@@ -25,6 +25,12 @@ python -X utf8 Tools/Rules/run_routes.py
 
 规则数据的单一可信来源是 `WhiteoutStation/Content/Rules/WhiteoutStationRules.v0.1.json`。
 
+## 当前可玩灰盒
+
+默认打开 `MVP_StationMap`，运行后可用 WASD 移动、鼠标观察、F 执行当前交互、E 打开证据板、Enter 结算、R 重开。当前灰盒已覆盖五个站区、13 项行动、三条成功路线、中段危机、零 AP 发报窗口、四类结局、事件日志与自动存档。
+
+UE 自动化回归可在编辑器 Session Frontend 中运行 `WhiteoutStation` 测试集，也可用命令行运行同名测试集。
+
 ## 工程目录
 
 - `WhiteoutStation/Source/WhiteoutStation`：UE C++ 运行时代码

@@ -1,0 +1,29 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "WhiteoutStationBuilder.generated.h"
+
+class AWSInteractableActor;
+
+UCLASS()
+class WHITEOUTSTATION_API AWhiteoutStationBuilder : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	AWhiteoutStationBuilder();
+	virtual void BeginPlay() override;
+
+private:
+	void BuildStation();
+	void SpawnBlock(const FString& Label, FVector Location, FVector Scale, FLinearColor Color);
+	void SpawnSign(const FString& Text, FVector Location, FRotator Rotation, FLinearColor Color);
+	void SpawnPointLight(const FString& Label, FVector Location, FLinearColor Color, float Intensity, float Radius);
+	AWSInteractableActor* SpawnHotspot(
+		const TCHAR* ActionId,
+		const TCHAR* Label,
+		FVector Location,
+		FLinearColor Color,
+		FVector Scale = FVector(0.55f, 0.55f, 0.9f));
+};
