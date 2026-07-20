@@ -10,6 +10,7 @@
 | UE Automation | 6 / 6 通过 | AP/零 AP 发报、事务幂等、三路线、知识白名单、模型 JSON/语义泄漏、10 次预算 |
 | UE Editor Win64 Development | 通过 | C++、UHT、编辑器模块与运行时资产加载 |
 | UE Game Win64 Development | 通过 | 非 Editor 运行目标与 MCP 编辑器插件隔离 |
+| Win64 Shipping BuildCookRun | 通过 | 514 包 cook 完成，0 error / 0 warning，Pak/IoStore stage 与 archive 成功 |
 
 ## 运行态路线矩阵
 
@@ -36,6 +37,14 @@
 - Poly Haven CC0 雪、锈蚀金属和混凝土 PBR 材质已在运行态着色。
 - Freesound CC0 风声以循环 SoundWave 播放；室外有体积雾、天空大气和动态飘雪。
 - 危机触发后外部光和五区灯组切换至低照度应急状态。
+
+## 独立发布包烟测
+
+- 从 `Builds/WhiteoutStation-v0.1-Win64/Windows/WhiteoutStation.exe` 启动，不依赖编辑器或开发期 MCP 插件。
+- Shipping 包内含可审计的 `Content/Rules/WhiteoutStationRules.v0.1.json` 与 `Content/Agents/AgentRuntime.v0.1.json`。
+- 自动执行医疗路线并正常退出：8 条已提交事务，AP 8 → 0，危机触发一次，0 AP 发报成功。
+- 最终结果为 `TaskSuccess`、76.64 / B；`heat_repair_room` 承诺仅结算一次且为履行。
+- 独立包成功写入 `%LOCALAPPDATA%/WhiteoutStation/Saved` 下的自动存档、事件日志和 1280×720 结果截图。
 
 ## v0.1 已知表现边界
 
