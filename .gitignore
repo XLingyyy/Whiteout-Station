@@ -1,0 +1,30 @@
+# Unreal Engine generated files and caches
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# IDE and editor state
+.vs/
+.vscode/
+.idea/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.code-workspace
+*.sln.DotSettings.user
+
+# Compiled and transient output
+*.log
+*.tmp
+*.user
+FileOpenOrder/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
