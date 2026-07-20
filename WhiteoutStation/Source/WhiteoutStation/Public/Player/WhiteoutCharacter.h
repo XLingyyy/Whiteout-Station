@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
+#include "State/WindStationTypes.h"
 #include "WhiteoutCharacter.generated.h"
 
 class UCameraComponent;
@@ -55,6 +56,14 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> SettleAction;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> DialogueModeAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> ContinueAction;
+
+	int32 DialogueModeIndex = 0;
+
 	void MoveForward(const FInputActionValue& Value);
 	void MoveBackward(const FInputActionValue& Value);
 	void MoveLeft(const FInputActionValue& Value);
@@ -64,5 +73,10 @@ private:
 	void ToggleEvidence(const FInputActionValue& Value);
 	void RestartRun(const FInputActionValue& Value);
 	void Settle(const FInputActionValue& Value);
+	void CycleDialogueMode(const FInputActionValue& Value);
+	void ContinueRun(const FInputActionValue& Value);
+	EWSDialogueAct SelectedDialogueAct() const;
+	FName SelectedPromiseCondition() const;
+	FString DialogueModeLabel() const;
 	AWSInteractableActor* FindLookedAtInteractable() const;
 };

@@ -4,11 +4,13 @@
 #include "EngineUtils.h"
 #include "HAL/PlatformMisc.h"
 #include "HUD/WhiteoutHUD.h"
+#include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Player/WhiteoutCharacter.h"
 #include "Player/WhiteoutPlayerController.h"
+#include "Sound/SoundBase.h"
 #include "State/WindStationStateSubsystem.h"
 #include "World/WhiteoutStationBuilder.h"
 #include "TimerManager.h"
@@ -27,7 +29,11 @@ void AWhiteoutGameMode::BeginPlay()
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.1 flow"));
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
-		StateSubsystem->NewGame();
+		const bool bContinueRequested = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutContinue"));
+		if (!bContinueRequested || !StateSubsystem->LoadSnapshot())
+		{
+			StateSubsystem->NewGame();
+		}
 	}
 
 	bool bHasBuilder = false;
@@ -39,6 +45,12 @@ void AWhiteoutGameMode::BeginPlay()
 	if (!bHasBuilder)
 	{
 		GetWorld()->SpawnActor<AWhiteoutStationBuilder>(FVector::ZeroVector, FRotator::ZeroRotator);
+	}
+	if (USoundBase* WindSound = LoadObject<USoundBase>(
+		nullptr,
+		TEXT("/Game/WindStation/Audio/Ambience/S_WindStrong_CC0.S_WindStrong_CC0")))
+	{
+		WindAmbience = UGameplayStatics::SpawnSound2D(this, WindSound, 0.16f, 0.94f, 0.0f, nullptr, false, false);
 	}
 
 	FString AutoRoute;
@@ -96,7 +108,11 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 		bSucceeded &= Commit(TEXT("talk_ye_cheng"));
 		bSucceeded &= Commit(TEXT("heat_medical_room"));
 		bSucceeded &= Commit(TEXT("treat_gu_heng"), [](FWSActionRequest& Request) { Request.TreatmentResource = EWSResourceType::Medicine; });
-		bSucceeded &= Commit(TEXT("talk_gu_heng"));
+		bSucceeded &= Commit(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
+		{
+			Request.DialogueAct = EWSDialogueAct::Promise;
+			Request.PromiseCondition = TEXT("heat_repair_room");
+		});
 		bSucceeded &= Commit(TEXT("heat_repair_room"));
 		bSucceeded &= Commit(TEXT("repair_generator"));
 		bSucceeded &= Commit(TEXT("calibrate_antenna"));

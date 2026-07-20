@@ -127,6 +127,24 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("rules_version"), TEXT("0.1.0"));
 	Root->SetArrayField(TEXT("events"), Events);
+	const FWSGameState& Snapshot = RulesEngine.GetState();
+	Root->SetNumberField(TEXT("remaining_ap"), Snapshot.ActionPoints);
+	Root->SetBoolField(TEXT("signal_sent"), Snapshot.Tasks.bSignalSent);
+	Root->SetStringField(TEXT("ending"), StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(Snapshot.Ending)));
+	Root->SetNumberField(TEXT("score"), Snapshot.Score.Total);
+	Root->SetStringField(TEXT("rating"), Snapshot.Score.Rating);
+	Root->SetNumberField(TEXT("model_calls"), Snapshot.ModelCalls);
+	TArray<TSharedPtr<FJsonValue>> Promises;
+	for (const FWSPromiseRecord& Promise : Snapshot.Promises)
+	{
+		TSharedRef<FJsonObject> PromiseObject = MakeShared<FJsonObject>();
+		PromiseObject->SetStringField(TEXT("promise_id"), Promise.PromiseId.ToString());
+		PromiseObject->SetStringField(TEXT("condition_id"), Promise.ConditionId.ToString());
+		PromiseObject->SetBoolField(TEXT("settled"), Promise.bSettled);
+		PromiseObject->SetBoolField(TEXT("fulfilled"), Promise.bFulfilled);
+		Promises.Add(MakeShared<FJsonValueObject>(PromiseObject));
+	}
+	Root->SetArrayField(TEXT("promises"), Promises);
 	FString Json;
 	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Json);
 	if (!FJsonSerializer::Serialize(Root, Writer))

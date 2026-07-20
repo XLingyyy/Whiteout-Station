@@ -85,6 +85,21 @@ void AWhiteoutHUD::DrawHUD()
 			const FString Level = StaticEnum<EWSKnowledgeLevel>()->GetNameStringByValue(static_cast<int64>(Pair.Value));
 			DrawLine(FString::Printf(TEXT("%s  //  %s"), *Pair.Key.ToString(), *Level), Width * 0.25f + 24, EvidenceY, FLinearColor(0.82f, 0.88f, 0.92f), 0.85f);
 		}
+		if (!State.Promises.IsEmpty())
+		{
+			EvidenceY += 10;
+			DrawLine(TEXT("RECORDED PROMISES"), Width * 0.25f + 22, EvidenceY, FLinearColor(0.95f, 0.75f, 0.3f), 1.0f);
+			for (const FWSPromiseRecord& Promise : State.Promises)
+			{
+				const TCHAR* Status = !Promise.bSettled ? TEXT("PENDING") : Promise.bFulfilled ? TEXT("KEPT") : TEXT("BROKEN");
+				DrawLine(
+					FString::Printf(TEXT("%s  //  %s"), *Promise.ConditionId.ToString(), Status),
+					Width * 0.25f + 24,
+					EvidenceY,
+					Promise.bSettled && !Promise.bFulfilled ? FLinearColor(1.0f, 0.42f, 0.25f) : FLinearColor(0.82f, 0.88f, 0.92f),
+					0.85f);
+			}
+		}
 	}
 
 	DrawPanel(20, Height - 168, Width - 40, 148, FLinearColor(0.015f, 0.025f, 0.04f, 0.9f));
@@ -105,7 +120,7 @@ void AWhiteoutHUD::DrawHUD()
 	{
 		DrawLine(InteractionPrompt.ToString(), 38, BottomY, FLinearColor(0.3f, 0.85f, 1.0f), 1.12f);
 	}
-	DrawLine(TEXT("WASD move  |  Mouse look  |  F interact  |  E evidence  |  Enter settle  |  R restart"), 38, BottomY, FLinearColor(0.55f, 0.64f, 0.72f), 0.82f);
+	DrawLine(TEXT("WASD move | F interact | Q dialogue | E evidence | C continue | Enter settle | R restart"), 38, BottomY, FLinearColor(0.55f, 0.64f, 0.72f), 0.82f);
 
 	if (State.Phase == EWSGamePhase::Results)
 	{
@@ -126,6 +141,10 @@ void AWhiteoutHUD::SetActionFeedback(const FText& ActionName, const FWSActionRes
 		if (Result.bCrisisTriggered)
 		{
 			FeedbackText += TEXT("  //  BACKUP BATTERY VOLTAGE COLLAPSED");
+		}
+		if (Result.Changes.ContainsByPredicate([](const FString& Change) { return Change.StartsWith(TEXT("Promise recognized:")); }))
+		{
+			FeedbackText += TEXT("  //  PROMISE LOGGED");
 		}
 	}
 	else
@@ -181,11 +200,12 @@ void AWhiteoutHUD::DrawResultsOverlay(const FWSGameState& State, const float Wid
 	LineY += 12;
 
 	const float BarWidth = PanelWidth * 0.55f;
-	DrawScoreRow(TEXT("TASK QUALITY"), State.Score.TaskQuality, 30.0f, X + 32, LineY, BarWidth, FLinearColor(0.25f, 0.72f, 1.0f));
-	DrawScoreRow(TEXT("PEOPLE"), State.Score.People, 30.0f, X + 32, LineY, BarWidth, FLinearColor(0.28f, 0.95f, 0.67f));
-	DrawScoreRow(TEXT("RESERVES"), State.Score.EffectiveReserves, 20.0f, X + 32, LineY, BarWidth, FLinearColor(0.95f, 0.7f, 0.25f));
-	DrawScoreRow(TEXT("SOCIAL STABILITY"), State.Score.SocialStability, 12.0f, X + 32, LineY, BarWidth, FLinearColor(0.75f, 0.48f, 1.0f));
-	DrawScoreRow(TEXT("INFORMATION"), State.Score.InformationResponsibility, 8.0f, X + 32, LineY, BarWidth, FLinearColor(0.4f, 0.86f, 0.9f));
+	const float ScoreRowHeight = Height < 650.0f ? 31.0f : 43.0f;
+	DrawScoreRow(TEXT("TASK QUALITY"), State.Score.TaskQuality, 30.0f, X + 32, LineY, BarWidth, FLinearColor(0.25f, 0.72f, 1.0f), ScoreRowHeight);
+	DrawScoreRow(TEXT("PEOPLE"), State.Score.People, 30.0f, X + 32, LineY, BarWidth, FLinearColor(0.28f, 0.95f, 0.67f), ScoreRowHeight);
+	DrawScoreRow(TEXT("RESERVES"), State.Score.EffectiveReserves, 20.0f, X + 32, LineY, BarWidth, FLinearColor(0.95f, 0.7f, 0.25f), ScoreRowHeight);
+	DrawScoreRow(TEXT("SOCIAL STABILITY"), State.Score.SocialStability, 12.0f, X + 32, LineY, BarWidth, FLinearColor(0.75f, 0.48f, 1.0f), ScoreRowHeight);
+	DrawScoreRow(TEXT("INFORMATION"), State.Score.InformationResponsibility, 8.0f, X + 32, LineY, BarWidth, FLinearColor(0.4f, 0.86f, 0.9f), ScoreRowHeight);
 
 	float SummaryX = X + PanelWidth * 0.65f;
 	float SummaryY = Y + 148;
@@ -220,13 +240,16 @@ void AWhiteoutHUD::DrawScoreRow(
 	const float X,
 	float& Y,
 	const float Width,
-	const FLinearColor Color)
+	const FLinearColor Color,
+	const float RowHeight)
 {
-	DrawText(FString::Printf(TEXT("%-22s %5.1f / %.0f"), *Label, Value, Maximum), FLinearColor(0.82f, 0.88f, 0.93f), X, Y, GEngine->GetSmallFont(), 0.86f, false);
-	const float BarY = Y + 18;
-	DrawRect(FLinearColor(0.08f, 0.12f, 0.16f, 1.0f), X, BarY, Width, 8);
-	DrawRect(Color, X, BarY, Width * FMath::Clamp(Value / Maximum, 0.0f, 1.0f), 8);
-	Y += 43;
+	const bool bCompact = RowHeight < 40.0f;
+	DrawText(FString::Printf(TEXT("%-22s %5.1f / %.0f"), *Label, Value, Maximum), FLinearColor(0.82f, 0.88f, 0.93f), X, Y, GEngine->GetSmallFont(), bCompact ? 0.76f : 0.86f, false);
+	const float BarY = Y + (bCompact ? 15.0f : 18.0f);
+	const float BarHeight = bCompact ? 6.0f : 8.0f;
+	DrawRect(FLinearColor(0.08f, 0.12f, 0.16f, 1.0f), X, BarY, Width, BarHeight);
+	DrawRect(Color, X, BarY, Width * FMath::Clamp(Value / Maximum, 0.0f, 1.0f), BarHeight);
+	Y += RowHeight;
 }
 
 FString AWhiteoutHUD::StatLabel(const float Value, const bool bTrust)

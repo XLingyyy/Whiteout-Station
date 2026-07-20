@@ -2,10 +2,13 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "Components/DirectionalLightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
 #include "Engine/PointLight.h"
+#include "Components/SkyAtmosphereComponent.h"
 #include "Engine/SkyLight.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/TextRenderActor.h"
@@ -14,6 +17,7 @@
 #include "State/WindStationStateSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 #include "World/WSInteractableActor.h"
+#include "World/WhiteoutSnowField.h"
 
 AWhiteoutStationBuilder::AWhiteoutStationBuilder()
 {
@@ -44,6 +48,17 @@ void AWhiteoutStationBuilder::BuildStation()
 		ExteriorLight->SetIntensity(3.0f);
 		ExteriorLight->SetLightColor(FLinearColor(0.58f, 0.7f, 0.9f));
 		ExteriorLight->SetMobility(EComponentMobility::Movable);
+		ExteriorLight->SetAtmosphereSunLight(true);
+	}
+	GetWorld()->SpawnActor<ASkyAtmosphere>(FVector::ZeroVector, FRotator::ZeroRotator);
+	AExponentialHeightFog* HeightFog = GetWorld()->SpawnActor<AExponentialHeightFog>(FVector(0, 0, -80), FRotator::ZeroRotator);
+	if (HeightFog)
+	{
+		HeightFog->GetComponent()->SetFogDensity(0.012f);
+		HeightFog->GetComponent()->SetFogHeightFalloff(0.26f);
+		HeightFog->GetComponent()->SetFogInscatteringColor(FLinearColor(0.24f, 0.34f, 0.48f));
+		HeightFog->GetComponent()->SetVolumetricFog(true);
+		HeightFog->GetComponent()->SetVolumetricFogExtinctionScale(0.65f);
 	}
 	ASkyLight* SkyLight = GetWorld()->SpawnActor<ASkyLight>(FVector(600, 400, 500), FRotator::ZeroRotator);
 	if (SkyLight)
@@ -58,10 +73,19 @@ void AWhiteoutStationBuilder::BuildStation()
 	SpawnPointLight(TEXT("Medical task light"), FVector(80, 780, 245), FLinearColor(0.35f, 0.85f, 0.72f), 2300.0f, 820.0f);
 	SpawnPointLight(TEXT("Quarters practical"), FVector(1120, 780, 245), FLinearColor(1.0f, 0.62f, 0.22f), 1900.0f, 820.0f);
 	SpawnPointLight(TEXT("Antenna work light"), FVector(2100, 400, 330), FLinearColor(0.28f, 0.48f, 1.0f), 2600.0f, 1000.0f);
+	GetWorld()->SpawnActor<AWhiteoutSnowField>(FVector::ZeroVector, FRotator::ZeroRotator);
+	const FLinearColor Control(0.15f, 0.55f, 0.9f);
+	const FLinearColor Repair(0.95f, 0.36f, 0.12f);
+	const FLinearColor Medical(0.12f, 0.75f, 0.55f);
+	const FLinearColor Quarter(0.9f, 0.65f, 0.12f);
+	const FLinearColor Outdoor(0.4f, 0.65f, 1.0f);
 	const FLinearColor FloorColor(0.08f, 0.11f, 0.14f, 1.0f);
 	const FLinearColor WallColor(0.22f, 0.27f, 0.30f, 1.0f);
 	SpawnBlock(TEXT("Indoor Floor"), FVector(700, 400, -25), FVector(20, 14, 0.5f), FloorColor);
 	SpawnBlock(TEXT("Outdoor Platform"), FVector(2300, 400, -25), FVector(10, 7, 0.5f), FloorColor);
+	SpawnBlock(TEXT("Snow Apron North"), FVector(2300, -450, -48), FVector(14, 9, 0.32f), FloorColor);
+	SpawnBlock(TEXT("Snow Apron South"), FVector(2300, 1250, -48), FVector(14, 9, 0.32f), FloorColor);
+	SpawnBlock(TEXT("Station Ceiling"), FVector(700, 400, 365), FVector(20, 14, 0.22f), WallColor);
 	SpawnBlock(TEXT("North Wall"), FVector(700, -300, 150), FVector(20, 0.25f, 3.5f), WallColor);
 	SpawnBlock(TEXT("South Wall"), FVector(700, 1100, 150), FVector(20, 0.25f, 3.5f), WallColor);
 	SpawnBlock(TEXT("West Wall"), FVector(-300, 400, 150), FVector(0.25f, 14, 3.5f), WallColor);
@@ -72,17 +96,23 @@ void AWhiteoutStationBuilder::BuildStation()
 	SpawnBlock(TEXT("Cross Partition A"), FVector(100, 400, 150), FVector(8, 0.2f, 3.5f), WallColor);
 	SpawnBlock(TEXT("Cross Partition B"), FVector(1300, 400, 150), FVector(8, 0.2f, 3.5f), WallColor);
 
+	// Silhouette props make every room legible before bespoke meshes arrive.
+	SpawnBlock(TEXT("Metal Control Desk"), FVector(-60, -165, 48), FVector(3.4f, 0.7f, 0.7f), Control);
+	SpawnBlock(TEXT("Metal Radio Stack"), FVector(390, -175, 92), FVector(0.8f, 0.55f, 1.45f), Control);
+	SpawnBlock(TEXT("Metal Generator Base"), FVector(1260, -120, 42), FVector(3.0f, 0.9f, 0.55f), Repair);
+	SpawnBlock(TEXT("Metal Pipe Run A"), FVector(1080, -245, 292), FVector(7.0f, 0.12f, 0.12f), Repair);
+	SpawnBlock(TEXT("Metal Pipe Run B"), FVector(1520, 150, 292), FVector(0.12f, 4.0f, 0.12f), Repair);
+	SpawnBlock(TEXT("Medical Bed"), FVector(330, 690, 42), FVector(2.3f, 0.85f, 0.35f), Medical);
+	SpawnBlock(TEXT("Medical Cabinet"), FVector(-170, 930, 90), FVector(0.65f, 1.0f, 1.55f), Medical);
+	SpawnBlock(TEXT("Kitchen Counter"), FVector(1260, 1015, 55), FVector(3.8f, 0.6f, 0.85f), Quarter);
+	SpawnBlock(TEXT("Quarters Bunk A"), FVector(820, 560, 40), FVector(2.4f, 0.7f, 0.32f), Quarter);
+	SpawnBlock(TEXT("Quarters Bunk B"), FVector(820, 930, 40), FVector(2.4f, 0.7f, 0.32f), Quarter);
+
 	SpawnSign(TEXT("CONTROL"), FVector(-180, 365, 215), FRotator(0, 90, 0), FLinearColor(0.35f, 0.75f, 1.0f));
 	SpawnSign(TEXT("REPAIR"), FVector(820, 365, 215), FRotator(0, 90, 0), FLinearColor(1.0f, 0.55f, 0.15f));
 	SpawnSign(TEXT("MEDICAL"), FVector(-180, 1080, 215), FRotator(0, 90, 0), FLinearColor(0.3f, 1.0f, 0.75f));
 	SpawnSign(TEXT("QUARTERS"), FVector(820, 1080, 215), FRotator(0, 90, 0), FLinearColor(0.95f, 0.8f, 0.35f));
 	SpawnSign(TEXT("ANTENNA"), FVector(2050, 650, 215), FRotator(0, 180, 0), FLinearColor(0.45f, 0.75f, 1.0f));
-
-	const FLinearColor Control(0.15f, 0.55f, 0.9f);
-	const FLinearColor Repair(0.95f, 0.36f, 0.12f);
-	const FLinearColor Medical(0.12f, 0.75f, 0.55f);
-	const FLinearColor Quarter(0.9f, 0.65f, 0.12f);
-	const FLinearColor Outdoor(0.4f, 0.65f, 1.0f);
 
 	SpawnHotspot(TEXT("investigate_generator_log"), TEXT("Deep generator log"), FVector(-120, 50, 70), Control);
 	SpawnHotspot(TEXT("send_signal"), TEXT("Emergency radio"), FVector(280, 50, 70), Control);
@@ -121,7 +151,18 @@ void AWhiteoutStationBuilder::SpawnBlock(
 	Block->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
 	Block->GetStaticMeshComponent()->SetCollisionProfileName(TEXT("BlockAll"));
 	Block->SetActorScale3D(Scale);
-	if (UMaterialInterface* BaseMaterial = Block->GetStaticMeshComponent()->GetMaterial(0))
+	const bool bSnowSurface = Label.Contains(TEXT("Outdoor")) || Label.Contains(TEXT("Snow"));
+	const bool bMetalSurface = Label.Contains(TEXT("Metal")) || Label.Contains(TEXT("Pipe"));
+	const TCHAR* MaterialPath = bSnowSurface
+		? TEXT("/Game/WindStation/Art/Materials/M_WS_Snow.M_WS_Snow")
+		: bMetalSurface
+			? TEXT("/Game/WindStation/Art/Materials/M_WS_RustedMetal.M_WS_RustedMetal")
+			: TEXT("/Game/WindStation/Art/Materials/M_WS_Concrete.M_WS_Concrete");
+	if (UMaterialInterface* SurfaceMaterial = LoadObject<UMaterialInterface>(nullptr, MaterialPath))
+	{
+		Block->GetStaticMeshComponent()->SetMaterial(0, SurfaceMaterial);
+	}
+	else if (UMaterialInterface* BaseMaterial = Block->GetStaticMeshComponent()->GetMaterial(0))
 	{
 		UMaterialInstanceDynamic* DynamicMaterial = UMaterialInstanceDynamic::Create(BaseMaterial, Block);
 		DynamicMaterial->SetVectorParameterValue(TEXT("Color"), Color);

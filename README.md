@@ -27,7 +27,7 @@ python -X utf8 Tools/Rules/run_routes.py
 
 ## 当前可玩灰盒
 
-默认打开 `MVP_StationMap`，运行后可用 WASD 移动、鼠标观察、F 执行当前交互、E 打开证据板、Enter 结算、R 重开。当前灰盒已覆盖五个站区、13 项行动、三条成功路线、中段危机、零 AP 发报窗口、四类结局、事件日志与自动存档。
+默认打开 `MVP_StationMap`，运行后可用 WASD 移动、鼠标观察、F 执行当前交互、Q 切换询问/质疑/安抚及三类可追踪承诺、E 打开证据板、C 读取自动存档、Enter 结算、R 重开。启动参数 `-WhiteoutContinue` 可直接从自动存档进入。当前流程已覆盖五个站区、13 项行动、三条成功路线、中段危机、零 AP 发报窗口、四类结局、事件日志与自动存档。
 
 UE 自动化回归可在编辑器 Session Frontend 中运行 `WhiteoutStation` 测试集，也可用命令行运行同名测试集。
 

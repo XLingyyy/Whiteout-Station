@@ -35,6 +35,8 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 	EvidenceAction = CreateDefaultSubobject<UInputAction>(TEXT("EvidenceAction"));
 	RestartAction = CreateDefaultSubobject<UInputAction>(TEXT("RestartAction"));
 	SettleAction = CreateDefaultSubobject<UInputAction>(TEXT("SettleAction"));
+	DialogueModeAction = CreateDefaultSubobject<UInputAction>(TEXT("DialogueModeAction"));
+	ContinueAction = CreateDefaultSubobject<UInputAction>(TEXT("ContinueAction"));
 
 	MoveForwardAction->ValueType = EInputActionValueType::Boolean;
 	MoveBackwardAction->ValueType = EInputActionValueType::Boolean;
@@ -45,6 +47,8 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 	EvidenceAction->ValueType = EInputActionValueType::Boolean;
 	RestartAction->ValueType = EInputActionValueType::Boolean;
 	SettleAction->ValueType = EInputActionValueType::Boolean;
+	DialogueModeAction->ValueType = EInputActionValueType::Boolean;
+	ContinueAction->ValueType = EInputActionValueType::Boolean;
 
 	RuntimeInputContext->MapKey(MoveForwardAction, EKeys::W);
 	RuntimeInputContext->MapKey(MoveBackwardAction, EKeys::S);
@@ -55,6 +59,8 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 	RuntimeInputContext->MapKey(EvidenceAction, EKeys::E);
 	RuntimeInputContext->MapKey(RestartAction, EKeys::R);
 	RuntimeInputContext->MapKey(SettleAction, EKeys::Enter);
+	RuntimeInputContext->MapKey(DialogueModeAction, EKeys::Q);
+	RuntimeInputContext->MapKey(ContinueAction, EKeys::C);
 }
 
 void AWhiteoutCharacter::BeginPlay()
@@ -105,6 +111,8 @@ void AWhiteoutCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		EnhancedInput->BindAction(EvidenceAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::ToggleEvidence);
 		EnhancedInput->BindAction(RestartAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::RestartRun);
 		EnhancedInput->BindAction(SettleAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::Settle);
+		EnhancedInput->BindAction(DialogueModeAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::CycleDialogueMode);
+		EnhancedInput->BindAction(ContinueAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::ContinueRun);
 	}
 }
 
@@ -139,8 +147,63 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 {
 	if (AWSInteractableActor* Interactable = FindLookedAtInteractable())
 	{
-		Interactable->Interact(this);
+		Interactable->Interact(this, SelectedDialogueAct(), SelectedPromiseCondition());
 	}
+}
+
+void AWhiteoutCharacter::CycleDialogueMode(const FInputActionValue& Value)
+{
+	DialogueModeIndex = (DialogueModeIndex + 1) % 6;
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->SetSystemMessage(FString::Printf(TEXT("DIALOGUE MODE: %s"), *DialogueModeLabel()));
+		}
+	}
+}
+
+void AWhiteoutCharacter::ContinueRun(const FInputActionValue& Value)
+{
+	UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	if (!StateSubsystem)
+	{
+		return;
+	}
+	const bool bLoaded = StateSubsystem->LoadSnapshot();
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->SetSystemMessage(bLoaded ? TEXT("AUTOSAVE RESTORED") : TEXT("NO AUTOSAVE FOUND"));
+		}
+	}
+}
+
+EWSDialogueAct AWhiteoutCharacter::SelectedDialogueAct() const
+{
+	if (DialogueModeIndex == 1) return EWSDialogueAct::Challenge;
+	if (DialogueModeIndex >= 2 && DialogueModeIndex <= 4) return EWSDialogueAct::Promise;
+	if (DialogueModeIndex == 5) return EWSDialogueAct::Reassure;
+	return EWSDialogueAct::Ask;
+}
+
+FName AWhiteoutCharacter::SelectedPromiseCondition() const
+{
+	if (DialogueModeIndex == 2) return TEXT("heat_repair_room");
+	if (DialogueModeIndex == 3) return TEXT("reserve_medicine");
+	if (DialogueModeIndex == 4) return TEXT("keep_records");
+	return NAME_None;
+}
+
+FString AWhiteoutCharacter::DialogueModeLabel() const
+{
+	if (DialogueModeIndex == 1) return TEXT("CHALLENGE");
+	if (DialogueModeIndex == 2) return TEXT("PROMISE // HEAT REPAIR ROOM");
+	if (DialogueModeIndex == 3) return TEXT("PROMISE // RESERVE MEDICINE");
+	if (DialogueModeIndex == 4) return TEXT("PROMISE // KEEP RECORDS");
+	if (DialogueModeIndex == 5) return TEXT("REASSURE");
+	return TEXT("ASK");
 }
 
 void AWhiteoutCharacter::ToggleEvidence(const FInputActionValue& Value)

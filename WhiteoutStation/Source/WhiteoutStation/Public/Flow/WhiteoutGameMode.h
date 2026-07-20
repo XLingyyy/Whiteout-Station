@@ -4,6 +4,8 @@
 #include "GameFramework/GameModeBase.h"
 #include "WhiteoutGameMode.generated.h"
 
+class UAudioComponent;
+
 UCLASS()
 class WHITEOUTSTATION_API AWhiteoutGameMode : public AGameModeBase
 {
@@ -14,5 +16,8 @@ public:
 	virtual void BeginPlay() override;
 
 private:
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> WindAmbience;
+
 	void RunAutomationRoute(const FString& RouteName);
 };

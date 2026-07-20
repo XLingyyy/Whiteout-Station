@@ -18,6 +18,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
 	TObjectPtr<UStaticMeshComponent> Mesh;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+	TObjectPtr<UStaticMeshComponent> HeadMesh;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
 	FName ActionId;
 
@@ -34,5 +37,8 @@ public:
 	FText GetInteractionPrompt() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
-	FWSActionResult Interact(APawn* InstigatorPawn);
+	FWSActionResult Interact(
+		APawn* InstigatorPawn,
+		EWSDialogueAct DialogueAct = EWSDialogueAct::Ask,
+		FName PromiseCondition = NAME_None);
 };
