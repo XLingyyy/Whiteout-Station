@@ -5,6 +5,9 @@
 #include "WhiteoutStationBuilder.generated.h"
 
 class AWSInteractableActor;
+class UDirectionalLightComponent;
+class UPointLightComponent;
+struct FWSActionResult;
 
 UCLASS()
 class WHITEOUTSTATION_API AWhiteoutStationBuilder : public AActor
@@ -16,6 +19,12 @@ public:
 	virtual void BeginPlay() override;
 
 private:
+	UPROPERTY()
+	TArray<TObjectPtr<UPointLightComponent>> RuntimeLights;
+
+	UPROPERTY()
+	TObjectPtr<UDirectionalLightComponent> ExteriorLight;
+
 	void BuildStation();
 	void SpawnBlock(const FString& Label, FVector Location, FVector Scale, FLinearColor Color);
 	void SpawnSign(const FString& Text, FVector Location, FRotator Rotation, FLinearColor Color);
@@ -26,4 +35,9 @@ private:
 		FVector Location,
 		FLinearColor Color,
 		FVector Scale = FVector(0.55f, 0.55f, 0.9f));
+
+	UFUNCTION()
+	void HandleActionCommitted(const FWSActionResult& Result);
+
+	void ApplyCrisisLighting();
 };

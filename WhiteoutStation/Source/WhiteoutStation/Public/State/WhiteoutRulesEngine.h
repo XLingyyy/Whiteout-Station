@@ -31,6 +31,7 @@ public:
 	EWSEndingType ClassifyEnding() const;
 	FWSScoreBreakdown CalculateScore() const;
 	void EndGame();
+	bool TryRecordModelCall();
 
 	TArray<FName> BuildAllowedFactIds(EWSCharacterId CharacterId) const;
 	static bool ValidateAgentResponse(

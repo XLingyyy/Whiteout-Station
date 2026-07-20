@@ -31,6 +31,10 @@ python -X utf8 Tools/Rules/run_routes.py
 
 UE 自动化回归可在编辑器 Session Frontend 中运行 `WhiteoutStation` 测试集，也可用命令行运行同名测试集。
 
+运行态回归可额外传入 `-WhiteoutAutoRoute=medical|technical|quick -WhiteoutAutoCapture`，自动走完指定路线、结算、导出事件日志并保存 `Saved/WhiteoutRuntimeSmoke.png`。
+
+对话默认使用完全离线的确定性预设。传入 `-WhiteoutAgentEndpoint=http://127.0.0.1:8765` 可连接兼容项目 JSON 协议的本地共享表达服务；模型只能改写台词，回应类型、事实权限和全部游戏状态仍由 C++ 决定。开发烟测服务可运行 `python -X utf8 Tools/Agents/mock_agent_server.py`。
+
 ## 工程目录
 
 - `WhiteoutStation/Source/WhiteoutStation`：UE C++ 运行时代码

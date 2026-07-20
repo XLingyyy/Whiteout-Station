@@ -12,4 +12,7 @@ class WHITEOUTSTATION_API AWhiteoutGameMode : public AGameModeBase
 public:
 	AWhiteoutGameMode();
 	virtual void BeginPlay() override;
+
+private:
+	void RunAutomationRoute(const FString& RouteName);
 };

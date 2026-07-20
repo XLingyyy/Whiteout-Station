@@ -2,6 +2,8 @@
 
 #include "Misc/AutomationTest.h"
 #include "Misc/Paths.h"
+#include "Agents/WSAgentGateway.h"
+#include "Agents/WSNPCDecisionService.h"
 #include "State/WhiteoutRulesEngine.h"
 
 namespace WhiteoutRuleTests
@@ -183,6 +185,67 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Quick score is in range"), Engine.GetState().Score.Total >= 55.0f && Engine.GetState().Score.Total <= 79.0f);
 		TestEqual(TEXT("Quick route retains two AP"), Engine.GetState().ActionPoints, 2);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutDialogueBoundaryTest,
+	"WhiteoutStation.Agents.DialogueBoundary",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
+{
+	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+	const FWSGameState State = Engine.GetState();
+	const FWSAgentReply Decision = UWSNPCDecisionService::BuildDeterministicReply(TEXT("talk_gu_heng"), State);
+	const TArray<FName> AllowedFacts = UWSNPCDecisionService::BuildAllowedFacts(TEXT("talk_gu_heng"), Decision.Speaker, State);
+	TestTrue(TEXT("Preset fallback is always available"), Decision.bAccepted && Decision.bFallback && !Decision.Utterance.IsEmpty());
+	TestFalse(TEXT("Early Gu context excludes Ye's heat pack"), AllowedFacts.Contains(TEXT("FACT_HEAT_PACK")));
+	TestFalse(TEXT("Early Gu context excludes restart confession"), AllowedFacts.Contains(TEXT("FACT_FORCED_RESTART_CONFIRMED")));
+
+	FWSAgentReply ModelReply;
+	FString Reason;
+	const FString ValidPayload = TEXT("{\"utterance\":\"手伤还在，先处理低温。\",\"emotion\":\"guarded\",\"response_type\":\"Deflect\",\"referenced_fact_ids\":[\"FACT_HAND_INJURY\"]}");
+	TestTrue(
+		TEXT("Schema-valid expression is accepted"),
+		UWSAgentGateway::ValidateModelPayload(ValidPayload, Decision, AllowedFacts, ModelReply, Reason));
+	TestFalse(TEXT("Accepted model line is not marked fallback"), ModelReply.bFallback);
+
+	const FString MutationPayload = TEXT("{\"utterance\":\"修好了。\",\"emotion\":\"calm\",\"response_type\":\"Deflect\",\"referenced_fact_ids\":[],\"ap_delta\":2}");
+	TestFalse(
+		TEXT("State mutation field is rejected"),
+		UWSAgentGateway::ValidateModelPayload(MutationPayload, Decision, AllowedFacts, ModelReply, Reason));
+	TestEqual(TEXT("Mutation rejection is explicit"), Reason, FString(TEXT("model_attempted_rule_change")));
+
+	const FString LeakPayload = TEXT("{\"utterance\":\"保温包在柜底。\",\"emotion\":\"calm\",\"response_type\":\"Deflect\",\"referenced_fact_ids\":[\"FACT_HEAT_PACK\"]}");
+	TestFalse(
+		TEXT("Unauthorized fact citation is rejected"),
+		UWSAgentGateway::ValidateModelPayload(LeakPayload, Decision, AllowedFacts, ModelReply, Reason));
+	TestEqual(TEXT("Leak rejection is explicit"), Reason, FString(TEXT("fact_permission_violation")));
+
+	const FString UntaggedLeakPayload = TEXT("{\"utterance\":\"柜底还有保温包。\",\"emotion\":\"calm\",\"response_type\":\"Deflect\",\"referenced_fact_ids\":[]}");
+	TestFalse(
+		TEXT("Untagged protected claim is rejected"),
+		UWSAgentGateway::ValidateModelPayload(UntaggedLeakPayload, Decision, AllowedFacts, ModelReply, Reason));
+	TestTrue(TEXT("Semantic leak identifies protected fact"), Reason.StartsWith(TEXT("semantic_fact_permission_violation:FACT_HEAT_PACK")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutModelBudgetTest,
+	"WhiteoutStation.Agents.ModelBudget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutModelBudgetTest::RunTest(const FString& Parameters)
+{
+	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+	for (int32 Index = 0; Index < 10; ++Index)
+	{
+		TestTrue(FString::Printf(TEXT("Model call %d is admitted"), Index + 1), Engine.TryRecordModelCall());
+	}
+	TestEqual(TEXT("Budget reaches hard limit"), Engine.GetState().ModelCalls, 10);
+	TestFalse(TEXT("Eleventh model call is blocked"), Engine.TryRecordModelCall());
+	TestEqual(TEXT("Rejected call does not exceed budget"), Engine.GetState().ModelCalls, 10);
 	return true;
 }
 

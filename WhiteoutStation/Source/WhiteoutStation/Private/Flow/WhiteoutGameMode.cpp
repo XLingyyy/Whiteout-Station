@@ -41,6 +41,12 @@ void AWhiteoutGameMode::BeginPlay()
 		GetWorld()->SpawnActor<AWhiteoutStationBuilder>(FVector::ZeroVector, FRotator::ZeroRotator);
 	}
 
+	FString AutoRoute;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WhiteoutAutoRoute="), AutoRoute))
+	{
+		RunAutomationRoute(AutoRoute);
+	}
+
 	if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoCapture")))
 	{
 		FTimerHandle CaptureTimer;
@@ -60,5 +66,88 @@ void AWhiteoutGameMode::BeginPlay()
 			[]() { FPlatformMisc::RequestExit(false); },
 			4.0f,
 			false);
+	}
+}
+
+void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
+{
+	UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	if (!StateSubsystem)
+	{
+		return;
+	}
+	const auto Commit = [StateSubsystem](const TCHAR* ActionId, const TFunction<void(FWSActionRequest&)>& Configure = nullptr)
+	{
+		FWSActionRequest Request;
+		Request.ActionId = FName(ActionId);
+		Request.TransactionId = FGuid::NewGuid();
+		if (Configure)
+		{
+			Configure(Request);
+		}
+		const FWSActionResult Result = StateSubsystem->CommitAction(Request);
+		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation AutoRoute: %s committed=%d AP=%d->%d"), ActionId, Result.bCommitted, Result.APBefore, Result.APAfter);
+		return Result.bCommitted;
+	};
+
+	bool bSucceeded = true;
+	if (RouteName.Equals(TEXT("medical"), ESearchCase::IgnoreCase))
+	{
+		bSucceeded &= Commit(TEXT("talk_ye_cheng"));
+		bSucceeded &= Commit(TEXT("heat_medical_room"));
+		bSucceeded &= Commit(TEXT("treat_gu_heng"), [](FWSActionRequest& Request) { Request.TreatmentResource = EWSResourceType::Medicine; });
+		bSucceeded &= Commit(TEXT("talk_gu_heng"));
+		bSucceeded &= Commit(TEXT("heat_repair_room"));
+		bSucceeded &= Commit(TEXT("repair_generator"));
+		bSucceeded &= Commit(TEXT("calibrate_antenna"));
+		bSucceeded &= Commit(TEXT("send_signal"));
+	}
+	else if (RouteName.Equals(TEXT("technical"), ESearchCase::IgnoreCase))
+	{
+		bSucceeded &= Commit(TEXT("investigate_generator_log"));
+		bSucceeded &= Commit(TEXT("inspect_control_cabinet"));
+		bSucceeded &= Commit(TEXT("talk_gu_heng"));
+		bSucceeded &= Commit(TEXT("dismantle_kitchen_heater"));
+		bSucceeded &= Commit(TEXT("heat_repair_room"));
+		bSucceeded &= Commit(TEXT("repair_generator"));
+		bSucceeded &= Commit(TEXT("calibrate_antenna"));
+		bSucceeded &= Commit(TEXT("send_signal"));
+	}
+	else if (RouteName.Equals(TEXT("quick"), ESearchCase::IgnoreCase))
+	{
+		bSucceeded &= Commit(TEXT("heat_repair_room"));
+		bSucceeded &= Commit(TEXT("distribute_food"), [](FWSActionRequest& Request)
+		{
+			Request.FoodForPlayer = 1;
+			Request.FoodForGuHeng = 1;
+		});
+		bSucceeded &= Commit(TEXT("repair_generator"));
+		bSucceeded &= Commit(TEXT("repair_generator"));
+		bSucceeded &= Commit(TEXT("calibrate_antenna"));
+		bSucceeded &= Commit(TEXT("send_signal"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: unknown route '%s'"), *RouteName);
+		return;
+	}
+
+	const FWSGameState Results = StateSubsystem->EndGame();
+	FString EventLogPath;
+	StateSubsystem->ExportEventLog(EventLogPath);
+	const FString Summary = FString::Printf(
+		TEXT("route=%s success=%d ending=%s score=%.2f log=%s"),
+		*RouteName,
+		bSucceeded && Results.Tasks.bSignalSent,
+		*StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(Results.Ending)),
+		Results.Score.Total,
+		*EventLogPath);
+	if (bSucceeded && Results.Tasks.bSignalSent)
+	{
+		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation AutoRoute: %s"), *Summary);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: %s"), *Summary);
 	}
 }

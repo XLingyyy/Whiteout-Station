@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "provider_name": "preset",
+  "model": "shared-dialogue",
+  "endpoint": "",
+  "timeout_seconds": 4,
+  "notes": "Leave endpoint empty for deterministic offline dialogue. Use -WhiteoutAgentEndpoint=<local-proxy-url> to enable the shared expression provider without storing credentials."
+}

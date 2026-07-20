@@ -619,6 +619,16 @@ void FWhiteoutRulesEngine::EndGame()
 	State.Phase = EWSGamePhase::Results;
 }
 
+bool FWhiteoutRulesEngine::TryRecordModelCall()
+{
+	if (State.ModelCalls >= Config.ModelCallHardLimit)
+	{
+		return false;
+	}
+	++State.ModelCalls;
+	return true;
+}
+
 EWSEndingType FWhiteoutRulesEngine::ClassifyEnding() const
 {
 	bool bCritical = false;

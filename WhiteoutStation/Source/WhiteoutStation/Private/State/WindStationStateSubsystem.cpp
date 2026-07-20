@@ -1,6 +1,8 @@
 #include "State/WindStationStateSubsystem.h"
 
 #include "Actions/WSActionResolver.h"
+#include "Agents/WSAgentGateway.h"
+#include "Agents/WSNPCDecisionService.h"
 #include "Dom/JsonObject.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/FileHelper.h"
@@ -22,17 +24,21 @@ void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	}
 	ActionResolver = NewObject<UWSActionResolver>(this);
 	ActionResolver->Initialize(this);
+	AgentGateway = NewObject<UWSAgentGateway>(this);
+	AgentGateway->Initialize();
 }
 
 void UWindStationStateSubsystem::Deinitialize()
 {
 	ActionResolver = nullptr;
+	AgentGateway = nullptr;
 	Super::Deinitialize();
 }
 
 void UWindStationStateSubsystem::NewGame()
 {
 	RulesEngine.Reset();
+	LatestDialogue = FWSAgentReply();
 	BroadcastState();
 }
 
@@ -54,6 +60,7 @@ FWSActionResult UWindStationStateSubsystem::CommitAction(const FWSActionRequest&
 		SaveSnapshot();
 		OnActionCommitted.Broadcast(Result);
 		BroadcastState();
+		RequestActionExpression(Result.ActionId);
 	}
 	return Result;
 }
@@ -134,4 +141,38 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 void UWindStationStateSubsystem::BroadcastState()
 {
 	OnStateChanged.Broadcast(RulesEngine.GetState());
+}
+
+void UWindStationStateSubsystem::RequestActionExpression(const FName ActionId)
+{
+	if (!AgentGateway || !UWSNPCDecisionService::RequiresExpression(ActionId))
+	{
+		return;
+	}
+
+	const bool bUseLiveProvider = AgentGateway->HasLiveProvider() && RulesEngine.TryRecordModelCall();
+	if (bUseLiveProvider)
+	{
+		SaveSnapshot();
+		BroadcastState();
+	}
+	TWeakObjectPtr<UWindStationStateSubsystem> WeakThis(this);
+	AgentGateway->RequestExpression(
+		ActionId,
+		RulesEngine.GetState(),
+		bUseLiveProvider,
+		FWSAgentReplyCallback::CreateLambda(
+			[WeakThis](const FWSAgentReply& Reply)
+			{
+				if (WeakThis.IsValid())
+				{
+					WeakThis->HandleAgentReply(Reply);
+				}
+			}));
+}
+
+void UWindStationStateSubsystem::HandleAgentReply(const FWSAgentReply& Reply)
+{
+	LatestDialogue = Reply;
+	OnDialogueLine.Broadcast(LatestDialogue);
 }

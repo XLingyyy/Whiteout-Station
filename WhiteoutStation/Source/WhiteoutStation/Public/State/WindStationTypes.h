@@ -430,3 +430,39 @@ struct FWSActionResult
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bCrisisTriggered = false;
 };
+
+USTRUCT(BlueprintType)
+struct FWSAgentReply
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSCharacterId Speaker = EWSCharacterId::GuHeng;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName ActionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSResponseType ResponseType = EWSResponseType::Deflect;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString Utterance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString Emotion = TEXT("guarded");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> ReferencedFactIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bAccepted = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bFallback = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString Provider = TEXT("preset");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString ValidationReason = TEXT("preset");
+};

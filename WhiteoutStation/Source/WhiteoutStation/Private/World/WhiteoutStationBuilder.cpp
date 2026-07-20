@@ -11,6 +11,7 @@
 #include "Engine/TextRenderActor.h"
 #include "Components/TextRenderComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "State/WindStationStateSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 #include "World/WSInteractableActor.h"
 
@@ -23,6 +24,14 @@ void AWhiteoutStationBuilder::BeginPlay()
 {
 	Super::BeginPlay();
 	BuildStation();
+	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	{
+		StateSubsystem->OnActionCommitted.AddDynamic(this, &AWhiteoutStationBuilder::HandleActionCommitted);
+		if (StateSubsystem->GetStateSnapshot().bMidCrisisTriggered)
+		{
+			ApplyCrisisLighting();
+		}
+	}
 }
 
 void AWhiteoutStationBuilder::BuildStation()
@@ -31,9 +40,10 @@ void AWhiteoutStationBuilder::BuildStation()
 	ADirectionalLight* DirectionalLight = GetWorld()->SpawnActor<ADirectionalLight>(FVector(600, 400, 900), FRotator(-52, -28, 0));
 	if (DirectionalLight)
 	{
-		DirectionalLight->GetLightComponent()->SetIntensity(3.0f);
-		DirectionalLight->GetLightComponent()->SetLightColor(FLinearColor(0.58f, 0.7f, 0.9f));
-		DirectionalLight->GetLightComponent()->SetMobility(EComponentMobility::Movable);
+		ExteriorLight = CastChecked<UDirectionalLightComponent>(DirectionalLight->GetLightComponent());
+		ExteriorLight->SetIntensity(3.0f);
+		ExteriorLight->SetLightColor(FLinearColor(0.58f, 0.7f, 0.9f));
+		ExteriorLight->SetMobility(EComponentMobility::Movable);
 	}
 	ASkyLight* SkyLight = GetWorld()->SpawnActor<ASkyLight>(FVector(600, 400, 500), FRotator::ZeroRotator);
 	if (SkyLight)
@@ -161,6 +171,34 @@ void AWhiteoutStationBuilder::SpawnPointLight(
 	Component->SetIntensity(Intensity);
 	Component->SetAttenuationRadius(Radius);
 	Component->SetLightColor(Color);
+	RuntimeLights.Add(Component);
+}
+
+void AWhiteoutStationBuilder::HandleActionCommitted(const FWSActionResult& Result)
+{
+	if (Result.bCrisisTriggered)
+	{
+		ApplyCrisisLighting();
+	}
+}
+
+void AWhiteoutStationBuilder::ApplyCrisisLighting()
+{
+	UE_LOG(LogTemp, Warning, TEXT("WhiteoutStation: backup power failure lighting engaged"));
+	if (ExteriorLight)
+	{
+		ExteriorLight->SetIntensity(0.65f);
+		ExteriorLight->SetLightColor(FLinearColor(0.18f, 0.25f, 0.38f));
+	}
+	for (int32 Index = 0; Index < RuntimeLights.Num(); ++Index)
+	{
+		if (UPointLightComponent* Light = RuntimeLights[Index])
+		{
+			const bool bEmergencyRed = Index == 1 || Index == 3;
+			Light->SetLightColor(bEmergencyRed ? FLinearColor(1.0f, 0.035f, 0.01f) : FLinearColor(0.06f, 0.16f, 0.32f));
+			Light->SetIntensity(bEmergencyRed ? 1650.0f : 480.0f);
+		}
+	}
 }
 
 AWSInteractableActor* AWhiteoutStationBuilder::SpawnHotspot(

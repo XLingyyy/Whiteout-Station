@@ -1,5 +1,6 @@
 #include "HUD/WhiteoutHUD.h"
 
+#include "Agents/WSNPCDecisionService.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "State/WindStationStateSubsystem.h"
@@ -25,10 +26,10 @@ void AWhiteoutHUD::DrawHUD()
 	DrawLine(TEXT("WHITEOUT STATION  //  BEFORE THE BLACKOUT"), 38, TopY, FLinearColor(0.72f, 0.9f, 1.0f), 1.15f);
 	DrawLine(
 		FString::Printf(
-			TEXT("AP %d / 8     PHASE %s     BLIZZARD ETA %s"),
+			TEXT("AP %d / 8     PHASE %s     %s"),
 			State.ActionPoints,
 			*PhaseLabel(State.Phase),
-			State.ActionPoints > 4 ? TEXT("approaching") : TEXT("imminent")),
+			State.bMidCrisisTriggered ? TEXT("BACKUP CELL FAILED // EMERGENCY LOAD ONLY") : TEXT("BLIZZARD ETA approaching")),
 		38,
 		TopY,
 		State.ActionPoints <= 4 ? FLinearColor(1.0f, 0.4f, 0.22f) : FLinearColor::White);
@@ -86,14 +87,30 @@ void AWhiteoutHUD::DrawHUD()
 		}
 	}
 
-	DrawPanel(20, Height - 146, Width - 40, 126, FLinearColor(0.015f, 0.025f, 0.04f, 0.9f));
-	float BottomY = Height - 134;
+	DrawPanel(20, Height - 168, Width - 40, 148, FLinearColor(0.015f, 0.025f, 0.04f, 0.9f));
+	float BottomY = Height - 156;
 	DrawLine(FeedbackText, 38, BottomY, FLinearColor(0.9f, 0.93f, 0.96f), 0.95f);
+	const FWSAgentReply Dialogue = StateSubsystem->GetLatestDialogue();
+	if (!Dialogue.Utterance.IsEmpty())
+	{
+		const FString SourceTag = Dialogue.bFallback ? TEXT("LOCAL") : TEXT("MODEL");
+		DrawLine(
+			FString::Printf(TEXT("%s [%s]: %s"), *UWSNPCDecisionService::SpeakerLabel(Dialogue.Speaker), *SourceTag, *Dialogue.Utterance),
+			38,
+			BottomY,
+			FLinearColor(0.42f, 0.86f, 1.0f),
+			0.92f);
+	}
 	if (!InteractionPrompt.IsEmpty())
 	{
 		DrawLine(InteractionPrompt.ToString(), 38, BottomY, FLinearColor(0.3f, 0.85f, 1.0f), 1.12f);
 	}
 	DrawLine(TEXT("WASD move  |  Mouse look  |  F interact  |  E evidence  |  Enter settle  |  R restart"), 38, BottomY, FLinearColor(0.55f, 0.64f, 0.72f), 0.82f);
+
+	if (State.Phase == EWSGamePhase::Results)
+	{
+		DrawResultsOverlay(State, Width, Height);
+	}
 }
 
 void AWhiteoutHUD::SetInteractionPrompt(const FText& Prompt)
@@ -142,6 +159,76 @@ void AWhiteoutHUD::DrawLine(const FString& Text, const float X, float& Y, const 
 	Y += 22.0f * Scale;
 }
 
+void AWhiteoutHUD::DrawResultsOverlay(const FWSGameState& State, const float Width, const float Height)
+{
+	const float PanelWidth = FMath::Min(780.0f, Width - 80.0f);
+	const float PanelHeight = FMath::Min(590.0f, Height - 70.0f);
+	const float X = (Width - PanelWidth) * 0.5f;
+	const float Y = (Height - PanelHeight) * 0.5f;
+	DrawPanel(0, 0, Width, Height, FLinearColor(0.0f, 0.006f, 0.012f, 0.72f));
+	DrawPanel(X, Y, PanelWidth, PanelHeight, FLinearColor(0.015f, 0.028f, 0.045f, 0.98f));
+	DrawPanel(X, Y, 7, PanelHeight, FLinearColor(0.22f, 0.72f, 0.96f, 1.0f));
+
+	float LineY = Y + 24;
+	DrawLine(TEXT("AFTER-ACTION REVIEW  //  RUN COMPLETE"), X + 32, LineY, FLinearColor(0.4f, 0.84f, 1.0f), 1.05f);
+	DrawLine(EndingLabel(State.Ending), X + 32, LineY, FLinearColor::White, 1.55f);
+	DrawLine(
+		FString::Printf(TEXT("TOTAL  %.1f / 100     RATING  %s"), State.Score.Total, *State.Score.Rating),
+		X + 32,
+		LineY,
+		State.Score.Total >= 70.0f ? FLinearColor(0.3f, 1.0f, 0.65f) : FLinearColor(1.0f, 0.48f, 0.24f),
+		1.22f);
+	LineY += 12;
+
+	const float BarWidth = PanelWidth * 0.55f;
+	DrawScoreRow(TEXT("TASK QUALITY"), State.Score.TaskQuality, 30.0f, X + 32, LineY, BarWidth, FLinearColor(0.25f, 0.72f, 1.0f));
+	DrawScoreRow(TEXT("PEOPLE"), State.Score.People, 30.0f, X + 32, LineY, BarWidth, FLinearColor(0.28f, 0.95f, 0.67f));
+	DrawScoreRow(TEXT("RESERVES"), State.Score.EffectiveReserves, 20.0f, X + 32, LineY, BarWidth, FLinearColor(0.95f, 0.7f, 0.25f));
+	DrawScoreRow(TEXT("SOCIAL STABILITY"), State.Score.SocialStability, 12.0f, X + 32, LineY, BarWidth, FLinearColor(0.75f, 0.48f, 1.0f));
+	DrawScoreRow(TEXT("INFORMATION"), State.Score.InformationResponsibility, 8.0f, X + 32, LineY, BarWidth, FLinearColor(0.4f, 0.86f, 0.9f));
+
+	float SummaryX = X + PanelWidth * 0.65f;
+	float SummaryY = Y + 148;
+	DrawLine(TEXT("FINAL STATE"), SummaryX, SummaryY, FLinearColor(0.95f, 0.75f, 0.3f), 0.95f);
+	DrawLine(FString::Printf(TEXT("Generator  %d / 2"), State.Tasks.GeneratorProgress), SummaryX, SummaryY, FLinearColor(0.8f, 0.86f, 0.92f), 0.85f);
+	DrawLine(FString::Printf(TEXT("Antenna    %d / 1"), State.Tasks.AntennaCalibration), SummaryX, SummaryY, FLinearColor(0.8f, 0.86f, 0.92f), 0.85f);
+	DrawLine(FString::Printf(TEXT("Signal     %s"), State.Tasks.bSignalSent ? TEXT("SENT") : TEXT("FAILED")), SummaryX, SummaryY, FLinearColor(0.8f, 0.86f, 0.92f), 0.85f);
+	DrawLine(FString::Printf(TEXT("AP left    %d"), State.ActionPoints), SummaryX, SummaryY, FLinearColor(0.8f, 0.86f, 0.92f), 0.85f);
+	DrawLine(FString::Printf(TEXT("Model      %d / 10"), State.ModelCalls), SummaryX, SummaryY, FLinearColor(0.8f, 0.86f, 0.92f), 0.85f);
+
+	LineY += 12;
+	DrawLine(TEXT("DECISION TRACE"), X + 32, LineY, FLinearColor(0.95f, 0.75f, 0.3f), 0.95f);
+	const int32 FirstEvent = FMath::Max(0, State.EventLog.Num() - 5);
+	for (int32 Index = FirstEvent; Index < State.EventLog.Num(); ++Index)
+	{
+		const FWSEventRecord& Event = State.EventLog[Index];
+		DrawLine(
+			FString::Printf(TEXT("%02d  %-28s  AP %d -> %d%s"), Event.Index, *Event.ActionId.ToString(), Event.APBefore, Event.APAfter, Event.bCrisisTriggered ? TEXT("  [CRISIS]") : TEXT("")),
+			X + 32,
+			LineY,
+			FLinearColor(0.68f, 0.75f, 0.82f),
+			0.78f);
+	}
+	float FooterY = Y + PanelHeight - 38;
+	DrawLine(TEXT("R  START A NEW RUN"), X + 32, FooterY, FLinearColor(0.4f, 0.84f, 1.0f), 0.9f);
+}
+
+void AWhiteoutHUD::DrawScoreRow(
+	const FString& Label,
+	const float Value,
+	const float Maximum,
+	const float X,
+	float& Y,
+	const float Width,
+	const FLinearColor Color)
+{
+	DrawText(FString::Printf(TEXT("%-22s %5.1f / %.0f"), *Label, Value, Maximum), FLinearColor(0.82f, 0.88f, 0.93f), X, Y, GEngine->GetSmallFont(), 0.86f, false);
+	const float BarY = Y + 18;
+	DrawRect(FLinearColor(0.08f, 0.12f, 0.16f, 1.0f), X, BarY, Width, 8);
+	DrawRect(Color, X, BarY, Width * FMath::Clamp(Value / Maximum, 0.0f, 1.0f), 8);
+	Y += 43;
+}
+
 FString AWhiteoutHUD::StatLabel(const float Value, const bool bTrust)
 {
 	if (bTrust)
@@ -154,4 +241,12 @@ FString AWhiteoutHUD::StatLabel(const float Value, const bool bTrust)
 FString AWhiteoutHUD::PhaseLabel(const EWSGamePhase Phase)
 {
 	return StaticEnum<EWSGamePhase>()->GetNameStringByValue(static_cast<int64>(Phase));
+}
+
+FString AWhiteoutHUD::EndingLabel(const EWSEndingType Ending)
+{
+	if (Ending == EWSEndingType::TaskSuccess) return TEXT("SIGNAL THROUGH  //  CONTROLLED SURVIVAL");
+	if (Ending == EWSEndingType::SurvivalWait) return TEXT("NO SIGNAL  //  HOLDING FOR DAWN");
+	if (Ending == EWSEndingType::CostUncontrolled) return TEXT("SIGNAL THROUGH  //  COST UNCONTROLLED");
+	return TEXT("STATION COLLAPSE  //  NO SAFE MARGIN");
 }

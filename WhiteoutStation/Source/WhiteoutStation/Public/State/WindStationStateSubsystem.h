@@ -6,9 +6,11 @@
 #include "WindStationStateSubsystem.generated.h"
 
 class UWSActionResolver;
+class UWSAgentGateway;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWSStateChangedSignature, const FWSGameState&, State);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWSActionCommittedSignature, const FWSActionResult&, Result);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWSDialogueLineSignature, const FWSAgentReply&, Reply);
 
 UCLASS()
 class WHITEOUTSTATION_API UWindStationStateSubsystem : public UGameInstanceSubsystem
@@ -24,6 +26,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Whiteout Station|State")
 	FWSActionCommittedSignature OnActionCommitted;
+
+	UPROPERTY(BlueprintAssignable, Category = "Whiteout Station|Dialogue")
+	FWSDialogueLineSignature OnDialogueLine;
 
 	UFUNCTION(BlueprintCallable, Category = "Whiteout Station|State")
 	void NewGame();
@@ -55,6 +60,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Actions")
 	UWSActionResolver* GetActionResolver() const { return ActionResolver; }
 
+	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Dialogue")
+	FWSAgentReply GetLatestDialogue() const { return LatestDialogue; }
+
 	const FWhiteoutRulesEngine& GetRulesEngine() const { return RulesEngine; }
 
 private:
@@ -64,5 +72,13 @@ private:
 	UPROPERTY()
 	TObjectPtr<UWSActionResolver> ActionResolver;
 
+	UPROPERTY()
+	TObjectPtr<UWSAgentGateway> AgentGateway;
+
+	UPROPERTY()
+	FWSAgentReply LatestDialogue;
+
 	void BroadcastState();
+	void RequestActionExpression(FName ActionId);
+	void HandleAgentReply(const FWSAgentReply& Reply);
 };
