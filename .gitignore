@@ -9,6 +9,7 @@ Saved/
 .vscode/
 .idea/
 *.sln
+*.slnx
 *.suo
 *.opensdf
 *.sdf
@@ -22,9 +23,13 @@ Saved/
 *.tmp
 *.user
 FileOpenOrder/
+__pycache__/
+*.py[cod]
 
 # Operating-system metadata
 .DS_Store
 Thumbs.db
 Desktop.ini
 
+# Local Codex/document QA scratch output
+.codex_tmp/
