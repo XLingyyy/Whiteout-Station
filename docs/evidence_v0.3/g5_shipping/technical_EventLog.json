@@ -1,0 +1,127 @@
+{
+	"rules_version": "0.1.0",
+	"events": [
+		{
+			"index": 1,
+			"action_id": "investigate_generator_log",
+			"transaction_id": "D70E32C9439B2F7C9B8E269F80534707",
+			"ap_before": 8,
+			"ap_after": 7,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Evidence acquired: EVIDENCE_DEEP_GENERATOR_LOG",
+				"Fact updated: FACT_GENERATOR_PROTECTION_STOP",
+				"Fact updated: FACT_FORCED_RESTART_SUSPICION",
+				"Generator records preserved",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 2,
+			"action_id": "inspect_control_cabinet",
+			"transaction_id": "9FDEFDF44CC325DDFF7AB6A7B1A33941",
+			"ap_before": 7,
+			"ap_after": 6,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Evidence acquired: EVIDENCE_BURNT_RELAY",
+				"Evidence acquired: EVIDENCE_ARC_MARKS",
+				"Evidence acquired: EVIDENCE_HAND_OBSERVATION",
+				"Fact updated: FACT_BURNT_RELAY",
+				"Fact updated: FACT_HAND_INJURY",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 3,
+			"action_id": "talk_gu_heng",
+			"transaction_id": "6BF3C8E642EE44C0EB19C78F356DD542",
+			"ap_before": 6,
+			"ap_after": 5,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Evidence acquired: EVIDENCE_HEATER_SERVICE_LABEL",
+				"Fact updated: FACT_RELAY_COMPATIBILITY",
+				"Fact updated: FACT_FORCED_RESTART_CONFIRMED",
+				"Gu Heng confirms the technical route",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 4,
+			"action_id": "dismantle_kitchen_heater",
+			"transaction_id": "6A89684D42D6E63F6969AA84F76C9FDD",
+			"ap_before": 5,
+			"ap_after": 4,
+			"reason_code": "Committed",
+			"crisis_triggered": true,
+			"changes": [
+				"Replacement relay recovered; kitchen heater lost",
+				"Environment settled for 1 AP",
+				"Fact updated: FACT_HEAT_PACK",
+				"Mid-crisis: backup battery voltage collapsed"
+			]
+		},
+		{
+			"index": 5,
+			"action_id": "heat_repair_room",
+			"transaction_id": "449998E7432B86AED2033EB2B75ED65A",
+			"ap_before": 4,
+			"ap_after": 3,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Repair room heated; fuel -1",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 6,
+			"action_id": "repair_generator",
+			"transaction_id": "DABEDBE2496BB27A82962584315FCD5A",
+			"ap_before": 3,
+			"ap_after": 2,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Generator progress +2",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 7,
+			"action_id": "calibrate_antenna",
+			"transaction_id": "50AD6F454A0B622A0872B48B13D5486A",
+			"ap_before": 2,
+			"ap_after": 0,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Antenna calibrated",
+				"Environment settled for 2 AP"
+			]
+		},
+		{
+			"index": 8,
+			"action_id": "send_signal",
+			"transaction_id": "86C2AE91409EF7739C68C888E98EC334",
+			"ap_before": 0,
+			"ap_after": 0,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Rescue signal sent"
+			]
+		}
+	],
+	"remaining_ap": 0,
+	"signal_sent": true,
+	"ending": "TaskSuccess",
+	"score": 71.900001525878906,
+	"rating": "B",
+	"model_calls": 0,
+	"promises": []
+}

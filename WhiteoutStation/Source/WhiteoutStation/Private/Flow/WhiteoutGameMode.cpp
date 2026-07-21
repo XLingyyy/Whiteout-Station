@@ -363,6 +363,14 @@ void AWhiteoutGameMode::CompletePerformanceTest()
 	const FIntPoint Resolution = GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport
 		? GEngine->GameViewport->Viewport->GetSizeXY()
 		: FIntPoint::ZeroValue;
+	const float AverageFps = 1000.0f / FMath::Max(MeanMs, 0.001f);
+	const float OnePercentLowFps = 1000.0f / FMath::Max(SlowTailMeanMs, 0.001f);
+	const float P95Ms = SortedFrameTimes[P95Index];
+	const float P99Ms = SortedFrameTimes[P99Index];
+	const float MaxMs = SortedFrameTimes.Last();
+	const bool bPassed = Resolution == FIntPoint(1920, 1080)
+		&& AverageFps >= 60.0f
+		&& OnePercentLowFps >= 60.0f;
 	UE_LOG(
 		LogTemp,
 		Display,
@@ -370,11 +378,24 @@ void AWhiteoutGameMode::CompletePerformanceTest()
 		Resolution.X,
 		Resolution.Y,
 		SortedFrameTimes.Num(),
-		1000.0f / FMath::Max(MeanMs, 0.001f),
-		1000.0f / FMath::Max(SlowTailMeanMs, 0.001f),
-		SortedFrameTimes[P95Index],
-		SortedFrameTimes[P99Index],
-		SortedFrameTimes.Last());
+		AverageFps,
+		OnePercentLowFps,
+		P95Ms,
+		P99Ms,
+		MaxMs);
+	const FString Json = FString::Printf(
+		TEXT("{\n  \"schema\": \"whiteout.v0.3.performance.v1\",\n  \"passed\": %s,\n  \"resolution\": \"%dx%d\",\n  \"samples\": %d,\n  \"average_fps\": %.2f,\n  \"one_percent_low_fps\": %.2f,\n  \"p95_frame_ms\": %.3f,\n  \"p99_frame_ms\": %.3f,\n  \"max_frame_ms\": %.3f,\n  \"minimum_average_fps\": 60.0,\n  \"minimum_one_percent_low_fps\": 60.0\n}\n"),
+		bPassed ? TEXT("true") : TEXT("false"),
+		Resolution.X,
+		Resolution.Y,
+		SortedFrameTimes.Num(),
+		AverageFps,
+		OnePercentLowFps,
+		P95Ms,
+		P99Ms,
+		MaxMs);
+	const FString OutputPath = FPaths::ProjectSavedDir() / TEXT("WhiteoutPerformance.json");
+	FFileHelper::SaveStringToFile(Json, *OutputPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 	FPlatformMisc::RequestExit(false);
 }
 
