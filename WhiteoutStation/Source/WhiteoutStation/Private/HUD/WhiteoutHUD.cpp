@@ -26,9 +26,23 @@ void AWhiteoutHUD::SetInteractionPrompt(const FText& Prompt)
 	if (HUDWidget) HUDWidget->SetInteractionPrompt(Prompt);
 }
 
-void AWhiteoutHUD::SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview)
+void AWhiteoutHUD::SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview)
 {
-	if (HUDWidget) HUDWidget->SetActionFeedback(ActionName, Result, Preview);
+	if (HUDWidget) HUDWidget->SetInteractionFocus(ActionName, Preview);
+}
+
+void AWhiteoutHUD::ClearInteractionFocus()
+{
+	if (HUDWidget) HUDWidget->ClearInteractionFocus();
+}
+
+void AWhiteoutHUD::SetActionFeedback(
+	const FText& ActionName,
+	const FWSActionResult& Result,
+	const FWSActionPreview& Preview,
+	const bool bPromiseCreated)
+{
+	if (HUDWidget) HUDWidget->SetActionFeedback(ActionName, Result, Preview, bPromiseCreated);
 }
 
 void AWhiteoutHUD::ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview)
@@ -84,6 +98,21 @@ void AWhiteoutHUD::ShowEvidenceForCapture()
 void AWhiteoutHUD::ShowComponentGalleryForCapture()
 {
 	if (HUDWidget) HUDWidget->ShowComponentGalleryForCapture();
+}
+
+void AWhiteoutHUD::SetOpeningCaptureStage(const int32 Stage)
+{
+	if (HUDWidget) HUDWidget->SetOpeningCaptureStage(Stage);
+}
+
+void AWhiteoutHUD::SetCrisisCaptureStage(const int32 Stage)
+{
+	if (HUDWidget) HUDWidget->SetCrisisCaptureStage(Stage);
+}
+
+void AWhiteoutHUD::SetEndingCaptureStage(const EWSEndingType Ending, const bool bShowResults)
+{
+	if (HUDWidget) HUDWidget->SetEndingCaptureStage(Ending, bShowResults);
 }
 
 void AWhiteoutHUD::SetInterfaceVisibleForCapture(const bool bVisible)

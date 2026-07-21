@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "State/WindStationTypes.h"
 #include "WhiteoutStationBuilder.generated.h"
 
 class AWSInteractableActor;
@@ -34,6 +35,11 @@ private:
 	UPROPERTY()
 	TObjectPtr<UDirectionalLightComponent> ExteriorLight;
 
+	FTimerHandle CrisisLightingTimer;
+	int32 CrisisLightingStep = 0;
+	bool bCrisisSequenceStarted = false;
+	bool bEndingPresentationApplied = false;
+
 	void BuildStation();
 	void SpawnStationAssembly();
 	void SpawnAssemblyMesh(const FWSStationMeshPlacement& Placement);
@@ -51,6 +57,12 @@ private:
 	UFUNCTION()
 	void HandleActionCommitted(const FWSActionResult& Result);
 
+	UFUNCTION()
+	void HandleStateChanged(const FWSGameState& State);
+
+	void BeginCrisisLightingSequence();
+	void AdvanceCrisisLightingSequence();
 	void ApplyCrisisLighting();
 	void RestoreGeneratorLighting();
+	void ApplyEndingPresentation(EWSEndingType Ending);
 };

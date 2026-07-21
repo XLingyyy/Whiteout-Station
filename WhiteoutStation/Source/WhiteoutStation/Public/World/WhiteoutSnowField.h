@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "State/WindStationTypes.h"
 #include "WhiteoutSnowField.generated.h"
 
 class UNiagaraComponent;
@@ -27,5 +28,9 @@ private:
 	UFUNCTION()
 	void HandleActionCommitted(const FWSActionResult& Result);
 
+	UFUNCTION()
+	void HandleStateChanged(const FWSGameState& State);
+
 	void SetBlizzardIntensity(bool bCrisis);
+	void SetEndingIntensity(EWSEndingType Ending);
 };

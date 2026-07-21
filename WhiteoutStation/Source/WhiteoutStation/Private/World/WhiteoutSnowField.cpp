@@ -54,9 +54,24 @@ void AWhiteoutSnowField::BeginPlay()
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		StateSubsystem->OnActionCommitted.AddDynamic(this, &AWhiteoutSnowField::HandleActionCommitted);
-		bCrisis = StateSubsystem->GetStateSnapshot().bMidCrisisTriggered;
+		StateSubsystem->OnStateChanged.AddDynamic(this, &AWhiteoutSnowField::HandleStateChanged);
+		const FWSGameState State = StateSubsystem->GetStateSnapshot();
+		bCrisis = State.bMidCrisisTriggered;
+		if (State.Phase == EWSGamePhase::Results)
+		{
+			SetEndingIntensity(State.Ending);
+			return;
+		}
 	}
 	SetBlizzardIntensity(bCrisis);
+}
+
+void AWhiteoutSnowField::HandleStateChanged(const FWSGameState& State)
+{
+	if (State.Phase == EWSGamePhase::Results)
+	{
+		SetEndingIntensity(State.Ending);
+	}
 }
 
 void AWhiteoutSnowField::HandleActionCommitted(const FWSActionResult& Result)
@@ -82,4 +97,32 @@ void AWhiteoutSnowField::SetBlizzardIntensity(const bool bCrisis)
 		else Layer->Deactivate();
 	}
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: Niagara blizzard intensity=%s layers=%d"), bCrisis ? TEXT("crisis") : TEXT("normal"), bCrisis ? 12 : 6);
+}
+
+void AWhiteoutSnowField::SetEndingIntensity(const EWSEndingType Ending)
+{
+	const int32 ActiveLayers = Ending == EWSEndingType::TaskSuccess ? 4
+		: Ending == EWSEndingType::SurvivalWait ? 8
+		: 12;
+	const float SpawnRate = Ending == EWSEndingType::TaskSuccess ? 260.0f
+		: Ending == EWSEndingType::SurvivalWait ? 590.0f
+		: Ending == EWSEndingType::CostUncontrolled ? 920.0f
+		: 1120.0f;
+	const FVector WindVelocity = Ending == EWSEndingType::TaskSuccess
+		? FVector(-520.0f, 90.0f, -80.0f)
+		: Ending == EWSEndingType::SurvivalWait
+			? FVector(-880.0f, 190.0f, -145.0f)
+			: FVector(-1280.0f, 310.0f, -210.0f);
+	for (int32 Index = 0; Index < BlizzardLayers.Num(); ++Index)
+	{
+		UNiagaraComponent* Layer = BlizzardLayers[Index];
+		Layer->SetVariableFloat(TEXT("User.SpawnRate"), SpawnRate);
+		Layer->SetVariableVec3(TEXT("User.WindVelocity"), WindVelocity);
+		Layer->SetWorldScale3D(Ending == EWSEndingType::TaskSuccess
+			? FVector(2.1f, 2.1f, 1.8f)
+			: FVector(3.4f, 3.4f, 2.8f));
+		if (Index < ActiveLayers) Layer->Activate(true);
+		else Layer->Deactivate();
+	}
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: ending blizzard layers=%d spawn=%.0f"), ActiveLayers, SpawnRate);
 }

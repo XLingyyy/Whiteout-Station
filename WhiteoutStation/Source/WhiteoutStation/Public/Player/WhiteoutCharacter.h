@@ -10,6 +10,7 @@ class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
 class AWSInteractableActor;
+class USoundBase;
 
 UCLASS()
 class WHITEOUTSTATION_API AWhiteoutCharacter : public ACharacter
@@ -69,6 +70,21 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AWSInteractableActor> PreviewedInteractable;
 
+	UPROPERTY(Transient)
+	TObjectPtr<AWSInteractableActor> FocusedInteractable;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> SnowFootstepSound;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> MetalFootstepSound;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> ConcreteFootstepSound;
+
+	FVector LastFootstepLocation = FVector::ZeroVector;
+	float FootstepTravel = 0.0f;
+
 	void MoveForward(const FInputActionValue& Value);
 	void MoveBackward(const FInputActionValue& Value);
 	void MoveLeft(const FInputActionValue& Value);
@@ -92,4 +108,5 @@ private:
 	EWSDialogueAct SelectedDialogueAct() const;
 	FName SelectedPromiseCondition() const;
 	AWSInteractableActor* FindLookedAtInteractable() const;
+	void UpdateFootsteps();
 };

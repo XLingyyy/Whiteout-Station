@@ -10,6 +10,7 @@
 #include "InputMappingContext.h"
 #include "Kismet/GameplayStatics.h"
 #include "State/WindStationStateSubsystem.h"
+#include "Sound/SoundBase.h"
 #include "World/WSInteractableActor.h"
 
 AWhiteoutCharacter::AWhiteoutCharacter()
@@ -76,6 +77,16 @@ void AWhiteoutCharacter::BeginPlay()
 			}
 		}
 	}
+	SnowFootstepSound = LoadObject<USoundBase>(
+		nullptr,
+		TEXT("/Game/WindStation/Audio/Foley/S_FootstepSnow_Original.S_FootstepSnow_Original"));
+	MetalFootstepSound = LoadObject<USoundBase>(
+		nullptr,
+		TEXT("/Game/WindStation/Audio/Foley/S_FootstepMetal_Original.S_FootstepMetal_Original"));
+	ConcreteFootstepSound = LoadObject<USoundBase>(
+		nullptr,
+		TEXT("/Game/WindStation/Audio/Foley/S_FootstepConcrete_Original.S_FootstepConcrete_Original"));
+	LastFootstepLocation = GetActorLocation();
 }
 
 void AWhiteoutCharacter::Tick(const float DeltaSeconds)
@@ -86,6 +97,18 @@ void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
 			AWSInteractableActor* Interactable = FindLookedAtInteractable();
+			if (FocusedInteractable != Interactable)
+			{
+				if (FocusedInteractable)
+				{
+					FocusedInteractable->SetInteractionFocused(false);
+				}
+				FocusedInteractable = Interactable;
+				if (FocusedInteractable)
+				{
+					FocusedInteractable->SetInteractionFocused(true);
+				}
+			}
 			if (PreviewedInteractable && PreviewedInteractable != Interactable)
 			{
 				PreviewedInteractable = nullptr;
@@ -94,14 +117,17 @@ void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 			}
 			if (Interactable)
 			{
-				HUD->SetInteractionPrompt(Interactable->GetInteractionPrompt());
+				HUD->SetInteractionFocus(
+					Interactable->DisplayName,
+					Interactable->PreviewInteraction(SelectedDialogueAct(), SelectedPromiseCondition()));
 			}
 			else
 			{
-				HUD->SetInteractionPrompt(FText::GetEmpty());
+				HUD->ClearInteractionFocus();
 			}
 		}
 	}
+	UpdateFootsteps();
 }
 
 void AWhiteoutCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -345,4 +371,43 @@ AWSInteractableActor* AWhiteoutCharacter::FindLookedAtInteractable() const
 		return Cast<AWSInteractableActor>(Hit.GetActor());
 	}
 	return nullptr;
+}
+
+void AWhiteoutCharacter::UpdateFootsteps()
+{
+	const FVector CurrentLocation = GetActorLocation();
+	const float TravelThisFrame = FVector::Dist2D(CurrentLocation, LastFootstepLocation);
+	LastFootstepLocation = CurrentLocation;
+	if (!GetCharacterMovement()->IsMovingOnGround() || GetVelocity().SizeSquared2D() < FMath::Square(65.0f) || TravelThisFrame > 80.0f)
+	{
+		if (GetVelocity().SizeSquared2D() < FMath::Square(25.0f))
+		{
+			FootstepTravel = 0.0f;
+		}
+		return;
+	}
+	FootstepTravel += TravelThisFrame;
+	if (FootstepTravel < 150.0f)
+	{
+		return;
+	}
+	FootstepTravel = 0.0f;
+	USoundBase* Footstep = ConcreteFootstepSound;
+	if (CurrentLocation.X > 1700.0f)
+	{
+		Footstep = SnowFootstepSound;
+	}
+	else if (CurrentLocation.X > 650.0f && CurrentLocation.Y < 520.0f)
+	{
+		Footstep = MetalFootstepSound;
+	}
+	if (Footstep)
+	{
+		UGameplayStatics::PlaySoundAtLocation(
+			this,
+			Footstep,
+			CurrentLocation,
+			0.32f,
+			FMath::FRandRange(0.93f, 1.07f));
+	}
 }

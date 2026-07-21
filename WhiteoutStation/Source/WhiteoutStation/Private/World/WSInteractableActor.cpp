@@ -4,6 +4,7 @@
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimInstance.h"
 #include "Components/SceneComponent.h"
+#include "Components/MeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -11,6 +12,7 @@
 #include "HUD/WhiteoutHUD.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "State/WindStationStateSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -88,6 +90,13 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 	ActionId = InActionId;
 	DisplayName = InDisplayName;
 	AccentColor = InAccentColor;
+	FocusOverlayMaterial = LoadObject<UMaterialInterface>(
+		nullptr,
+		TEXT("/Game/WindStation/Art/Materials/M_WS_InteractionOverlay.M_WS_InteractionOverlay"));
+	if (!FocusOverlayMaterial)
+	{
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation v0.2: interaction overlay material is missing"));
+	}
 	const bool bCharacter = ActionId == TEXT("talk_gu_heng") || ActionId == TEXT("talk_ye_cheng");
 	bCharacterPresentation = bCharacter;
 	SetActorTickEnabled(bCharacter);
@@ -165,6 +174,24 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 bool AWSInteractableActor::IsCharacterHotspot() const
 {
 	return bCharacterPresentation;
+}
+
+void AWSInteractableActor::SetInteractionFocused(const bool bFocused)
+{
+	const auto ApplyFocus = [this, bFocused](UMeshComponent* Component)
+	{
+		if (!Component)
+		{
+			return;
+		}
+		Component->SetRenderCustomDepth(bFocused);
+		Component->SetCustomDepthStencilValue(241);
+		Component->SetOverlayMaterial(bFocused ? FocusOverlayMaterial.Get() : nullptr);
+	};
+	ApplyFocus(Mesh);
+	ApplyFocus(HeadMesh);
+	ApplyFocus(CharacterMesh);
+	ApplyFocus(InjuryWrap);
 }
 
 void AWSInteractableActor::ConfigureCharacterPresentation()
@@ -407,7 +434,11 @@ FWSActionResult AWSInteractableActor::Interact(
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->SetActionFeedback(DisplayName, Result, Preview);
+			HUD->SetActionFeedback(
+				DisplayName,
+				Result,
+				Preview,
+				DialogueAct == EWSDialogueAct::Promise && Result.bCommitted);
 		}
 	}
 	return Result;

@@ -13,6 +13,7 @@ class UScrollBox;
 class UTextBlock;
 class UVerticalBox;
 class UFont;
+class USoundBase;
 
 UCLASS()
 class WHITEOUTSTATION_API UWhiteoutHUDWidget : public UUserWidget
@@ -25,7 +26,9 @@ public:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	void SetInteractionPrompt(const FText& Prompt);
-	void SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview);
+	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview);
+	void ClearInteractionFocus();
+	void SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview, bool bPromiseCreated = false);
 	void ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview);
 	void HideActionPreview();
 	void ToggleEvidence();
@@ -38,6 +41,9 @@ public:
 	void SetPresentationCaptureState(const FWSGameState& State);
 	void ShowEvidenceForCapture();
 	void ShowComponentGalleryForCapture();
+	void SetOpeningCaptureStage(int32 Stage);
+	void SetCrisisCaptureStage(int32 Stage);
+	void SetEndingCaptureStage(EWSEndingType Ending, bool bShowResults);
 
 private:
 	UPROPERTY(Transient)
@@ -54,6 +60,21 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> PromptText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> CrosshairText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> FocusBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FocusText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> ToastBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ToastText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> PreviewBorder;
@@ -84,6 +105,21 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> OpeningBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> OpeningText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> CrisisBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> CrisisText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> EndingCinematicBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> EndingCinematicText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> ResultsBorder;
@@ -121,9 +157,31 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UObject> UIStringTableAsset;
 
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> UIHoverSound;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> UIConfirmSound;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> UIRejectSound;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> UIPromiseSound;
+
 	FText InteractionPrompt;
+	FString FocusedActionName;
 	FString SystemMessage;
 	float OpeningElapsed = 0.0f;
+	float ToastRemaining = 0.0f;
+	float CrisisElapsed = -1.0f;
+	float EndingElapsed = -1.0f;
+	int32 ActiveOpeningStage = INDEX_NONE;
+	int32 ActiveCrisisStage = INDEX_NONE;
+	bool bWasShowingResults = false;
+	bool bEndingResultsRevealed = false;
+	bool bEndingCinematicCapture = false;
+	EWSEndingType ActiveEnding = EWSEndingType::SurvivalWait;
 	bool bEvidenceVisible = false;
 	bool bDialogueVisible = false;
 	bool bPresentationCaptureOverride = false;
@@ -134,6 +192,11 @@ private:
 	void UpdateFromState(const FWSGameState& State);
 	void UpdateEvidence(const FWSGameState& State);
 	void UpdateResults(const FWSGameState& State);
+	void ApplyOpeningStage(int32 Stage);
+	void ApplyCrisisStage(int32 Stage);
+	void BeginEndingCinematic(EWSEndingType Ending);
+	void ApplyEndingCinematic(EWSEndingType Ending);
+	void PlayUISound(USoundBase* Sound, float Volume = 1.0f);
 	UTextBlock* MakeText(const FName Name, int32 Size, const FLinearColor& Color, bool bWrap = true);
 	UBorder* MakePanel(UCanvasPanel* Canvas, const FName Name, const FAnchors& Anchors, const FMargin& Offsets, const FLinearColor& Color);
 	UButton* MakeButton(UVerticalBox* Box, const FText& Label, const FName Name);
@@ -149,4 +212,7 @@ private:
 
 	UFUNCTION()
 	void QuitGame();
+
+	UFUNCTION()
+	void PlayHoverSound();
 };

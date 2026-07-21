@@ -9,6 +9,7 @@ class UStaticMeshComponent;
 class USceneComponent;
 class USkeletalMeshComponent;
 class UAnimSequence;
+class UMaterialInterface;
 
 UCLASS()
 class WHITEOUTSTATION_API AWSInteractableActor : public AActor
@@ -47,6 +48,7 @@ public:
 	void Configure(FName InActionId, const FText& InDisplayName, FLinearColor InAccentColor);
 
 	void SetCharacterPreviewMood(bool bHighTrust);
+	void SetInteractionFocused(bool bFocused);
 	bool IsCharacterHotspot() const;
 
 	UFUNCTION(BlueprintPure, Category = "Interaction")
@@ -75,6 +77,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UAnimSequence> WorkAnimation;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> FocusOverlayMaterial;
 
 	bool bCharacterPresentation = false;
 	bool bReactionActive = false;

@@ -13,12 +13,14 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/FontFace.h"
 #include "Engine/Font.h"
+#include "Flow/WhiteoutGameMode.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Presentation/WSPresentationText.h"
 #include "State/WindStationStateSubsystem.h"
 #include "Styling/CoreStyle.h"
+#include "Sound/SoundBase.h"
 
 namespace
 {
@@ -40,6 +42,10 @@ void UWhiteoutHUDWidget::NativeOnInitialized()
 		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation v0.2: Chinese StringTable asset is missing"));
 	}
 	InitializeUIFontFamily();
+	UIHoverSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/WindStation/Audio/UI/S_UIHover_Original.S_UIHover_Original"));
+	UIConfirmSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/WindStation/Audio/UI/S_UIConfirm_Original.S_UIConfirm_Original"));
+	UIRejectSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/WindStation/Audio/UI/S_UIReject_Original.S_UIReject_Original"));
+	UIPromiseSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/WindStation/Audio/UI/S_UIPromise_Original.S_UIPromise_Original"));
 	SystemMessage = FWSPresentationText::UI(TEXT("ui_initial_message"), TEXT("靠近带有蓝色轮廓的设备，按 F 查看行动。")).ToString();
 	BuildWidgetTree();
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: native UMG widget tree initialized"));
@@ -86,9 +92,64 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	OpeningElapsed += InDeltaTime;
-	if (OpeningBorder && OpeningElapsed > 11.0f)
+	if (OpeningBorder && OpeningBorder->GetVisibility() == ESlateVisibility::Visible)
 	{
-		OpeningBorder->SetVisibility(ESlateVisibility::Collapsed);
+		const int32 Stage = OpeningElapsed < 2.2f ? 0 : OpeningElapsed < 6.8f ? 1 : OpeningElapsed < 10.8f ? 2 : 3;
+		if (Stage != ActiveOpeningStage)
+		{
+			ApplyOpeningStage(Stage);
+		}
+		if (OpeningElapsed > 14.0f)
+		{
+			DismissOpening();
+		}
+	}
+	if (ToastRemaining > 0.0f && ToastBorder)
+	{
+		ToastRemaining = FMath::Max(0.0f, ToastRemaining - InDeltaTime);
+		const float Opacity = FMath::Clamp(ToastRemaining * 1.8f, 0.0f, 1.0f);
+		ToastBorder->SetRenderOpacity(Opacity);
+		if (TopText)
+		{
+			const float Pulse = 1.0f + 0.035f * FMath::Sin(ToastRemaining * 12.0f) * Opacity;
+			TopText->SetRenderScale(FVector2D(Pulse));
+		}
+		if (ToastRemaining <= 0.0f)
+		{
+			ToastBorder->SetVisibility(ESlateVisibility::Collapsed);
+			if (TopText) TopText->SetRenderScale(FVector2D(1.0f));
+		}
+	}
+	if (CrisisElapsed >= 0.0f && CrisisBorder)
+	{
+		CrisisElapsed += InDeltaTime;
+		const int32 Stage = CrisisElapsed < 0.55f ? 0 : CrisisElapsed < 1.45f ? 1 : 2;
+		if (Stage != ActiveCrisisStage)
+		{
+			ApplyCrisisStage(Stage);
+		}
+		CrisisBorder->SetRenderOpacity(CrisisElapsed < 0.25f
+			? CrisisElapsed / 0.25f
+			: FMath::Clamp((3.8f - CrisisElapsed) / 0.55f, 0.0f, 1.0f));
+		if (CrisisElapsed >= 3.8f)
+		{
+			CrisisElapsed = -1.0f;
+			CrisisBorder->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+	if (EndingElapsed >= 0.0f && EndingCinematicBorder)
+	{
+		EndingElapsed += InDeltaTime;
+		EndingCinematicBorder->SetRenderOpacity(EndingElapsed < 0.5f
+			? EndingElapsed / 0.5f
+			: FMath::Clamp((4.4f - EndingElapsed) / 0.8f, 0.0f, 1.0f));
+		if (EndingElapsed >= 4.4f)
+		{
+			EndingElapsed = -1.0f;
+			bEndingResultsRevealed = true;
+			EndingCinematicBorder->SetVisibility(ESlateVisibility::Collapsed);
+			if (ResultsBorder) ResultsBorder->SetVisibility(ESlateVisibility::Visible);
+		}
 	}
 	if (bPresentationCaptureOverride)
 	{
@@ -136,6 +197,19 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	BottomBox->AddChildToVerticalBox(FeedbackText)->SetPadding(FMargin(0, 0, 0, 8));
 	BottomBox->AddChildToVerticalBox(PromptText)->SetPadding(FMargin(0, 0, 0, 8));
 	BottomBox->AddChildToVerticalBox(HelpText);
+
+	CrosshairText = MakeText(TEXT("CrosshairText"), 28, Body, false);
+	CrosshairText->SetText(FText::FromString(TEXT("+")));
+	CrosshairText->SetJustification(ETextJustify::Center);
+	UCanvasPanelSlot* CrosshairSlot = Canvas->AddChildToCanvas(CrosshairText);
+	CrosshairSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+	CrosshairSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+	CrosshairSlot->SetOffsets(FMargin(-22.0f, -22.0f, 44.0f, 44.0f));
+	FocusBorder = MakePanel(Canvas, TEXT("FocusPanel"), FAnchors(0.5f, 0.5f), FMargin(-190, 42, 380, 74), FLinearColor(0.018f, 0.07f, 0.10f, 0.92f));
+	FocusText = MakeText(TEXT("FocusText"), 18, Cyan);
+	FocusText->SetJustification(ETextJustify::Center);
+	FocusBorder->SetContent(FocusText);
+	FocusBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	PreviewBorder = MakePanel(Canvas, TEXT("PreviewPanel"), FAnchors(0.16f, 0.10f, 0.84f, 0.90f), FMargin(0), FLinearColor(0.008f, 0.025f, 0.045f, 0.985f));
 	UVerticalBox* PreviewBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PreviewBox"));
@@ -229,13 +303,29 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	GalleryBox->AddChildToVerticalBox(GalleryToast)->SetPadding(FMargin(0, 14, 0, 0));
 	ComponentGalleryBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	OpeningBorder = MakePanel(Canvas, TEXT("OpeningPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.003f, 0.010f, 0.020f, 0.94f));
-	UTextBlock* OpeningText = MakeText(TEXT("OpeningText"), 31, Body);
+	ToastBorder = MakePanel(Canvas, TEXT("ActionToast"), FAnchors(0.27f, 0.70f, 0.73f, 0.70f), FMargin(0, 0, 0, 104), FLinearColor(0.02f, 0.18f, 0.24f, 0.97f));
+	ToastText = MakeText(TEXT("ActionToastText"), 20, Body);
+	ToastText->SetJustification(ETextJustify::Center);
+	ToastBorder->SetContent(ToastText);
+	ToastBorder->SetVisibility(ESlateVisibility::Collapsed);
+
+	EndingCinematicBorder = MakePanel(Canvas, TEXT("EndingCinematicPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.004f, 0.012f, 0.022f, 0.94f));
+	EndingCinematicText = MakeText(TEXT("EndingCinematicText"), 38, Body);
+	EndingCinematicText->SetJustification(ETextJustify::Center);
+	EndingCinematicBorder->SetContent(EndingCinematicText);
+	EndingCinematicBorder->SetVisibility(ESlateVisibility::Collapsed);
+
+	CrisisBorder = MakePanel(Canvas, TEXT("CrisisPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.23f, 0.005f, 0.003f, 0.72f));
+	CrisisText = MakeText(TEXT("CrisisText"), 40, Danger);
+	CrisisText->SetJustification(ETextJustify::Center);
+	CrisisBorder->SetContent(CrisisText);
+	CrisisBorder->SetVisibility(ESlateVisibility::Collapsed);
+
+	OpeningBorder = MakePanel(Canvas, TEXT("OpeningPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.003f, 0.010f, 0.020f, 0.96f));
+	OpeningText = MakeText(TEXT("OpeningText"), 31, Body);
 	OpeningText->SetJustification(ETextJustify::Center);
-	OpeningText->SetText(FWSPresentationText::UI(
-		TEXT("ui_opening"),
-		TEXT("风雪站：断电前夜\n\n暴风雪正在封锁山区，备用电池只够支撑最后一轮抢修。\n修复发电机，校准室外天线，并把求救信号送出去。\n\n你有 8 点行动力。跨过中段后，备用电池会发生一次故障。\n每个付费行动都会先显示成本、条件与影响；再次按 F 才会确认。\n\nWASD 移动 · 鼠标观察 · F 交互 · E 查看证据 · Esc 暂停/退出\n\n按空格跳过")));
 	OpeningBorder->SetContent(OpeningText);
+	ApplyOpeningStage(0);
 
 	PauseBorder = MakePanel(Canvas, TEXT("PausePanel"), FAnchors(0.5f, 0.5f), FMargin(-310, -255, 620, 510), FLinearColor(0.004f, 0.014f, 0.026f, 0.995f));
 	UVerticalBox* PauseBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PauseBox"));
@@ -287,6 +377,7 @@ UButton* UWhiteoutHUDWidget::MakeButton(UVerticalBox* Box, const FText& Label, c
 	LabelText->SetText(Label);
 	LabelText->SetJustification(ETextJustify::Center);
 	Button->SetContent(LabelText);
+	Button->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
 	Box->AddChildToVerticalBox(Button)->SetPadding(FMargin(16, 9));
 	return Button;
 }
@@ -437,11 +528,26 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 {
 	const bool bResults = State.Phase == EWSGamePhase::Results;
-	ResultsBorder->SetVisibility(bResults ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	if (!bResults)
 	{
+		ResultsBorder->SetVisibility(ESlateVisibility::Collapsed);
+		bWasShowingResults = false;
 		return;
 	}
+	if (bPresentationCaptureOverride && !bEndingCinematicCapture)
+	{
+		bEndingResultsRevealed = true;
+		ResultsBorder->SetVisibility(ESlateVisibility::Visible);
+	}
+	else
+	{
+		if (!bWasShowingResults)
+		{
+			BeginEndingCinematic(State.Ending);
+		}
+		ResultsBorder->SetVisibility(bEndingResultsRevealed ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	bWasShowingResults = true;
 	const FString HeaderFormat = FWSPresentationText::UI(
 		TEXT("ui_results_header_format"),
 		TEXT("行动复盘\n{0}\n{1}\n\n总分 {2} / 100　｜　评级 {3}\n\n最终状态\n发电机 {4} / 2　天线 {5} / 1　信号 {6}　剩余行动力 {7}")).ToString();
@@ -527,6 +633,47 @@ void UWhiteoutHUDWidget::SetInteractionPrompt(const FText& Prompt)
 	InteractionPrompt = Prompt;
 }
 
+void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview)
+{
+	const FString NewName = ActionName.ToString();
+	if (FocusedActionName != NewName)
+	{
+		FocusedActionName = NewName;
+		PlayUISound(UIHoverSound, 0.42f);
+	}
+	if (CrosshairText)
+	{
+		CrosshairText->SetText(FText::FromString(TEXT("◆")));
+		CrosshairText->SetColorAndOpacity(FSlateColor(Preview.bCanExecute ? Cyan : Danger));
+	}
+	if (FocusBorder && FocusText)
+	{
+		FocusBorder->SetVisibility(ESlateVisibility::Visible);
+		FocusBorder->SetBrushColor(Preview.bCanExecute
+			? FLinearColor(0.018f, 0.12f, 0.17f, 0.94f)
+			: FLinearColor(0.21f, 0.025f, 0.015f, 0.94f));
+		FocusText->SetColorAndOpacity(FSlateColor(Preview.bCanExecute ? Cyan : Danger));
+		const FString Format = FWSPresentationText::UI(
+			TEXT("ui_focus_format"),
+			TEXT("{0}　｜　{1} AP　｜　[F] 查看行动")).ToString();
+		FocusText->SetText(FText::FromString(FString::Format(*Format, {NewName, Preview.APCost})));
+	}
+}
+
+void UWhiteoutHUDWidget::ClearInteractionFocus()
+{
+	FocusedActionName.Reset();
+	if (CrosshairText)
+	{
+		CrosshairText->SetText(FText::FromString(TEXT("+")));
+		CrosshairText->SetColorAndOpacity(FSlateColor(Body));
+	}
+	if (FocusBorder)
+	{
+		FocusBorder->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
 void UWhiteoutHUDWidget::ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview)
 {
 	PreviewBorder->SetVisibility(ESlateVisibility::Visible);
@@ -557,6 +704,7 @@ void UWhiteoutHUDWidget::ShowActionPreview(const FText& ActionName, const FWSAct
 	}
 	else
 	{
+		PlayUISound(UIRejectSound, 0.72f);
 		PreviewTitleText->SetColorAndOpacity(FSlateColor(Danger));
 		const FString RejectionFormat = FWSPresentationText::UI(TEXT("ui_rejection_format"), TEXT("现在不能执行\n{0}\n\n怎样改变条件\n{1}")).ToString();
 		PreviewBodyText->SetText(FText::FromString(FString::Format(
@@ -574,24 +722,53 @@ void UWhiteoutHUDWidget::HideActionPreview()
 	}
 }
 
-void UWhiteoutHUDWidget::SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview)
+void UWhiteoutHUDWidget::SetActionFeedback(
+	const FText& ActionName,
+	const FWSActionResult& Result,
+	const FWSActionPreview& Preview,
+	const bool bPromiseCreated)
 {
 	HideActionPreview();
 	if (Result.bCommitted)
 	{
+		PlayUISound(bPromiseCreated ? UIPromiseSound.Get() : UIConfirmSound.Get(), 0.84f);
 		const FString CommittedFormat = FWSPresentationText::UI(TEXT("ui_feedback_committed"), TEXT("已执行：{0}　｜　行动力 {1} → {2}")).ToString();
 		SystemMessage = FString::Format(*CommittedFormat, {ActionName.ToString(), Result.APBefore, Result.APAfter});
+		if (bPromiseCreated)
+		{
+			SystemMessage = FWSPresentationText::UI(TEXT("ui_promise_recorded"), TEXT("承诺已记录　｜　")).ToString() + SystemMessage;
+		}
 		if (Result.bCrisisTriggered)
 		{
 			SystemMessage += FWSPresentationText::UI(TEXT("ui_feedback_crisis"), TEXT("　｜　备用电池电压崩溃，应急灯已接管")).ToString();
+			CrisisElapsed = 0.0f;
+			ActiveCrisisStage = INDEX_NONE;
+			if (CrisisBorder)
+			{
+				CrisisBorder->SetVisibility(ESlateVisibility::Visible);
+				CrisisBorder->SetRenderOpacity(0.0f);
+			}
+			ApplyCrisisStage(0);
 		}
 	}
 	else
 	{
+		PlayUISound(UIRejectSound, 0.80f);
 		const FString RejectedFormat = FWSPresentationText::UI(TEXT("ui_feedback_rejected"), TEXT("未执行：{0}　｜　{1}　｜　{2}")).ToString();
 		SystemMessage = FString::Format(
 			*RejectedFormat,
 			{ActionName.ToString(), FWSPresentationText::ReasonCause(Result.ReasonCode).ToString(), FWSPresentationText::ReasonNextStep(Result.ReasonCode).ToString()});
+	}
+	if (ToastBorder && ToastText)
+	{
+		ToastText->SetText(FText::FromString(SystemMessage));
+		ToastText->SetColorAndOpacity(FSlateColor(Result.bCommitted ? Body : FLinearColor(1.0f, 0.72f, 0.62f, 1.0f)));
+		ToastBorder->SetBrushColor(Result.bCommitted
+			? bPromiseCreated ? FLinearColor(0.13f, 0.09f, 0.28f, 0.97f) : FLinearColor(0.02f, 0.18f, 0.24f, 0.97f)
+			: FLinearColor(0.26f, 0.035f, 0.02f, 0.97f));
+		ToastBorder->SetVisibility(ESlateVisibility::Visible);
+		ToastBorder->SetRenderOpacity(1.0f);
+		ToastRemaining = 2.7f;
 	}
 }
 
@@ -641,6 +818,15 @@ void UWhiteoutHUDWidget::ResetPresentationCapture()
 	if (DialogueBorder) DialogueBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (ResultsBorder) ResultsBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (ComponentGalleryBorder) ComponentGalleryBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (ToastBorder) ToastBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (CrisisBorder) CrisisBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (EndingCinematicBorder) EndingCinematicBorder->SetVisibility(ESlateVisibility::Collapsed);
+	bEndingCinematicCapture = false;
+	bWasShowingResults = false;
+	bEndingResultsRevealed = false;
+	ToastRemaining = 0.0f;
+	CrisisElapsed = -1.0f;
+	EndingElapsed = -1.0f;
 	HideActionPreview();
 }
 
@@ -673,9 +859,191 @@ void UWhiteoutHUDWidget::ShowComponentGalleryForCapture()
 	}
 }
 
+void UWhiteoutHUDWidget::SetOpeningCaptureStage(const int32 Stage)
+{
+	if (!OpeningBorder)
+	{
+		return;
+	}
+	OpeningBorder->SetVisibility(ESlateVisibility::Visible);
+	OpeningElapsed = Stage == 0 ? 0.8f : Stage == 1 ? 3.6f : Stage == 2 ? 8.0f : 11.6f;
+	ApplyOpeningStage(FMath::Clamp(Stage, 0, 3));
+}
+
+void UWhiteoutHUDWidget::SetCrisisCaptureStage(const int32 Stage)
+{
+	if (!CrisisBorder)
+	{
+		return;
+	}
+	// Capture stages are held instead of flowing into the next beat during the
+	// screenshot settle delay. Runtime crisis playback still uses CrisisElapsed.
+	CrisisElapsed = -1.0f;
+	CrisisBorder->SetVisibility(ESlateVisibility::Visible);
+	CrisisBorder->SetRenderOpacity(1.0f);
+	ApplyCrisisStage(FMath::Clamp(Stage, 0, 2));
+}
+
+void UWhiteoutHUDWidget::SetEndingCaptureStage(const EWSEndingType Ending, const bool bShowResults)
+{
+	ActiveEnding = Ending;
+	bEndingCinematicCapture = !bShowResults;
+	if (bShowResults)
+	{
+		EndingElapsed = -1.0f;
+		bEndingResultsRevealed = true;
+		if (EndingCinematicBorder) EndingCinematicBorder->SetVisibility(ESlateVisibility::Collapsed);
+		if (ResultsBorder) ResultsBorder->SetVisibility(ESlateVisibility::Visible);
+		return;
+	}
+	bEndingResultsRevealed = false;
+	ApplyEndingCinematic(Ending);
+	EndingElapsed = 1.25f;
+	if (EndingCinematicBorder)
+	{
+		EndingCinematicBorder->SetVisibility(ESlateVisibility::Visible);
+		EndingCinematicBorder->SetRenderOpacity(1.0f);
+	}
+	if (ResultsBorder) ResultsBorder->SetVisibility(ESlateVisibility::Collapsed);
+}
+
 void UWhiteoutHUDWidget::SetSystemMessage(const FString& Message)
 {
 	SystemMessage = Message;
+}
+
+void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
+{
+	if (!OpeningBorder || !OpeningText)
+	{
+		return;
+	}
+	ActiveOpeningStage = Stage;
+	if (Stage == 0)
+	{
+		OpeningBorder->SetBrushColor(FLinearColor(0.002f, 0.008f, 0.016f, 0.985f));
+		OpeningText->SetFont(UIFont(42, true));
+		OpeningText->SetColorAndOpacity(FSlateColor(Body));
+		OpeningText->SetText(FWSPresentationText::UI(
+			TEXT("ui_opening_title"),
+			TEXT("风雪站：断电前夜\n\n海拔 4,126 米｜极夜值班")));
+	}
+	else if (Stage == 1)
+	{
+		OpeningBorder->SetBrushColor(FLinearColor(0.002f, 0.012f, 0.024f, 0.34f));
+		OpeningText->SetFont(UIFont(31, true));
+		OpeningText->SetColorAndOpacity(FSlateColor(FLinearColor(0.82f, 0.92f, 1.0f, 1.0f)));
+		const FString EstablishingCopy = FWSPresentationText::UI(
+			TEXT("ui_opening_establishing"),
+			TEXT("暴雪封山\n备用电池正在衰减\n\n按空格跳过")).ToString();
+		OpeningText->SetText(FText::FromString(TEXT("\n\n") + EstablishingCopy));
+	}
+	else if (Stage == 2)
+	{
+		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.010f, 0.020f, 0.88f));
+		OpeningText->SetFont(UIFont(29, true));
+		OpeningText->SetColorAndOpacity(FSlateColor(Body));
+		OpeningText->SetText(FWSPresentationText::UI(
+			TEXT("ui_opening_objective"),
+			TEXT("最后一轮抢修\n\n① 修复发电机\n② 校准室外天线\n③ 发出求救信号\n\n预算：8 点行动力\n越过中段后，备用电池将发生一次故障\n\n按空格跳过")));
+	}
+	else
+	{
+		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.010f, 0.020f, 0.91f));
+		OpeningText->SetFont(UIFont(27, true));
+		OpeningText->SetColorAndOpacity(FSlateColor(Cyan));
+		OpeningText->SetText(FWSPresentationText::UI(
+			TEXT("ui_opening_controls"),
+			TEXT("每次行动都先预览，再确认\n\nWASD 移动　鼠标观察\nF 预览 / 再按 F 确认\nE 证据板　Q 对话方式　Esc 暂停/退出\n\n控制权交还")));
+	}
+}
+
+void UWhiteoutHUDWidget::ApplyCrisisStage(const int32 Stage)
+{
+	if (!CrisisBorder || !CrisisText)
+	{
+		return;
+	}
+	ActiveCrisisStage = Stage;
+	if (Stage == 0)
+	{
+		CrisisBorder->SetBrushColor(FLinearColor(0.30f, 0.006f, 0.002f, 0.72f));
+		CrisisText->SetText(FWSPresentationText::UI(TEXT("ui_crisis_voltage_drop"), TEXT("电压骤降")));
+	}
+	else if (Stage == 1)
+	{
+		CrisisBorder->SetBrushColor(FLinearColor(0.015f, 0.018f, 0.028f, 0.92f));
+		CrisisText->SetText(FWSPresentationText::UI(TEXT("ui_crisis_battery_offline"), TEXT("备用电池离线")));
+	}
+	else
+	{
+		CrisisBorder->SetBrushColor(FLinearColor(0.16f, 0.006f, 0.004f, 0.68f));
+		CrisisText->SetText(FWSPresentationText::UI(
+			TEXT("ui_crisis_emergency_load"),
+			TEXT("应急负载接管\n剩余行动力进入红线")));
+	}
+}
+
+void UWhiteoutHUDWidget::BeginEndingCinematic(const EWSEndingType Ending)
+{
+	ActiveEnding = Ending;
+	bEndingResultsRevealed = false;
+	EndingElapsed = 0.0f;
+	ApplyEndingCinematic(Ending);
+	if (EndingCinematicBorder)
+	{
+		EndingCinematicBorder->SetVisibility(ESlateVisibility::Visible);
+		EndingCinematicBorder->SetRenderOpacity(0.0f);
+	}
+}
+
+void UWhiteoutHUDWidget::ApplyEndingCinematic(const EWSEndingType Ending)
+{
+	if (!EndingCinematicBorder || !EndingCinematicText)
+	{
+		return;
+	}
+	FName Key(TEXT("ui_ending_collapse_cinematic"));
+	const TCHAR* Fallback = TEXT("气象站失守\n电力与体温一同沉入黑暗");
+	FLinearColor Panel(0.003f, 0.004f, 0.008f, 0.985f);
+	FLinearColor TextColor(0.70f, 0.74f, 0.82f, 1.0f);
+	if (Ending == EWSEndingType::TaskSuccess)
+	{
+		Key = TEXT("ui_ending_success_cinematic");
+		Fallback = TEXT("信号穿过风雪\n远方电台传来回应");
+		Panel = FLinearColor(0.015f, 0.07f, 0.085f, 0.93f);
+		TextColor = FLinearColor(0.82f, 0.96f, 1.0f, 1.0f);
+	}
+	else if (Ending == EWSEndingType::SurvivalWait)
+	{
+		Key = TEXT("ui_ending_survival_cinematic");
+		Fallback = TEXT("等待天明\n风雪仍在敲打外墙");
+		Panel = FLinearColor(0.006f, 0.025f, 0.07f, 0.95f);
+		TextColor = FLinearColor(0.68f, 0.82f, 1.0f, 1.0f);
+	}
+	else if (Ending == EWSEndingType::CostUncontrolled)
+	{
+		Key = TEXT("ui_ending_cost_cinematic");
+		Fallback = TEXT("信号已经发出\n但代价越过了安全边界");
+		Panel = FLinearColor(0.13f, 0.018f, 0.006f, 0.95f);
+		TextColor = FLinearColor(1.0f, 0.68f, 0.42f, 1.0f);
+	}
+	EndingCinematicBorder->SetBrushColor(Panel);
+	EndingCinematicText->SetColorAndOpacity(FSlateColor(TextColor));
+	EndingCinematicText->SetText(FWSPresentationText::UI(Key, Fallback));
+}
+
+void UWhiteoutHUDWidget::PlayUISound(USoundBase* Sound, const float Volume)
+{
+	if (Sound)
+	{
+		UGameplayStatics::PlaySound2D(this, Sound, Volume);
+	}
+}
+
+void UWhiteoutHUDWidget::PlayHoverSound()
+{
+	PlayUISound(UIHoverSound, 0.48f);
 }
 
 void UWhiteoutHUDWidget::DismissOpening()
@@ -683,6 +1051,10 @@ void UWhiteoutHUDWidget::DismissOpening()
 	if (OpeningBorder)
 	{
 		OpeningBorder->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (AWhiteoutGameMode* GameMode = GetWorld() ? Cast<AWhiteoutGameMode>(GetWorld()->GetAuthGameMode()) : nullptr)
+	{
+		GameMode->FinishOpeningPresentation();
 	}
 }
 

@@ -33,9 +33,15 @@ void AWhiteoutStationBuilder::BeginPlay()
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		StateSubsystem->OnActionCommitted.AddDynamic(this, &AWhiteoutStationBuilder::HandleActionCommitted);
-		if (StateSubsystem->GetStateSnapshot().bMidCrisisTriggered)
+		StateSubsystem->OnStateChanged.AddDynamic(this, &AWhiteoutStationBuilder::HandleStateChanged);
+		const FWSGameState State = StateSubsystem->GetStateSnapshot();
+		if (State.bMidCrisisTriggered)
 		{
 			ApplyCrisisLighting();
+		}
+		if (State.Phase == EWSGamePhase::Results)
+		{
+			ApplyEndingPresentation(State.Ending);
 		}
 	}
 }
@@ -309,12 +315,65 @@ void AWhiteoutStationBuilder::HandleActionCommitted(const FWSActionResult& Resul
 {
 	if (Result.bCrisisTriggered)
 	{
-		ApplyCrisisLighting();
+		BeginCrisisLightingSequence();
 	}
 	if (Result.ActionId == TEXT("repair_generator"))
 	{
 		RestoreGeneratorLighting();
 	}
+}
+
+void AWhiteoutStationBuilder::HandleStateChanged(const FWSGameState& State)
+{
+	if (State.Phase == EWSGamePhase::Results && !bEndingPresentationApplied)
+	{
+		ApplyEndingPresentation(State.Ending);
+	}
+}
+
+void AWhiteoutStationBuilder::BeginCrisisLightingSequence()
+{
+	if (bCrisisSequenceStarted)
+	{
+		return;
+	}
+	bCrisisSequenceStarted = true;
+	CrisisLightingStep = 0;
+	AdvanceCrisisLightingSequence();
+	UE_LOG(LogTemp, Warning, TEXT("WhiteoutStation v0.2: voltage-drop lighting sequence started"));
+}
+
+void AWhiteoutStationBuilder::AdvanceCrisisLightingSequence()
+{
+	if (CrisisLightingStep >= 4)
+	{
+		ApplyCrisisLighting();
+		return;
+	}
+	const bool bBlackoutFrame = CrisisLightingStep == 1 || CrisisLightingStep == 3;
+	if (ExteriorLight)
+	{
+		ExteriorLight->SetIntensity(bBlackoutFrame ? 0.08f : CrisisLightingStep == 0 ? 5.2f : 3.8f);
+		ExteriorLight->SetLightColor(bBlackoutFrame
+			? FLinearColor(0.04f, 0.06f, 0.10f)
+			: FLinearColor(0.78f, 0.90f, 1.0f));
+	}
+	for (int32 Index = 0; Index < RuntimeLights.Num(); ++Index)
+	{
+		if (!RuntimeBaseLightIntensities.IsValidIndex(Index) || !RuntimeBaseLightColors.IsValidIndex(Index))
+		{
+			continue;
+		}
+		RuntimeLights[Index]->SetLightColor(bBlackoutFrame
+			? FLinearColor(0.02f, 0.03f, 0.05f)
+			: FLinearColor(0.78f, 0.90f, 1.0f));
+		RuntimeLights[Index]->SetIntensity(bBlackoutFrame
+			? 22.0f
+			: RuntimeBaseLightIntensities[Index] * (CrisisLightingStep == 0 ? 1.75f : 1.18f));
+	}
+	const float Delay = CrisisLightingStep == 0 ? 0.10f : CrisisLightingStep == 1 ? 0.16f : CrisisLightingStep == 2 ? 0.13f : 0.22f;
+	++CrisisLightingStep;
+	GetWorldTimerManager().SetTimer(CrisisLightingTimer, this, &AWhiteoutStationBuilder::AdvanceCrisisLightingSequence, Delay, false);
 }
 
 void AWhiteoutStationBuilder::ApplyCrisisLighting()
@@ -352,6 +411,67 @@ void AWhiteoutStationBuilder::RestoreGeneratorLighting()
 		}
 	}
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: generator-powered repair lighting restored"));
+}
+
+void AWhiteoutStationBuilder::ApplyEndingPresentation(const EWSEndingType Ending)
+{
+	bEndingPresentationApplied = true;
+	GetWorldTimerManager().ClearTimer(CrisisLightingTimer);
+	if (ExteriorLight)
+	{
+		if (Ending == EWSEndingType::TaskSuccess)
+		{
+			ExteriorLight->SetIntensity(2.6f);
+			ExteriorLight->SetLightColor(FLinearColor(1.0f, 0.72f, 0.42f));
+		}
+		else if (Ending == EWSEndingType::SurvivalWait)
+		{
+			ExteriorLight->SetIntensity(0.48f);
+			ExteriorLight->SetLightColor(FLinearColor(0.20f, 0.34f, 0.56f));
+		}
+		else if (Ending == EWSEndingType::CostUncontrolled)
+		{
+			ExteriorLight->SetIntensity(0.30f);
+			ExteriorLight->SetLightColor(FLinearColor(0.56f, 0.18f, 0.09f));
+		}
+		else
+		{
+			ExteriorLight->SetIntensity(0.035f);
+			ExteriorLight->SetLightColor(FLinearColor(0.03f, 0.04f, 0.07f));
+		}
+	}
+	for (int32 Index = 0; Index < RuntimeLights.Num(); ++Index)
+	{
+		if (!RuntimeBaseLightIntensities.IsValidIndex(Index) || !RuntimeBaseLightColors.IsValidIndex(Index))
+		{
+			continue;
+		}
+		const bool bEmergencyRed = RuntimeEmergencyLights.IsValidIndex(Index) && RuntimeEmergencyLights[Index];
+		if (Ending == EWSEndingType::TaskSuccess)
+		{
+			RuntimeLights[Index]->SetIntensity(RuntimeBaseLightIntensities[Index] * 0.92f);
+			RuntimeLights[Index]->SetLightColor(FLinearColor(1.0f, 0.48f, 0.18f));
+		}
+		else if (Ending == EWSEndingType::SurvivalWait)
+		{
+			RuntimeLights[Index]->SetIntensity(RuntimeBaseLightIntensities[Index] * 0.28f);
+			RuntimeLights[Index]->SetLightColor(FLinearColor(0.10f, 0.24f, 0.48f));
+		}
+		else if (Ending == EWSEndingType::CostUncontrolled)
+		{
+			RuntimeLights[Index]->SetIntensity(bEmergencyRed ? 1120.0f : 190.0f);
+			RuntimeLights[Index]->SetLightColor(bEmergencyRed
+				? FLinearColor(1.0f, 0.025f, 0.008f)
+				: FLinearColor(0.42f, 0.08f, 0.03f));
+		}
+		else
+		{
+			RuntimeLights[Index]->SetIntensity(bEmergencyRed ? 70.0f : 8.0f);
+			RuntimeLights[Index]->SetLightColor(FLinearColor(0.055f, 0.035f, 0.045f));
+		}
+	}
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: ending lighting staged for %s"),
+		*StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(Ending)));
 }
 
 void AWhiteoutStationBuilder::SetLightingPreviewState(const bool bCrisis, const bool bGeneratorOnline)

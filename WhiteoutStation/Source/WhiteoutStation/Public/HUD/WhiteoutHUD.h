@@ -17,7 +17,9 @@ public:
 	virtual void DrawHUD() override;
 
 	void SetInteractionPrompt(const FText& Prompt);
-	void SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview);
+	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview);
+	void ClearInteractionFocus();
+	void SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview, bool bPromiseCreated = false);
 	void ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview);
 	void HideActionPreview();
 	void ToggleEvidence();
@@ -29,6 +31,9 @@ public:
 	void SetPresentationCaptureState(const FWSGameState& State);
 	void ShowEvidenceForCapture();
 	void ShowComponentGalleryForCapture();
+	void SetOpeningCaptureStage(int32 Stage);
+	void SetCrisisCaptureStage(int32 Stage);
+	void SetEndingCaptureStage(EWSEndingType Ending, bool bShowResults);
 	void SetInterfaceVisibleForCapture(bool bVisible);
 
 private:

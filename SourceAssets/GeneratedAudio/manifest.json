@@ -1,0 +1,149 @@
+{
+  "generator": "Tools/Assets/generate_v02_audio.py",
+  "generator_version": 1,
+  "seed": 20260721,
+  "source_wind": {
+    "path": "SourceAssets/Freesound/344887/S_Wind_Strong_CC0.wav",
+    "sha256": "62712a2aaf2b373c3eb45b8bbf0155cd3a54f5f312903a443c0b614a644b4385",
+    "license": "CC0 1.0",
+    "source_page": "https://freesound.org/people/lextrack/sounds/344887/"
+  },
+  "license_note": "All non-derivative files are original procedural audio authored for this repository.",
+  "assets": {
+    "Ambience/S_WindIndoor_CC0_Derivative.wav": {
+      "sha256": "5b0b1686eb8cb5b3c196a5587388f7aee2c581dd363772858981dc5be512bb47",
+      "sample_rate": 24000,
+      "channels": 2,
+      "frames": 473678,
+      "duration_seconds": 19.7366,
+      "looping": true,
+      "provenance": "CC0 derivative"
+    },
+    "Machinery/S_GeneratorLoop_Original.wav": {
+      "sha256": "759019a1679f97a3e5143f3f7b6bb1b57252a77ef9f7337b36e72203e8bd1f45",
+      "sample_rate": 24000,
+      "channels": 2,
+      "frames": 192000,
+      "duration_seconds": 8.0,
+      "looping": true,
+      "provenance": "Original procedural"
+    },
+    "Foley/S_FootstepSnow_Original.wav": {
+      "sha256": "8c4c0625f7a9c1ad52152619bfefe36b64dab1f90f2063cadffca34355f4fb22",
+      "sample_rate": 24000,
+      "channels": 1,
+      "frames": 13919,
+      "duration_seconds": 0.58,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "Foley/S_FootstepMetal_Original.wav": {
+      "sha256": "3e61335e7438101c1ab5f7d1dc6159fd42a66ed5c10f4b47d1052035639cf1cb",
+      "sample_rate": 24000,
+      "channels": 1,
+      "frames": 10560,
+      "duration_seconds": 0.44,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "Foley/S_FootstepConcrete_Original.wav": {
+      "sha256": "ad2a26638d73a1750b9ed0cbf1731728c91a72063f5ead9b9c9a86d862ba53c8",
+      "sample_rate": 24000,
+      "channels": 1,
+      "frames": 11040,
+      "duration_seconds": 0.46,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "UI/S_UIHover_Original.wav": {
+      "sha256": "398dda9d0d74646aec09c084642b874ba595c049004c8fc9bd657a1af71a28a4",
+      "sample_rate": 24000,
+      "channels": 1,
+      "frames": 2640,
+      "duration_seconds": 0.11,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "UI/S_UIConfirm_Original.wav": {
+      "sha256": "b698e9c746148cef9ddb68c2450d062ccf6ebd021f9e0dfbd6a798d76b6ae3f2",
+      "sample_rate": 24000,
+      "channels": 1,
+      "frames": 10080,
+      "duration_seconds": 0.42,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "UI/S_UIReject_Original.wav": {
+      "sha256": "9a10c1ea514b5a3e2721e4a08da4ec9f84464b43a16a6ba2b9e1a7ebda4ce8fd",
+      "sample_rate": 24000,
+      "channels": 1,
+      "frames": 11040,
+      "duration_seconds": 0.46,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "UI/S_UIPromise_Original.wav": {
+      "sha256": "f7d546ce1e329f5a0e23c2d5d663c7123b8381cb43d235f35698d5f98d9717da",
+      "sample_rate": 24000,
+      "channels": 1,
+      "frames": 19680,
+      "duration_seconds": 0.82,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "Events/S_CrisisStinger_Original.wav": {
+      "sha256": "68f6b238c21eee2cc2474cadf78d6c12f3c6a55566539b13e28a89a32a89abb9",
+      "sample_rate": 24000,
+      "channels": 2,
+      "frames": 67200,
+      "duration_seconds": 2.8,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "Events/S_RadioReply_Original.wav": {
+      "sha256": "ff7ae9244c0e6e5d28bd16763b730cabc47197bcd6f2bfbf8cd5c4e80411a005",
+      "sample_rate": 24000,
+      "channels": 2,
+      "frames": 86400,
+      "duration_seconds": 3.6,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "Music/S_EndingSuccess_Original.wav": {
+      "sha256": "b1a8c89e68f05a4e30e35f1f0b3233701a7a2b76e502b3bc2a2ee0406db14e9b",
+      "sample_rate": 24000,
+      "channels": 2,
+      "frames": 288000,
+      "duration_seconds": 12.0,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "Music/S_EndingSurvival_Original.wav": {
+      "sha256": "1f9d734192672212f05df4fa9cb779468faec98b0a7eb557575de3e8595c24e3",
+      "sample_rate": 24000,
+      "channels": 2,
+      "frames": 288000,
+      "duration_seconds": 12.0,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "Music/S_EndingCost_Original.wav": {
+      "sha256": "3ee038fcdb7db6fe29b6c96c13c5f8fddb4473bccecbdf07f053024b3d03a2af",
+      "sample_rate": 24000,
+      "channels": 2,
+      "frames": 288000,
+      "duration_seconds": 12.0,
+      "looping": false,
+      "provenance": "Original procedural"
+    },
+    "Music/S_EndingCollapse_Original.wav": {
+      "sha256": "e56a5a3932e1d9e1d23d0ff83c168f5726f7f17ca0c2b4a38888bd223c5f29a7",
+      "sample_rate": 24000,
+      "channels": 2,
+      "frames": 288000,
+      "duration_seconds": 12.0,
+      "looping": false,
+      "provenance": "Original procedural"
+    }
+  }
+}

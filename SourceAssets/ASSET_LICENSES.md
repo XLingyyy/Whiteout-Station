@@ -24,6 +24,15 @@ License: https://polyhaven.com/license (CC0 1.0 Universal). Exact downloaded URL
 
 The Freesound source page marks sound 344887 as Creative Commons Zero. The tracked WAV is a PCM conversion of Freesound's low-quality MP3 preview; no creative changes were made. URL, checksums and audio properties are in `Freesound/344887/manifest.json`. Reproduce with `python -X utf8 Tools/Assets/download_freesound_audio.py` after installing the `soundfile` conversion helper.
 
+## Whiteout Station v0.2 generated audio — original procedural / CC0 derivative
+
+| Assets | Authorship / license | Project use |
+|---|---|---|
+| `S_WindIndoor_CC0_Derivative.wav` | Procedural derivative of lextrack sound 344887, CC0 1.0 | looping muffled indoor wind bed |
+| Generator loop, three surface footsteps, four UI cues, crisis stinger, radio reply and four ending beds | Original procedural audio authored for this repository | machinery, foley, interaction feedback and ending presentation |
+
+All 15 WAV files are generated deterministically by `python -X utf8 Tools/Assets/generate_v02_audio.py` with seed `20260721`. `GeneratedAudio/manifest.json` records the exact source-wind hash, generator version, per-file SHA-256, sample rate, channel count, duration, loop setting and provenance. No trained-model output or unlisted third-party sample is present in these files.
+
 ## Quaternius Modular Sci-Fi MegaKit Standard — CC0 1.0
 
 | Asset | Author | Project use | Source |

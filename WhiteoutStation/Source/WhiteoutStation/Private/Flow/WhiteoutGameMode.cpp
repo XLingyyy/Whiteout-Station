@@ -1,5 +1,7 @@
 #include "Flow/WhiteoutGameMode.h"
 
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
 #include "HAL/PlatformMisc.h"
@@ -11,8 +13,8 @@
 #include "Misc/Paths.h"
 #include "Player/WhiteoutCharacter.h"
 #include "Player/WhiteoutPlayerController.h"
+#include "Presentation/WhiteoutAudioDirector.h"
 #include "Presentation/WSPresentationText.h"
-#include "Sound/SoundBase.h"
 #include "State/WindStationStateSubsystem.h"
 #include "World/WSInteractableActor.h"
 #include "World/WhiteoutStationBuilder.h"
@@ -154,11 +156,15 @@ void AWhiteoutGameMode::BeginPlay()
 	{
 		GetWorld()->SpawnActor<AWhiteoutStationBuilder>(FVector::ZeroVector, FRotator::ZeroRotator);
 	}
-	if (USoundBase* WindSound = LoadObject<USoundBase>(
-		nullptr,
-		TEXT("/Game/WindStation/Audio/Ambience/S_WindStrong_CC0.S_WindStrong_CC0")))
+	bool bHasAudioDirector = false;
+	for (TActorIterator<AWhiteoutAudioDirector> It(GetWorld()); It; ++It)
 	{
-		WindAmbience = UGameplayStatics::SpawnSound2D(this, WindSound, 0.16f, 0.94f, 0.0f, nullptr, false, false);
+		bHasAudioDirector = true;
+		break;
+	}
+	if (!bHasAudioDirector)
+	{
+		GetWorld()->SpawnActor<AWhiteoutAudioDirector>(FVector::ZeroVector, FRotator::ZeroRotator);
 	}
 
 	FString AutoRoute;
@@ -199,6 +205,65 @@ void AWhiteoutGameMode::BeginPlay()
 		FTimerHandle PresentationTimer;
 		GetWorldTimerManager().SetTimer(PresentationTimer, this, &AWhiteoutGameMode::BeginPresentationCapture, 2.0f, false);
 	}
+
+	if (AutoRoute.IsEmpty() && !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutBaselineCapture")))
+	{
+		FTimerHandle OpeningStartTimer;
+		GetWorldTimerManager().SetTimer(OpeningStartTimer, this, &AWhiteoutGameMode::BeginOpeningPresentation, 0.25f, false);
+	}
+}
+
+void AWhiteoutGameMode::BeginOpeningPresentation()
+{
+	if (bOpeningFinished || OpeningCamera)
+	{
+		return;
+	}
+	APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (!PlayerController || !PlayerPawn)
+	{
+		return;
+	}
+	const FVector CameraLocation(3160.0f, -720.0f, 560.0f);
+	const FVector LookTarget(1040.0f, 390.0f, 105.0f);
+	OpeningCamera = GetWorld()->SpawnActor<ACameraActor>(CameraLocation, (LookTarget - CameraLocation).Rotation());
+	if (!OpeningCamera)
+	{
+		return;
+	}
+	OpeningCamera->Tags.Add(TEXT("WSRuntimeOpeningCamera"));
+	OpeningCamera->GetCameraComponent()->SetFieldOfView(69.0f);
+	PlayerController->SetIgnoreMoveInput(true);
+	PlayerController->SetIgnoreLookInput(true);
+	PlayerController->SetViewTargetWithBlend(OpeningCamera, 0.75f, EViewTargetBlendFunction::VTBlend_Cubic);
+	GetWorldTimerManager().SetTimer(OpeningFinishTimer, this, &AWhiteoutGameMode::FinishOpeningPresentation, 14.0f, false);
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: opening establishing camera started"));
+}
+
+void AWhiteoutGameMode::FinishOpeningPresentation()
+{
+	if (bOpeningFinished)
+	{
+		return;
+	}
+	bOpeningFinished = true;
+	GetWorldTimerManager().ClearTimer(OpeningFinishTimer);
+	if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
+	{
+		if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
+		{
+			PlayerController->SetViewTargetWithBlend(PlayerPawn, 0.85f, EViewTargetBlendFunction::VTBlend_Cubic);
+		}
+		PlayerController->SetIgnoreMoveInput(false);
+		PlayerController->SetIgnoreLookInput(false);
+	}
+	if (OpeningCamera)
+	{
+		OpeningCamera->SetLifeSpan(1.1f);
+		OpeningCamera = nullptr;
+	}
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: opening handed control to player"));
 }
 
 void AWhiteoutGameMode::BeginPresentationCapture()
@@ -211,6 +276,15 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 			TEXT("reject_generator"), TEXT("reject_medical"), TEXT("reject_relay"),
 			TEXT("dialogue"), TEXT("evidence"),
 			TEXT("results_task"), TEXT("results_survival"), TEXT("results_cost"), TEXT("results_collapse")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("g4suite"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("opening_title"), TEXT("opening_establishing"), TEXT("opening_objective"), TEXT("opening_controls"),
+			TEXT("focus_available"), TEXT("focus_blocked"), TEXT("toast_commit"), TEXT("toast_promise"),
+			TEXT("crisis_flash"), TEXT("crisis_blackout"), TEXT("crisis_emergency"),
+			TEXT("ending_task_cinematic"), TEXT("ending_survival_cinematic"),
+			TEXT("ending_cost_cinematic"), TEXT("ending_collapse_cinematic")};
 	}
 	else
 	{
@@ -240,12 +314,92 @@ void AWhiteoutGameMode::StagePresentationCapture()
 
 	const FString& CaptureName = PresentationCaptureNames[PresentationCaptureIndex];
 	HUD->ResetPresentationCapture();
-	if (!CaptureName.Equals(TEXT("opening")))
+	for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+	{
+		It->SetInteractionFocused(false);
+	}
+	if (!CaptureName.Equals(TEXT("opening")) && !CaptureName.StartsWith(TEXT("opening_")))
 	{
 		HUD->DismissOpening();
+		if (APlayerController* CaptureController = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			if (APawn* CapturePawn = UGameplayStatics::GetPlayerPawn(this, 0))
+			{
+				CaptureController->SetViewTarget(CapturePawn);
+			}
+		}
 	}
 
-	if (CaptureName.Equals(TEXT("preview")))
+	if (CaptureName.StartsWith(TEXT("opening_")))
+	{
+		const int32 Stage = CaptureName.Equals(TEXT("opening_title")) ? 0
+			: CaptureName.Equals(TEXT("opening_establishing")) ? 1
+			: CaptureName.Equals(TEXT("opening_objective")) ? 2
+			: 3;
+		HUD->SetOpeningCaptureStage(Stage);
+	}
+	else if (CaptureName.StartsWith(TEXT("focus_")))
+	{
+		const bool bBlocked = CaptureName.Equals(TEXT("focus_blocked"));
+		const FName TargetAction = bBlocked ? FName(TEXT("send_signal")) : FName(TEXT("repair_generator"));
+		for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+		{
+			if (It->ActionId != TargetAction)
+			{
+				continue;
+			}
+			if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
+			{
+				const FVector DesiredCameraLocation = It->GetActorLocation() + FVector(-235.0f, 0.0f, 105.0f);
+				const FVector PawnLocation = DesiredCameraLocation - FVector(0.0f, 0.0f, 64.0f);
+				Pawn->SetActorLocation(PawnLocation, false, nullptr, ETeleportType::TeleportPhysics);
+				if (APlayerController* FocusController = UGameplayStatics::GetPlayerController(this, 0))
+				{
+					FocusController->SetControlRotation(
+						(It->GetActorLocation() + FVector(0.0f, 0.0f, 75.0f) - DesiredCameraLocation).Rotation());
+				}
+			}
+			It->SetInteractionFocused(true);
+			HUD->SetInteractionFocus(It->DisplayName, It->PreviewInteraction());
+			break;
+		}
+	}
+	else if (CaptureName.StartsWith(TEXT("toast_")))
+	{
+		const bool bPromise = CaptureName.Equals(TEXT("toast_promise"));
+		FWSActionPreview Preview;
+		Preview.ActionId = bPromise ? FName(TEXT("talk_gu_heng")) : FName(TEXT("investigate_generator_log"));
+		Preview.APCost = 1;
+		Preview.bCanExecute = true;
+		FWSActionResult Result;
+		Result.ActionId = Preview.ActionId;
+		Result.bCommitted = true;
+		Result.APBefore = 7;
+		Result.APAfter = 6;
+		HUD->SetActionFeedback(FWSPresentationText::ActionLabel(Preview.ActionId), Result, Preview, bPromise);
+	}
+	else if (CaptureName.StartsWith(TEXT("crisis_")))
+	{
+		const int32 Stage = CaptureName.Equals(TEXT("crisis_flash")) ? 0
+			: CaptureName.Equals(TEXT("crisis_blackout")) ? 1
+			: 2;
+		HUD->SetCrisisCaptureStage(Stage);
+		for (TActorIterator<AWhiteoutStationBuilder> It(GetWorld()); It; ++It)
+		{
+			It->SetLightingPreviewState(true, false);
+			break;
+		}
+	}
+	else if (CaptureName.StartsWith(TEXT("ending_")))
+	{
+		EWSEndingType Ending = EWSEndingType::TaskSuccess;
+		if (CaptureName.Contains(TEXT("survival"))) Ending = EWSEndingType::SurvivalWait;
+		else if (CaptureName.Contains(TEXT("cost"))) Ending = EWSEndingType::CostUncontrolled;
+		else if (CaptureName.Contains(TEXT("collapse"))) Ending = EWSEndingType::TotalCollapse;
+		HUD->SetPresentationCaptureState(MakePresentationResultsState(StateSubsystem->GetStateSnapshot(), Ending));
+		HUD->SetEndingCaptureStage(Ending, false);
+	}
+	else if (CaptureName.Equals(TEXT("preview")))
 	{
 		FWSActionRequest Request;
 		Request.ActionId = TEXT("investigate_generator_log");
@@ -303,6 +457,28 @@ void AWhiteoutGameMode::StagePresentationCapture()
 
 void AWhiteoutGameMode::CapturePresentationFrame()
 {
+	const FString& CaptureName = PresentationCaptureNames[PresentationCaptureIndex];
+	if (CaptureName.StartsWith(TEXT("focus_")))
+	{
+		const FName TargetAction = CaptureName.Equals(TEXT("focus_blocked"))
+			? FName(TEXT("send_signal"))
+			: FName(TEXT("repair_generator"));
+		if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+			{
+				for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+				{
+					if (It->ActionId == TargetAction)
+					{
+						It->SetInteractionFocused(true);
+						HUD->SetInteractionFocus(It->DisplayName, It->PreviewInteraction());
+						break;
+					}
+				}
+			}
+		}
+	}
 	const FIntPoint Size = GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport
 		? GEngine->GameViewport->Viewport->GetSizeXY()
 		: FIntPoint(0, 0);
@@ -310,7 +486,7 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 	IFileManager::Get().MakeDirectory(*Directory, true);
 	const FString ScreenshotPath = Directory / FString::Printf(
 		TEXT("UI_%s_%dx%d.png"),
-		*PresentationCaptureNames[PresentationCaptureIndex], Size.X, Size.Y);
+		*CaptureName, Size.X, Size.Y);
 	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false, false, FIntRect(), true);
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: requested presentation screenshot %s"), *ScreenshotPath);
 	++PresentationCaptureIndex;
