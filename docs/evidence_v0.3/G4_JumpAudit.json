@@ -1,0 +1,15 @@
+{
+  "schema": "whiteout.g4.jump.v1",
+  "passed": true,
+  "landed": true,
+  "blocking_overlap_detected": false,
+  "jump_z_velocity": 350.00,
+  "gravity_scale": 1.15,
+  "start_z_cm": 96.00,
+  "max_z_cm": 139.07,
+  "height_cm": 43.07,
+  "air_time_seconds": 0.35,
+  "captured_frames": 7,
+  "ceiling_height_cm": 365.0,
+  "capsule_half_height_cm": 92.00
+}

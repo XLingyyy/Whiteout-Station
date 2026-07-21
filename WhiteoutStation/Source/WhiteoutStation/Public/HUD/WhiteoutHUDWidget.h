@@ -13,6 +13,7 @@ class UEditableTextBox;
 class UImage;
 class UProgressBar;
 class UScrollBox;
+class USlider;
 class UTextBlock;
 class UUniformGridPanel;
 class UVerticalBox;
@@ -52,6 +53,7 @@ public:
 	void SetPresentationCaptureState(const FWSGameState& State);
 	void ShowEvidenceForCapture();
 	void ShowComponentGalleryForCapture();
+	void ShowSettingsForCapture();
 	void SetOpeningCaptureStage(int32 Stage);
 	void SetCrisisCaptureStage(int32 Stage);
 	void SetEndingCaptureStage(EWSEndingType Ending, bool bShowResults);
@@ -217,6 +219,39 @@ private:
 	TObjectPtr<UButton> PauseDefaultButton;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UBorder> SettingsBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USlider> FOVSlider;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USlider> MasterVolumeSlider;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USlider> AmbienceVolumeSlider;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USlider> EffectsVolumeSlider;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USlider> FeedbackVolumeSlider;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FOVValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> MasterVolumeValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> AmbienceVolumeValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> EffectsVolumeValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FeedbackVolumeValueText;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBorder> ComponentGalleryBorder;
 
 	UPROPERTY(Transient)
@@ -264,6 +299,7 @@ private:
 	EWSEndingType ActiveEnding = EWSEndingType::SurvivalWait;
 	bool bEvidenceVisible = false;
 	bool bDialogueVisible = false;
+	bool bUpdatingSettings = false;
 	FName ActiveDialogueActionId;
 	bool bPresentationCaptureOverride = false;
 	FWSGameState PresentationCaptureState;
@@ -302,6 +338,29 @@ private:
 
 	UFUNCTION()
 	void ToggleControls();
+
+	UFUNCTION()
+	void OpenSettings();
+
+	UFUNCTION()
+	void CloseSettings();
+
+	UFUNCTION()
+	void HandleFOVChanged(float Value);
+
+	UFUNCTION()
+	void HandleMasterVolumeChanged(float Value);
+
+	UFUNCTION()
+	void HandleAmbienceVolumeChanged(float Value);
+
+	UFUNCTION()
+	void HandleEffectsVolumeChanged(float Value);
+
+	UFUNCTION()
+	void HandleFeedbackVolumeChanged(float Value);
+
+	void RefreshSettingsUI();
 
 	UFUNCTION()
 	void QuitGame();

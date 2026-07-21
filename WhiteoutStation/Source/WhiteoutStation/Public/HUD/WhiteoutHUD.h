@@ -35,6 +35,7 @@ public:
 	void SetPresentationCaptureState(const FWSGameState& State);
 	void ShowEvidenceForCapture();
 	void ShowComponentGalleryForCapture();
+	void ShowSettingsForCapture();
 	void SetOpeningCaptureStage(int32 Stage);
 	void SetCrisisCaptureStage(int32 Stage);
 	void SetEndingCaptureStage(EWSEndingType Ending, bool bShowResults);

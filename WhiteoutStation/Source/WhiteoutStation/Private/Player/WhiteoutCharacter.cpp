@@ -12,6 +12,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "State/WindStationStateSubsystem.h"
 #include "Sound/SoundBase.h"
+#include "Settings/WhiteoutSettingsSubsystem.h"
 #include "World/WSInteractableActor.h"
 
 AWhiteoutCharacter::AWhiteoutCharacter()
@@ -20,6 +21,9 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 	GetCapsuleComponent()->InitCapsuleSize(42.0f, 92.0f);
 	GetCharacterMovement()->MaxWalkSpeed = 430.0f;
 	GetCharacterMovement()->BrakingDecelerationWalking = 1600.0f;
+	GetCharacterMovement()->JumpZVelocity = 350.0f;
+	GetCharacterMovement()->GravityScale = 1.15f;
+	GetCharacterMovement()->AirControl = 0.10f;
 	bUseControllerRotationYaw = true;
 
 	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
@@ -87,6 +91,10 @@ void AWhiteoutCharacter::BeginPlay()
 	LastFootstepLocation = GetActorLocation();
 	DialogueIntentGateway = NewObject<UWSAgentGateway>(this);
 	DialogueIntentGateway->Initialize();
+	if (UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->Apply(this);
+	}
 }
 
 void AWhiteoutCharacter::Tick(const float DeltaSeconds)
@@ -158,6 +166,8 @@ void AWhiteoutCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		EnhancedInput->BindAction(ContinueAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::ContinueRun);
 	}
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AWhiteoutCharacter::DismissOpening);
+	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &ACharacter::Jump);
+	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Released, this, &ACharacter::StopJumping);
 	FInputKeyBinding& PauseBinding = PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AWhiteoutCharacter::TogglePauseMenu);
 	PauseBinding.bExecuteWhenPaused = true;
 }

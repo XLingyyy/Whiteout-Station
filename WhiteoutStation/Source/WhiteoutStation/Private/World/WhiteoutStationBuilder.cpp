@@ -96,7 +96,7 @@ void AWhiteoutStationBuilder::BuildStation()
 		PostProcess->Settings.bOverride_AutoExposureBias = true;
 		PostProcess->Settings.AutoExposureBias = -0.20f;
 		PostProcess->Settings.bOverride_BloomIntensity = true;
-		PostProcess->Settings.BloomIntensity = 0.28f;
+		PostProcess->Settings.BloomIntensity = 0.16f;
 		PostProcess->Settings.bOverride_VignetteIntensity = true;
 		PostProcess->Settings.VignetteIntensity = 0.22f;
 	}
@@ -227,13 +227,32 @@ void AWhiteoutStationBuilder::SpawnAssemblyMesh(const FWSStationMeshPlacement& P
 
 void AWhiteoutStationBuilder::SpawnAssemblyLight(const FWSStationLightPlacement& Placement)
 {
+	FVector Location = Placement.Location;
+	FLinearColor Color = Placement.Color;
+	float Intensity = Placement.Intensity;
+	float Radius = Placement.Radius;
+	if (Placement.Label == TEXT("控制室冷色补光"))
+	{
+		// Keep the ceiling strip readable instead of driving its white surface into clipping.
+		Color = FLinearColor(0.28f, 0.50f, 0.78f);
+		Intensity = 820.0f;
+		Radius = 700.0f;
+	}
+	else if (Placement.Label == TEXT("天线检修灯"))
+	{
+		// A broad camera-side fill preserves the antenna silhouette against the snow sky.
+		Location = FVector(2140.0f, 400.0f, 245.0f);
+		Color = FLinearColor(0.48f, 0.63f, 0.92f);
+		Intensity = 4800.0f;
+		Radius = 1150.0f;
+	}
 	SpawnPointLight(
 		Placement.Label.ToString(),
 		Placement.Zone,
-		Placement.Location,
-		Placement.Color,
-		Placement.Intensity,
-		Placement.Radius,
+		Location,
+		Color,
+		Intensity,
+		Radius,
 		Placement.bEmergencyRed,
 		Placement.bGeneratorPowered);
 }

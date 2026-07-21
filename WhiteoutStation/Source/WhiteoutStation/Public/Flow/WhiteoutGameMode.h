@@ -43,6 +43,11 @@ private:
 	TArray<float> PerformanceFrameTimesMs;
 	double PerformanceStartSeconds = 0.0;
 	bool bPerformanceTestActive = false;
+	int32 JumpCaptureIndex = 0;
+	float JumpStartZ = 0.0f;
+	float JumpMaxZ = 0.0f;
+	bool bJumpOverlapDetected = false;
+	TArray<float> JumpHeightSamples;
 
 	void RunAutomationRoute(const FString& RouteName);
 	void CompletePerformanceTest();
@@ -53,4 +58,7 @@ private:
 	void BeginPresentationCapture();
 	void StagePresentationCapture();
 	void CapturePresentationFrame();
+	void RunSettingsAudit(const FString& Mode);
+	void BeginJumpCapture();
+	void CaptureJumpFrame();
 };

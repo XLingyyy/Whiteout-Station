@@ -8,7 +8,7 @@ G1 通过。玩家界面已迁移到中文 StringTable 与原生 UMG 宿主；�
 
 ## 实现与视觉证据
 
-- `/Game/WindStation/UI/ST_WhiteoutStation_zh`：223 个中文条目，207 个代码引用键通过静态校验；运行日志中缺失条目与 StringTable 警告均为 0。
+- `/Game/WindStation/UI/ST_WhiteoutStation_zh`：**G1 门禁时点**为 223 个中文条目、207 个代码引用键；v0.2 后续演出与发布阶段补充后，**封版口径**为 236 个条目、210 个引用键。两组数字对应不同门禁快照；运行日志中缺失条目与 StringTable 警告均为 0。
 - `/Game/WindStation/Presentation/DA_WS_UIDesign`：Noto Sans CJK 字体、色板、字号与间距令牌。
 - `/Game/WindStation/World/Dev_TestMap`：隔离的控件测试地图；`baseline_v0.2/UI_components_1280x720.png` 展示字体层级、状态标签、三种进度条、按钮与 toast。
 - `baseline_v0.2/UI_opening_*.png`：开场在首屏说明撤离目标、8 点行动力、按键与风险。
@@ -41,3 +41,5 @@ G1 通过。玩家界面已迁移到中文 StringTable 与原生 UMG 宿主；�
 | 运行态 `-WhiteoutAutoRoute=quick` | 成功，TaskSuccess，72.06 |
 | `WhiteoutStationEditor Win64 Development` | 编译通过 |
 | UI 捕获运行日志 | 缺失字符串 0、StringTable 警告 0、崩溃/未处理异常 0 |
+
+> 口径修订（v0.3 / V3-24）：本表中的 223/207 保留为 G1 当日可复现结果；跨文档比较 v0.2 最终版本时统一采用 QA 封版的 236/210，详见 `DOCUMENTATION_RECONCILIATION_v0.3.md`。

@@ -14,6 +14,7 @@
 #include "Components/ProgressBar.h"
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
+#include "Components/Slider.h"
 #include "Components/TextBlock.h"
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
@@ -28,6 +29,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Presentation/WSPresentationText.h"
 #include "Player/WhiteoutCharacter.h"
+#include "Settings/WhiteoutSettingsSubsystem.h"
 #include "State/WindStationStateSubsystem.h"
 #include "Styling/CoreStyle.h"
 #include "Sound/SoundBase.h"
@@ -631,16 +633,16 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PauseDefaultButton = ResumeButton;
 	UButton* SaveButton = MakeButton(PauseBox, FText::FromString(TEXT("保存游戏　｜　当前版本不可用")), TEXT("SaveButton"));
 	UButton* LoadButton = MakeButton(PauseBox, FText::FromString(TEXT("读取游戏　｜　当前版本不可用")), TEXT("LoadButton"));
-	UButton* SettingsButton = MakeButton(PauseBox, FText::FromString(TEXT("设置　　　｜　当前版本不可用")), TEXT("SettingsButton"));
+	UButton* SettingsButton = MakeButton(PauseBox, FText::FromString(TEXT("设置　　　｜　视野与音量")), TEXT("SettingsButton"));
 	UButton* HelpButton = MakeButton(PauseBox, FText::FromString(TEXT("操作说明")), TEXT("HelpButton"));
 	UButton* RestartButton = MakeButton(PauseBox, FWSPresentationText::UI(TEXT("ui_restart"), TEXT("重新开始")), TEXT("RestartButton"));
 	UButton* MainMenuButton = MakeButton(PauseBox, FText::FromString(TEXT("返回主菜单｜　当前版本不可用")), TEXT("MainMenuButton"));
 	UButton* QuitButton = MakeButton(PauseBox, FWSPresentationText::UI(TEXT("ui_quit"), TEXT("退出到桌面")), TEXT("QuitButton"));
 	SaveButton->SetIsEnabled(false);
 	LoadButton->SetIsEnabled(false);
-	SettingsButton->SetIsEnabled(false);
 	MainMenuButton->SetIsEnabled(false);
 	ResumeButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ResumeGame);
+	SettingsButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::OpenSettings);
 	HelpButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ToggleControls);
 	RestartButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::RestartGame);
 	QuitButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::QuitGame);
@@ -653,6 +655,76 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PauseHelpText->SetVisibility(ESlateVisibility::Collapsed);
 	PauseBox->AddChildToVerticalBox(PauseHelpText)->SetPadding(FMargin(8, 12, 8, 0));
 	PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
+
+	SettingsBorder = MakePanel(Canvas, TEXT("SettingsPanel"), FAnchors(0.5f, 0.5f), FMargin(-330, -300, 660, 600), FLinearColor(0.004f, 0.014f, 0.026f, 0.99f));
+	UVerticalBox* SettingsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SettingsBox"));
+	SettingsBorder->SetContent(SettingsBox);
+	UTextBlock* SettingsTitle = MakeText(TEXT("SettingsTitle"), 31, Body);
+	SettingsTitle->SetText(FText::FromString(TEXT("设置")));
+	SettingsTitle->SetJustification(ETextJustify::Center);
+	SettingsBox->AddChildToVerticalBox(SettingsTitle)->SetPadding(FMargin(0, 0, 0, 8));
+	UTextBlock* SettingsHint = MakeText(TEXT("SettingsHint"), 13, Secondary);
+	SettingsHint->SetText(FText::FromString(TEXT("更改会实时生效，并保存在本机。")));
+	SettingsHint->SetJustification(ETextJustify::Center);
+	SettingsBox->AddChildToVerticalBox(SettingsHint)->SetPadding(FMargin(0, 0, 0, 18));
+	auto AddSettingsRow = [this, SettingsBox](const FName Name, const FString& Label, UTextBlock*& OutValueText)
+	{
+		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*(Name.ToString() + TEXT("Row"))));
+		USizeBox* LabelBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*(Name.ToString() + TEXT("LabelBox"))));
+		LabelBox->SetWidthOverride(135.0f);
+		UTextBlock* LabelText = MakeText(FName(*(Name.ToString() + TEXT("Label"))), 16, Body);
+		LabelText->SetText(FText::FromString(Label));
+		LabelBox->SetContent(LabelText);
+		Row->AddChildToHorizontalBox(LabelBox)->SetVerticalAlignment(VAlign_Center);
+		USizeBox* SliderBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*(Name.ToString() + TEXT("SliderBox"))));
+		SliderBox->SetWidthOverride(350.0f);
+		USlider* Slider = WidgetTree->ConstructWidget<USlider>(USlider::StaticClass(), Name);
+		Slider->SetMinValue(0.0f);
+		Slider->SetMaxValue(1.0f);
+		Slider->SetStepSize(0.01f);
+		Slider->SetSliderBarColor(FLinearColor(0.18f, 0.32f, 0.41f, 1.0f));
+		Slider->SetSliderHandleColor(Cyan);
+		SliderBox->SetContent(Slider);
+		Row->AddChildToHorizontalBox(SliderBox)->SetVerticalAlignment(VAlign_Center);
+		USizeBox* ValueBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*(Name.ToString() + TEXT("ValueBox"))));
+		ValueBox->SetWidthOverride(90.0f);
+		OutValueText = MakeText(FName(*(Name.ToString() + TEXT("Value"))), 15, Cyan);
+		OutValueText->SetJustification(ETextJustify::Right);
+		ValueBox->SetContent(OutValueText);
+		Row->AddChildToHorizontalBox(ValueBox)->SetVerticalAlignment(VAlign_Center);
+		SettingsBox->AddChildToVerticalBox(Row)->SetPadding(FMargin(8, 7));
+		return Slider;
+	};
+	UTextBlock* FOVValue = nullptr;
+	FOVSlider = AddSettingsRow(TEXT("FOVSlider"), TEXT("视野角度"), FOVValue);
+	FOVValueText = FOVValue;
+	UTextBlock* MasterValue = nullptr;
+	MasterVolumeSlider = AddSettingsRow(TEXT("MasterVolumeSlider"), TEXT("主音量"), MasterValue);
+	MasterVolumeValueText = MasterValue;
+	UTextBlock* AmbienceValue = nullptr;
+	AmbienceVolumeSlider = AddSettingsRow(TEXT("AmbienceVolumeSlider"), TEXT("氛围音量"), AmbienceValue);
+	AmbienceVolumeValueText = AmbienceValue;
+	UTextBlock* EffectsValue = nullptr;
+	EffectsVolumeSlider = AddSettingsRow(TEXT("EffectsVolumeSlider"), TEXT("效果音量"), EffectsValue);
+	EffectsVolumeValueText = EffectsValue;
+	UTextBlock* FeedbackValue = nullptr;
+	FeedbackVolumeSlider = AddSettingsRow(TEXT("FeedbackVolumeSlider"), TEXT("反馈音量"), FeedbackValue);
+	FeedbackVolumeValueText = FeedbackValue;
+	FOVSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleFOVChanged);
+	MasterVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleMasterVolumeChanged);
+	AmbienceVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleAmbienceVolumeChanged);
+	EffectsVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleEffectsVolumeChanged);
+	FeedbackVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleFeedbackVolumeChanged);
+	UButton* SettingsBackButton = MakeButton(SettingsBox, FText::FromString(TEXT("返回暂停菜单")), TEXT("SettingsBackButton"));
+	SettingsBackButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CloseSettings);
+	SettingsBox->AddChildToVerticalBox(MakeText(TEXT("SettingsScope"), 12, Secondary))->SetPadding(FMargin(8, 10, 8, 0));
+	if (UTextBlock* ScopeText = Cast<UTextBlock>(SettingsBox->GetChildAt(SettingsBox->GetChildrenCount() - 1)))
+	{
+		ScopeText->SetText(FText::FromString(TEXT("效果：脚步 / 事件 / 结局音乐　反馈：界面提示")));
+		ScopeText->SetJustification(ETextJustify::Center);
+	}
+	SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
+	RefreshSettingsUI();
 }
 
 UTextBlock* UWhiteoutHUDWidget::MakeText(const FName Name, const int32 Size, const FLinearColor& Color, const bool bWrap)
@@ -702,7 +774,7 @@ UButton* UWhiteoutHUDWidget::MakeButton(UVerticalBox* Box, const FText& Label, c
 			Row->AddChildToHorizontalBox(IconBox)->SetPadding(FMargin(10, 0, 14, 0));
 		}
 	}
-	UTextBlock* LabelText = MakeText(FName(*(Name.ToString() + TEXT("Label"))), 18, Body);
+	UTextBlock* LabelText = MakeText(FName(*(Name.ToString() + TEXT("Label"))), 18, Body, false);
 	LabelText->SetText(Label);
 	UHorizontalBoxSlot* LabelSlot = Row->AddChildToHorizontalBox(LabelText);
 	LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -1148,8 +1220,9 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 	{
 		const FWSEventRecord& Event = State.EventLog[Index];
 		Timeline += FString::Printf(
-			TEXT("%02d　%s　行动力 %d → %d%s\n"),
+			TEXT("%02d　%s　%s　行动力 %d → %d%s\n"),
 			Event.Index,
+			*ClockForAP(Event.APAfter),
 			*FWSPresentationText::ActionLabel(Event.ActionId).ToString(),
 			Event.APBefore,
 			Event.APAfter,
@@ -1529,6 +1602,7 @@ void UWhiteoutHUDWidget::ResetPresentationCapture()
 	if (CrisisBorder) CrisisBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (EndingCinematicBorder) EndingCinematicBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (PauseBorder) PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (SettingsBorder) SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (PauseHelpText) PauseHelpText->SetVisibility(ESlateVisibility::Collapsed);
 	bEndingCinematicCapture = false;
 	bWasShowingResults = false;
@@ -1566,6 +1640,15 @@ void UWhiteoutHUDWidget::ShowComponentGalleryForCapture()
 	{
 		ComponentGalleryBorder->SetVisibility(ESlateVisibility::Visible);
 	}
+}
+
+void UWhiteoutHUDWidget::ShowSettingsForCapture()
+{
+	if (!IsPauseMenuVisible())
+	{
+		TogglePauseMenu();
+	}
+	OpenSettings();
 }
 
 void UWhiteoutHUDWidget::SetOpeningCaptureStage(const int32 Stage)
@@ -1636,7 +1719,7 @@ void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
 		OpeningText->SetColorAndOpacity(FSlateColor(Body));
 		OpeningText->SetText(FWSPresentationText::UI(
 			TEXT("ui_opening_title"),
-			TEXT("风雪站：断电前夜\n\n海拔 4,126 米｜极夜值班")));
+			TEXT("风雪站：断电前夜\n\n08:15｜海拔 4,126 米｜极夜值班")));
 	}
 	else if (Stage == 1)
 	{
@@ -1645,7 +1728,7 @@ void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
 		OpeningText->SetColorAndOpacity(FSlateColor(FLinearColor(0.82f, 0.92f, 1.0f, 1.0f)));
 		const FString EstablishingCopy = FWSPresentationText::UI(
 			TEXT("ui_opening_establishing"),
-			TEXT("暴雪封山\n备用电池正在衰减\n\n按空格跳过")).ToString();
+			TEXT("08:15｜暴雪封山\n备用电池正在衰减\n\n按空格跳过")).ToString();
 		OpeningText->SetText(FText::FromString(TEXT("\n\n") + EstablishingCopy));
 	}
 	else if (Stage == 2)
@@ -1655,7 +1738,7 @@ void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
 		OpeningText->SetColorAndOpacity(FSlateColor(Body));
 		OpeningText->SetText(FWSPresentationText::UI(
 			TEXT("ui_opening_objective"),
-			TEXT("最后一轮抢修\n\n① 修复发电机\n② 校准室外天线\n③ 发出求救信号\n\n预算：8 点行动力\n越过中段后，备用电池将发生一次故障\n\n按空格跳过")));
+			TEXT("08:15 → 18:15｜最后一轮抢修\n\n① 修复发电机\n② 校准室外天线\n③ 发出求救信号\n\n预算：8 点行动力\n越过中段后，备用电池将发生一次故障\n\n按空格跳过")));
 	}
 	else
 	{
@@ -1664,7 +1747,7 @@ void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
 		OpeningText->SetColorAndOpacity(FSlateColor(Cyan));
 		OpeningText->SetText(FWSPresentationText::UI(
 			TEXT("ui_opening_controls"),
-			TEXT("每次行动都先预览，再确认\n\nWASD 移动　鼠标观察\nF 预览 / 再按 F 确认\nE 证据板　Q 对话方式　Esc 暂停/退出\n\n控制权交还")));
+			TEXT("08:15｜每次行动都先预览，再确认\n\nWASD 移动　鼠标观察　Space 跳跃\nF 预览 / 再按 F 确认\nE 证据板　Q 对话方式　Esc 暂停/退出\n\n控制权交还")));
 	}
 }
 
@@ -1678,19 +1761,19 @@ void UWhiteoutHUDWidget::ApplyCrisisStage(const int32 Stage)
 	if (Stage == 0)
 	{
 		CrisisBorder->SetBrushColor(FLinearColor(0.30f, 0.006f, 0.002f, 0.72f));
-		CrisisText->SetText(FWSPresentationText::UI(TEXT("ui_crisis_voltage_drop"), TEXT("电压骤降")));
+		CrisisText->SetText(FWSPresentationText::UI(TEXT("ui_crisis_voltage_drop"), TEXT("13:15｜电压骤降")));
 	}
 	else if (Stage == 1)
 	{
 		CrisisBorder->SetBrushColor(FLinearColor(0.015f, 0.018f, 0.028f, 0.92f));
-		CrisisText->SetText(FWSPresentationText::UI(TEXT("ui_crisis_battery_offline"), TEXT("备用电池离线")));
+		CrisisText->SetText(FWSPresentationText::UI(TEXT("ui_crisis_battery_offline"), TEXT("13:15｜备用电池离线")));
 	}
 	else
 	{
 		CrisisBorder->SetBrushColor(FLinearColor(0.16f, 0.006f, 0.004f, 0.68f));
 		CrisisText->SetText(FWSPresentationText::UI(
 			TEXT("ui_crisis_emergency_load"),
-			TEXT("应急负载接管\n剩余行动力进入红线")));
+			TEXT("13:15｜应急负载接管\n剩余行动力进入红线")));
 	}
 }
 
@@ -1770,7 +1853,8 @@ void UWhiteoutHUDWidget::DismissOpening()
 
 bool UWhiteoutHUDWidget::IsPauseMenuVisible() const
 {
-	return PauseBorder && PauseBorder->GetVisibility() == ESlateVisibility::Visible;
+	return (PauseBorder && PauseBorder->GetVisibility() == ESlateVisibility::Visible)
+		|| (SettingsBorder && SettingsBorder->GetVisibility() == ESlateVisibility::Visible);
 }
 
 void UWhiteoutHUDWidget::TogglePauseMenu()
@@ -1781,6 +1865,10 @@ void UWhiteoutHUDWidget::TogglePauseMenu()
 		return;
 	}
 	DismissOpening();
+	if (SettingsBorder)
+	{
+		SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	PauseBorder->SetVisibility(ESlateVisibility::Visible);
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
@@ -1796,6 +1884,10 @@ void UWhiteoutHUDWidget::TogglePauseMenu()
 void UWhiteoutHUDWidget::ResumeGame()
 {
 	PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (SettingsBorder)
+	{
+		SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	if (PauseHelpText)
 	{
 		PauseHelpText->SetVisibility(ESlateVisibility::Collapsed);
@@ -1805,6 +1897,122 @@ void UWhiteoutHUDWidget::ResumeGame()
 		PlayerController->SetPause(false);
 		PlayerController->bShowMouseCursor = false;
 		PlayerController->SetInputMode(FInputModeGameOnly());
+	}
+}
+
+void UWhiteoutHUDWidget::OpenSettings()
+{
+	RefreshSettingsUI();
+	if (PauseBorder)
+	{
+		PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (SettingsBorder)
+	{
+		SettingsBorder->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		FInputModeUIOnly InputMode;
+		InputMode.SetWidgetToFocus(FOVSlider ? FOVSlider->TakeWidget() : SettingsBorder->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PlayerController->SetInputMode(InputMode);
+	}
+	PlayUISound(UIConfirmSound, 0.62f);
+}
+
+void UWhiteoutHUDWidget::CloseSettings()
+{
+	if (SettingsBorder)
+	{
+		SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (PauseBorder)
+	{
+		PauseBorder->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		FInputModeUIOnly InputMode;
+		InputMode.SetWidgetToFocus(PauseDefaultButton ? PauseDefaultButton->TakeWidget() : PauseBorder->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PlayerController->SetInputMode(InputMode);
+	}
+	PlayUISound(UIHoverSound, 0.48f);
+}
+
+void UWhiteoutHUDWidget::RefreshSettingsUI()
+{
+	if (!GetGameInstance())
+	{
+		return;
+	}
+	const UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>();
+	if (!Settings)
+	{
+		return;
+	}
+	bUpdatingSettings = true;
+	if (FOVSlider) FOVSlider->SetValue((Settings->GetFieldOfView() - 75.0f) / 30.0f);
+	if (MasterVolumeSlider) MasterVolumeSlider->SetValue(Settings->GetMasterVolume());
+	if (AmbienceVolumeSlider) AmbienceVolumeSlider->SetValue(Settings->GetAmbienceVolume());
+	if (EffectsVolumeSlider) EffectsVolumeSlider->SetValue(Settings->GetEffectsVolume());
+	if (FeedbackVolumeSlider) FeedbackVolumeSlider->SetValue(Settings->GetFeedbackVolume());
+	if (FOVValueText) FOVValueText->SetText(FText::FromString(FString::Printf(TEXT("%d°"), FMath::RoundToInt(Settings->GetFieldOfView()))));
+	if (MasterVolumeValueText) MasterVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetMasterVolume() * 100.0f))));
+	if (AmbienceVolumeValueText) AmbienceVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetAmbienceVolume() * 100.0f))));
+	if (EffectsVolumeValueText) EffectsVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetEffectsVolume() * 100.0f))));
+	if (FeedbackVolumeValueText) FeedbackVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetFeedbackVolume() * 100.0f))));
+	bUpdatingSettings = false;
+}
+
+void UWhiteoutHUDWidget::HandleFOVChanged(const float Value)
+{
+	if (bUpdatingSettings || !GetGameInstance()) return;
+	if (UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->SetFieldOfView(75.0f + FMath::Clamp(Value, 0.0f, 1.0f) * 30.0f, this);
+		if (FOVValueText) FOVValueText->SetText(FText::FromString(FString::Printf(TEXT("%d°"), FMath::RoundToInt(Settings->GetFieldOfView()))));
+	}
+}
+
+void UWhiteoutHUDWidget::HandleMasterVolumeChanged(const float Value)
+{
+	if (bUpdatingSettings || !GetGameInstance()) return;
+	if (UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->SetMasterVolume(Value, this);
+		if (MasterVolumeValueText) MasterVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetMasterVolume() * 100.0f))));
+	}
+}
+
+void UWhiteoutHUDWidget::HandleAmbienceVolumeChanged(const float Value)
+{
+	if (bUpdatingSettings || !GetGameInstance()) return;
+	if (UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->SetAmbienceVolume(Value, this);
+		if (AmbienceVolumeValueText) AmbienceVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetAmbienceVolume() * 100.0f))));
+	}
+}
+
+void UWhiteoutHUDWidget::HandleEffectsVolumeChanged(const float Value)
+{
+	if (bUpdatingSettings || !GetGameInstance()) return;
+	if (UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->SetEffectsVolume(Value, this);
+		if (EffectsVolumeValueText) EffectsVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetEffectsVolume() * 100.0f))));
+	}
+}
+
+void UWhiteoutHUDWidget::HandleFeedbackVolumeChanged(const float Value)
+{
+	if (bUpdatingSettings || !GetGameInstance()) return;
+	if (UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->SetFeedbackVolume(Value, this);
+		if (FeedbackVolumeValueText) FeedbackVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetFeedbackVolume() * 100.0f))));
 	}
 }
 

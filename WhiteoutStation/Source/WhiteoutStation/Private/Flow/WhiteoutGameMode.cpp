@@ -13,18 +13,21 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/IConsoleManager.h"
 #include "Components/PointLightComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformTime.h"
 #include "HAL/FileManager.h"
 #include "HUD/WhiteoutHUD.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
+#include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Player/WhiteoutCharacter.h"
 #include "Player/WhiteoutPlayerController.h"
 #include "Presentation/WhiteoutAudioDirector.h"
 #include "Presentation/WSPresentationText.h"
+#include "Settings/WhiteoutSettingsSubsystem.h"
 #include "State/WindStationStateSubsystem.h"
 #include "World/WSInteractableActor.h"
 #include "World/WhiteoutStationBuilder.h"
@@ -281,9 +284,28 @@ void AWhiteoutGameMode::BeginPlay()
 		GetWorldTimerManager().SetTimer(PresentationTimer, this, &AWhiteoutGameMode::BeginPresentationCapture, 2.0f, false);
 	}
 
+	FString SettingsAuditMode;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WhiteoutSettingsAudit="), SettingsAuditMode))
+	{
+		FTimerHandle SettingsAuditTimer;
+		GetWorldTimerManager().SetTimer(
+			SettingsAuditTimer,
+			[this, SettingsAuditMode]() { RunSettingsAudit(SettingsAuditMode); },
+			1.0f,
+			false);
+	}
+
+	if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutJumpAudit")))
+	{
+		FTimerHandle JumpAuditTimer;
+		GetWorldTimerManager().SetTimer(JumpAuditTimer, this, &AWhiteoutGameMode::BeginJumpCapture, 2.0f, false);
+	}
+
 	if (AutoRoute.IsEmpty()
 		&& !bIntentProbeRequested
 		&& !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutBaselineCapture"))
+		&& SettingsAuditMode.IsEmpty()
+		&& !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutJumpAudit"))
 		&& !bPerformanceTestActive)
 	{
 		FTimerHandle OpeningStartTimer;
@@ -465,6 +487,19 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 			TEXT("character_gu_near"), TEXT("character_gu_mid"),
 			TEXT("character_ye_near"), TEXT("character_ye_mid")};
 	}
+	else if (PresentationCaptureMode.Equals(TEXT("g4systems"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("settings_default"), TEXT("settings_adjusted"),
+			TEXT("clock_0815"), TEXT("clock_1815"),
+			TEXT("opening_controls_time"), TEXT("crisis_emergency_time"), TEXT("results_timeline_time"),
+			TEXT("lighting_control_ceiling"), TEXT("lighting_antenna_front"), TEXT("lighting_antenna_side")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("g4lighting"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("lighting_control_ceiling"), TEXT("lighting_antenna_front"), TEXT("lighting_antenna_side")};
+	}
 	else
 	{
 		PresentationCaptureNames.Add(PresentationCaptureMode);
@@ -612,6 +647,70 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		if (PlayerController)
 		{
 			PlayerController->SetPause(false);
+		}
+	}
+	else if (CaptureName.StartsWith(TEXT("settings_")))
+	{
+		if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
+		{
+			Pawn->SetActorLocation(FVector(-190.0f, 245.0f, 105.0f), false, nullptr, ETeleportType::TeleportPhysics);
+			if (PlayerController)
+			{
+				PlayerController->SetControlRotation(FRotator(-2.0f, -72.0f, 0.0f));
+			}
+		}
+		if (UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+		{
+			const bool bAdjusted = CaptureName.Equals(TEXT("settings_adjusted"));
+			Settings->SetFieldOfView(bAdjusted ? 103.0f : 90.0f, this);
+			Settings->SetMasterVolume(bAdjusted ? 0.76f : 1.0f, this);
+			Settings->SetAmbienceVolume(bAdjusted ? 0.48f : 1.0f, this);
+			Settings->SetEffectsVolume(bAdjusted ? 0.64f : 1.0f, this);
+			Settings->SetFeedbackVolume(bAdjusted ? 0.82f : 1.0f, this);
+		}
+		HUD->ShowSettingsForCapture();
+		if (PlayerController)
+		{
+			PlayerController->SetPause(false);
+		}
+	}
+	else if (CaptureName.StartsWith(TEXT("clock_")))
+	{
+		FWSGameState ClockState = StateSubsystem->GetStateSnapshot();
+		ClockState.ActionPoints = CaptureName.Equals(TEXT("clock_1815")) ? 0 : 8;
+		ClockState.bMidCrisisTriggered = ClockState.ActionPoints == 0;
+		HUD->SetPresentationCaptureState(ClockState);
+	}
+	else if (CaptureName.StartsWith(TEXT("lighting_")))
+	{
+		HUD->SetInterfaceVisibleForCapture(false);
+		for (TActorIterator<AWhiteoutStationBuilder> It(GetWorld()); It; ++It)
+		{
+			It->SetLightingPreviewState(false, false);
+			break;
+		}
+		APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+		if (Pawn && PlayerController)
+		{
+			FVector Location(-190.0f, 245.0f, 105.0f);
+			FRotator Rotation(-8.0f, -72.0f, 0.0f);
+			if (CaptureName.Equals(TEXT("lighting_antenna_front")))
+			{
+				Location = FVector(1810.0f, 400.0f, 115.0f);
+				Rotation = FRotator(-4.0f, 0.0f, 0.0f);
+			}
+			else if (CaptureName.Equals(TEXT("lighting_antenna_side")))
+			{
+				Location = FVector(2650.0f, 900.0f, 125.0f);
+				Rotation = FRotator(-5.0f, -129.0f, 0.0f);
+			}
+			PlayerController->SetViewTarget(Pawn);
+			Pawn->SetActorLocation(Location, false, nullptr, ETeleportType::TeleportPhysics);
+			PlayerController->SetControlRotation(Rotation);
+			if (ACharacter* CaptureCharacter = Cast<ACharacter>(Pawn))
+			{
+				CaptureCharacter->GetCharacterMovement()->DisableMovement();
+			}
 		}
 	}
 	else if (CaptureName.StartsWith(TEXT("reject_")))
@@ -865,6 +964,7 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		this,
 		&AWhiteoutGameMode::CapturePresentationFrame,
 		CaptureName.StartsWith(TEXT("lookat_")) ? 1.0f
+			: CaptureName.StartsWith(TEXT("lighting_")) ? 3.0f
 			: CaptureName.StartsWith(TEXT("scene_")) ? 1.2f
 			: 0.45f,
 		false);
@@ -873,7 +973,7 @@ void AWhiteoutGameMode::StagePresentationCapture()
 void AWhiteoutGameMode::CapturePresentationFrame()
 {
 	const FString& CaptureName = PresentationCaptureNames[PresentationCaptureIndex];
-	if (CaptureName.StartsWith(TEXT("scene_")) || CaptureName.StartsWith(TEXT("character_")))
+	if (CaptureName.StartsWith(TEXT("scene_")) || CaptureName.StartsWith(TEXT("character_")) || CaptureName.StartsWith(TEXT("lighting_")))
 	{
 		if (APlayerController* CaptureController = UGameplayStatics::GetPlayerController(this, 0))
 		{
@@ -928,9 +1028,12 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 	const bool bV03Capture = PresentationCaptureMode.Equals(TEXT("g1suite"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("g2suite"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("g3suite"), ESearchCase::IgnoreCase)
+		|| PresentationCaptureMode.Equals(TEXT("g4systems"), ESearchCase::IgnoreCase)
+		|| PresentationCaptureMode.Equals(TEXT("g4lighting"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.StartsWith(TEXT("focus_"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.StartsWith(TEXT("scene_"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.StartsWith(TEXT("character_"), ESearchCase::IgnoreCase)
+		|| PresentationCaptureMode.StartsWith(TEXT("lighting_"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("hud"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("pause"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("evidence"), ESearchCase::IgnoreCase);
@@ -947,6 +1050,141 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 	++PresentationCaptureIndex;
 	FTimerHandle NextTimer;
 	GetWorldTimerManager().SetTimer(NextTimer, this, &AWhiteoutGameMode::StagePresentationCapture, 1.1f, false);
+}
+
+void AWhiteoutGameMode::RunSettingsAudit(const FString& Mode)
+{
+	UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>();
+	if (!Settings)
+	{
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation G4 SettingsAudit: subsystem unavailable"));
+		FPlatformMisc::RequestExit(false);
+		return;
+	}
+	const bool bWrite = Mode.Equals(TEXT("write"), ESearchCase::IgnoreCase);
+	if (bWrite)
+	{
+		Settings->SetFieldOfView(103.0f, this);
+		Settings->SetMasterVolume(0.76f, this);
+		Settings->SetAmbienceVolume(0.48f, this);
+		Settings->SetEffectsVolume(0.64f, this);
+		Settings->SetFeedbackVolume(0.82f, this);
+	}
+	else
+	{
+		Settings->Apply(this);
+	}
+	const float CameraFOV = Cast<AWhiteoutCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0))
+		? CastChecked<AWhiteoutCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0))->FirstPersonCamera->FieldOfView
+		: 0.0f;
+	const bool bPass = FMath::IsNearlyEqual(Settings->GetFieldOfView(), 103.0f, 0.01f)
+		&& FMath::IsNearlyEqual(Settings->GetMasterVolume(), 0.76f, 0.01f)
+		&& FMath::IsNearlyEqual(Settings->GetAmbienceVolume(), 0.48f, 0.01f)
+		&& FMath::IsNearlyEqual(Settings->GetEffectsVolume(), 0.64f, 0.01f)
+		&& FMath::IsNearlyEqual(Settings->GetFeedbackVolume(), 0.82f, 0.01f)
+		&& FMath::IsNearlyEqual(CameraFOV, 103.0f, 0.01f);
+	const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../docs/evidence_v0.3"));
+	IFileManager::Get().MakeDirectory(*Directory, true);
+	const FString OutputPath = Directory / FString::Printf(TEXT("G4_SettingsAudit_%s.json"), bWrite ? TEXT("write") : TEXT("verify"));
+	const FString Json = FString::Printf(
+		TEXT("{\n  \"schema\": \"whiteout.g4.settings.v1\",\n  \"mode\": \"%s\",\n  \"passed\": %s,\n  \"ini\": \"GameUserSettings.ini\",\n  \"field_of_view\": %.2f,\n  \"camera_field_of_view\": %.2f,\n  \"master_volume\": %.2f,\n  \"ambience_volume\": %.2f,\n  \"effects_volume\": %.2f,\n  \"feedback_volume\": %.2f\n}\n"),
+		bWrite ? TEXT("write") : TEXT("verify_after_restart"),
+		bPass ? TEXT("true") : TEXT("false"),
+		Settings->GetFieldOfView(), CameraFOV,
+		Settings->GetMasterVolume(), Settings->GetAmbienceVolume(),
+		Settings->GetEffectsVolume(), Settings->GetFeedbackVolume());
+	FFileHelper::SaveStringToFile(Json, *OutputPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation G4 SettingsAudit: mode=%s pass=%s fov=%.2f output=%s"),
+		*Mode, bPass ? TEXT("true") : TEXT("false"), Settings->GetFieldOfView(), *OutputPath);
+	FTimerHandle ExitTimer;
+	GetWorldTimerManager().SetTimer(ExitTimer, []() { FPlatformMisc::RequestExit(false); }, 0.4f, false);
+}
+
+void AWhiteoutGameMode::BeginJumpCapture()
+{
+	AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+	APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0);
+	if (!Character || !PlayerController)
+	{
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation G4 JumpAudit: player unavailable"));
+		FPlatformMisc::RequestExit(false);
+		return;
+	}
+	if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+	{
+		HUD->DismissOpening();
+		HUD->SetInterfaceVisibleForCapture(false);
+	}
+	Character->SetActorLocation(FVector(600.0f, 400.0f, 96.0f), false, nullptr, ETeleportType::TeleportPhysics);
+	PlayerController->SetControlRotation(FRotator(-7.0f, 0.0f, 0.0f));
+	Character->GetCharacterMovement()->StopMovementImmediately();
+	Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	JumpCaptureIndex = 0;
+	JumpStartZ = Character->GetActorLocation().Z;
+	JumpMaxZ = JumpStartZ;
+	bJumpOverlapDetected = false;
+	JumpHeightSamples.Reset();
+	Character->Jump();
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation G4 JumpAudit: started z=%.2f jump_z=%.2f gravity=%.2f"),
+		JumpStartZ, Character->GetCharacterMovement()->JumpZVelocity, Character->GetCharacterMovement()->GravityScale);
+	FTimerHandle FirstFrameTimer;
+	GetWorldTimerManager().SetTimer(FirstFrameTimer, this, &AWhiteoutGameMode::CaptureJumpFrame, 0.05f, false);
+}
+
+void AWhiteoutGameMode::CaptureJumpFrame()
+{
+	AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+	if (!Character)
+	{
+		FPlatformMisc::RequestExit(false);
+		return;
+	}
+	const float CurrentZ = Character->GetActorLocation().Z;
+	JumpMaxZ = FMath::Max(JumpMaxZ, CurrentZ);
+	JumpHeightSamples.Add(CurrentZ - JumpStartZ);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(WhiteoutJumpAudit), false, Character);
+	const float CapsuleRadius = FMath::Max(1.0f, Character->GetCapsuleComponent()->GetScaledCapsuleRadius() - 1.0f);
+	const float CapsuleHalfHeight = FMath::Max(CapsuleRadius, Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - 1.0f);
+	bJumpOverlapDetected |= GetWorld()->OverlapBlockingTestByChannel(
+		Character->GetActorLocation(),
+		Character->GetActorQuat(),
+		ECC_Pawn,
+		FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight),
+		QueryParams);
+	const FString SequenceDirectory = FPaths::ConvertRelativePathToFull(
+		FPaths::ProjectDir() / TEXT("../docs/evidence_v0.3/jump_sequence"));
+	IFileManager::Get().MakeDirectory(*SequenceDirectory, true);
+	const FString ScreenshotPath = SequenceDirectory / FString::Printf(TEXT("Jump_%03d.png"), JumpCaptureIndex);
+	FScreenshotRequest::RequestScreenshot(ScreenshotPath, false, false, false, FIntRect(), true);
+	const bool bLanded = JumpCaptureIndex >= 6 && Character->GetCharacterMovement()->IsMovingOnGround();
+	const bool bTimedOut = JumpCaptureIndex >= 30;
+	++JumpCaptureIndex;
+	if (!bLanded && !bTimedOut)
+	{
+		FTimerHandle NextFrameTimer;
+		GetWorldTimerManager().SetTimer(NextFrameTimer, this, &AWhiteoutGameMode::CaptureJumpFrame, 0.05f, false);
+		return;
+	}
+	const float JumpHeight = JumpMaxZ - JumpStartZ;
+	const float AirTime = JumpCaptureIndex * 0.05f;
+	const bool bPass = bLanded && !bJumpOverlapDetected && JumpHeight >= 40.0f && JumpHeight <= 70.0f && AirTime <= 0.85f;
+	const FString EvidenceDirectory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../docs/evidence_v0.3"));
+	IFileManager::Get().MakeDirectory(*EvidenceDirectory, true);
+	const FString OutputPath = EvidenceDirectory / TEXT("G4_JumpAudit.json");
+	const FString Json = FString::Printf(
+		TEXT("{\n  \"schema\": \"whiteout.g4.jump.v1\",\n  \"passed\": %s,\n  \"landed\": %s,\n  \"blocking_overlap_detected\": %s,\n  \"jump_z_velocity\": %.2f,\n  \"gravity_scale\": %.2f,\n  \"start_z_cm\": %.2f,\n  \"max_z_cm\": %.2f,\n  \"height_cm\": %.2f,\n  \"air_time_seconds\": %.2f,\n  \"captured_frames\": %d,\n  \"ceiling_height_cm\": 365.0,\n  \"capsule_half_height_cm\": %.2f\n}\n"),
+		bPass ? TEXT("true") : TEXT("false"), bLanded ? TEXT("true") : TEXT("false"),
+		bJumpOverlapDetected ? TEXT("true") : TEXT("false"),
+		Character->GetCharacterMovement()->JumpZVelocity,
+		Character->GetCharacterMovement()->GravityScale,
+		JumpStartZ, JumpMaxZ, JumpHeight, AirTime, JumpCaptureIndex,
+		Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	FFileHelper::SaveStringToFile(Json, *OutputPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation G4 JumpAudit: pass=%s height=%.2fcm airtime=%.2fs frames=%d overlap=%s"),
+		bPass ? TEXT("true") : TEXT("false"), JumpHeight, AirTime, JumpCaptureIndex,
+		bJumpOverlapDetected ? TEXT("true") : TEXT("false"));
+	FTimerHandle ExitTimer;
+	GetWorldTimerManager().SetTimer(ExitTimer, []() { FPlatformMisc::RequestExit(false); }, 0.6f, false);
 }
 
 void AWhiteoutGameMode::BeginBaselineCapture()

@@ -120,6 +120,11 @@ void AWhiteoutHUD::ShowComponentGalleryForCapture()
 	if (HUDWidget) HUDWidget->ShowComponentGalleryForCapture();
 }
 
+void AWhiteoutHUD::ShowSettingsForCapture()
+{
+	if (HUDWidget) HUDWidget->ShowSettingsForCapture();
+}
+
 void AWhiteoutHUD::SetOpeningCaptureStage(const int32 Stage)
 {
 	if (HUDWidget) HUDWidget->SetOpeningCaptureStage(Stage);
