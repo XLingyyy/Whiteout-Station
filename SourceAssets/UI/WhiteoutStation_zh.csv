@@ -30,3 +30,264 @@ ending_task_success,"信号穿过风雪"
 ending_survival_wait,"等待天明"
 ending_cost_uncontrolled,"求救成功，代价失控"
 ending_total_collapse,"气象站失守"
+ui_initial_message,"靠近带有蓝色轮廓的设备，按 F 查看行动。"
+ui_help,"WASD 移动　鼠标观察　F 预览/确认　Q 对话方式　1–6 选择　E 证据板　Enter 结束　R 重开　Esc 暂停/退出"
+ui_opening,"风雪站：断电前夜
+
+暴风雪正在封锁山区，备用电池只够支撑最后一轮抢修。
+修复发电机，校准室外天线，并把求救信号送出去。
+
+你有 8 点行动力。跨过中段后，备用电池会发生一次故障。
+每个付费行动都会先显示成本、条件与影响；再次按 F 才会确认。
+
+WASD 移动 · 鼠标观察 · F 交互 · E 查看证据 · Esc 暂停/退出
+
+按空格跳过"
+ui_crisis_normal,"暴风雪逼近｜电力正在衰减"
+ui_crisis_triggered,"备用电池故障｜仅保留应急负载"
+ui_top_format,"风雪站：断电前夜
+行动力 {0}  {1} / 8　｜　阶段：{2}　｜　{3}"
+ui_objective_format,"首要目标
+修复发电机　{0} / 2
+校准天线　　{1} / 1
+求救信号　　{2}
+
+现有储备
+燃料 {3}　食品 {4}　药品 {5}
+替代继电器 {6}　保温包 {7}
+证据 {8} 条　厨房供暖 {9}"
+ui_sent,"已发送"
+ui_not_sent,"未发送"
+ui_failed,"失败"
+ui_discovered,"已发现"
+ui_unknown,"未知"
+ui_intact,"完好"
+ui_dismantled,"已拆解"
+ui_crew_header,"队员状态｜仅显示等级
+"
+ui_crew_line,"
+{0}
+健康 {1}　体温 {2}　精力 {3}"
+ui_crew_trust,"　信任 {0}"
+ui_preview_body_format,"行动成本
+行动力 ×{0}
+
+执行者
+{1}
+
+资源成本
+{2}
+
+可预见风险
+{3}
+
+预期结果
+{4}
+
+当前前置条件满足；确认后立即结算。"
+ui_preview_footer,"再次按 F 确认执行　｜　移开视线取消"
+ui_risk_none,"未发现额外风险。"
+ui_rejection_format,"现在不能执行
+{0}
+
+怎样改变条件
+{1}"
+ui_rejection_footer,"移开视线或按 F 关闭提示"
+ui_feedback_committed,"已执行：{0}　｜　行动力 {1} → {2}"
+ui_feedback_crisis,"　｜　备用电池电压崩溃，应急灯已接管"
+ui_feedback_rejected,"未执行：{0}　｜　{1}　｜　{2}"
+executor_player,"你｜值班负责人"
+executor_gu_dialogue,"你与顾衡"
+executor_ye_dialogue,"你与叶澄"
+executor_treatment,"叶澄主治，由你确认物资"
+executor_repair,"你主导，顾衡按合作状态协助"
+resource_none,"无直接物资消耗"
+resource_fuel_one,"燃料 ×1"
+resource_food_allocation,"食品 1–2 份（按当前分配）"
+resource_treatment,"药品 ×1，或已发现的保温包 ×1"
+resource_kitchen_heater,"厨房加热器完整性（不可逆）"
+ui_evidence_title,"证据板　　　　　　　　　　　　　　　　　　　按 E 关闭
+
+"
+ui_evidence_system,"一、系统证据｜设备记录与现场物证
+"
+ui_evidence_empty,"　尚未取得证据。
+"
+ui_evidence_claims,"
+二、角色说法｜尚待交叉核验
+"
+ui_claims_empty,"　当前没有待核验说法。
+"
+ui_evidence_confirmed,"
+三、已证实事实｜可用于行动判断
+"
+ui_confirmed_empty,"　尚无已证实事实。
+"
+ui_evidence_promises,"
+四、承诺追踪｜兑现状态
+"
+ui_promises_empty,"　当前没有承诺。
+"
+ui_promise_pending,"进行中"
+ui_promise_fulfilled,"已兑现"
+ui_promise_broken,"已违背"
+ui_dialogue_title,"选择对话方式　　　　　　　　　　　　　按 Q 关闭
+
+"
+dialogue_ask,"询问　｜　获取对方愿意公开的信息"
+dialogue_challenge,"质疑　｜　用现有证据追问矛盾"
+dialogue_promise_heat,"承诺：恢复维修间供暖"
+dialogue_promise_medicine,"承诺：为顾衡保留药品"
+dialogue_promise_records,"承诺：保存完整维修记录"
+dialogue_reassure,"安抚　｜　降低压力，争取合作"
+ui_dialogue_footer,"选择后看向顾衡或叶澄，按 F 查看这次交谈的成本与影响。所有选项均有明确意图，不会暗中循环。"
+score_task,"任务质量"
+score_people,"人员状态"
+score_reserves,"有效储备"
+score_social,"社会稳定"
+score_information,"信息责任"
+score_attr_task,"发电机、天线、信号与剩余行动力"
+score_attr_people,"三人的健康、体温、饥饿与精力"
+score_attr_reserves,"燃料、食品、医疗物资与厨房供暖"
+score_attr_social,"信任变化与承诺兑现情况"
+score_attr_information,"证据核验、记录保存与责任选择"
+ui_results_header_format,"行动复盘
+{0}
+{1}
+
+总分 {2} / 100　｜　评级 {3}
+
+最终状态
+发电机 {4} / 2　天线 {5} / 1　信号 {6}　剩余行动力 {7}"
+ui_results_crew_header,"三人最终状态
+"
+ui_results_timeline_header,"完整因果时间线
+"
+ui_crisis_tag,"　［备用电池故障］"
+ui_timeline_empty,"　没有已提交的行动。
+"
+ui_results_advice_format,"下一轮建议
+{0}
+
+按 R 开始新一轮　｜　Esc 打开退出菜单"
+advice_task_success,"尝试用更少行动力完成同样目标，并保留更多燃料与医疗物资。"
+advice_survival_wait,"优先确认故障证据，再把发电机和天线串成一条可执行路线。"
+advice_cost_uncontrolled,"发信前先处理失温、伤势与承诺；任务完成不等于代价可控。"
+advice_total_collapse,"先恢复一处关键供暖并取得维修记录，避免在条件不足时连续冒险。"
+action_unknown,"未知行动"
+impact_investigate_generator_log,"确认故障记录并获得与维修有关的证据。"
+impact_send_signal,"在发电机与天线就绪后发出求救信号；该行动不消耗行动力。"
+impact_inspect_control_cabinet,"检查继电器损坏状况，推进替代部件线索。"
+impact_heat_repair_room,"消耗燃料改善维修环境，也可能兑现对顾衡的承诺。"
+impact_repair_generator,"推进发电机修复；需要线索、部件或顾衡配合。"
+impact_forced_self_repair,"无需顾衡配合尝试维修，但会让你承担更高的人身代价。"
+impact_talk_gu_heng,"根据当前对话意图获取信息、争取配合或记录承诺。"
+impact_heat_medical_room,"消耗燃料恢复医务室治疗条件。"
+impact_treat_gu_heng,"消耗医疗资源稳定顾衡，为后续维修创造条件。"
+impact_talk_ye_cheng,"获取诊断、物资或责任相关信息。"
+impact_distribute_food,"把有限口粮分给你和顾衡，改善体力并影响关系。"
+impact_dismantle_kitchen_heater,"牺牲厨房供暖换取可用于发电机的替代继电器。"
+impact_calibrate_antenna,"在室外完成天线校准，为发送信号做准备。"
+impact_default,"该行动会写入一次确定性状态事务。"
+reason_ok_cause,"条件满足。"
+reason_committed_cause,"行动已经完成。"
+reason_unknown_action_cause,"这个交互点暂时不可用。"
+reason_phase_locked_cause,"当前阶段不能执行这项行动。"
+reason_insufficient_ap_cause,"剩余行动力不足。"
+reason_already_completed_cause,"这项工作已经完成。"
+reason_use_limit_cause,"这项行动的使用次数已经耗尽。"
+reason_duplicate_cause,"这项行动已被系统记录，无需重复提交。"
+reason_already_heated_cause,"该区域的供暖已经恢复。"
+reason_needs_fuel_cause,"当前没有足够燃料供暖。"
+reason_invalid_food_cause,"口粮分配超出了现有储备。"
+reason_empty_food_cause,"尚未选择要分配的口粮。"
+reason_insufficient_food_cause,"食品储备不足。"
+reason_needs_medical_heat_cause,"医务室过冷，无法安全治疗。"
+reason_needs_diagnosis_cause,"还缺少叶澄的明确诊断。"
+reason_heat_pack_hidden_cause,"保温包的位置尚未被发现。"
+reason_invalid_treatment_cause,"选择的治疗资源当前不可用。"
+reason_needs_medicine_cause,"药品已经耗尽。"
+reason_needs_heat_pack_cause,"需要先取得隐藏的保温包。"
+reason_needs_relay_evidence_cause,"还不能确认替代继电器是否兼容。"
+reason_heater_dismantled_cause,"厨房加热器已经被拆解。"
+reason_generator_repaired_cause,"发电机已经修复。"
+reason_gu_critical_cause,"顾衡的身体状况太差，无法参与维修。"
+reason_needs_cooperation_cause,"顾衡还没有同意配合维修。"
+reason_needs_records_cause,"缺少发电机运行记录，无法判断故障。"
+reason_self_repair_used_cause,"你已经承担过一次强行维修，不能再次冒险。"
+reason_needs_generator_cause,"发电机尚未修复。"
+reason_antenna_done_cause,"天线已经校准。"
+reason_player_cold_cause,"你已经严重失温，无法继续室外作业。"
+reason_needs_antenna_cause,"天线尚未校准。"
+reason_default_cause,"当前条件不满足。"
+reason_insufficient_ap_next,"改选低成本行动，或在行动力归零后使用免费的发信窗口。"
+reason_needs_fuel_next,"保留或寻找燃料，再回到供暖控制器。"
+reason_needs_medical_heat_next,"先使用医务室供暖控制器。"
+reason_needs_diagnosis_next,"先与叶澄交谈并询问顾衡的伤情。"
+reason_heat_pack_hidden_next,"从叶澄处取得物资线索。"
+reason_needs_medicine_next,"改用已发现的保温包，或选择不消耗药品的路线。"
+reason_needs_heat_pack_next,"与叶澄交谈，确认隐藏保温包的位置。"
+reason_needs_relay_evidence_next,"检查控制柜，或取得能证明继电器兼容的记录。"
+reason_gu_critical_next,"先恢复医务室供暖并治疗顾衡。"
+reason_needs_cooperation_next,"与顾衡交谈，询问、安抚或作出可兑现的承诺。"
+reason_needs_records_next,"返回控制室调查发电机运行记录。"
+reason_needs_generator_next,"先完成发电机两阶段维修。"
+reason_player_cold_next,"留在室内恢复状态，避免继续消耗体温。"
+reason_needs_antenna_next,"前往室外天线区完成校准。"
+reason_phase_locked_next,"关闭当前界面或进入下一阶段后再试。"
+reason_default_next,"检查目标、资源、证据和队员状态后选择下一步。"
+evidence_generator_log,"发电机运行记录：电压波动始于继电器损坏之后。"
+evidence_relay_burn_pattern,"控制柜烧蚀痕迹：旧继电器已经失效。"
+evidence_relay_compatibility,"替代继电器标牌：规格可以匹配发电机。"
+evidence_gu_diagnosis,"顾衡诊断：失温与外伤正在影响其工作能力。"
+evidence_heat_pack,"隐藏物资：医务柜后方留有一只保温包。"
+evidence_antenna_ice,"天线结冰：方位机构需要现场重新校准。"
+evidence_records_preserved,"维修记录已保存，可追溯故障与责任。"
+evidence_default,"尚未整理的现场证据。"
+fact_generator_fault,"发电机故障与继电器损坏有关"
+fact_relay_compatible,"厨房加热器中的继电器可以替代"
+fact_gu_condition,"顾衡需要治疗后才能稳定工作"
+fact_heat_pack_location,"医务室藏有应急保温包"
+fact_antenna_calibration,"天线必须在室外重新校准"
+fact_records_accountability,"保留维修记录会影响信息责任"
+fact_default,"未命名事实"
+promise_heat_repair_room,"恢复维修间供暖"
+promise_reserve_medicine,"为顾衡保留药品"
+promise_keep_records,"保存完整维修记录"
+promise_default,"未说明的承诺"
+phase_opening,"事发"
+phase_action,"抢修"
+phase_resolving,"执行中"
+phase_dialogue,"交涉"
+phase_crisis,"备用电池故障"
+phase_post_action,"最后窗口"
+phase_ending_choice,"最后决定"
+phase_ending,"结局"
+phase_results,"复盘"
+phase_default,"抢修"
+summary_task_success,"求救信号已经发出，人员与储备仍在可控范围内。"
+summary_survival_wait,"信号未能发出，你们只能依靠现有储备等待风暴减弱。"
+summary_cost_uncontrolled,"外界收到了信号，但人员、物资或关系付出了沉重代价。"
+summary_total_collapse,"电力、任务与人员状态同时越过了安全边界。"
+character_gu_heng,"顾衡｜工程师｜41 岁"
+character_ye_cheng,"叶澄｜医生｜31 岁"
+character_player,"你｜值班负责人"
+level_stable,"稳定"
+level_strained,"吃紧"
+level_danger,"危险"
+level_critical,"危急"
+trust_trusted,"信任"
+trust_neutral,"中立"
+trust_guarded,"戒备"
+trust_hostile,"敌对"
+knowledge_confirmed,"已确认"
+knowledge_suspected,"有根据的推测"
+knowledge_claimed,"单方说法"
+knowledge_unknown,"未知"
+ui_gallery_title,"界面控件测试页｜Dev_TestMap"
+ui_gallery_typography,"标题 30　正文 18　辅助 15｜Noto Sans SC Regular / Bold"
+ui_gallery_labels,"状态标签　［可执行］　［条件不足］　［危机］　［已完成］"
+ui_gallery_buttons,"按钮状态｜默认 / 聚焦 / 危险操作"
+ui_gallery_primary,"确认行动"
+ui_gallery_secondary,"查看证据"
+ui_gallery_toast,"行动已记录｜行动力 6 → 5｜证据板新增 1 条"

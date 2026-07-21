@@ -23,9 +23,15 @@ private:
 	TArray<FRotator> BaselineRotations;
 	TArray<FString> BaselineNames;
 	int32 BaselineCaptureIndex = 0;
+	TArray<FString> PresentationCaptureNames;
+	FString PresentationCaptureMode;
+	int32 PresentationCaptureIndex = 0;
 
 	void RunAutomationRoute(const FString& RouteName);
 	void BeginBaselineCapture();
 	void StageBaselineView();
 	void CaptureBaselineView();
+	void BeginPresentationCapture();
+	void StagePresentationCapture();
+	void CapturePresentationFrame();
 };

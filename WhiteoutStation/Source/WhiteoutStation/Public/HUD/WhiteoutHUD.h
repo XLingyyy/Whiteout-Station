@@ -25,6 +25,10 @@ public:
 	void SetSystemMessage(const FString& Message);
 	void DismissOpening();
 	void TogglePauseMenu();
+	void ResetPresentationCapture();
+	void SetPresentationCaptureState(const FWSGameState& State);
+	void ShowEvidenceForCapture();
+	void ShowComponentGalleryForCapture();
 
 private:
 	UPROPERTY(Transient)

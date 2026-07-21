@@ -28,7 +28,7 @@ def ensure_data_asset(name: str, asset_class, refresh_properties: tuple[str, ...
         defaults = unreal.get_default_object(asset_class)
         for property_name in refresh_properties:
             asset.set_editor_property(property_name, defaults.get_editor_property(property_name))
-    unreal.EditorAssetLibrary.save_loaded_asset(asset)
+    unreal.EditorAssetLibrary.save_loaded_asset(asset, False)
     unreal.log(f"WhiteoutStation v0.2: populated {asset_path}")
     return asset
 
@@ -45,10 +45,12 @@ def ensure_string_table() -> object:
         )
     if not string_table:
         raise RuntimeError(f"Unable to create {asset_path}")
+    string_table.modify(True)
     table_id = unreal.StringTableLibrary.get_table_id(string_table)
     if not unreal.StringTableLibrary.import_table_from_csv_file(table_id, str(CSV_PATH)):
         raise RuntimeError(f"Unable to import {CSV_PATH} into {table_id}")
-    unreal.EditorAssetLibrary.save_loaded_asset(string_table)
+    string_table.modify(True)
+    unreal.EditorAssetLibrary.save_loaded_asset(string_table, False)
     unreal.log(f"WhiteoutStation v0.2: populated {asset_path} as table {table_id}")
     return string_table
 

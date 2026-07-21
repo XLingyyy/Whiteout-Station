@@ -8,6 +8,8 @@
 class UBorder;
 class UButton;
 class UCanvasPanel;
+class UProgressBar;
+class UScrollBox;
 class UTextBlock;
 class UVerticalBox;
 class UFont;
@@ -32,6 +34,10 @@ public:
 	void DismissOpening();
 	void TogglePauseMenu();
 	bool IsPauseMenuVisible() const;
+	void ResetPresentationCapture();
+	void SetPresentationCaptureState(const FWSGameState& State);
+	void ShowEvidenceForCapture();
+	void ShowComponentGalleryForCapture();
 
 private:
 	UPROPERTY(Transient)
@@ -68,6 +74,9 @@ private:
 	TObjectPtr<UTextBlock> EvidenceText;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UScrollBox> EvidenceScroll;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBorder> DialogueBorder;
 
 	UPROPERTY(Transient)
@@ -83,16 +92,42 @@ private:
 	TObjectPtr<UTextBlock> ResultsText;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ResultsTimelineText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ResultsCrewText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ResultsAdviceText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UScrollBox> ResultsScroll;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> ResultScoreTexts;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UProgressBar>> ResultScoreBars;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBorder> PauseBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> ComponentGalleryBorder;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFont> UIFontFamily;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UObject> UIStringTableAsset;
+
 	FText InteractionPrompt;
-	FString SystemMessage = TEXT("靠近带有蓝色轮廓的设备，按 F 查看行动。");
+	FString SystemMessage;
 	float OpeningElapsed = 0.0f;
 	bool bEvidenceVisible = false;
 	bool bDialogueVisible = false;
+	bool bPresentationCaptureOverride = false;
+	FWSGameState PresentationCaptureState;
 
 	void BuildWidgetTree();
 	void InitializeUIFontFamily();
@@ -104,6 +139,7 @@ private:
 	UButton* MakeButton(UVerticalBox* Box, const FText& Label, const FName Name);
 	FSlateFontInfo UIFont(int32 Size, bool bBold = false) const;
 	static FString APCells(int32 Remaining);
+	static float ScoreRatio(float Value, float Maximum);
 
 	UFUNCTION()
 	void ResumeGame();

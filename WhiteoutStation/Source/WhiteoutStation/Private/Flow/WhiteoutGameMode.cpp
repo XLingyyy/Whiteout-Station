@@ -11,11 +11,117 @@
 #include "Misc/Paths.h"
 #include "Player/WhiteoutCharacter.h"
 #include "Player/WhiteoutPlayerController.h"
+#include "Presentation/WSPresentationText.h"
 #include "Sound/SoundBase.h"
 #include "State/WindStationStateSubsystem.h"
 #include "World/WhiteoutStationBuilder.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+
+namespace
+{
+	void AddPresentationEvent(FWSGameState& State, const TCHAR* ActionId, const int32 APBefore, const int32 APAfter, const bool bCrisis = false)
+	{
+		FWSEventRecord& Event = State.EventLog.Emplace_GetRef();
+		Event.Index = State.EventLog.Num();
+		Event.ActionId = FName(ActionId);
+		Event.APBefore = APBefore;
+		Event.APAfter = APAfter;
+		Event.ReasonCode = EWSReasonCode::Committed;
+		Event.bCrisisTriggered = bCrisis;
+	}
+
+	FWSGameState MakePresentationResultsState(const FWSGameState& BaseState, const EWSEndingType Ending)
+	{
+		FWSGameState State = BaseState;
+		State.Phase = EWSGamePhase::Results;
+		State.Ending = Ending;
+		State.EventLog.Reset();
+		State.bMidCrisisTriggered = true;
+		State.Score.Rating = TEXT("C");
+		State.Tasks = FWSTaskState();
+		State.ActionPoints = 0;
+
+		if (Ending == EWSEndingType::TaskSuccess)
+		{
+			State.Tasks.GeneratorProgress = 2;
+			State.Tasks.AntennaCalibration = 1;
+			State.Tasks.bSignalSent = true;
+			State.ActionPoints = 1;
+			State.Score.TaskQuality = 29.0f;
+			State.Score.People = 23.4f;
+			State.Score.EffectiveReserves = 16.0f;
+			State.Score.SocialStability = 9.0f;
+			State.Score.InformationResponsibility = 7.0f;
+			State.Score.Total = 84.4f;
+			State.Score.Rating = TEXT("A");
+			AddPresentationEvent(State, TEXT("investigate_generator_log"), 8, 7);
+			AddPresentationEvent(State, TEXT("inspect_control_cabinet"), 7, 6);
+			AddPresentationEvent(State, TEXT("talk_gu_heng"), 6, 5);
+			AddPresentationEvent(State, TEXT("heat_repair_room"), 5, 4, true);
+			AddPresentationEvent(State, TEXT("repair_generator"), 4, 3);
+			AddPresentationEvent(State, TEXT("calibrate_antenna"), 3, 1);
+			AddPresentationEvent(State, TEXT("send_signal"), 1, 1);
+		}
+		else if (Ending == EWSEndingType::SurvivalWait)
+		{
+			State.Tasks.GeneratorProgress = 1;
+			State.Score.TaskQuality = 10.0f;
+			State.Score.People = 24.5f;
+			State.Score.EffectiveReserves = 18.0f;
+			State.Score.SocialStability = 7.2f;
+			State.Score.InformationResponsibility = 3.0f;
+			State.Score.Total = 62.7f;
+			State.Score.Rating = TEXT("C");
+			AddPresentationEvent(State, TEXT("talk_ye_cheng"), 8, 7);
+			AddPresentationEvent(State, TEXT("heat_medical_room"), 7, 6);
+			AddPresentationEvent(State, TEXT("investigate_generator_log"), 6, 5);
+			AddPresentationEvent(State, TEXT("repair_generator"), 5, 4, true);
+		}
+		else if (Ending == EWSEndingType::CostUncontrolled)
+		{
+			State.Tasks.GeneratorProgress = 2;
+			State.Tasks.AntennaCalibration = 1;
+			State.Tasks.bSignalSent = true;
+			State.Score.TaskQuality = 25.0f;
+			State.Score.People = 8.5f;
+			State.Score.EffectiveReserves = 4.0f;
+			State.Score.SocialStability = 2.0f;
+			State.Score.InformationResponsibility = 1.0f;
+			State.Score.Total = 40.5f;
+			State.Score.Rating = TEXT("D");
+			if (FWSCharacterState* Player = State.Characters.Find(EWSCharacterId::Player))
+			{
+				Player->Health = 26.0f;
+				Player->Temperature = 24.0f;
+			}
+			AddPresentationEvent(State, TEXT("forced_self_repair"), 8, 6);
+			AddPresentationEvent(State, TEXT("dismantle_kitchen_heater"), 6, 5);
+			AddPresentationEvent(State, TEXT("repair_generator"), 5, 4, true);
+			AddPresentationEvent(State, TEXT("calibrate_antenna"), 4, 2);
+			AddPresentationEvent(State, TEXT("send_signal"), 2, 2);
+		}
+		else
+		{
+			State.Score.TaskQuality = 0.0f;
+			State.Score.People = 5.0f;
+			State.Score.EffectiveReserves = 2.0f;
+			State.Score.SocialStability = 1.0f;
+			State.Score.InformationResponsibility = 0.0f;
+			State.Score.Total = 8.0f;
+			State.Score.Rating = TEXT("D");
+			for (TPair<EWSCharacterId, FWSCharacterState>& Pair : State.Characters)
+			{
+				Pair.Value.Health = 25.0f;
+				Pair.Value.Temperature = 22.0f;
+			}
+			AddPresentationEvent(State, TEXT("forced_self_repair"), 8, 6);
+			AddPresentationEvent(State, TEXT("distribute_food"), 6, 5);
+			AddPresentationEvent(State, TEXT("talk_gu_heng"), 5, 4, true);
+		}
+		return State;
+	}
+}
 
 AWhiteoutGameMode::AWhiteoutGameMode()
 {
@@ -86,6 +192,129 @@ void AWhiteoutGameMode::BeginPlay()
 		FTimerHandle BaselineTimer;
 		GetWorldTimerManager().SetTimer(BaselineTimer, this, &AWhiteoutGameMode::BeginBaselineCapture, 2.0f, false);
 	}
+
+	if (FParse::Value(FCommandLine::Get(), TEXT("WhiteoutPresentationCapture="), PresentationCaptureMode))
+	{
+		FTimerHandle PresentationTimer;
+		GetWorldTimerManager().SetTimer(PresentationTimer, this, &AWhiteoutGameMode::BeginPresentationCapture, 2.0f, false);
+	}
+}
+
+void AWhiteoutGameMode::BeginPresentationCapture()
+{
+	PresentationCaptureNames.Reset();
+	if (PresentationCaptureMode.Equals(TEXT("suite"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("opening"), TEXT("hud"), TEXT("components"), TEXT("preview"),
+			TEXT("reject_generator"), TEXT("reject_medical"), TEXT("reject_relay"),
+			TEXT("dialogue"), TEXT("evidence"),
+			TEXT("results_task"), TEXT("results_survival"), TEXT("results_cost"), TEXT("results_collapse")};
+	}
+	else
+	{
+		PresentationCaptureNames.Add(PresentationCaptureMode);
+	}
+	PresentationCaptureIndex = 0;
+	StagePresentationCapture();
+}
+
+void AWhiteoutGameMode::StagePresentationCapture()
+{
+	if (!PresentationCaptureNames.IsValidIndex(PresentationCaptureIndex))
+	{
+		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: presentation capture completed"));
+		FPlatformMisc::RequestExit(false);
+		return;
+	}
+	APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0);
+	AWhiteoutHUD* HUD = PlayerController ? Cast<AWhiteoutHUD>(PlayerController->GetHUD()) : nullptr;
+	UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	if (!HUD || !StateSubsystem)
+	{
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation v0.2: presentation capture could not find HUD/state"));
+		FPlatformMisc::RequestExit(false);
+		return;
+	}
+
+	const FString& CaptureName = PresentationCaptureNames[PresentationCaptureIndex];
+	HUD->ResetPresentationCapture();
+	if (!CaptureName.Equals(TEXT("opening")))
+	{
+		HUD->DismissOpening();
+	}
+
+	if (CaptureName.Equals(TEXT("preview")))
+	{
+		FWSActionRequest Request;
+		Request.ActionId = TEXT("investigate_generator_log");
+		const FWSActionPreview Preview = StateSubsystem->PreviewAction(Request);
+		HUD->ShowActionPreview(FWSPresentationText::ActionLabel(Request.ActionId), Preview);
+	}
+	else if (CaptureName.Equals(TEXT("components")))
+	{
+		HUD->ShowComponentGalleryForCapture();
+	}
+	else if (CaptureName.StartsWith(TEXT("reject_")))
+	{
+		FWSActionRequest Request;
+		if (CaptureName.Equals(TEXT("reject_generator"))) Request.ActionId = TEXT("calibrate_antenna");
+		else if (CaptureName.Equals(TEXT("reject_medical")))
+		{
+			Request.ActionId = TEXT("treat_gu_heng");
+			Request.TreatmentResource = EWSResourceType::Medicine;
+		}
+		else Request.ActionId = TEXT("dismantle_kitchen_heater");
+		const FWSActionPreview Preview = StateSubsystem->PreviewAction(Request);
+		HUD->ShowActionPreview(FWSPresentationText::ActionLabel(Request.ActionId), Preview);
+	}
+	else if (CaptureName.Equals(TEXT("dialogue")))
+	{
+		HUD->ShowDialogueMenu(2, true);
+	}
+	else if (CaptureName.Equals(TEXT("evidence")))
+	{
+		FWSGameState EvidenceState = StateSubsystem->GetStateSnapshot();
+		EvidenceState.Evidence = {TEXT("generator_log"), TEXT("relay_burn_pattern"), TEXT("relay_compatibility")};
+		EvidenceState.PlayerKnowledge.Add(TEXT("generator_fault"), EWSKnowledgeLevel::Confirmed);
+		EvidenceState.PlayerKnowledge.Add(TEXT("relay_compatible"), EWSKnowledgeLevel::Confirmed);
+		EvidenceState.PlayerKnowledge.Add(TEXT("gu_heng_condition"), EWSKnowledgeLevel::Suspected);
+		EvidenceState.PlayerKnowledge.Add(TEXT("records_accountability"), EWSKnowledgeLevel::Claimed);
+		FWSPromiseRecord& Promise = EvidenceState.Promises.Emplace_GetRef();
+		Promise.PromiseId = TEXT("capture_promise");
+		Promise.ConditionId = TEXT("heat_repair_room");
+		Promise.bRecognized = true;
+		HUD->SetPresentationCaptureState(EvidenceState);
+		HUD->ShowEvidenceForCapture();
+	}
+	else if (CaptureName.StartsWith(TEXT("results_")))
+	{
+		EWSEndingType Ending = EWSEndingType::TaskSuccess;
+		if (CaptureName.Equals(TEXT("results_survival"))) Ending = EWSEndingType::SurvivalWait;
+		else if (CaptureName.Equals(TEXT("results_cost"))) Ending = EWSEndingType::CostUncontrolled;
+		else if (CaptureName.Equals(TEXT("results_collapse"))) Ending = EWSEndingType::TotalCollapse;
+		HUD->SetPresentationCaptureState(MakePresentationResultsState(StateSubsystem->GetStateSnapshot(), Ending));
+	}
+
+	FTimerHandle SettleTimer;
+	GetWorldTimerManager().SetTimer(SettleTimer, this, &AWhiteoutGameMode::CapturePresentationFrame, 0.45f, false);
+}
+
+void AWhiteoutGameMode::CapturePresentationFrame()
+{
+	const FIntPoint Size = GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport
+		? GEngine->GameViewport->Viewport->GetSizeXY()
+		: FIntPoint(0, 0);
+	const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../docs/baseline_v0.2"));
+	IFileManager::Get().MakeDirectory(*Directory, true);
+	const FString ScreenshotPath = Directory / FString::Printf(
+		TEXT("UI_%s_%dx%d.png"),
+		*PresentationCaptureNames[PresentationCaptureIndex], Size.X, Size.Y);
+	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false, false, FIntRect(), true);
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: requested presentation screenshot %s"), *ScreenshotPath);
+	++PresentationCaptureIndex;
+	FTimerHandle NextTimer;
+	GetWorldTimerManager().SetTimer(NextTimer, this, &AWhiteoutGameMode::StagePresentationCapture, 1.1f, false);
 }
 
 void AWhiteoutGameMode::BeginBaselineCapture()

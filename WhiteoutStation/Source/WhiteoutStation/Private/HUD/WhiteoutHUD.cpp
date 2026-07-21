@@ -65,3 +65,23 @@ void AWhiteoutHUD::TogglePauseMenu()
 {
 	if (HUDWidget) HUDWidget->TogglePauseMenu();
 }
+
+void AWhiteoutHUD::ResetPresentationCapture()
+{
+	if (HUDWidget) HUDWidget->ResetPresentationCapture();
+}
+
+void AWhiteoutHUD::SetPresentationCaptureState(const FWSGameState& State)
+{
+	if (HUDWidget) HUDWidget->SetPresentationCaptureState(State);
+}
+
+void AWhiteoutHUD::ShowEvidenceForCapture()
+{
+	if (HUDWidget) HUDWidget->ShowEvidenceForCapture();
+}
+
+void AWhiteoutHUD::ShowComponentGalleryForCapture()
+{
+	if (HUDWidget) HUDWidget->ShowComponentGalleryForCapture();
+}
