@@ -12,7 +12,8 @@ namespace
 	FText TableText(const TCHAR* Key, const TCHAR* Fallback)
 	{
 		const FText Value = FText::FromStringTable(UITextTable, FTextKey(Key));
-		return Value.IsEmpty() ? Text(Fallback) : Value;
+		const FString Resolved = Value.ToString();
+		return Value.IsEmpty() || Resolved.Contains(TEXT("MISSING STRING TABLE ENTRY")) ? Text(Fallback) : Value;
 	}
 }
 
@@ -20,7 +21,8 @@ FText FWSPresentationText::UI(const FName Key, const TCHAR* Fallback)
 {
 	const FString KeyString = Key.ToString();
 	const FText Value = FText::FromStringTable(UITextTable, FTextKey(KeyString));
-	return Value.IsEmpty() ? Text(Fallback) : Value;
+	const FString Resolved = Value.ToString();
+	return Value.IsEmpty() || Resolved.Contains(TEXT("MISSING STRING TABLE ENTRY")) ? Text(Fallback) : Value;
 }
 
 FText FWSPresentationText::ActionLabel(const FName ActionId)

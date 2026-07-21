@@ -1,10 +1,12 @@
 #include "Flow/WhiteoutGameMode.h"
 
+#include "Algo/Sort.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/PlatformTime.h"
 #include "HAL/FileManager.h"
 #include "HUD/WhiteoutHUD.h"
 #include "Kismet/GameplayStatics.h"
@@ -128,6 +130,7 @@ namespace
 
 AWhiteoutGameMode::AWhiteoutGameMode()
 {
+	PrimaryActorTick.bCanEverTick = true;
 	DefaultPawnClass = AWhiteoutCharacter::StaticClass();
 	PlayerControllerClass = AWhiteoutPlayerController::StaticClass();
 	HUDClass = AWhiteoutHUD::StaticClass();
@@ -167,10 +170,38 @@ void AWhiteoutGameMode::BeginPlay()
 		GetWorld()->SpawnActor<AWhiteoutAudioDirector>(FVector::ZeroVector, FRotator::ZeroRotator);
 	}
 
+	bPerformanceTestActive = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutPerformanceTest"));
+	if (bPerformanceTestActive)
+	{
+		PerformanceFrameTimesMs.Reset();
+		PerformanceFrameTimesMs.Reserve(2400);
+		PerformanceStartSeconds = FPlatformTime::Seconds();
+		if (APawn* PerformancePawn = UGameplayStatics::GetPlayerPawn(this, 0))
+		{
+			PerformancePawn->SetActorLocation(FVector(2650.0f, 900.0f, 125.0f), false, nullptr, ETeleportType::TeleportPhysics);
+		}
+		if (APlayerController* PerformanceController = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			PerformanceController->SetControlRotation(FRotator(-5.0f, -129.0f, 0.0f));
+		}
+		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation Performance: 1080p outdoor benchmark warmup started"));
+	}
+
 	FString AutoRoute;
 	if (FParse::Value(FCommandLine::Get(), TEXT("WhiteoutAutoRoute="), AutoRoute))
 	{
 		RunAutomationRoute(AutoRoute);
+		if (APlayerController* RouteController = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			if (AWhiteoutHUD* RouteHUD = Cast<AWhiteoutHUD>(RouteController->GetHUD()))
+			{
+				RouteHUD->DismissOpening();
+				if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+				{
+					RouteHUD->SetEndingCaptureStage(StateSubsystem->GetStateSnapshot().Ending, true);
+				}
+			}
+		}
 	}
 
 	if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoCapture")))
@@ -206,11 +237,78 @@ void AWhiteoutGameMode::BeginPlay()
 		GetWorldTimerManager().SetTimer(PresentationTimer, this, &AWhiteoutGameMode::BeginPresentationCapture, 2.0f, false);
 	}
 
-	if (AutoRoute.IsEmpty() && !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutBaselineCapture")))
+	if (AutoRoute.IsEmpty()
+		&& !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutBaselineCapture"))
+		&& !bPerformanceTestActive)
 	{
 		FTimerHandle OpeningStartTimer;
 		GetWorldTimerManager().SetTimer(OpeningStartTimer, this, &AWhiteoutGameMode::BeginOpeningPresentation, 0.25f, false);
 	}
+}
+
+void AWhiteoutGameMode::Tick(const float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (!bPerformanceTestActive)
+	{
+		return;
+	}
+	constexpr double WarmupSeconds = 5.0;
+	constexpr double SampleSeconds = 15.0;
+	const double Elapsed = FPlatformTime::Seconds() - PerformanceStartSeconds;
+	if (Elapsed >= WarmupSeconds && DeltaSeconds > 0.0f && DeltaSeconds < 0.25f)
+	{
+		PerformanceFrameTimesMs.Add(DeltaSeconds * 1000.0f);
+	}
+	if (Elapsed >= WarmupSeconds + SampleSeconds)
+	{
+		CompletePerformanceTest();
+	}
+}
+
+void AWhiteoutGameMode::CompletePerformanceTest()
+{
+	bPerformanceTestActive = false;
+	if (PerformanceFrameTimesMs.IsEmpty())
+	{
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation Performance: no frame samples collected"));
+		FPlatformMisc::RequestExit(false);
+		return;
+	}
+	TArray<float> SortedFrameTimes = PerformanceFrameTimesMs;
+	SortedFrameTimes.Sort();
+	double TotalMs = 0.0;
+	for (const float FrameMs : SortedFrameTimes)
+	{
+		TotalMs += FrameMs;
+	}
+	const float MeanMs = static_cast<float>(TotalMs / SortedFrameTimes.Num());
+	const int32 P95Index = FMath::Clamp(FMath::FloorToInt((SortedFrameTimes.Num() - 1) * 0.95f), 0, SortedFrameTimes.Num() - 1);
+	const int32 P99Index = FMath::Clamp(FMath::FloorToInt((SortedFrameTimes.Num() - 1) * 0.99f), 0, SortedFrameTimes.Num() - 1);
+	const int32 SlowTailStart = P99Index;
+	double SlowTailTotalMs = 0.0;
+	for (int32 Index = SlowTailStart; Index < SortedFrameTimes.Num(); ++Index)
+	{
+		SlowTailTotalMs += SortedFrameTimes[Index];
+	}
+	const int32 SlowTailCount = SortedFrameTimes.Num() - SlowTailStart;
+	const float SlowTailMeanMs = static_cast<float>(SlowTailTotalMs / FMath::Max(SlowTailCount, 1));
+	const FIntPoint Resolution = GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport
+		? GEngine->GameViewport->Viewport->GetSizeXY()
+		: FIntPoint::ZeroValue;
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("WhiteoutStation Performance: resolution=%dx%d samples=%d avg_fps=%.2f one_percent_low_fps=%.2f p95_ms=%.3f p99_ms=%.3f max_ms=%.3f"),
+		Resolution.X,
+		Resolution.Y,
+		SortedFrameTimes.Num(),
+		1000.0f / FMath::Max(MeanMs, 0.001f),
+		1000.0f / FMath::Max(SlowTailMeanMs, 0.001f),
+		SortedFrameTimes[P95Index],
+		SortedFrameTimes[P99Index],
+		SortedFrameTimes.Last());
+	FPlatformMisc::RequestExit(false);
 }
 
 void AWhiteoutGameMode::BeginOpeningPresentation()

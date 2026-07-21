@@ -12,7 +12,7 @@ UE 5.8 C++ 项目，目标是制作一局 10—15 分钟的社会生存与轻推
 
 ## 当前范围
 
-v0.1 必须保留 8 AP 闭环、两名 NPC、13 项核心行动、三条成功路线、中段危机、确定性结算、模型故障降级、存档日志和五维复盘。详细范围见 `docs/SCOPE_v0.1.md`。
+v0.2 已在不改规则的前提下完成写实五区场景、两名可动画 NPC、全中文 UMG、两步行动确认、13 热点高亮、分层音频、开场/危机/四结局演出与五维复盘。详细范围见 `docs/SCOPE_v0.2.md`。
 
 ## 规则回归
 
@@ -25,11 +25,11 @@ python -X utf8 Tools/Rules/run_routes.py
 
 规则数据的单一可信来源是 `WhiteoutStation/Content/Rules/WhiteoutStationRules.v0.1.json`。
 
-## v0.1 可玩 Demo
+## v0.2 可玩 Demo
 
-默认打开 `MVP_StationMap`，运行后可用 WASD 移动、鼠标观察、F 执行当前交互、Q 切换询问/质疑/安抚及三类可追踪承诺、E 打开证据板、C 读取自动存档、Enter 结算、R 重开。启动参数 `-WhiteoutContinue` 可直接从自动存档进入。当前流程已覆盖五个站区、13 项行动、三条成功路线、中段危机、零 AP 发报窗口、四类结局、事件日志与自动存档。
+默认打开 `MVP_StationMap`。WASD/鼠标移动观察；看向热点后按 F 打开预览、再次按 F 确认；Q 打开六种对话方式，E 打开证据板，Space 跳过开场，Enter 结算，R 重开，Esc 暂停/退出。启动参数 `-WhiteoutContinue` 可直接从自动存档进入。
 
-已归档的 Windows Shipping 版本位于 `Builds/WhiteoutStation-v0.1-Win64/Windows/WhiteoutStation.exe`。完整启动、操作、存档和复现构建说明见 `docs/BUILD_AND_PLAY_v0.1.md`。
+Windows Shipping 版本位于 `Builds/WhiteoutStation-v0.2-Win64/Windows/WhiteoutStation.exe`。完整启动、操作、存档和复现构建说明见 `docs/BUILD_AND_PLAY_v0.2.md`；验收数据见 `docs/QA_REPORT_v0.2.md`。
 
 UE 自动化回归可在编辑器 Session Frontend 中运行 `WhiteoutStation` 测试集，也可用命令行运行同名测试集。
 

@@ -15,6 +15,7 @@ class WHITEOUTSTATION_API AWhiteoutGameMode : public AGameModeBase
 public:
 	AWhiteoutGameMode();
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 	void FinishOpeningPresentation();
 
 private:
@@ -31,8 +32,12 @@ private:
 	TArray<FString> PresentationCaptureNames;
 	FString PresentationCaptureMode;
 	int32 PresentationCaptureIndex = 0;
+	TArray<float> PerformanceFrameTimesMs;
+	double PerformanceStartSeconds = 0.0;
+	bool bPerformanceTestActive = false;
 
 	void RunAutomationRoute(const FString& RouteName);
+	void CompletePerformanceTest();
 	void BeginOpeningPresentation();
 	void BeginBaselineCapture();
 	void StageBaselineView();

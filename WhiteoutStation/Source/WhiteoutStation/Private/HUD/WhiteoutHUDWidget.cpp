@@ -891,6 +891,7 @@ void UWhiteoutHUDWidget::SetEndingCaptureStage(const EWSEndingType Ending, const
 	if (bShowResults)
 	{
 		EndingElapsed = -1.0f;
+		bWasShowingResults = true;
 		bEndingResultsRevealed = true;
 		if (EndingCinematicBorder) EndingCinematicBorder->SetVisibility(ESlateVisibility::Collapsed);
 		if (ResultsBorder) ResultsBorder->SetVisibility(ESlateVisibility::Visible);
