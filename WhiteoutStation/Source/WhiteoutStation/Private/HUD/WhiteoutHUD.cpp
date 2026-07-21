@@ -85,3 +85,8 @@ void AWhiteoutHUD::ShowComponentGalleryForCapture()
 {
 	if (HUDWidget) HUDWidget->ShowComponentGalleryForCapture();
 }
+
+void AWhiteoutHUD::SetInterfaceVisibleForCapture(const bool bVisible)
+{
+	if (HUDWidget) HUDWidget->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+}

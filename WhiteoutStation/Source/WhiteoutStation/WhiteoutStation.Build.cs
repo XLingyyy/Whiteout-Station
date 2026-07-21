@@ -17,6 +17,7 @@ public class WhiteoutStation : ModuleRules
 			"Json",
 			"JsonUtilities",
 			"HTTP",
+			"Niagara",
 			"UMG"
 		});
 

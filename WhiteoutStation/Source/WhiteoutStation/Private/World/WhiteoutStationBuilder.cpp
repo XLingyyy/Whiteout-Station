@@ -129,11 +129,11 @@ void AWhiteoutStationBuilder::BuildStation()
 	SpawnHotspot(TEXT("heat_repair_room"), TEXT("维修间供暖控制器"), FVector(1050, -80, 70), Repair, FVector(0.7f));
 	SpawnHotspot(TEXT("repair_generator"), TEXT("柴油发电机"), FVector(1250, 80, 90), Repair, FVector(1.2f, 0.7f, 1.1f));
 	SpawnHotspot(TEXT("forced_self_repair"), TEXT("手动维修工具"), FVector(1450, 220, 55), Repair, FVector(0.65f));
-	SpawnHotspot(TEXT("talk_gu_heng"), TEXT("顾衡｜工程师"), FVector(980, 260, 95), FLinearColor(0.75f, 0.28f, 0.16f), FVector(0.45f, 0.45f, 1.9f));
+	SpawnHotspot(TEXT("talk_gu_heng"), TEXT("顾衡｜工程师"), FVector(860, 160, 0), FLinearColor(0.75f, 0.28f, 0.16f), FVector(0.45f, 0.45f, 1.9f));
 
 	SpawnHotspot(TEXT("heat_medical_room"), TEXT("医务室供暖控制器"), FVector(-120, 680, 70), Medical, FVector(0.7f));
 	SpawnHotspot(TEXT("treat_gu_heng"), TEXT("治疗台"), FVector(270, 780, 70), Medical, FVector(0.8f));
-	SpawnHotspot(TEXT("talk_ye_cheng"), TEXT("叶澄｜医生"), FVector(120, 980, 95), FLinearColor(0.12f, 0.65f, 0.72f), FVector(0.45f, 0.45f, 1.85f));
+	SpawnHotspot(TEXT("talk_ye_cheng"), TEXT("叶澄｜医生"), FVector(120, 850, 0), FLinearColor(0.12f, 0.65f, 0.72f), FVector(0.45f, 0.45f, 1.85f));
 
 	SpawnHotspot(TEXT("distribute_food"), TEXT("口粮台"), FVector(900, 760, 70), Quarter, FVector(0.72f));
 	SpawnHotspot(TEXT("dismantle_kitchen_heater"), TEXT("厨房加热器"), FVector(1330, 850, 70), Quarter, FVector(0.72f));
@@ -302,6 +302,7 @@ void AWhiteoutStationBuilder::SpawnPointLight(
 	RuntimeEmergencyLights.Add(bEmergencyRed);
 	RuntimeGeneratorLights.Add(bGeneratorPowered);
 	RuntimeBaseLightIntensities.Add(Intensity);
+	RuntimeBaseLightColors.Add(Color);
 }
 
 void AWhiteoutStationBuilder::HandleActionCommitted(const FWSActionResult& Result)
@@ -353,6 +354,32 @@ void AWhiteoutStationBuilder::RestoreGeneratorLighting()
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: generator-powered repair lighting restored"));
 }
 
+void AWhiteoutStationBuilder::SetLightingPreviewState(const bool bCrisis, const bool bGeneratorOnline)
+{
+	if (bCrisis)
+	{
+		ApplyCrisisLighting();
+		return;
+	}
+	if (ExteriorLight)
+	{
+		ExteriorLight->SetIntensity(3.0f);
+		ExteriorLight->SetLightColor(FLinearColor(0.58f, 0.7f, 0.9f));
+	}
+	for (int32 Index = 0; Index < RuntimeLights.Num(); ++Index)
+	{
+		if (!RuntimeBaseLightIntensities.IsValidIndex(Index) || !RuntimeBaseLightColors.IsValidIndex(Index))
+		{
+			continue;
+		}
+		const bool bGeneratorPowered = RuntimeGeneratorLights.IsValidIndex(Index) && RuntimeGeneratorLights[Index];
+		RuntimeLights[Index]->SetLightColor(RuntimeBaseLightColors[Index]);
+		RuntimeLights[Index]->SetIntensity(bGeneratorPowered && !bGeneratorOnline
+			? RuntimeBaseLightIntensities[Index] * 0.22f
+			: RuntimeBaseLightIntensities[Index]);
+	}
+}
+
 AWSInteractableActor* AWhiteoutStationBuilder::SpawnHotspot(
 	const TCHAR* ActionId,
 	const TCHAR* Label,
@@ -364,7 +391,15 @@ AWSInteractableActor* AWhiteoutStationBuilder::SpawnHotspot(
 	if (Hotspot)
 	{
 		Hotspot->Configure(FName(ActionId), FText::FromString(Label), Color);
-		Hotspot->SetActorScale3D(Scale);
+		if (Hotspot->IsCharacterHotspot())
+		{
+			Hotspot->SetActorScale3D(FVector::OneVector);
+			Hotspot->SetActorRotation(FRotator(0.0f, 180.0f, 0.0f));
+		}
+		else
+		{
+			Hotspot->SetActorScale3D(Scale);
+		}
 		Hotspot->Tags.Add(TEXT("WSRuntimeHotspot"));
 	}
 	return Hotspot;

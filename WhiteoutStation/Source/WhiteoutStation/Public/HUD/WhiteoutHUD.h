@@ -29,6 +29,7 @@ public:
 	void SetPresentationCaptureState(const FWSGameState& State);
 	void ShowEvidenceForCapture();
 	void ShowComponentGalleryForCapture();
+	void SetInterfaceVisibleForCapture(bool bVisible);
 
 private:
 	UPROPERTY(Transient)

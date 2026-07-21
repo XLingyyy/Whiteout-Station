@@ -6,6 +6,9 @@
 #include "WSInteractableActor.generated.h"
 
 class UStaticMeshComponent;
+class USceneComponent;
+class USkeletalMeshComponent;
+class UAnimSequence;
 
 UCLASS()
 class WHITEOUTSTATION_API AWSInteractableActor : public AActor
@@ -14,12 +17,22 @@ class WHITEOUTSTATION_API AWSInteractableActor : public AActor
 
 public:
 	AWSInteractableActor();
+	virtual void Tick(float DeltaSeconds) override;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+	TObjectPtr<USceneComponent> SceneRoot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
 	TObjectPtr<UStaticMeshComponent> Mesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
 	TObjectPtr<UStaticMeshComponent> HeadMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+	TObjectPtr<USkeletalMeshComponent> CharacterMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+	TObjectPtr<UStaticMeshComponent> InjuryWrap;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
 	FName ActionId;
@@ -32,6 +45,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void Configure(FName InActionId, const FText& InDisplayName, FLinearColor InAccentColor);
+
+	void SetCharacterPreviewMood(bool bHighTrust);
+	bool IsCharacterHotspot() const;
 
 	UFUNCTION(BlueprintPure, Category = "Interaction")
 	FText GetInteractionPrompt() const;
@@ -48,5 +64,31 @@ public:
 		FName PromiseCondition = NAME_None);
 
 private:
+	UPROPERTY()
+	TObjectPtr<UAnimSequence> IdleAnimation;
+
+	UPROPERTY()
+	TObjectPtr<UAnimSequence> GestureAnimation;
+
+	UPROPERTY()
+	TObjectPtr<UAnimSequence> GuardedAnimation;
+
+	UPROPERTY()
+	TObjectPtr<UAnimSequence> WorkAnimation;
+
+	bool bCharacterPresentation = false;
+	bool bReactionActive = false;
+	float ReactionUntilTime = 0.0f;
+
+	void ConfigureCharacterPresentation();
+	void PlayCharacterAnimation(UAnimSequence* Animation, bool bLoop = true);
+	void ApplyCharacterState(const FWSGameState& State);
+
+	UFUNCTION()
+	void HandleCharacterStateChanged(const FWSGameState& State);
+
+	UFUNCTION()
+	void HandleCharacterActionCommitted(const FWSActionResult& Result);
+
 	FWSActionRequest BuildRequest(EWSDialogueAct DialogueAct, FName PromiseCondition) const;
 };

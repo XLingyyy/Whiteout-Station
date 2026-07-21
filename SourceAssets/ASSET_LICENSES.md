@@ -47,3 +47,22 @@ The official public Google Drive folder contains Blend, FBX and OBJ copies. `pyt
 | Noto Sans SC Regular and Bold | Noto project contributors | all Simplified Chinese interface and world labels | https://github.com/notofonts/noto-cjk |
 
 The original OFL 1.1 license is retained at `Fonts/NotoSansSC/LICENSE.txt`. The source revision, exact URLs, sizes and SHA-256 values are pinned by `python -X utf8 Tools/Assets/download_noto_cjk.py` in `Fonts/NotoSansSC/manifest.json`.
+
+## Unreal Engine 5.8 First Person Horror template — Unreal Engine EULA
+
+| Asset | Author | Project use | Source |
+|---|---|---|---|
+| `NS_DustMote` and `M_DustMote` | Epic Games | soft translucent snow-sprite material and optional mist layer for the exterior blizzard system | UE 5.8 installation: `Templates/TP_FirstPerson/Content/Variant_Horror/Blueprints/Light/Assets` |
+| `NS_Confetti` and `M_GoldConfetti` | Epic Games | audited emitter-stack source for the windblown streak layer; the runtime duplicate replaces the gold material, radial velocity and timing with the white dust material and linear storm motion | UE 5.8 installation: `Templates/TP_UEIntro_BP/Content/DemoTemplate/Templates/Confetti` |
+
+This is official Unreal Engine template content supplied with the installed engine, not a CC0 third-party download. It is used only as part of this Unreal Engine Product under the Unreal Engine EULA. Project duplicates are stored under `/Game/WindStation/Art/VFX`; the audited source packages retain their original template paths so package references remain deterministic.
+
+## MakeHuman v0.2 characters — CC0 and CC-BY
+
+| Asset | Author | License | Project use | Source |
+|---|---|---|---|---|
+| MakeHuman system mesh, `game_engine` rig, Asian skins, facial parts, hair and shoes | MakeHuman Community contributors | CC0 | base meshes, skeletons and system materials for 顾衡 / 叶澄 | https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html |
+| `elvs_male_coveralls_1` | Elvaerwyn | CC-BY | 顾衡 navy engineer coveralls | https://static.makehumancommunity.org/assets/assetpacks/suits03.html |
+| `elvs_emt_uniform_jacket_female`, `elvs_emt_uniform_pants_female` | Elvaerwyn + Punkduck | CC BY 4.0 | 叶澄 insulated emergency-medical uniform | https://static.makehumancommunity.org/assets/assetpacks/suits03.html |
+
+The MakeHuman application is used only as an offline exporter; its AGPL code is neither linked nor redistributed. Exact download URLs and SHA-256 values are pinned in `Tools/Assets/download_makehuman_inputs.py`; the generated FBX files, textures and detailed attribution are stored under `SourceAssets/MakeHuman/`.

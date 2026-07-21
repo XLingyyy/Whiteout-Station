@@ -1,62 +1,85 @@
 #include "World/WhiteoutSnowField.h"
 
-#include "Components/HierarchicalInstancedStaticMeshComponent.h"
-#include "Engine/StaticMesh.h"
-#include "UObject/ConstructorHelpers.h"
+#include "Components/SceneComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "State/WindStationStateSubsystem.h"
 
 AWhiteoutSnowField::AWhiteoutSnowField()
 {
-	PrimaryActorTick.bCanEverTick = true;
-	SnowInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("SnowInstances"));
-	SetRootComponent(SnowInstances);
-	SnowInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	SnowInstances->SetCastShadow(false);
-	SnowInstances->SetReceivesDecals(false);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> FlakeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (FlakeMesh.Succeeded())
+	PrimaryActorTick.bCanEverTick = false;
+	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	SetRootComponent(SceneRoot);
+	for (int32 Index = 0; Index < 12; ++Index)
 	{
-		SnowInstances->SetStaticMesh(FlakeMesh.Object);
+		UNiagaraComponent* Layer = CreateDefaultSubobject<UNiagaraComponent>(
+			FName(*FString::Printf(TEXT("BlizzardLayer%d"), Index + 1)));
+		Layer->SetupAttachment(SceneRoot);
+		Layer->SetAutoActivate(false);
+		Layer->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		BlizzardLayers.Add(Layer);
 	}
 }
 
 void AWhiteoutSnowField::BeginPlay()
 {
 	Super::BeginPlay();
-	ParticlePositions.Reserve(ParticleCount);
-	ParticleSpeeds.Reserve(ParticleCount);
-	for (int32 Index = 0; Index < ParticleCount; ++Index)
+	Tags.Add(TEXT("WSRuntimeNiagaraBlizzard"));
+	UNiagaraSystem* BlizzardSystem = LoadObject<UNiagaraSystem>(
+		nullptr,
+		TEXT("/Game/WindStation/Art/VFX/NS_WS_BlizzardStreaks.NS_WS_BlizzardStreaks"));
+	if (!BlizzardSystem)
 	{
-		const FVector Position(
-			RandomStream.FRandRange(MinX, MaxX),
-			RandomStream.FRandRange(MinY, MaxY),
-			RandomStream.FRandRange(MinZ, MaxZ));
-		const float Speed = RandomStream.FRandRange(0.7f, 1.35f);
-		ParticlePositions.Add(Position);
-		ParticleSpeeds.Add(Speed);
-		const FVector Scale(RandomStream.FRandRange(0.012f, 0.026f), 0.008f, RandomStream.FRandRange(0.025f, 0.055f));
-		SnowInstances->AddInstance(FTransform(FRotator(18.0f, -34.0f, 0.0f), Position, Scale), true);
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation v0.2: Niagara blizzard asset is missing"));
+		return;
+	}
+	const TArray<FVector> LayerLocations = {
+		FVector(2200, 400, 260), FVector(2450, 200, 300),
+		FVector(2450, 600, 300), FVector(1950, 0, 300),
+		FVector(1950, 800, 300), FVector(2850, 400, 380),
+		FVector(2200, -300, 400), FVector(2200, 1100, 400),
+		FVector(3200, 0, 500), FVector(3200, 800, 500),
+		FVector(2700, -500, 480), FVector(2700, 1300, 480)};
+	for (int32 Index = 0; Index < BlizzardLayers.Num(); ++Index)
+	{
+		UNiagaraComponent* Layer = BlizzardLayers[Index];
+		Layer->SetAsset(BlizzardSystem);
+		Layer->SetWorldLocation(LayerLocations[Index]);
+		Layer->SetWorldRotation(FRotator(-14.0f, -24.0f, 0.0f));
+		Layer->SetWorldScale3D(FVector(2.4f, 2.4f, 2.0f));
+		Layer->SetVariableVec3(TEXT("User.WindVelocity"), FVector(-760.0f, 150.0f, -125.0f));
+		Layer->SetVariableFloat(TEXT("User.SpawnRate"), 420.0f);
+	}
+	bool bCrisis = false;
+	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	{
+		StateSubsystem->OnActionCommitted.AddDynamic(this, &AWhiteoutSnowField::HandleActionCommitted);
+		bCrisis = StateSubsystem->GetStateSnapshot().bMidCrisisTriggered;
+	}
+	SetBlizzardIntensity(bCrisis);
+}
+
+void AWhiteoutSnowField::HandleActionCommitted(const FWSActionResult& Result)
+{
+	if (Result.bCrisisTriggered)
+	{
+		SetBlizzardIntensity(true);
 	}
 }
 
-void AWhiteoutSnowField::Tick(const float DeltaSeconds)
+void AWhiteoutSnowField::SetBlizzardIntensity(const bool bCrisis)
 {
-	Super::Tick(DeltaSeconds);
-	for (int32 Index = 0; Index < ParticlePositions.Num(); ++Index)
+	for (int32 Index = 0; Index < BlizzardLayers.Num(); ++Index)
 	{
-		FVector& Position = ParticlePositions[Index];
-		const float Speed = ParticleSpeeds[Index];
-		Position += FVector(-430.0f, 105.0f, -115.0f) * Speed * DeltaSeconds;
-		if (Position.X < MinX || Position.Y > MaxY || Position.Z < MinZ)
-		{
-			Position.X = MaxX;
-			Position.Y = RandomStream.FRandRange(MinY, MaxY);
-			Position.Z = RandomStream.FRandRange(MaxZ * 0.6f, MaxZ);
-		}
-		FTransform Transform;
-		if (SnowInstances->GetInstanceTransform(Index, Transform, true))
-		{
-			Transform.SetLocation(Position);
-			SnowInstances->UpdateInstanceTransform(Index, Transform, true, Index == ParticlePositions.Num() - 1, true);
-		}
+		UNiagaraComponent* Layer = BlizzardLayers[Index];
+		const bool bActive = bCrisis || Index < 6;
+		Layer->SetVariableFloat(TEXT("User.SpawnRate"), bCrisis ? 860.0f : 420.0f);
+		Layer->SetVariableVec3(
+			TEXT("User.WindVelocity"),
+			bCrisis ? FVector(-1120.0f, 260.0f, -180.0f) : FVector(-760.0f, 150.0f, -125.0f));
+		Layer->SetWorldScale3D(bCrisis ? FVector(3.2f, 3.2f, 2.6f) : FVector(2.4f, 2.4f, 2.0f));
+		if (bActive) Layer->Activate(true);
+		else Layer->Deactivate();
 	}
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: Niagara blizzard intensity=%s layers=%d"), bCrisis ? TEXT("crisis") : TEXT("normal"), bCrisis ? 12 : 6);
 }

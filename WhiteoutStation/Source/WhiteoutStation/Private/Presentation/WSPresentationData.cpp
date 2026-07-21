@@ -70,12 +70,22 @@ UWSStationAssemblyData::UWSStationAssemblyData()
 	AddPlacement(Placements, TEXT("无线电接入点"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_AccessPoint.Prop_AccessPoint"), FVector(385, -210, 115), FRotator(0, 90, 0), FVector(1.1f), Rust);
 	AddPlacement(Placements, TEXT("控制台座椅01"), TEXT("Control"), FString(I) + TEXT("Chair_1.Chair_1"), FVector(-85, -55, 0), FRotator(0, -90, 0), FVector(0.55f), Fabric);
 	AddPlacement(Placements, TEXT("控制台座椅02"), TEXT("Control"), FString(I) + TEXT("Chair_1.Chair_1"), FVector(115, -55, 0), FRotator(0, -90, 0), FVector(0.55f), Fabric);
+	AddPlacement(Placements, TEXT("控制台线缆束"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_Cable_3.Prop_Cable_3"), FVector(260, -265, 18), FRotator(0, 90, 0), FVector(1.1f), Rust, false);
+	AddPlacement(Placements, TEXT("控制室记录架"), TEXT("Control"), FString(I) + TEXT("Bookshelf.Bookshelf"), FVector(-255, 210, 0), FRotator(0, 90, 0), FVector(0.55f), Paint);
+	AddPlacement(Placements, TEXT("控制室备用箱"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_Crate3.Prop_Crate3"), FVector(430, 230, 35), FRotator(0, -12, 0), FVector(0.72f), Paint);
+	AddPlacement(Placements, TEXT("控制室顶灯"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_Light_Wide.Prop_Light_Wide"), FVector(60, -275, 275), FRotator(0, 0, 0), FVector(1.25f), Paint, false);
 
 	AddPlacement(Placements, TEXT("维修间结构柱"), TEXT("Repair"), FString(Q) + TEXT("Columns/Column_MetalSupport.Column_MetalSupport"), FVector(760, -250, 0), FRotator::ZeroRotator, FVector(1.1f), Rust);
 	AddPlacement(Placements, TEXT("维修间管束"), TEXT("Repair"), FString(Q) + TEXT("Columns/Column_Pipes.Column_Pipes"), FVector(1510, -245, 0), FRotator::ZeroRotator, FVector(1.0f), Rust);
 	AddPlacement(Placements, TEXT("维修间通风机"), TEXT("Repair"), FString(Q) + TEXT("Props/Prop_Vent_Big.Prop_Vent_Big"), FVector(1180, -270, 195), FRotator(0, 0, 0), FVector(1.4f), Rust, false);
 	AddPlacement(Placements, TEXT("维修间物资箱01"), TEXT("Repair"), FString(Q) + TEXT("Props/Prop_Crate3.Prop_Crate3"), FVector(1510, 150, 40), FRotator(0, 15, 0), FVector(1.0f), Paint);
 	AddPlacement(Placements, TEXT("维修间油桶"), TEXT("Repair"), FString(Q) + TEXT("Props/Prop_Barrel_Large.Prop_Barrel_Large"), FVector(1580, -145, 55), FRotator::ZeroRotator, FVector(1.0f), Rust);
+	AddPlacement(Placements, TEXT("维修间管卡01"), TEXT("Repair"), FString(Q) + TEXT("Props/Prop_PipeHolder.Prop_PipeHolder"), FVector(980, -275, 185), FRotator(0, 0, 0), FVector(1.0f), Rust, false);
+	AddPlacement(Placements, TEXT("维修间管卡02"), TEXT("Repair"), FString(Q) + TEXT("Props/Prop_PipeHolder.Prop_PipeHolder"), FVector(1380, -275, 185), FRotator(0, 0, 0), FVector(1.0f), Rust, false);
+	AddPlacement(Placements, TEXT("维修间地面线缆"), TEXT("Repair"), FString(Q) + TEXT("Props/Prop_Cable_1.Prop_Cable_1"), FVector(1180, 245, 8), FRotator(0, 24, 0), FVector(1.35f), Rust, false);
+	AddPlacement(Placements, TEXT("维修间工具架"), TEXT("Repair"), FString(I) + TEXT("Shelf_Large.Shelf_Large"), FVector(820, 255, 0), FRotator(0, -90, 0), FVector(0.62f), Rust);
+	AddPlacement(Placements, TEXT("维修间工作凳"), TEXT("Repair"), FString(I) + TEXT("Stool.Stool"), FVector(1420, 220, 0), FRotator::ZeroRotator, FVector(0.58f), Paint);
+	AddPlacement(Placements, TEXT("维修间零件箱"), TEXT("Repair"), FString(Q) + TEXT("Props/Prop_Crate4.Prop_Crate4"), FVector(920, 210, 35), FRotator(0, -8, 0), FVector(0.72f), Paint);
 
 	AddPlacement(Placements, TEXT("医务室墙灯"), TEXT("Medical"), FString(Q) + TEXT("Props/Prop_Light_Corner.Prop_Light_Corner"), FVector(-220, 750, 240), FRotator(0, 90, 0), FVector(1.0f), Paint, false);
 	AddPlacement(Placements, TEXT("医务室设备"), TEXT("Medical"), FString(Q) + TEXT("Props/Prop_Computer.Prop_Computer"), FVector(-125, 910, 70), FRotator(0, -90, 0), FVector(0.9f), Paint);
@@ -84,6 +94,10 @@ UWSStationAssemblyData::UWSStationAssemblyData()
 	AddPlacement(Placements, TEXT("医务器械柜"), TEXT("Medical"), FString(I) + TEXT("Kitchen_Cabinet1.Kitchen_Cabinet1"), FVector(-205, 945, 72), FRotator(0, 90, 0), FVector(0.65f), Paint);
 	AddPlacement(Placements, TEXT("医务抽屉柜"), TEXT("Medical"), FString(I) + TEXT("Drawer_2.Drawer_2"), FVector(365, 985, 0), FRotator(0, 180, 0), FVector(0.6f), Paint);
 	AddPlacement(Placements, TEXT("医务床头柜"), TEXT("Medical"), FString(I) + TEXT("NightStand_1.NightStand_1"), FVector(420, 720, 0), FRotator(0, 90, 0), FVector(0.6f), Paint);
+	AddPlacement(Placements, TEXT("医务陪护椅"), TEXT("Medical"), FString(I) + TEXT("Chair_1.Chair_1"), FVector(190, 660, 0), FRotator(0, 45, 0), FVector(0.52f), Fabric);
+	AddPlacement(Placements, TEXT("医务药品架"), TEXT("Medical"), FString(I) + TEXT("Shelf_Large.Shelf_Large"), FVector(-225, 560, 0), FRotator(0, 90, 0), FVector(0.55f), Paint);
+	AddPlacement(Placements, TEXT("医务搪瓷盘"), TEXT("Medical"), FString(I) + TEXT("Plate_1.Plate_1"), FVector(410, 725, 74), FRotator::ZeroRotator, FVector(0.75f), Paint, false);
+	AddPlacement(Placements, TEXT("医务备用柜"), TEXT("Medical"), FString(I) + TEXT("Kitchen_CabinetSmall.Kitchen_CabinetSmall"), FVector(-190, 600, 0), FRotator(0, 90, 0), FVector(0.58f), Paint);
 
 	AddPlacement(Placements, TEXT("宿舍物资箱01"), TEXT("Quarters"), FString(Q) + TEXT("Props/Prop_Crate4.Prop_Crate4"), FVector(1460, 980, 45), FRotator(0, -12, 0), FVector(1.0f), Paint);
 	AddPlacement(Placements, TEXT("宿舍物资箱02"), TEXT("Quarters"), FString(Q) + TEXT("Props/Prop_Crate3.Prop_Crate3"), FVector(1515, 890, 40), FRotator(0, 8, 0), FVector(0.8f), Paint);
@@ -99,6 +113,10 @@ UWSStationAssemblyData::UWSStationAssemblyData()
 	AddPlacement(Placements, TEXT("厨房凳01"), TEXT("Quarters"), FString(I) + TEXT("Stool.Stool"), FVector(1080, 650, 0), FRotator::ZeroRotator, FVector(0.6f), Paint);
 	AddPlacement(Placements, TEXT("厨房凳02"), TEXT("Quarters"), FString(I) + TEXT("Stool.Stool"), FVector(1300, 650, 0), FRotator::ZeroRotator, FVector(0.6f), Paint);
 	AddPlacement(Placements, TEXT("宿舍货架"), TEXT("Quarters"), FString(I) + TEXT("Shelf_Large.Shelf_Large"), FVector(1600, 580, 0), FRotator(0, -90, 0), FVector(0.65f), Rust);
+	AddPlacement(Placements, TEXT("厨房冰箱"), TEXT("Quarters"), FString(I) + TEXT("Kitchen_Fridge.Kitchen_Fridge"), FVector(1510, 1030, 0), FRotator(0, 180, 0), FVector(0.65f), Paint);
+	AddPlacement(Placements, TEXT("餐桌搪瓷盘01"), TEXT("Quarters"), FString(I) + TEXT("Plate_1.Plate_1"), FVector(1145, 650, 78), FRotator::ZeroRotator, FVector(0.72f), Paint, false);
+	AddPlacement(Placements, TEXT("餐桌搪瓷盘02"), TEXT("Quarters"), FString(I) + TEXT("Plate_1.Plate_1"), FVector(1235, 650, 78), FRotator(0, 40, 0), FVector(0.72f), Paint, false);
+	AddPlacement(Placements, TEXT("宿舍书架"), TEXT("Quarters"), FString(I) + TEXT("Bookshelf.Bookshelf"), FVector(1550, 760, 0), FRotator(0, -90, 0), FVector(0.55f), Fabric);
 
 	AddPlacement(Placements, TEXT("室外平台01"), TEXT("Outdoor"), FString(Q) + TEXT("Platforms/Platform_Metal.Platform_Metal"), FVector(2050, 400, 5), FRotator::ZeroRotator, FVector(2.2f, 2.2f, 1.0f), Rust);
 	AddPlacement(Placements, TEXT("室外平台02"), TEXT("Outdoor"), FString(Q) + TEXT("Platforms/Platform_Metal.Platform_Metal"), FVector(2420, 400, 5), FRotator::ZeroRotator, FVector(2.2f, 2.2f, 1.0f), Rust);
@@ -106,6 +124,16 @@ UWSStationAssemblyData::UWSStationAssemblyData()
 	AddPlacement(Placements, TEXT("室外护栏南"), TEXT("Outdoor"), FString(Q) + TEXT("Platforms/Platform_Rails_4.Platform_Rails_4"), FVector(2250, 720, 45), FRotator(0, 180, 0), FVector(1.8f), Paint);
 	AddPlacement(Placements, TEXT("室外台阶"), TEXT("Outdoor"), FString(Q) + TEXT("Platforms/Platform_Stairs_4.Platform_Stairs_4"), FVector(1780, 400, 0), FRotator(0, 90, 0), FVector(1.3f), Rust);
 	AddPlacement(Placements, TEXT("天线检修门"), TEXT("Outdoor"), FString(Q) + TEXT("Platforms/Door_Frame_SquareTall.Door_Frame_SquareTall"), FVector(1710, 400, 115), FRotator(0, 90, 0), FVector(1.05f), Concrete, false);
+	AddPlacement(Placements, TEXT("天线支撑柱北"), TEXT("Outdoor"), FString(Q) + TEXT("Columns/Column_MetalSupport.Column_MetalSupport"), FVector(2440, 150, 0), FRotator::ZeroRotator, FVector(0.8f), Rust);
+	AddPlacement(Placements, TEXT("天线支撑柱南"), TEXT("Outdoor"), FString(Q) + TEXT("Columns/Column_MetalSupport.Column_MetalSupport"), FVector(2440, 650, 0), FRotator::ZeroRotator, FVector(0.8f), Rust);
+	AddPlacement(Placements, TEXT("天线中央桅杆"), TEXT("Outdoor"), FString(Q) + TEXT("Columns/Column_Pipes.Column_Pipes"), FVector(2440, 400, 0), FRotator::ZeroRotator, FVector(0.58f, 0.58f, 2.15f), Rust);
+	AddPlacement(Placements, TEXT("天线横向支臂"), TEXT("Outdoor"), FString(Q) + TEXT("Columns/Column_MetalSupport.Column_MetalSupport"), FVector(2440, 400, 285), FRotator(90, 0, 0), FVector(0.42f, 0.42f, 1.35f), Rust, false);
+	AddPlacement(Placements, TEXT("天线接收阵列北"), TEXT("Outdoor"), FString(Q) + TEXT("Props/Prop_AccessPoint.Prop_AccessPoint"), FVector(2420, 315, 330), FRotator(-28, 90, 0), FVector(1.65f), Paint, false);
+	AddPlacement(Placements, TEXT("天线接收阵列南"), TEXT("Outdoor"), FString(Q) + TEXT("Props/Prop_AccessPoint.Prop_AccessPoint"), FVector(2420, 485, 330), FRotator(-28, -90, 0), FVector(1.65f), Paint, false);
+	AddPlacement(Placements, TEXT("天线控制终端"), TEXT("Outdoor"), FString(Q) + TEXT("Props/Prop_Computer.Prop_Computer"), FVector(2260, 500, 48), FRotator(0, -90, 0), FVector(0.72f), Paint);
+	AddPlacement(Placements, TEXT("室外检修箱"), TEXT("Outdoor"), FString(Q) + TEXT("Props/Prop_Crate3.Prop_Crate3"), FVector(2050, 690, 38), FRotator(0, 18, 0), FVector(0.75f), Paint);
+	AddPlacement(Placements, TEXT("室外电缆"), TEXT("Outdoor"), FString(Q) + TEXT("Props/Prop_Cable_3.Prop_Cable_3"), FVector(2140, 240, 20), FRotator(0, -28, 0), FVector(1.3f), Rust, false);
+	AddPlacement(Placements, TEXT("天线检修灯具"), TEXT("Outdoor"), FString(Q) + TEXT("Props/Prop_Light_Wide.Prop_Light_Wide"), FVector(2080, 400, 265), FRotator(0, 90, 0), FVector(1.15f), Paint, false);
 }
 
 UWSUIDesignData::UWSUIDesignData() = default;

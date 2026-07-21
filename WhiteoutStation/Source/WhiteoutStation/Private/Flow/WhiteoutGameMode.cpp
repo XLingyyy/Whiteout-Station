@@ -14,6 +14,7 @@
 #include "Presentation/WSPresentationText.h"
 #include "Sound/SoundBase.h"
 #include "State/WindStationStateSubsystem.h"
+#include "World/WSInteractableActor.h"
 #include "World/WhiteoutStationBuilder.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
@@ -320,24 +321,40 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 void AWhiteoutGameMode::BeginBaselineCapture()
 {
 	BaselineLocations = {
-		FVector(-190, 245, 105),
-		FVector(520, 300, 105),
-		FVector(150, 250, 105)};
+		FVector(-190, 245, 105), FVector(520, 300, 105),
+		FVector(1000, 350, 120), FVector(1600, 300, 105),
+		FVector(-180, 520, 105), FVector(520, 1020, 105),
+		FVector(860, 720, 115), FVector(1600, 520, 105),
+		FVector(1810, 400, 115), FVector(2650, 900, 125),
+		FVector(1000, 350, 120), FVector(1000, 350, 120), FVector(200, 350, 105),
+		FVector(740, 160, 105), FVector(740, 160, 105),
+		FVector(120, 570, 105), FVector(120, 570, 105)};
 	BaselineRotations = {
-		FRotator(0, -72, 0),
-		FRotator(-4, -142, 0),
-		FRotator(-2, -90, 0)};
+		FRotator(0, -72, 0), FRotator(-4, -142, 0),
+		FRotator(-3, -55, 0), FRotator(-3, -145, 0),
+		FRotator(-2, 30, 0), FRotator(-2, -153, 0),
+		FRotator(-2, 0, 0), FRotator(-2, 143, 0),
+		FRotator(-4, 0, 0), FRotator(-5, -129, 0),
+		FRotator(-3, -55, 0), FRotator(-3, -55, 0), FRotator(-3, -106, 0),
+		FRotator(-1, 0, 0), FRotator(-1, 0, 0),
+		FRotator(-1, 90, 0), FRotator(-1, 90, 0)};
 	BaselineNames = {
-		TEXT("ControlRoom_01_Entry"),
-		TEXT("ControlRoom_02_Consoles"),
-		TEXT("ControlRoom_03_WindowWall")};
-	BaselineCaptureIndex = 0;
+		TEXT("Zone_Control_01"), TEXT("Zone_Control_02"),
+		TEXT("Zone_Repair_01"), TEXT("Zone_Repair_02"),
+		TEXT("Zone_Medical_01"), TEXT("Zone_Medical_02"),
+		TEXT("Zone_Quarters_01"), TEXT("Zone_Quarters_02"),
+		TEXT("Zone_Outdoor_01"), TEXT("Zone_Outdoor_02"),
+		TEXT("Lighting_Repair_Unpowered"), TEXT("Lighting_Repair_Restored"), TEXT("Lighting_Crisis"),
+		TEXT("Character_Engineer_HighTrust"), TEXT("Character_Engineer_LowTrust"),
+		TEXT("Character_Doctor_HighTrust"), TEXT("Character_Doctor_LowTrust")};
+	BaselineCaptureIndex = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutCharacterCapture")) ? 13 : 0;
 	if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
 	{
-		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
-		{
-			HUD->DismissOpening();
-		}
+			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+			{
+				HUD->DismissOpening();
+				HUD->SetInterfaceVisibleForCapture(false);
+			}
 	}
 	StageBaselineView();
 }
@@ -355,6 +372,30 @@ void AWhiteoutGameMode::StageBaselineView()
 	}
 	APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0);
 	APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	for (TActorIterator<AWhiteoutStationBuilder> It(GetWorld()); It; ++It)
+	{
+		const FString& CaptureName = BaselineNames[BaselineCaptureIndex];
+		It->SetLightingPreviewState(
+			CaptureName.Equals(TEXT("Lighting_Crisis")),
+			CaptureName.Equals(TEXT("Lighting_Repair_Restored")));
+		break;
+	}
+	const FString& CaptureName = BaselineNames[BaselineCaptureIndex];
+	if (CaptureName.StartsWith(TEXT("Character_")))
+	{
+		const bool bEngineer = CaptureName.Contains(TEXT("Engineer"));
+		const bool bHighTrust = CaptureName.Contains(TEXT("HighTrust"));
+		for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+		{
+			const bool bTarget = (bEngineer && It->ActionId == TEXT("talk_gu_heng"))
+				|| (!bEngineer && It->ActionId == TEXT("talk_ye_cheng"));
+			if (bTarget)
+			{
+				It->SetCharacterPreviewMood(bHighTrust);
+				break;
+			}
+		}
+	}
 	if (Pawn)
 	{
 		Pawn->SetActorLocation(BaselineLocations[BaselineCaptureIndex], false, nullptr, ETeleportType::TeleportPhysics);

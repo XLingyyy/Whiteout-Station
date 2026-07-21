@@ -20,6 +20,7 @@ class WHITEOUTSTATION_API AWhiteoutStationBuilder : public AActor
 public:
 	AWhiteoutStationBuilder();
 	virtual void BeginPlay() override;
+	void SetLightingPreviewState(bool bCrisis, bool bGeneratorOnline);
 
 private:
 	UPROPERTY()
@@ -28,6 +29,7 @@ private:
 	TArray<bool> RuntimeEmergencyLights;
 	TArray<bool> RuntimeGeneratorLights;
 	TArray<float> RuntimeBaseLightIntensities;
+	TArray<FLinearColor> RuntimeBaseLightColors;
 
 	UPROPERTY()
 	TObjectPtr<UDirectionalLightComponent> ExteriorLight;
