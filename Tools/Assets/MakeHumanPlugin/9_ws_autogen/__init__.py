@@ -125,10 +125,12 @@ def _animation_track(rig, name: str, style: str) -> animation.AnimationTrack:
     for frame in range(frame_count):
         phase = (frame / frame_count) * math.tau
         pose = {
-            "upperarm_l": (-70.0, 0.0, 0.0),
-            "upperarm_r": (70.0, 0.0, 0.0),
-            "lowerarm_l": (0.0, 0.0, 4.0),
-            "lowerarm_r": (0.0, 0.0, -4.0),
+            # The game-engine rig's local Z axis lowers the arms from its T-pose.
+            # Rotating local X instead pitches the hands toward the camera.
+            "upperarm_l": (0.0, 0.0, -78.0),
+            "upperarm_r": (0.0, 0.0, 78.0),
+            "lowerarm_l": (0.0, 0.0, 0.0),
+            "lowerarm_r": (0.0, 0.0, 0.0),
             "spine_02": (1.2 * math.sin(phase), 0.8 * math.sin(phase), 0.0),
             "neck_01": (-0.8 * math.sin(phase), 0.0, 0.0),
         }

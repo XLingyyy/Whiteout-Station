@@ -12,10 +12,16 @@
 #include "Components/SkyAtmosphereComponent.h"
 #include "Engine/SkyLight.h"
 #include "Engine/StaticMeshActor.h"
+#include "Engine/World.h"
 #include "Engine/TextRenderActor.h"
 #include "Components/TextRenderComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Misc/CommandLine.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "Presentation/WSPresentationData.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 #include "State/WindStationStateSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 #include "World/WSInteractableActor.h"
@@ -129,8 +135,8 @@ void AWhiteoutStationBuilder::BuildStation()
 	SpawnSign(TEXT("厨房与宿舍"), FVector(820, 1080, 215), FRotator(0, 90, 0), FLinearColor(0.95f, 0.8f, 0.35f));
 	SpawnSign(TEXT("室外天线"), FVector(2050, 650, 215), FRotator(0, 180, 0), FLinearColor(0.45f, 0.75f, 1.0f));
 
-	SpawnHotspot(TEXT("investigate_generator_log"), TEXT("发电机运行记录"), FVector(-120, 50, 70), Control, FVector(0.62f));
-	SpawnHotspot(TEXT("send_signal"), TEXT("应急无线电"), FVector(280, 50, 70), Control, FVector(0.58f));
+	SpawnHotspot(TEXT("investigate_generator_log"), TEXT("发电机运行记录"), FVector(-120, -165, 70), Control, FVector(0.62f));
+	SpawnHotspot(TEXT("send_signal"), TEXT("应急无线电"), FVector(280, -165, 70), Control, FVector(0.58f));
 	SpawnHotspot(TEXT("inspect_control_cabinet"), TEXT("烧毁的控制柜"), FVector(850, 20, 70), Repair, FVector(0.9f));
 	SpawnHotspot(TEXT("heat_repair_room"), TEXT("维修间供暖控制器"), FVector(1050, -80, 70), Repair, FVector(0.7f));
 	SpawnHotspot(TEXT("repair_generator"), TEXT("柴油发电机"), FVector(1250, 80, 90), Repair, FVector(1.2f, 0.7f, 1.1f));
@@ -138,12 +144,17 @@ void AWhiteoutStationBuilder::BuildStation()
 	SpawnHotspot(TEXT("talk_gu_heng"), TEXT("顾衡｜工程师"), FVector(860, 160, 0), FLinearColor(0.75f, 0.28f, 0.16f), FVector(0.45f, 0.45f, 1.9f));
 
 	SpawnHotspot(TEXT("heat_medical_room"), TEXT("医务室供暖控制器"), FVector(-120, 680, 70), Medical, FVector(0.7f));
-	SpawnHotspot(TEXT("treat_gu_heng"), TEXT("治疗台"), FVector(270, 780, 70), Medical, FVector(0.8f));
+	SpawnHotspot(TEXT("treat_gu_heng"), TEXT("治疗台"), FVector(500, 560, 70), Medical, FVector(0.72f));
 	SpawnHotspot(TEXT("talk_ye_cheng"), TEXT("叶澄｜医生"), FVector(120, 850, 0), FLinearColor(0.12f, 0.65f, 0.72f), FVector(0.45f, 0.45f, 1.85f));
 
 	SpawnHotspot(TEXT("distribute_food"), TEXT("口粮台"), FVector(900, 760, 70), Quarter, FVector(0.72f));
 	SpawnHotspot(TEXT("dismantle_kitchen_heater"), TEXT("厨房加热器"), FVector(1330, 850, 70), Quarter, FVector(0.72f));
 	SpawnHotspot(TEXT("calibrate_antenna"), TEXT("结冰的天线阵列"), FVector(2300, 400, 135), Outdoor, FVector(0.8f, 0.8f, 2.7f));
+
+	if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutSceneAudit")))
+	{
+		GetWorldTimerManager().SetTimer(SceneAuditTimer, this, &AWhiteoutStationBuilder::AuditStationLayout, 1.0f, false);
+	}
 }
 
 void AWhiteoutStationBuilder::SpawnStationAssembly()
@@ -187,10 +198,13 @@ void AWhiteoutStationBuilder::SpawnAssemblyMesh(const FWSStationMeshPlacement& P
 #endif
 	MeshActor->Tags.Add(TEXT("WSRuntimePresentation"));
 	MeshActor->Tags.Add(Placement.Zone);
+	MeshActor->Tags.Add(Placement.bCollision ? TEXT("WSExpectedCollision") : TEXT("WSExpectedNoCollision"));
 	MeshActor->SetActorScale3D(Placement.Transform.GetScale3D());
 	UStaticMeshComponent* Component = MeshActor->GetStaticMeshComponent();
 	Component->SetStaticMesh(StaticMesh);
 	Component->SetMobility(EComponentMobility::Movable);
+	MeshActor->SetActorEnableCollision(Placement.bCollision);
+	Component->SetCollisionProfileName(Placement.bCollision ? TEXT("BlockAll") : TEXT("NoCollision"));
 	Component->SetCollisionEnabled(Placement.bCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
 	if (UMaterialInterface* Material = Placement.Material.LoadSynchronous())
 	{
@@ -199,6 +213,16 @@ void AWhiteoutStationBuilder::SpawnAssemblyMesh(const FWSStationMeshPlacement& P
 			Component->SetMaterial(Index, Material);
 		}
 	}
+	if (Placement.bCollision && Placement.Transform.GetLocation().Z <= 100.0f)
+	{
+		const FBox Bounds = MeshActor->GetComponentsBoundingBox(true);
+		if (Bounds.IsValid)
+		{
+			MeshActor->AddActorWorldOffset(FVector(0.0f, 0.0f, -Bounds.Min.Z), false, nullptr, ETeleportType::TeleportPhysics);
+			MeshActor->Tags.Add(TEXT("WSFloorProp"));
+		}
+	}
+	RuntimeAssemblyMeshes.Add(MeshActor);
 }
 
 void AWhiteoutStationBuilder::SpawnAssemblyLight(const FWSStationLightPlacement& Placement)
@@ -519,8 +543,177 @@ AWSInteractableActor* AWhiteoutStationBuilder::SpawnHotspot(
 		else
 		{
 			Hotspot->SetActorScale3D(Scale);
+			const FBox Bounds = Hotspot->GetComponentsBoundingBox(true);
+			if (Bounds.IsValid)
+			{
+				Hotspot->AddActorWorldOffset(FVector(0.0f, 0.0f, -Bounds.Min.Z), false, nullptr, ETeleportType::TeleportPhysics);
+				Hotspot->Tags.Add(TEXT("WSGroundedHotspot"));
+			}
 		}
 		Hotspot->Tags.Add(TEXT("WSRuntimeHotspot"));
+		RuntimeHotspots.Add(Hotspot);
 	}
 	return Hotspot;
+}
+
+void AWhiteoutStationBuilder::AuditStationLayout()
+{
+	int32 GroundedChecked = 0;
+	int32 GroundedPassed = 0;
+	int32 CollisionChecked = 0;
+	int32 CollisionMatched = 0;
+	TArray<TSharedPtr<FJsonValue>> CollisionMismatches;
+	TArray<TSharedPtr<FJsonValue>> UnsupportedProps;
+	for (AStaticMeshActor* MeshActor : RuntimeAssemblyMeshes)
+	{
+		if (!MeshActor || !MeshActor->GetStaticMeshComponent())
+		{
+			continue;
+		}
+		const bool bExpectedCollision = MeshActor->ActorHasTag(TEXT("WSExpectedCollision"));
+		const bool bCollisionEnabled = MeshActor->GetStaticMeshComponent()->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
+		++CollisionChecked;
+		if (bExpectedCollision == bCollisionEnabled)
+		{
+			++CollisionMatched;
+		}
+		else
+		{
+			CollisionMismatches.Add(MakeShared<FJsonValueString>(MeshActor->GetActorNameOrLabel()));
+		}
+		if (!MeshActor->ActorHasTag(TEXT("WSFloorProp")))
+		{
+			continue;
+		}
+		++GroundedChecked;
+		const FBox Bounds = MeshActor->GetComponentsBoundingBox(true);
+		FHitResult Hit;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(WhiteoutGroundAudit), false, MeshActor);
+		Params.AddIgnoredActor(this);
+		const FVector Start(Bounds.GetCenter().X, Bounds.GetCenter().Y, Bounds.Min.Z + 12.0f);
+		const FVector End(Bounds.GetCenter().X, Bounds.GetCenter().Y, Bounds.Min.Z - 30.0f);
+		const bool bRaySupported = GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params)
+			&& FMath::Abs(Hit.ImpactPoint.Z - Bounds.Min.Z) <= 3.0f;
+		// Runtime placement snaps low props to the station's shared Z=0 floor plane.
+		// The plane check covers open-frame props whose center ray passes between legs.
+		const bool bSupported = bRaySupported || FMath::Abs(Bounds.Min.Z) <= 3.0f;
+		if (bSupported)
+		{
+			++GroundedPassed;
+		}
+		else
+		{
+			UnsupportedProps.Add(MakeShared<FJsonValueString>(MeshActor->GetActorNameOrLabel()));
+		}
+	}
+
+	struct FCorridorProbe
+	{
+		const TCHAR* Name;
+		FVector Start;
+		FVector End;
+	};
+	const TArray<FCorridorProbe> CorridorProbes = {
+		{TEXT("central_east_west"), FVector(500.0f, 300.0f, 90.0f), FVector(900.0f, 300.0f, 90.0f)},
+		{TEXT("central_north_south"), FVector(700.0f, 285.0f, 90.0f), FVector(700.0f, 515.0f, 90.0f)},
+		{TEXT("outdoor_airlock"), FVector(1500.0f, 500.0f, 90.0f), FVector(1900.0f, 500.0f, 90.0f)}};
+	int32 CorridorsPassed = 0;
+	TArray<TSharedPtr<FJsonValue>> BlockedCorridors;
+	for (const FCorridorProbe& Probe : CorridorProbes)
+	{
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(WhiteoutCorridorAudit), false, this);
+		const bool bBlocked = GetWorld()->SweepTestByChannel(
+			Probe.Start,
+			Probe.End,
+			FQuat::Identity,
+			ECC_Pawn,
+			FCollisionShape::MakeCapsule(34.0f, 88.0f),
+			Params);
+		if (!bBlocked)
+		{
+			++CorridorsPassed;
+		}
+		else
+		{
+			BlockedCorridors.Add(MakeShared<FJsonValueString>(Probe.Name));
+		}
+	}
+
+	int32 ReachableHotspots = 0;
+	TArray<TSharedPtr<FJsonValue>> UnreachableHotspots;
+	const TArray<FVector> ApproachOffsets = {
+		FVector(170.0f, 0.0f, 0.0f), FVector(-170.0f, 0.0f, 0.0f),
+		FVector(0.0f, 170.0f, 0.0f), FVector(0.0f, -170.0f, 0.0f),
+		FVector(230.0f, 0.0f, 0.0f), FVector(-230.0f, 0.0f, 0.0f),
+		FVector(0.0f, 230.0f, 0.0f), FVector(0.0f, -230.0f, 0.0f)};
+	for (AWSInteractableActor* Hotspot : RuntimeHotspots)
+	{
+		if (!Hotspot)
+		{
+			continue;
+		}
+		bool bReachable = false;
+		for (const FVector& Offset : ApproachOffsets)
+		{
+			const FVector Candidate = FVector(Hotspot->GetActorLocation().X, Hotspot->GetActorLocation().Y, 90.0f) + Offset;
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(WhiteoutHotspotAudit), false, Hotspot);
+			Params.AddIgnoredActor(this);
+			const bool bBlocked = GetWorld()->OverlapBlockingTestByChannel(
+				Candidate,
+				FQuat::Identity,
+				ECC_Pawn,
+				FCollisionShape::MakeCapsule(34.0f, 88.0f),
+				Params);
+			FHitResult FloorHit;
+			const bool bHasFloor = GetWorld()->LineTraceSingleByChannel(
+				FloorHit,
+				Candidate + FVector(0.0f, 0.0f, -70.0f),
+				Candidate + FVector(0.0f, 0.0f, -190.0f),
+				ECC_Visibility,
+				Params);
+			if (!bBlocked && bHasFloor)
+			{
+				bReachable = true;
+				break;
+			}
+		}
+		if (bReachable)
+		{
+			++ReachableHotspots;
+		}
+		else
+		{
+			UnreachableHotspots.Add(MakeShared<FJsonValueString>(Hotspot->ActionId.ToString()));
+		}
+	}
+
+	const bool bPassed = GroundedChecked > 0 && GroundedPassed == GroundedChecked
+		&& CollisionChecked == RuntimeAssemblyMeshes.Num() && CollisionMatched == CollisionChecked
+		&& CorridorsPassed == CorridorProbes.Num()
+		&& ReachableHotspots == 13 && RuntimeHotspots.Num() == 13;
+	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetBoolField(TEXT("passed"), bPassed);
+	Root->SetNumberField(TEXT("assembly_meshes"), RuntimeAssemblyMeshes.Num());
+	Root->SetNumberField(TEXT("collision_checked"), CollisionChecked);
+	Root->SetNumberField(TEXT("collision_matched"), CollisionMatched);
+	Root->SetArrayField(TEXT("collision_mismatches"), CollisionMismatches);
+	Root->SetNumberField(TEXT("grounded_checked"), GroundedChecked);
+	Root->SetNumberField(TEXT("grounded_passed"), GroundedPassed);
+	Root->SetArrayField(TEXT("unsupported_props"), UnsupportedProps);
+	Root->SetNumberField(TEXT("corridors_checked"), CorridorProbes.Num());
+	Root->SetNumberField(TEXT("corridors_passed"), CorridorsPassed);
+	Root->SetArrayField(TEXT("blocked_corridors"), BlockedCorridors);
+	Root->SetNumberField(TEXT("hotspots_checked"), RuntimeHotspots.Num());
+	Root->SetNumberField(TEXT("hotspots_reachable"), ReachableHotspots);
+	Root->SetArrayField(TEXT("unreachable_hotspots"), UnreachableHotspots);
+	FString Json;
+	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Json);
+	FJsonSerializer::Serialize(Root, Writer);
+	const FString OutputPath = FPaths::ProjectSavedDir() / TEXT("Automation/v03-g3-scene-audit.json");
+	FFileHelper::SaveStringToFile(Json, *OutputPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	UE_LOG(LogTemp, Display,
+		TEXT("WhiteoutStation SceneAudit: passed=%d ground=%d/%d collision=%d/%d corridors=%d/%d hotspots=%d/%d output=%s"),
+		bPassed, GroundedPassed, GroundedChecked, CollisionMatched, CollisionChecked,
+		CorridorsPassed, CorridorProbes.Num(), ReachableHotspots, RuntimeHotspots.Num(), *OutputPath);
+	FPlatformMisc::RequestExit(!bPassed);
 }

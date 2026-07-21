@@ -118,9 +118,13 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 	{
 		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_AccessPoint.Prop_AccessPoint");
 	}
-	else if (ActionId == TEXT("forced_self_repair") || ActionId == TEXT("distribute_food") || ActionId == TEXT("treat_gu_heng"))
+	else if (ActionId == TEXT("forced_self_repair") || ActionId == TEXT("distribute_food"))
 	{
 		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_Crate3.Prop_Crate3");
+	}
+	else if (ActionId == TEXT("treat_gu_heng"))
+	{
+		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Interior/NightStand_1.NightStand_1");
 	}
 	else if (ActionId == TEXT("dismantle_kitchen_heater"))
 	{
@@ -210,6 +214,16 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 	if (USkeletalMesh* SkeletalMesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath))
 	{
 		CharacterMesh->SetSkeletalMesh(SkeletalMesh);
+		if (UMaterialInterface* EyeMaterial = LoadObject<UMaterialInterface>(
+			nullptr,
+			TEXT("/Game/WindStation/Art/Materials/M_WS_Eye.M_WS_Eye")))
+		{
+			const int32 EyeMaterialIndex = CharacterMesh->GetMaterialIndex(TEXT("high-poly"));
+			if (EyeMaterialIndex != INDEX_NONE)
+			{
+				CharacterMesh->SetMaterial(EyeMaterialIndex, EyeMaterial);
+			}
+		}
 	}
 	else
 	{
@@ -311,11 +325,7 @@ void AWSInteractableActor::ApplyCharacterState(const FWSGameState& State)
 		{
 			PlayCharacterAnimation(WorkAnimation);
 		}
-		else if (State.Flags.bGuHengTreated && Trust >= 0.0f)
-		{
-			PlayCharacterAnimation(GestureAnimation);
-		}
-		else if (!State.Flags.bGuHengTreated || Trust < -5.0f)
+		else if (Trust < -15.0f)
 		{
 			PlayCharacterAnimation(GuardedAnimation);
 		}
@@ -326,7 +336,7 @@ void AWSInteractableActor::ApplyCharacterState(const FWSGameState& State)
 	}
 	else
 	{
-		PlayCharacterAnimation(Trust < 0.0f ? GuardedAnimation : IdleAnimation);
+		PlayCharacterAnimation(Trust < -15.0f ? GuardedAnimation : IdleAnimation);
 	}
 }
 
@@ -358,7 +368,7 @@ void AWSInteractableActor::SetCharacterPreviewMood(const bool bHighTrust)
 	}
 	bReactionActive = true;
 	ReactionUntilTime = TNumericLimits<float>::Max();
-	PlayCharacterAnimation(bHighTrust ? GestureAnimation : GuardedAnimation);
+	PlayCharacterAnimation(bHighTrust ? IdleAnimation : GuardedAnimation);
 }
 
 void AWSInteractableActor::SetDialogueLookAtActive(const bool bActive)

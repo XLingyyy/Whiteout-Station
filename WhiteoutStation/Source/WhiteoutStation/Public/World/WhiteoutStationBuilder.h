@@ -6,6 +6,7 @@
 #include "WhiteoutStationBuilder.generated.h"
 
 class AWSInteractableActor;
+class AStaticMeshActor;
 class UDirectionalLightComponent;
 class UPointLightComponent;
 class UWSStationAssemblyData;
@@ -35,7 +36,14 @@ private:
 	UPROPERTY()
 	TObjectPtr<UDirectionalLightComponent> ExteriorLight;
 
+	UPROPERTY()
+	TArray<TObjectPtr<AStaticMeshActor>> RuntimeAssemblyMeshes;
+
+	UPROPERTY()
+	TArray<TObjectPtr<AWSInteractableActor>> RuntimeHotspots;
+
 	FTimerHandle CrisisLightingTimer;
+	FTimerHandle SceneAuditTimer;
 	int32 CrisisLightingStep = 0;
 	bool bCrisisSequenceStarted = false;
 	bool bEndingPresentationApplied = false;
@@ -65,4 +73,5 @@ private:
 	void ApplyCrisisLighting();
 	void RestoreGeneratorLighting();
 	void ApplyEndingPresentation(EWSEndingType Ending);
+	void AuditStationLayout();
 };

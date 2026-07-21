@@ -4,11 +4,14 @@
 #include "Algo/Sort.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/PointLight.h"
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "Components/PointLightComponent.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformTime.h"
@@ -408,6 +411,14 @@ void AWhiteoutGameMode::FinishOpeningPresentation()
 
 void AWhiteoutGameMode::BeginPresentationCapture()
 {
+	if (IConsoleVariable* MotionBlurQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("r.MotionBlurQuality")))
+	{
+		MotionBlurQuality->Set(0, ECVF_SetByCode);
+	}
+	if (IConsoleVariable* DepthOfFieldQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("r.DepthOfFieldQuality")))
+	{
+		DepthOfFieldQuality->Set(0, ECVF_SetByCode);
+	}
 	PresentationCaptureNames.Reset();
 	if (PresentationCaptureMode.Equals(TEXT("suite"), ESearchCase::IgnoreCase))
 	{
@@ -442,6 +453,17 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 			TEXT("dialogue_promise"), TEXT("dialogue_free"),
 			TEXT("dialogue_offline"), TEXT("dialogue_response"),
 			TEXT("lookat_near"), TEXT("lookat_side"), TEXT("lookat_far")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("g3suite"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("scene_01_after_control_grounding"), TEXT("scene_02_after_control_storage"),
+			TEXT("scene_03_after_central_passage"), TEXT("scene_04_after_quarters_grounding"),
+			TEXT("scene_05_after_repair_passage"), TEXT("scene_06_after_gu_idle"),
+			TEXT("scene_07_after_repair_grounding"), TEXT("scene_08_after_medical_layout"),
+			TEXT("scene_09_after_ye_idle"), TEXT("scene_10_after_bed_passage"),
+			TEXT("character_gu_near"), TEXT("character_gu_mid"),
+			TEXT("character_ye_near"), TEXT("character_ye_mid")};
 	}
 	else
 	{
@@ -702,6 +724,117 @@ void AWhiteoutGameMode::StagePresentationCapture()
 			break;
 		}
 	}
+	else if (CaptureName.StartsWith(TEXT("scene_")) || CaptureName.StartsWith(TEXT("character_")))
+	{
+		HUD->SetInterfaceVisibleForCapture(false);
+		const TArray<FString> SceneCaptureNames = {
+			TEXT("scene_01_after_control_grounding"), TEXT("scene_02_after_control_storage"),
+			TEXT("scene_03_after_central_passage"), TEXT("scene_04_after_quarters_grounding"),
+			TEXT("scene_05_after_repair_passage"), TEXT("scene_06_after_gu_idle"),
+			TEXT("scene_07_after_repair_grounding"), TEXT("scene_08_after_medical_layout"),
+			TEXT("scene_09_after_ye_idle"), TEXT("scene_10_after_bed_passage"),
+			TEXT("character_gu_near"), TEXT("character_gu_mid"),
+			TEXT("character_ye_near"), TEXT("character_ye_mid")};
+		const TArray<FVector> SceneCaptureLocations = {
+			FVector(520, 300, 105), FVector(520, 300, 105),
+			FVector(520, 300, 105), FVector(860, 720, 115),
+			FVector(1000, 350, 120), FVector(620, 300, 105),
+			FVector(1600, 300, 105), FVector(-180, 520, 105),
+			FVector(120, 1120, 105), FVector(1500, 520, 105),
+			FVector(735, 160, 105), FVector(600, 160, 110),
+			FVector(120, 690, 105), FVector(120, 560, 110)};
+		const TArray<FRotator> SceneCaptureRotations = {
+			FRotator(-2, -142, 0), FRotator(-4, -142, 0),
+			FRotator(-2, 0, 0), FRotator(-2, 0, 0),
+			FRotator(-3, -55, 0), FRotator(-1, -28, 0),
+			FRotator(-3, -145, 0), FRotator(-2, 30, 0),
+			FRotator(-1, -90, 0), FRotator(-2, 143, 0),
+			FRotator(-1, 0, 0), FRotator(-1, 0, 0),
+			FRotator(-1, 90, 0), FRotator(-1, 90, 0)};
+		const int32 ViewIndex = SceneCaptureNames.IndexOfByKey(CaptureName);
+		APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+		if (Pawn && PlayerController && SceneCaptureLocations.IsValidIndex(ViewIndex)
+			&& SceneCaptureRotations.IsValidIndex(ViewIndex))
+		{
+			PlayerController->SetViewTarget(Pawn);
+			Pawn->SetActorLocation(SceneCaptureLocations[ViewIndex], false, nullptr, ETeleportType::TeleportPhysics);
+			PlayerController->SetControlRotation(SceneCaptureRotations[ViewIndex]);
+			if (ACharacter* CaptureCharacter = Cast<ACharacter>(Pawn))
+			{
+				CaptureCharacter->GetCharacterMovement()->DisableMovement();
+			}
+		}
+		if (Pawn && PlayerController && CaptureName.StartsWith(TEXT("character_")))
+		{
+			if (PlayerController->PlayerCameraManager)
+			{
+				PlayerController->PlayerCameraManager->SetFOV(55.0f);
+			}
+			const bool bEngineer = CaptureName.Contains(TEXT("_gu_"));
+			const FName TargetAction = bEngineer ? FName(TEXT("talk_gu_heng")) : FName(TEXT("talk_ye_cheng"));
+			for (TActorIterator<AWSInteractableActor> CharacterIt(GetWorld()); CharacterIt; ++CharacterIt)
+			{
+				const bool bIsCharacter = CharacterIt->ActionId == TEXT("talk_gu_heng")
+					|| CharacterIt->ActionId == TEXT("talk_ye_cheng");
+				if (bIsCharacter)
+				{
+					CharacterIt->SetActorHiddenInGame(CharacterIt->ActionId != TargetAction);
+				}
+			}
+			for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+			{
+				if (It->ActionId != TargetAction)
+				{
+					continue;
+				}
+				const FVector InspectionLocation = bEngineer
+					? FVector(10000.0f, 10000.0f, 0.0f)
+					: FVector(10000.0f, 10600.0f, 0.0f);
+				It->SetActorLocation(InspectionLocation, false, nullptr, ETeleportType::TeleportPhysics);
+				It->SetActorRotation(FRotator(0.0f, 180.0f, 0.0f));
+				It->SetCharacterPreviewMood(true);
+				const FVector Forward = It->GetActorForwardVector();
+				const FVector Right = It->GetActorRightVector();
+				const FVector ViewDirection = -Right;
+				const float Distance = CaptureName.EndsWith(TEXT("_near")) ? 240.0f : 420.0f;
+				FVector PawnLocation = It->GetActorLocation() + ViewDirection * Distance;
+				PawnLocation.Z = 105.0f;
+				Pawn->SetActorLocation(PawnLocation, false, nullptr, ETeleportType::TeleportPhysics);
+				const FVector CameraLocation = Pawn->GetPawnViewLocation();
+				const float LookTargetHeight = CaptureName.EndsWith(TEXT("_near")) ? 145.0f : 92.0f;
+				const FVector LookTarget = It->GetActorLocation() + FVector(0.0f, 0.0f, LookTargetHeight);
+				PlayerController->SetControlRotation((LookTarget - CameraLocation).Rotation());
+				if (!LookAtCaptureLight)
+				{
+					LookAtCaptureLight = GetWorld()->SpawnActor<APointLight>(InspectionLocation, FRotator::ZeroRotator);
+					if (LookAtCaptureLight && LookAtCaptureLight->PointLightComponent)
+					{
+						LookAtCaptureLight->PointLightComponent->SetMobility(EComponentMobility::Movable);
+						LookAtCaptureLight->PointLightComponent->SetIntensity(1800.0f);
+						LookAtCaptureLight->PointLightComponent->SetAttenuationRadius(850.0f);
+						LookAtCaptureLight->PointLightComponent->SetLightColor(FLinearColor(0.62f, 0.74f, 1.0f));
+						LookAtCaptureLight->PointLightComponent->SetCastShadows(false);
+					}
+				}
+				if (LookAtCaptureLight)
+				{
+					LookAtCaptureLight->SetActorLocation(
+						It->GetActorLocation() + ViewDirection * 90.0f + Forward * 90.0f + FVector(0.0f, 0.0f, 205.0f));
+				}
+				FVector CaptureBoundsOrigin = FVector::ZeroVector;
+				FVector CaptureBoundsExtent = FVector::ZeroVector;
+				It->GetActorBounds(false, CaptureBoundsOrigin, CaptureBoundsExtent);
+				UE_LOG(LogTemp, Display,
+					TEXT("WhiteoutStation v0.3 G3 character capture %s actor=%s pawn=%s bounds_origin=%s bounds_extent=%s"),
+					*CaptureName,
+					*It->GetActorLocation().ToCompactString(),
+					*Pawn->GetActorLocation().ToCompactString(),
+					*CaptureBoundsOrigin.ToCompactString(),
+					*CaptureBoundsExtent.ToCompactString());
+				break;
+			}
+		}
+	}
 	else if (CaptureName.Equals(TEXT("evidence")))
 	{
 		FWSGameState EvidenceState = StateSubsystem->GetStateSnapshot();
@@ -731,13 +864,38 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		SettleTimer,
 		this,
 		&AWhiteoutGameMode::CapturePresentationFrame,
-		CaptureName.StartsWith(TEXT("lookat_")) ? 1.0f : 0.45f,
+		CaptureName.StartsWith(TEXT("lookat_")) ? 1.0f
+			: CaptureName.StartsWith(TEXT("scene_")) ? 1.2f
+			: 0.45f,
 		false);
 }
 
 void AWhiteoutGameMode::CapturePresentationFrame()
 {
 	const FString& CaptureName = PresentationCaptureNames[PresentationCaptureIndex];
+	if (CaptureName.StartsWith(TEXT("scene_")) || CaptureName.StartsWith(TEXT("character_")))
+	{
+		if (APlayerController* CaptureController = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			if (APawn* CapturePawn = UGameplayStatics::GetPlayerPawn(this, 0))
+			{
+				const FVector CameraLocation = CapturePawn->GetPawnViewLocation();
+				const FRotator CameraRotation = CaptureController->GetControlRotation();
+				ACameraActor* CaptureCamera = GetWorld()->SpawnActor<ACameraActor>(CameraLocation, CameraRotation);
+				if (CaptureCamera && CaptureCamera->GetCameraComponent())
+				{
+					CaptureCamera->GetCameraComponent()->SetFieldOfView(
+						CaptureName.StartsWith(TEXT("character_")) ? 55.0f : 90.0f);
+					CaptureCamera->SetLifeSpan(1.0f);
+					CaptureController->SetViewTarget(CaptureCamera);
+				}
+				if (CaptureController->PlayerCameraManager)
+				{
+					CaptureController->PlayerCameraManager->UpdateCamera(0.0f);
+				}
+			}
+		}
+	}
 	if (CaptureName.StartsWith(TEXT("focus_")))
 	{
 		const FName TargetAction = CaptureName.Equals(TEXT("focus_blocked"))
@@ -769,7 +927,10 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 		: FIntPoint(0, 0);
 	const bool bV03Capture = PresentationCaptureMode.Equals(TEXT("g1suite"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("g2suite"), ESearchCase::IgnoreCase)
+		|| PresentationCaptureMode.Equals(TEXT("g3suite"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.StartsWith(TEXT("focus_"), ESearchCase::IgnoreCase)
+		|| PresentationCaptureMode.StartsWith(TEXT("scene_"), ESearchCase::IgnoreCase)
+		|| PresentationCaptureMode.StartsWith(TEXT("character_"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("hud"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("pause"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("evidence"), ESearchCase::IgnoreCase);
