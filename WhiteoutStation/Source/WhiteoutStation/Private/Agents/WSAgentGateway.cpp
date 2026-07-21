@@ -2,9 +2,11 @@
 
 #include "Agents/WSNPCDecisionService.h"
 #include "Dom/JsonObject.h"
+#include "HAL/PlatformMisc.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpResponse.h"
 #include "Misc/CommandLine.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
@@ -59,7 +61,7 @@ void UWSAgentGateway::Initialize()
 
 bool UWSAgentGateway::HasLiveProvider() const
 {
-	return !Endpoint.IsEmpty();
+	return bLLMEnabled && !Endpoint.IsEmpty() && (!bRequiresApiKey || !ApiKey.IsEmpty());
 }
 
 void UWSAgentGateway::RequestExpression(
@@ -80,6 +82,10 @@ void UWSAgentGateway::RequestExpression(
 	Request->SetURL(Endpoint);
 	Request->SetVerb(TEXT("POST"));
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json; charset=utf-8"));
+	if (!ApiKey.IsEmpty())
+	{
+		Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *ApiKey));
+	}
 	Request->SetTimeout(TimeoutSeconds);
 	Request->SetContentAsString(BuildRequestJson(Decision, AllowedFacts, State));
 	Request->OnProcessRequestComplete().BindLambda(
@@ -191,6 +197,11 @@ bool UWSAgentGateway::ValidateModelPayload(
 
 void UWSAgentGateway::LoadConfig()
 {
+	Endpoint = TEXT("https://api.deepseek.com/chat/completions");
+	ProviderName = TEXT("deepseek");
+	ModelName = TEXT("deepseek-v4-flash");
+	bLLMEnabled = false;
+
 	FString JsonText;
 	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v0.1.json");
 	if (FFileHelper::LoadFileToString(JsonText, *ConfigPath))
@@ -202,6 +213,7 @@ void UWSAgentGateway::LoadConfig()
 			Root->TryGetStringField(TEXT("endpoint"), Endpoint);
 			Root->TryGetStringField(TEXT("provider_name"), ProviderName);
 			Root->TryGetStringField(TEXT("model"), ModelName);
+			Root->TryGetBoolField(TEXT("llm_enabled"), bLLMEnabled);
 			double ConfigTimeout = TimeoutSeconds;
 			if (Root->TryGetNumberField(TEXT("timeout_seconds"), ConfigTimeout))
 			{
@@ -209,13 +221,56 @@ void UWSAgentGateway::LoadConfig()
 			}
 		}
 	}
+
+	const FString LocalConfigPath = FPaths::ProjectDir() / TEXT("LocalConfig/WhiteoutLLM.ini");
+	FConfigFile LocalConfig;
+	LocalConfig.Read(LocalConfigPath);
+	if (LocalConfig.Num() > 0)
+	{
+		FString LocalEnabled;
+		if (LocalConfig.GetString(TEXT("WhiteoutLLM"), TEXT("Enabled"), LocalEnabled))
+		{
+			bLLMEnabled = LocalEnabled.ToBool();
+		}
+		LocalConfig.GetString(TEXT("WhiteoutLLM"), TEXT("Endpoint"), Endpoint);
+		LocalConfig.GetString(TEXT("WhiteoutLLM"), TEXT("Model"), ModelName);
+		FString LocalTimeout;
+		if (LocalConfig.GetString(TEXT("WhiteoutLLM"), TEXT("TimeoutSeconds"), LocalTimeout))
+		{
+			TimeoutSeconds = FMath::Clamp(FCString::Atof(*LocalTimeout), 1.0f, 15.0f);
+		}
+		if (LocalConfig.GetString(TEXT("WhiteoutLLM"), TEXT("ApiKey"), ApiKey))
+		{
+			ApiKey = ApiKey.TrimStartAndEnd();
+			CredentialSource = ApiKey.IsEmpty() ? TEXT("none") : TEXT("local_ini");
+		}
+	}
+
+	const FString EnvironmentKey = FPlatformMisc::GetEnvironmentVariable(TEXT("WHITEOUT_LLM_API_KEY")).TrimStartAndEnd();
+	if (!EnvironmentKey.IsEmpty())
+	{
+		ApiKey = EnvironmentKey;
+		CredentialSource = TEXT("environment");
+	}
+	const FString EnvironmentEnabled = FPlatformMisc::GetEnvironmentVariable(TEXT("WHITEOUT_LLM_ENABLED")).TrimStartAndEnd();
+	if (!EnvironmentEnabled.IsEmpty())
+	{
+		bLLMEnabled = EnvironmentEnabled.ToBool();
+	}
+
 	FString CommandLineEndpoint;
 	if (FParse::Value(FCommandLine::Get(), TEXT("WhiteoutAgentEndpoint="), CommandLineEndpoint))
 	{
 		Endpoint = CommandLineEndpoint.TrimStartAndEnd();
 		ProviderName = TEXT("command-line-provider");
 	}
-	if (Endpoint.IsEmpty())
+	FString CommandLineEnabled;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WhiteoutLLMEnabled="), CommandLineEnabled))
+	{
+		bLLMEnabled = CommandLineEnabled.ToBool();
+	}
+	bRequiresApiKey = Endpoint.StartsWith(TEXT("https://api.deepseek.com"), ESearchCase::IgnoreCase);
+	if (!bLLMEnabled || Endpoint.IsEmpty() || (bRequiresApiKey && ApiKey.IsEmpty()))
 	{
 		ProviderName = TEXT("preset");
 	}
@@ -224,10 +279,10 @@ void UWSAgentGateway::LoadConfig()
 FString UWSAgentGateway::BuildRequestJson(
 	const FWSAgentReply& Decision,
 	const TArray<FName>& AllowedFactIds,
-	const FWSGameState& State)
+	const FWSGameState& State) const
 {
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetStringField(TEXT("model"), TEXT("shared-dialogue"));
+	Root->SetStringField(TEXT("model"), ModelName);
 	Root->SetStringField(TEXT("instruction"), TEXT("Rewrite only the utterance. Do not change decisions, rules, AP, resources, facts, or outcomes."));
 	Root->SetStringField(TEXT("speaker"), UWSNPCDecisionService::SpeakerLabel(Decision.Speaker));
 	Root->SetStringField(TEXT("action_id"), Decision.ActionId.ToString());

@@ -31,13 +31,19 @@ public:
 		FString& OutReason);
 
 	FString GetProviderName() const { return ProviderName; }
+	FString GetModelName() const { return ModelName; }
+	FString GetCredentialSource() const { return CredentialSource; }
 
 private:
 	FString Endpoint;
+	FString ApiKey;
+	FString CredentialSource = TEXT("none");
 	FString ProviderName = TEXT("preset");
-	FString ModelName = TEXT("shared-dialogue");
+	FString ModelName = TEXT("deepseek-v4-flash");
 	float TimeoutSeconds = 4.0f;
+	bool bLLMEnabled = false;
+	bool bRequiresApiKey = false;
 
 	void LoadConfig();
-	static FString BuildRequestJson(const FWSAgentReply& Decision, const TArray<FName>& AllowedFactIds, const FWSGameState& State);
+	FString BuildRequestJson(const FWSAgentReply& Decision, const TArray<FName>& AllowedFactIds, const FWSGameState& State) const;
 };

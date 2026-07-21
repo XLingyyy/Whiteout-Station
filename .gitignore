@@ -35,3 +35,9 @@ Desktop.ini
 .codex_tmp/
 .playwright-cli/
 Builds/
+
+# Local runtime credentials and raw playtest material
+WhiteoutStation/LocalConfig/*.ini
+!WhiteoutStation/LocalConfig/*.ini.example
+docs/*真人体验反馈*.docx
+docs/*体验反馈*.docx

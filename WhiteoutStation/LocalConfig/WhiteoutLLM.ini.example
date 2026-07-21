@@ -1,0 +1,6 @@
+[WhiteoutLLM]
+Enabled=false
+ApiKey=
+Endpoint=https://api.deepseek.com/chat/completions
+Model=deepseek-v4-flash
+TimeoutSeconds=8

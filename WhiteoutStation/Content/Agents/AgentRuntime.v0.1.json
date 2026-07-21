@@ -1,8 +1,9 @@
 {
   "schema_version": 1,
-  "provider_name": "preset",
-  "model": "shared-dialogue",
-  "endpoint": "",
-  "timeout_seconds": 4,
-  "notes": "Leave endpoint empty for deterministic offline dialogue. Use -WhiteoutAgentEndpoint=<local-proxy-url> to enable the shared expression provider without storing credentials."
+  "provider_name": "deepseek",
+  "model": "deepseek-v4-flash",
+  "endpoint": "https://api.deepseek.com/chat/completions",
+  "timeout_seconds": 8,
+  "llm_enabled": false,
+  "notes": "Online dialogue is opt-in. Credentials are read only from WHITEOUT_LLM_API_KEY or ignored LocalConfig/WhiteoutLLM.ini; AutoRoute remains offline."
 }
