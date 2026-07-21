@@ -3,6 +3,7 @@
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/FileManager.h"
 #include "HUD/WhiteoutHUD.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
@@ -26,7 +27,7 @@ AWhiteoutGameMode::AWhiteoutGameMode()
 void AWhiteoutGameMode::BeginPlay()
 {
 	Super::BeginPlay();
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.1 flow"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.2 presentation flow"));
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		const bool bContinueRequested = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutContinue"));
@@ -79,6 +80,74 @@ void AWhiteoutGameMode::BeginPlay()
 			4.0f,
 			false);
 	}
+
+	if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutBaselineCapture")))
+	{
+		FTimerHandle BaselineTimer;
+		GetWorldTimerManager().SetTimer(BaselineTimer, this, &AWhiteoutGameMode::BeginBaselineCapture, 2.0f, false);
+	}
+}
+
+void AWhiteoutGameMode::BeginBaselineCapture()
+{
+	BaselineLocations = {
+		FVector(-190, 245, 105),
+		FVector(500, 120, 105),
+		FVector(300, -235, 105)};
+	BaselineRotations = {
+		FRotator(0, -72, 0),
+		FRotator(-4, -150, 0),
+		FRotator(-2, 92, 0)};
+	BaselineNames = {
+		TEXT("ControlRoom_01_Entry"),
+		TEXT("ControlRoom_02_Consoles"),
+		TEXT("ControlRoom_03_WindowWall")};
+	BaselineCaptureIndex = 0;
+	if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->DismissOpening();
+		}
+	}
+	StageBaselineView();
+}
+
+void AWhiteoutGameMode::StageBaselineView()
+{
+	if (!BaselineLocations.IsValidIndex(BaselineCaptureIndex))
+	{
+		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: baseline capture completed"));
+		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoExit")))
+		{
+			FPlatformMisc::RequestExit(false);
+		}
+		return;
+	}
+	APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (Pawn)
+	{
+		Pawn->SetActorLocation(BaselineLocations[BaselineCaptureIndex], false, nullptr, ETeleportType::TeleportPhysics);
+	}
+	if (PlayerController)
+	{
+		PlayerController->SetControlRotation(BaselineRotations[BaselineCaptureIndex]);
+	}
+	FTimerHandle SettleTimer;
+	GetWorldTimerManager().SetTimer(SettleTimer, this, &AWhiteoutGameMode::CaptureBaselineView, 0.6f, false);
+}
+
+void AWhiteoutGameMode::CaptureBaselineView()
+{
+	const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../docs/baseline_v0.2"));
+	IFileManager::Get().MakeDirectory(*Directory, true);
+	const FString ScreenshotPath = Directory / (BaselineNames[BaselineCaptureIndex] + TEXT(".png"));
+	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false, false, FIntRect(), true);
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: requested baseline screenshot %s"), *ScreenshotPath);
+	++BaselineCaptureIndex;
+	FTimerHandle NextTimer;
+	GetWorldTimerManager().SetTimer(NextTimer, this, &AWhiteoutGameMode::StageBaselineView, 1.25f, false);
 }
 
 void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)

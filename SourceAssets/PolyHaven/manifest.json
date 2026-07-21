@@ -1,18 +1,21 @@
 {
   "snow_02": {
     "Diffuse": {
+      "source_channel": "Diffuse",
       "file": "SourceAssets/PolyHaven/snow_02/snow_02_diff_1k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/snow_02/snow_02_diff_1k.jpg",
       "md5": "fc54766c6b36ff298699115a619d440b",
       "size": 325497
     },
-    "nor_dx": {
+    "Normal": {
+      "source_channel": "nor_dx",
       "file": "SourceAssets/PolyHaven/snow_02/snow_02_nor_dx_1k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/snow_02/snow_02_nor_dx_1k.jpg",
       "md5": "a0125d726a545e689015a50d3c3acdd8",
       "size": 1111679
     },
-    "Rough": {
+    "Roughness": {
+      "source_channel": "Rough",
       "file": "SourceAssets/PolyHaven/snow_02/snow_02_rough_1k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/snow_02/snow_02_rough_1k.jpg",
       "md5": "1dbae0269e53dbf80d4fd1c4335f25a2",
@@ -21,18 +24,21 @@
   },
   "rusty_metal_05": {
     "Diffuse": {
+      "source_channel": "Diffuse",
       "file": "SourceAssets/PolyHaven/rusty_metal_05/rusty_metal_05_diff_1k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rusty_metal_05/rusty_metal_05_diff_1k.jpg",
       "md5": "7662ff71242d7e11ff9aa647598d7e99",
       "size": 815155
     },
-    "nor_dx": {
+    "Normal": {
+      "source_channel": "nor_dx",
       "file": "SourceAssets/PolyHaven/rusty_metal_05/rusty_metal_05_nor_dx_1k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rusty_metal_05/rusty_metal_05_nor_dx_1k.jpg",
       "md5": "9d0433c445c28aaa484bac829de7cb36",
       "size": 593449
     },
-    "Rough": {
+    "Roughness": {
+      "source_channel": "Rough",
       "file": "SourceAssets/PolyHaven/rusty_metal_05/rusty_metal_05_rough_1k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rusty_metal_05/rusty_metal_05_rough_1k.jpg",
       "md5": "0c03068b64bcae6f9272b6c1175f7d29",
@@ -41,22 +47,71 @@
   },
   "concrete": {
     "Diffuse": {
+      "source_channel": "Diffuse",
       "file": "SourceAssets/PolyHaven/concrete/concrete_diff_1k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete/concrete_diff_1k.jpg",
       "md5": "795b1fbb460fb38d29c5859ff2c4b5d4",
       "size": 543902
     },
-    "nor_dx": {
+    "Normal": {
+      "source_channel": "nor_dx",
       "file": "SourceAssets/PolyHaven/concrete/concrete_nor_dx_1k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete/concrete_nor_dx_1k.jpg",
       "md5": "6a4a0de427defadfb3b3e822f92131f8",
       "size": 115262
     },
-    "Rough": {
+    "Roughness": {
+      "source_channel": "Rough",
       "file": "SourceAssets/PolyHaven/concrete/concrete_rough_1k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete/concrete_rough_1k.jpg",
       "md5": "2e491629157a6d2a2c915d2b2753798c",
       "size": 215714
+    }
+  },
+  "blue_metal_plate": {
+    "Diffuse": {
+      "source_channel": "Diffuse",
+      "file": "SourceAssets/PolyHaven/blue_metal_plate/blue_metal_plate_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/blue_metal_plate/blue_metal_plate_diff_1k.jpg",
+      "md5": "a906d0e554596fb76c6969f2f644c5e6",
+      "size": 395923
+    },
+    "Normal": {
+      "source_channel": "nor_dx",
+      "file": "SourceAssets/PolyHaven/blue_metal_plate/blue_metal_plate_nor_dx_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/blue_metal_plate/blue_metal_plate_nor_dx_1k.jpg",
+      "md5": "b2857e3ba6a817ae97d4e6e1c8231d56",
+      "size": 233281
+    },
+    "Roughness": {
+      "source_channel": "Rough",
+      "file": "SourceAssets/PolyHaven/blue_metal_plate/blue_metal_plate_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/blue_metal_plate/blue_metal_plate_rough_1k.jpg",
+      "md5": "76c3911d8ad2416e4db3104a2ef831c7",
+      "size": 402450
+    }
+  },
+  "fabric_pattern_05": {
+    "Diffuse": {
+      "source_channel": "col_01",
+      "file": "SourceAssets/PolyHaven/fabric_pattern_05/fabric_pattern_05_col_01_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/fabric_pattern_05/fabric_pattern_05_col_01_1k.jpg",
+      "md5": "bb9ea242bac4c41493de34ba251870c2",
+      "size": 797220
+    },
+    "Normal": {
+      "source_channel": "nor_dx",
+      "file": "SourceAssets/PolyHaven/fabric_pattern_05/fabric_pattern_05_nor_dx_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/fabric_pattern_05/fabric_pattern_05_nor_dx_1k.jpg",
+      "md5": "3d739486b5b315c1c90933795bcf738b",
+      "size": 898289
+    },
+    "Roughness": {
+      "source_channel": "Rough",
+      "file": "SourceAssets/PolyHaven/fabric_pattern_05/fabric_pattern_05_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/fabric_pattern_05/fabric_pattern_05_rough_1k.jpg",
+      "md5": "94f4531e69392685b4fe74fba3a2da48",
+      "size": 438194
     }
   }
 }

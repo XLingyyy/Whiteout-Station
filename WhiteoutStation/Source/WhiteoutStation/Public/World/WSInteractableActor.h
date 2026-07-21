@@ -36,9 +36,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Interaction")
 	FText GetInteractionPrompt() const;
 
+	UFUNCTION(BlueprintPure, Category = "Interaction")
+	FWSActionPreview PreviewInteraction(
+		EWSDialogueAct DialogueAct = EWSDialogueAct::Ask,
+		FName PromiseCondition = NAME_None) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	FWSActionResult Interact(
 		APawn* InstigatorPawn,
 		EWSDialogueAct DialogueAct = EWSDialogueAct::Ask,
 		FName PromiseCondition = NAME_None);
+
+private:
+	FWSActionRequest BuildRequest(EWSDialogueAct DialogueAct, FName PromiseCondition) const;
 };

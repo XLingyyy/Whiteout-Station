@@ -64,11 +64,11 @@ def make_material(name: str, textures: dict[str, object], metallic: float, tilin
     normal = unreal.MaterialEditingLibrary.create_material_expression(
         material, unreal.MaterialExpressionTextureSample, -360, 40
     )
-    normal.set_editor_property("texture", textures["nor_dx"])
+    normal.set_editor_property("texture", textures["Normal"])
     rough = unreal.MaterialEditingLibrary.create_material_expression(
         material, unreal.MaterialExpressionTextureSample, -360, 220
     )
-    rough.set_editor_property("texture", textures["Rough"])
+    rough.set_editor_property("texture", textures["Roughness"])
     metallic_value = unreal.MaterialEditingLibrary.create_material_expression(
         material, unreal.MaterialExpressionConstant, -120, 340
     )
@@ -101,21 +101,22 @@ def main() -> None:
         "snow_02": ("M_WS_Snow", 0.0, 2.2),
         "rusty_metal_05": ("M_WS_RustedMetal", 0.82, 2.8),
         "concrete": ("M_WS_Concrete", 0.0, 2.6),
+        "blue_metal_plate": ("M_WS_PaintedMetal", 0.38, 2.0),
+        "fabric_pattern_05": ("M_WS_WinterFabric", 0.0, 3.2),
     }
     for asset_id, (material_name, metallic, tiling) in material_specs.items():
         imported = {}
         for channel, entry in manifest[asset_id].items():
             source_file = REPO_ROOT / entry["file"]
-            suffix = {"Diffuse": "D", "nor_dx": "N", "Rough": "R"}[channel]
+            suffix = {"Diffuse": "D", "Normal": "N", "Roughness": "R"}[channel]
             imported[channel] = import_texture(
                 source_file,
                 f"T_{asset_id}_{suffix}",
-                is_normal=channel == "nor_dx",
-                is_linear=channel == "Rough",
+                is_normal=channel == "Normal",
+                is_linear=channel == "Roughness",
             )
         make_material(material_name, imported, metallic, tiling)
         unreal.log(f"WhiteoutStation assets: built {material_name}")
-    unreal.EditorAssetLibrary.save_directory("/Game/WindStation/Art", only_if_is_dirty=False, recursive=True)
 
 
 if __name__ == "__main__":

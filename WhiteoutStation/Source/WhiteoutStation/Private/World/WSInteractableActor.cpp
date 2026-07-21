@@ -41,6 +41,30 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 	DisplayName = InDisplayName;
 	AccentColor = InAccentColor;
 	const bool bCharacter = ActionId == TEXT("talk_gu_heng") || ActionId == TEXT("talk_ye_cheng");
+	const TCHAR* PresentationMeshPath = nullptr;
+	if (ActionId == TEXT("investigate_generator_log") || ActionId == TEXT("inspect_control_cabinet"))
+	{
+		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_Computer.Prop_Computer");
+	}
+	else if (ActionId == TEXT("send_signal") || ActionId == TEXT("heat_repair_room") || ActionId == TEXT("heat_medical_room"))
+	{
+		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_AccessPoint.Prop_AccessPoint");
+	}
+	else if (ActionId == TEXT("forced_self_repair") || ActionId == TEXT("distribute_food") || ActionId == TEXT("treat_gu_heng"))
+	{
+		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_Crate3.Prop_Crate3");
+	}
+	else if (ActionId == TEXT("dismantle_kitchen_heater"))
+	{
+		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_Barrel_Large.Prop_Barrel_Large");
+	}
+	if (PresentationMeshPath)
+	{
+		if (UStaticMesh* PresentationMesh = LoadObject<UStaticMesh>(nullptr, PresentationMeshPath))
+		{
+			Mesh->SetStaticMesh(PresentationMesh);
+		}
+	}
 	if (bCharacter)
 	{
 		if (UStaticMesh* CylinderMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")))
@@ -65,7 +89,10 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 			nullptr,
 			TEXT("/Game/WindStation/Art/Materials/M_WS_RustedMetal.M_WS_RustedMetal")))
 		{
-			Mesh->SetMaterial(0, SurfaceMaterial);
+			for (int32 Index = 0; Index < Mesh->GetNumMaterials(); ++Index)
+			{
+				Mesh->SetMaterial(Index, SurfaceMaterial);
+			}
 			return;
 		}
 	}
@@ -85,7 +112,44 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 
 FText AWSInteractableActor::GetInteractionPrompt() const
 {
-	return FText::Format(FText::FromString(TEXT("[F] {0}")), DisplayName);
+	return FText::Format(FText::FromString(TEXT("[F] 查看行动：{0}")), DisplayName);
+}
+
+FWSActionRequest AWSInteractableActor::BuildRequest(
+	const EWSDialogueAct DialogueAct,
+	const FName PromiseCondition) const
+{
+	FWSActionRequest Request;
+	Request.ActionId = ActionId;
+	Request.TransactionId = FGuid::NewGuid();
+	Request.DialogueAct = DialogueAct;
+	Request.PromiseCondition = PromiseCondition;
+	if (ActionId == TEXT("distribute_food"))
+	{
+		Request.FoodForPlayer = 1;
+		Request.FoodForGuHeng = 1;
+	}
+	if (ActionId == TEXT("treat_gu_heng"))
+	{
+		Request.TreatmentResource = EWSResourceType::Medicine;
+	}
+	return Request;
+}
+
+FWSActionPreview AWSInteractableActor::PreviewInteraction(
+	const EWSDialogueAct DialogueAct,
+	const FName PromiseCondition) const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			return StateSubsystem->PreviewAction(BuildRequest(DialogueAct, PromiseCondition));
+		}
+	}
+	FWSActionPreview Preview;
+	Preview.ActionId = ActionId;
+	return Preview;
 }
 
 FWSActionResult AWSInteractableActor::Interact(
@@ -104,20 +168,7 @@ FWSActionResult AWSInteractableActor::Interact(
 		return Empty;
 	}
 
-	FWSActionRequest Request;
-	Request.ActionId = ActionId;
-	Request.TransactionId = FGuid::NewGuid();
-	Request.DialogueAct = DialogueAct;
-	Request.PromiseCondition = PromiseCondition;
-	if (ActionId == TEXT("distribute_food"))
-	{
-		Request.FoodForPlayer = 1;
-		Request.FoodForGuHeng = 1;
-	}
-	if (ActionId == TEXT("treat_gu_heng"))
-	{
-		Request.TreatmentResource = EWSResourceType::Medicine;
-	}
+	const FWSActionRequest Request = BuildRequest(DialogueAct, PromiseCondition);
 
 	const FWSActionPreview Preview = StateSubsystem->PreviewAction(Request);
 	FWSActionResult Result;

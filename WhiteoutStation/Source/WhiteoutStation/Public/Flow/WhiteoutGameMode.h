@@ -19,5 +19,13 @@ private:
 	UPROPERTY()
 	TObjectPtr<UAudioComponent> WindAmbience;
 
+	TArray<FVector> BaselineLocations;
+	TArray<FRotator> BaselineRotations;
+	TArray<FString> BaselineNames;
+	int32 BaselineCaptureIndex = 0;
+
 	void RunAutomationRoute(const FString& RouteName);
+	void BeginBaselineCapture();
+	void StageBaselineView();
+	void CaptureBaselineView();
 };

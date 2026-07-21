@@ -14,6 +14,7 @@
 #include "Engine/TextRenderActor.h"
 #include "Components/TextRenderComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Presentation/WSPresentationData.h"
 #include "State/WindStationStateSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 #include "World/WSInteractableActor.h"
@@ -95,10 +96,9 @@ void AWhiteoutStationBuilder::BuildStation()
 	SpawnBlock(TEXT("Central Partition B"), FVector(700, 850, 150), FVector(0.2f, 5, 3.5f), WallColor);
 	SpawnBlock(TEXT("Cross Partition A"), FVector(100, 400, 150), FVector(8, 0.2f, 3.5f), WallColor);
 	SpawnBlock(TEXT("Cross Partition B"), FVector(1300, 400, 150), FVector(8, 0.2f, 3.5f), WallColor);
+	SpawnStationAssembly();
 
 	// Silhouette props make every room legible before bespoke meshes arrive.
-	SpawnBlock(TEXT("Metal Control Desk"), FVector(-60, -165, 48), FVector(3.4f, 0.7f, 0.7f), Control);
-	SpawnBlock(TEXT("Metal Radio Stack"), FVector(390, -175, 92), FVector(0.8f, 0.55f, 1.45f), Control);
 	SpawnBlock(TEXT("Metal Generator Base"), FVector(1260, -120, 42), FVector(3.0f, 0.9f, 0.55f), Repair);
 	SpawnBlock(TEXT("Metal Pipe Run A"), FVector(1080, -245, 292), FVector(7.0f, 0.12f, 0.12f), Repair);
 	SpawnBlock(TEXT("Metal Pipe Run B"), FVector(1520, 150, 292), FVector(0.12f, 4.0f, 0.12f), Repair);
@@ -108,27 +108,78 @@ void AWhiteoutStationBuilder::BuildStation()
 	SpawnBlock(TEXT("Quarters Bunk A"), FVector(820, 560, 40), FVector(2.4f, 0.7f, 0.32f), Quarter);
 	SpawnBlock(TEXT("Quarters Bunk B"), FVector(820, 930, 40), FVector(2.4f, 0.7f, 0.32f), Quarter);
 
-	SpawnSign(TEXT("CONTROL"), FVector(-180, 365, 215), FRotator(0, 90, 0), FLinearColor(0.35f, 0.75f, 1.0f));
-	SpawnSign(TEXT("REPAIR"), FVector(820, 365, 215), FRotator(0, 90, 0), FLinearColor(1.0f, 0.55f, 0.15f));
-	SpawnSign(TEXT("MEDICAL"), FVector(-180, 1080, 215), FRotator(0, 90, 0), FLinearColor(0.3f, 1.0f, 0.75f));
-	SpawnSign(TEXT("QUARTERS"), FVector(820, 1080, 215), FRotator(0, 90, 0), FLinearColor(0.95f, 0.8f, 0.35f));
-	SpawnSign(TEXT("ANTENNA"), FVector(2050, 650, 215), FRotator(0, 180, 0), FLinearColor(0.45f, 0.75f, 1.0f));
+	SpawnSign(TEXT("控制室"), FVector(-180, 365, 215), FRotator(0, 90, 0), FLinearColor(0.35f, 0.75f, 1.0f));
+	SpawnSign(TEXT("维修间"), FVector(820, 365, 215), FRotator(0, 90, 0), FLinearColor(1.0f, 0.55f, 0.15f));
+	SpawnSign(TEXT("医务室"), FVector(-180, 1080, 215), FRotator(0, 90, 0), FLinearColor(0.3f, 1.0f, 0.75f));
+	SpawnSign(TEXT("厨房与宿舍"), FVector(820, 1080, 215), FRotator(0, 90, 0), FLinearColor(0.95f, 0.8f, 0.35f));
+	SpawnSign(TEXT("室外天线"), FVector(2050, 650, 215), FRotator(0, 180, 0), FLinearColor(0.45f, 0.75f, 1.0f));
 
-	SpawnHotspot(TEXT("investigate_generator_log"), TEXT("Deep generator log"), FVector(-120, 50, 70), Control);
-	SpawnHotspot(TEXT("send_signal"), TEXT("Emergency radio"), FVector(280, 50, 70), Control);
-	SpawnHotspot(TEXT("inspect_control_cabinet"), TEXT("Burnt control cabinet"), FVector(850, 20, 70), Repair);
-	SpawnHotspot(TEXT("heat_repair_room"), TEXT("Repair-room heating"), FVector(1050, -80, 70), Repair);
-	SpawnHotspot(TEXT("repair_generator"), TEXT("Diesel generator"), FVector(1250, 80, 90), Repair, FVector(1.2f, 0.7f, 1.1f));
-	SpawnHotspot(TEXT("forced_self_repair"), TEXT("Manual repair kit"), FVector(1450, 220, 55), Repair, FVector(0.45f));
-	SpawnHotspot(TEXT("talk_gu_heng"), TEXT("Gu Heng / engineer"), FVector(980, 260, 95), FLinearColor(0.75f, 0.28f, 0.16f), FVector(0.45f, 0.45f, 1.9f));
+	SpawnHotspot(TEXT("investigate_generator_log"), TEXT("发电机运行记录"), FVector(-120, 50, 70), Control, FVector(0.9f));
+	SpawnHotspot(TEXT("send_signal"), TEXT("应急无线电"), FVector(280, 50, 70), Control, FVector(0.82f));
+	SpawnHotspot(TEXT("inspect_control_cabinet"), TEXT("烧毁的控制柜"), FVector(850, 20, 70), Repair, FVector(0.9f));
+	SpawnHotspot(TEXT("heat_repair_room"), TEXT("维修间供暖控制器"), FVector(1050, -80, 70), Repair, FVector(0.7f));
+	SpawnHotspot(TEXT("repair_generator"), TEXT("柴油发电机"), FVector(1250, 80, 90), Repair, FVector(1.2f, 0.7f, 1.1f));
+	SpawnHotspot(TEXT("forced_self_repair"), TEXT("手动维修工具"), FVector(1450, 220, 55), Repair, FVector(0.65f));
+	SpawnHotspot(TEXT("talk_gu_heng"), TEXT("顾衡｜工程师"), FVector(980, 260, 95), FLinearColor(0.75f, 0.28f, 0.16f), FVector(0.45f, 0.45f, 1.9f));
 
-	SpawnHotspot(TEXT("heat_medical_room"), TEXT("Medical-room heating"), FVector(-120, 680, 70), Medical);
-	SpawnHotspot(TEXT("treat_gu_heng"), TEXT("Treatment station"), FVector(270, 780, 70), Medical);
-	SpawnHotspot(TEXT("talk_ye_cheng"), TEXT("Ye Cheng / doctor"), FVector(120, 980, 95), FLinearColor(0.12f, 0.65f, 0.72f), FVector(0.45f, 0.45f, 1.85f));
+	SpawnHotspot(TEXT("heat_medical_room"), TEXT("医务室供暖控制器"), FVector(-120, 680, 70), Medical, FVector(0.7f));
+	SpawnHotspot(TEXT("treat_gu_heng"), TEXT("治疗台"), FVector(270, 780, 70), Medical, FVector(0.8f));
+	SpawnHotspot(TEXT("talk_ye_cheng"), TEXT("叶澄｜医生"), FVector(120, 980, 95), FLinearColor(0.12f, 0.65f, 0.72f), FVector(0.45f, 0.45f, 1.85f));
 
-	SpawnHotspot(TEXT("distribute_food"), TEXT("Ration counter"), FVector(900, 760, 70), Quarter);
-	SpawnHotspot(TEXT("dismantle_kitchen_heater"), TEXT("Kitchen heater"), FVector(1330, 850, 70), Quarter);
-	SpawnHotspot(TEXT("calibrate_antenna"), TEXT("Frozen antenna array"), FVector(2300, 400, 135), Outdoor, FVector(0.8f, 0.8f, 2.7f));
+	SpawnHotspot(TEXT("distribute_food"), TEXT("口粮台"), FVector(900, 760, 70), Quarter, FVector(0.72f));
+	SpawnHotspot(TEXT("dismantle_kitchen_heater"), TEXT("厨房加热器"), FVector(1330, 850, 70), Quarter, FVector(0.72f));
+	SpawnHotspot(TEXT("calibrate_antenna"), TEXT("结冰的天线阵列"), FVector(2300, 400, 135), Outdoor, FVector(0.8f, 0.8f, 2.7f));
+}
+
+void AWhiteoutStationBuilder::SpawnStationAssembly()
+{
+	UWSStationAssemblyData* Assembly = LoadObject<UWSStationAssemblyData>(
+		nullptr,
+		TEXT("/Game/WindStation/Presentation/DA_WS_StationAssembly.DA_WS_StationAssembly"));
+	if (!Assembly)
+	{
+		Assembly = NewObject<UWSStationAssemblyData>(this, TEXT("RuntimeStationAssembly"));
+		UE_LOG(LogTemp, Warning, TEXT("WhiteoutStation v0.2: assembly asset missing; using class defaults"));
+	}
+	for (const FWSStationMeshPlacement& Placement : Assembly->Placements)
+	{
+		SpawnAssemblyMesh(Placement);
+	}
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: spawned %d presentation meshes"), Assembly->Placements.Num());
+}
+
+void AWhiteoutStationBuilder::SpawnAssemblyMesh(const FWSStationMeshPlacement& Placement)
+{
+	UStaticMesh* StaticMesh = Placement.Mesh.LoadSynchronous();
+	if (!StaticMesh)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("WhiteoutStation v0.2: missing assembly mesh for %s"), *Placement.Label.ToString());
+		return;
+	}
+	AStaticMeshActor* MeshActor = GetWorld()->SpawnActor<AStaticMeshActor>(
+		Placement.Transform.GetLocation(),
+		Placement.Transform.Rotator());
+	if (!MeshActor)
+	{
+		return;
+	}
+#if WITH_EDITOR
+	MeshActor->SetActorLabel(Placement.Label.ToString());
+#endif
+	MeshActor->Tags.Add(TEXT("WSRuntimePresentation"));
+	MeshActor->Tags.Add(Placement.Zone);
+	MeshActor->SetActorScale3D(Placement.Transform.GetScale3D());
+	UStaticMeshComponent* Component = MeshActor->GetStaticMeshComponent();
+	Component->SetStaticMesh(StaticMesh);
+	Component->SetMobility(EComponentMobility::Movable);
+	Component->SetCollisionEnabled(Placement.bCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+	if (UMaterialInterface* Material = Placement.Material.LoadSynchronous())
+	{
+		for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
+		{
+			Component->SetMaterial(Index, Material);
+		}
+	}
 }
 
 void AWhiteoutStationBuilder::SpawnBlock(

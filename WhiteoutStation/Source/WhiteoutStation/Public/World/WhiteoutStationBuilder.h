@@ -7,6 +7,8 @@
 class AWSInteractableActor;
 class UDirectionalLightComponent;
 class UPointLightComponent;
+class UWSStationAssemblyData;
+struct FWSStationMeshPlacement;
 struct FWSActionResult;
 
 UCLASS()
@@ -26,6 +28,8 @@ private:
 	TObjectPtr<UDirectionalLightComponent> ExteriorLight;
 
 	void BuildStation();
+	void SpawnStationAssembly();
+	void SpawnAssemblyMesh(const FWSStationMeshPlacement& Placement);
 	void SpawnBlock(const FString& Label, FVector Location, FVector Scale, FLinearColor Color);
 	void SpawnSign(const FString& Text, FVector Location, FRotator Rotation, FLinearColor Color);
 	void SpawnPointLight(const FString& Label, FVector Location, FLinearColor Color, float Intensity, float Radius);

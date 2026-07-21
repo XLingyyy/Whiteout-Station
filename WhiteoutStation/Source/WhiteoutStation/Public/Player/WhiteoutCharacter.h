@@ -63,6 +63,11 @@ private:
 	TObjectPtr<UInputAction> ContinueAction;
 
 	int32 DialogueModeIndex = 0;
+	bool bDialogueMenuVisible = false;
+	bool bPreviewCanExecute = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AWSInteractableActor> PreviewedInteractable;
 
 	void MoveForward(const FInputActionValue& Value);
 	void MoveBackward(const FInputActionValue& Value);
@@ -75,8 +80,16 @@ private:
 	void Settle(const FInputActionValue& Value);
 	void CycleDialogueMode(const FInputActionValue& Value);
 	void ContinueRun(const FInputActionValue& Value);
+	void SelectDialogue1();
+	void SelectDialogue2();
+	void SelectDialogue3();
+	void SelectDialogue4();
+	void SelectDialogue5();
+	void SelectDialogue6();
+	void SelectDialogueIndex(int32 Index);
+	void DismissOpening();
+	void TogglePauseMenu();
 	EWSDialogueAct SelectedDialogueAct() const;
 	FName SelectedPromiseCondition() const;
-	FString DialogueModeLabel() const;
 	AWSInteractableActor* FindLookedAtInteractable() const;
 };

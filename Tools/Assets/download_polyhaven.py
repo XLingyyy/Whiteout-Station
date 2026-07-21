@@ -10,8 +10,13 @@ import urllib.request
 from pathlib import Path
 
 
-ASSETS = ("snow_02", "rusty_metal_05", "concrete")
-CHANNELS = ("Diffuse", "nor_dx", "Rough")
+ASSETS = {
+    "snow_02": {"Diffuse": "Diffuse", "Normal": "nor_dx", "Roughness": "Rough"},
+    "rusty_metal_05": {"Diffuse": "Diffuse", "Normal": "nor_dx", "Roughness": "Rough"},
+    "concrete": {"Diffuse": "Diffuse", "Normal": "nor_dx", "Roughness": "Rough"},
+    "blue_metal_plate": {"Diffuse": "Diffuse", "Normal": "nor_dx", "Roughness": "Rough"},
+    "fabric_pattern_05": {"Diffuse": "col_01", "Normal": "nor_dx", "Roughness": "Rough"},
+}
 RESOLUTION = "1k"
 FORMAT = "jpg"
 USER_AGENT = "WhiteoutStationAssetPipeline/0.1 (+https://polyhaven.com)"
@@ -53,15 +58,16 @@ def download(url: str, destination: Path, expected_md5: str) -> None:
 
 def main() -> int:
     manifest: dict[str, dict[str, dict[str, str | int]]] = {}
-    for asset_id in ASSETS:
+    for asset_id, channels in ASSETS.items():
         files = fetch_json(f"https://api.polyhaven.com/files/{asset_id}")
         manifest[asset_id] = {}
-        for channel in CHANNELS:
+        for semantic, channel in channels.items():
             entry = files[channel][RESOLUTION][FORMAT]
             filename = Path(urllib.parse.urlparse(entry["url"]).path).name
             destination = OUTPUT_ROOT / asset_id / filename
             download(entry["url"], destination, entry["md5"])
-            manifest[asset_id][channel] = {
+            manifest[asset_id][semantic] = {
+                "source_channel": channel,
                 "file": str(destination.relative_to(REPO_ROOT)).replace("\\", "/"),
                 "url": entry["url"],
                 "md5": entry["md5"],

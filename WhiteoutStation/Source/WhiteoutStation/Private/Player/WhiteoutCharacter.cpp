@@ -85,7 +85,14 @@ void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			if (const AWSInteractableActor* Interactable = FindLookedAtInteractable())
+			AWSInteractableActor* Interactable = FindLookedAtInteractable();
+			if (PreviewedInteractable && PreviewedInteractable != Interactable)
+			{
+				PreviewedInteractable = nullptr;
+				bPreviewCanExecute = false;
+				HUD->HideActionPreview();
+			}
+			if (Interactable)
 			{
 				HUD->SetInteractionPrompt(Interactable->GetInteractionPrompt());
 			}
@@ -114,6 +121,15 @@ void AWhiteoutCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		EnhancedInput->BindAction(DialogueModeAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::CycleDialogueMode);
 		EnhancedInput->BindAction(ContinueAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::ContinueRun);
 	}
+	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue1);
+	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue2);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue3);
+	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue4);
+	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue5);
+	PlayerInputComponent->BindKey(EKeys::Six, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue6);
+	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AWhiteoutCharacter::DismissOpening);
+	FInputKeyBinding& PauseBinding = PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AWhiteoutCharacter::TogglePauseMenu);
+	PauseBinding.bExecuteWhenPaused = true;
 }
 
 void AWhiteoutCharacter::MoveForward(const FInputActionValue& Value)
@@ -147,18 +163,87 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 {
 	if (AWSInteractableActor* Interactable = FindLookedAtInteractable())
 	{
-		Interactable->Interact(this, SelectedDialogueAct(), SelectedPromiseCondition());
+		if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+		{
+			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+			{
+				if (PreviewedInteractable == Interactable)
+				{
+					if (bPreviewCanExecute)
+					{
+						Interactable->Interact(this, SelectedDialogueAct(), SelectedPromiseCondition());
+					}
+					else
+					{
+						HUD->HideActionPreview();
+					}
+					PreviewedInteractable = nullptr;
+					bPreviewCanExecute = false;
+					return;
+				}
+
+				const FWSActionPreview Preview = Interactable->PreviewInteraction(SelectedDialogueAct(), SelectedPromiseCondition());
+				HUD->ShowActionPreview(Interactable->DisplayName, Preview);
+				PreviewedInteractable = Interactable;
+				bPreviewCanExecute = Preview.bCanExecute;
+			}
+		}
 	}
 }
 
 void AWhiteoutCharacter::CycleDialogueMode(const FInputActionValue& Value)
 {
-	DialogueModeIndex = (DialogueModeIndex + 1) % 6;
+	bDialogueMenuVisible = !bDialogueMenuVisible;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->SetSystemMessage(FString::Printf(TEXT("DIALOGUE MODE: %s"), *DialogueModeLabel()));
+			HUD->ShowDialogueMenu(DialogueModeIndex, bDialogueMenuVisible);
+		}
+	}
+}
+
+void AWhiteoutCharacter::SelectDialogue1() { SelectDialogueIndex(0); }
+void AWhiteoutCharacter::SelectDialogue2() { SelectDialogueIndex(1); }
+void AWhiteoutCharacter::SelectDialogue3() { SelectDialogueIndex(2); }
+void AWhiteoutCharacter::SelectDialogue4() { SelectDialogueIndex(3); }
+void AWhiteoutCharacter::SelectDialogue5() { SelectDialogueIndex(4); }
+void AWhiteoutCharacter::SelectDialogue6() { SelectDialogueIndex(5); }
+
+void AWhiteoutCharacter::SelectDialogueIndex(const int32 Index)
+{
+	DialogueModeIndex = FMath::Clamp(Index, 0, 5);
+	bDialogueMenuVisible = true;
+	PreviewedInteractable = nullptr;
+	bPreviewCanExecute = false;
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->HideActionPreview();
+			HUD->ShowDialogueMenu(DialogueModeIndex, true);
+		}
+	}
+}
+
+void AWhiteoutCharacter::DismissOpening()
+{
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->DismissOpening();
+		}
+	}
+}
+
+void AWhiteoutCharacter::TogglePauseMenu()
+{
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->TogglePauseMenu();
 		}
 	}
 }
@@ -175,7 +260,7 @@ void AWhiteoutCharacter::ContinueRun(const FInputActionValue& Value)
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->SetSystemMessage(bLoaded ? TEXT("AUTOSAVE RESTORED") : TEXT("NO AUTOSAVE FOUND"));
+			HUD->SetSystemMessage(bLoaded ? TEXT("已恢复自动存档") : TEXT("没有找到自动存档"));
 		}
 	}
 }
@@ -194,16 +279,6 @@ FName AWhiteoutCharacter::SelectedPromiseCondition() const
 	if (DialogueModeIndex == 3) return TEXT("reserve_medicine");
 	if (DialogueModeIndex == 4) return TEXT("keep_records");
 	return NAME_None;
-}
-
-FString AWhiteoutCharacter::DialogueModeLabel() const
-{
-	if (DialogueModeIndex == 1) return TEXT("CHALLENGE");
-	if (DialogueModeIndex == 2) return TEXT("PROMISE // HEAT REPAIR ROOM");
-	if (DialogueModeIndex == 3) return TEXT("PROMISE // RESERVE MEDICINE");
-	if (DialogueModeIndex == 4) return TEXT("PROMISE // KEEP RECORDS");
-	if (DialogueModeIndex == 5) return TEXT("REASSURE");
-	return TEXT("ASK");
 }
 
 void AWhiteoutCharacter::ToggleEvidence(const FInputActionValue& Value)
@@ -240,7 +315,7 @@ void AWhiteoutCharacter::Settle(const FInputActionValue& Value)
 		{
 			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 			{
-				HUD->SetSystemMessage(TEXT("Settlement locked: send the signal, spend all AP, or accept a failed ending."));
+				HUD->SetSystemMessage(TEXT("现在还不能结算：先发出信号、用完行动力，或接受失败结局。"));
 			}
 		}
 		return;
@@ -250,11 +325,7 @@ void AWhiteoutCharacter::Settle(const FInputActionValue& Value)
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->SetSystemMessage(FString::Printf(
-				TEXT("RESULT: %s  //  SCORE %.1f (%s)  //  Press R to restart"),
-				*StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(Results.Ending)),
-				Results.Score.Total,
-				*Results.Score.Rating));
+			HUD->SetSystemMessage(FString::Printf(TEXT("本轮已结束：总分 %.1f，评级 %s。按 R 重新开始。"), Results.Score.Total, *Results.Score.Rating));
 		}
 	}
 }

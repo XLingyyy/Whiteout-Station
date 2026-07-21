@@ -1,0 +1,253 @@
+{
+  "source": "https://quaternius.com/packs/modularscifimegakit.html",
+  "license": "CC0-1.0",
+  "archive": "SourceAssets/Quaternius/ModularSciFiMegaKit/ModularSciFiMegaKit_Standard.zip",
+  "archive_sha256": "6fae60cf5189e44dff0bd91097f094a765acc6d57d64a85a0cc0dd56e03035e3",
+  "files": [
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/License_Standard.txt",
+      "sha256": "885b700f02932c08a41163b35cc97d1abe0895a05de29d9a9062fde5132969a8",
+      "size": 837
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Columns/Column_MetalSupport.fbx",
+      "sha256": "89992988a8c68000fa1f5757b73dc357683fa591a9451a1bd04433afa46557c3",
+      "size": 41116
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Columns/Column_Pipes.fbx",
+      "sha256": "c1fd5376f87b0ebeca3890b0319ca7e197c76cfe2253b68cc5acc3212d5b839d",
+      "size": 192988
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Platforms/Door_DarkMetal.fbx",
+      "sha256": "4690f85efd9556fea126989507f049d418990654da5776f7f9dfe8076cae4c1a",
+      "size": 20316
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Platforms/Door_Frame_SquareTall.fbx",
+      "sha256": "1fb71a714f325dc2723f6f85f7eb7135fd9e845150460b347638332ade6f1014",
+      "size": 24540
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Platforms/Platform_Metal.fbx",
+      "sha256": "4cd7c4cb1c6041e534d6c3cf5ae6e82b735089871fbd3d94c4497b6a1fef408f",
+      "size": 18716
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Platforms/Platform_Rails_4.fbx",
+      "sha256": "1e3cd9f9083966239299abd4c566f0eb9dd0bacb8addce8a509657bd8e5bf3c2",
+      "size": 47292
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Platforms/Platform_Stairs_4.fbx",
+      "sha256": "cf15f020e361a95fd6ffaf39a48d960fbb7e7529e07c769dd4781f3023080907",
+      "size": 31324
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_AccessPoint.fbx",
+      "sha256": "74b629f5d5f2ec22b98b5a30c68a4412d108ae0073b35fe93743aca5513c40c4",
+      "size": 44988
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Barrel_Large.fbx",
+      "sha256": "a13a915e9342220734e8880bcf2bb5e6d85d4e8fcac8bf8e84df4b02521e3f48",
+      "size": 33372
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Cable_1.fbx",
+      "sha256": "dffe2cc8ed05f6eed44365e2bbc5ac9a9390a7631affbb91e807dea8b6a2afd6",
+      "size": 93788
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Cable_3.fbx",
+      "sha256": "7fffb877014cd5ce6c948842e736fa1718e44cc473799d5a38ba323a276f1796",
+      "size": 159980
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Computer.fbx",
+      "sha256": "19c8078842001e566fb2502f71b391e7ea6bfb05ba728e997e398b02ce0c30e6",
+      "size": 38604
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Crate3.fbx",
+      "sha256": "4427d5c49538e1d4ffff80ed3b2ba8a7952c8458a7f24101b45918bbd018fe15",
+      "size": 22172
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Crate4.fbx",
+      "sha256": "b9ef38d5db72554d04f0fe435919ceee649e1fe9b3f95a4d53e9251de2aecdd2",
+      "size": 38108
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Fan_Small.fbx",
+      "sha256": "e3a47955483c59ae620755264e7b3df9da837a2fd847cf6ebf414caece263c44",
+      "size": 64124
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Light_Corner.fbx",
+      "sha256": "1296af9bc5837e40fe3da21973fe5e353f5a8a875ba67635a48ee9f1eec5fa01",
+      "size": 58492
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Light_Wide.fbx",
+      "sha256": "b41e931166c1f5bdc08bd6b9b2ae73a85b853bb5735363c2ea269902df6d8c2b",
+      "size": 27772
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_PipeHolder.fbx",
+      "sha256": "0fc120fe769ee64d35aed2b2a6903ec78bea1375ac8a9889c364be3f5c932aed",
+      "size": 129916
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Vent_Big.fbx",
+      "sha256": "25e93f1e294dae06d7c1d2055d25dcaed33e6ed6eb6e08cf1ab1813054d78b45",
+      "size": 28428
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Props/Prop_Vent_Wide.fbx",
+      "sha256": "be565bba4f8848c3cae929f47c924cd0defe6928ad18457dc5d93b717f4f1456",
+      "size": 27596
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Walls/BottomMetal_Straight.fbx",
+      "sha256": "84695fe94f1aec06988ec173578fee97b4ff9f94b085dbf9ff032708011ff494",
+      "size": 22892
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Walls/TopCables_Straight.fbx",
+      "sha256": "b834083a11027372103ffe23b0e6a1a2eec2cdf563c7c04ab65beb43a79663f7",
+      "size": 51868
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Walls/TopWindow_Straight.fbx",
+      "sha256": "0ac54abe197227cf9f845e6c1d591f00654bd0e5ff7c783fc519a5d62a17a112",
+      "size": 35628
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Walls/WallAstra_Straight.fbx",
+      "sha256": "a308bf71c9c98a78f2cc5d92f08220535a8cdbc98072c58acee0fb352acf2ddf",
+      "size": 39372
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Walls/WallAstra_Straight_Window.fbx",
+      "sha256": "e8d21d36f1d704f6b396baf29957c8138cec8d828325dee7980df6fd58ee847c",
+      "size": 39484
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Walls/WallBand_Straight.fbx",
+      "sha256": "91151d97b9236dbc424ebaff25dfefb8b3cf9157d6ad147abd48db0cdec9a180",
+      "size": 25100
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Models/Walls/WallWindow_Straight.fbx",
+      "sha256": "ccfb968f9053a32a03d9a01262baa7f1856bafe7b4b4e4ba20045f4c3a502a34",
+      "size": 39660
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Decals.png",
+      "sha256": "cfd1dfe9d3c86a7f5f9bc2e516d935599a70854090f413a29aec0ced1d6c908a",
+      "size": 161794
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_PaddedWall_BaseColor.png",
+      "sha256": "7b431c76896c8d2de736e33271049fc869f2a8a5c0632678c9f030146e90c650",
+      "size": 2129999
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_PaddedWall_Normal.png",
+      "sha256": "141c075ee32a4dda83c4b954076ea563b86e2a6329d5c536aa7ddccb6c1328bf",
+      "size": 3491441
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_PaddedWall_ORM.png",
+      "sha256": "555039f51a71803be3d617ac03eac05e840ec5b36c269de2115a50e956bff3b2",
+      "size": 2846320
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_PaddingWall_Emissive.png",
+      "sha256": "e29de6549929f2d8ba322e9477a290e63f761cf6afd51e114aa5232f7ab60f8a",
+      "size": 14752
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_01_BaseColor.png",
+      "sha256": "a8f3271be2aa9c450ef5ef85c15bf8bcaeeaa48f5fc616df12d1334a96e78605",
+      "size": 980201
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_01_BaseColor_Red.png",
+      "sha256": "15fc0e344ed35483bc771aaa95c1c2a0b0ec2349a893cf24af18b8742f0842ac",
+      "size": 965873
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_01_DetailMask.png",
+      "sha256": "3ce977235dc82314cc8be07dcfe81293a3d0c6b317e267557d3849621dbb47e9",
+      "size": 12808
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_01_Emissive.png",
+      "sha256": "e031d09286c602e5d5bd847a4f84e88a124a800c1eb151c40302650a955f69bb",
+      "size": 12619
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_01_Normal.png",
+      "sha256": "1aec7ad47a642fc68216b5a3119341b7dca038c1fc9493df8a15ad4aa27ddbcf",
+      "size": 585626
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_01_ORM.png",
+      "sha256": "6ab7ad231df22867652048ebfd602684a9072d45c483ca57df0fcd4cb2cb4feb",
+      "size": 3338790
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_02_BaseColor.png",
+      "sha256": "7b13c6a7d82b434314237c4b1930b8e12ddc69a70ffef28d73cbd178d3ff6293",
+      "size": 1125543
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_02_BaseColor_Blue.png",
+      "sha256": "f5b2289f70fed4997f01e6f774c918bc30813ee9ec37f83f479f9bc36e0b68de",
+      "size": 1464045
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_02_BaseColor_Red.png",
+      "sha256": "4a08abf8dc0a5bf558a0ae38dc0d70eddc328eaa8060725d07b95d7c8a75663c",
+      "size": 1150649
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_02_DetailMask.png",
+      "sha256": "cdbb533d3b25e552e528351c19449a840ec7feec6a62c4cf49c0e8131aad7e81",
+      "size": 14281
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_02_Normal.png",
+      "sha256": "7faaa7059192f43aded9cc2f93917dd54fd14545509c37318d4e6bf0a8104960",
+      "size": 756841
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_02_ORM.png",
+      "sha256": "2a433e6a7fbcec375b5c5e5c7aa57dbe1fd23ca6592f48c52d09dde2d622aab8",
+      "size": 3994352
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_03_BaseColor.png",
+      "sha256": "2a15eadbedbc928d771ed8f2a7a8c1a16bce89b2836a0ecf34ece7e2fab96769",
+      "size": 1285125
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_03_Cables.png",
+      "sha256": "758a95beccdc9f0621d8b8a283ee2593e04b56f1cd32776165ec85e1568e8eb8",
+      "size": 779284
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_03_Normal.png",
+      "sha256": "b2c3238cbe2586e44df0b00179adf85e5b7ac7fed1713ec0b807482245a30738",
+      "size": 375307
+    },
+    {
+      "file": "SourceAssets/Quaternius/ModularSciFiMegaKit/Selected/Textures/T_Trim_03_ORM.png",
+      "sha256": "c57134b5d496b39b955a87765ea32b93567b1ab494fe6b890de24c75dcfd6fe4",
+      "size": 3009230
+    }
+  ]
+}
