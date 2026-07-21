@@ -1,0 +1,121 @@
+{
+  "source": "https://quaternius.com/packs/ultimatehomeinterior.html",
+  "source_folder": "https://drive.google.com/drive/folders/1SNK9PwPi8xqqxmpU5xEZeiQjB26C1oX6",
+  "license": "CC0-1.0",
+  "files": [
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/License.txt",
+      "google_drive_file_id": "1UF65ItPpj1rIxmewMDtVnpJk_WikvnyJ",
+      "sha256": "83d8959f9fc56353ed571fbe2dc52e4bcd64508e2399501cd45ac2ce3df0bf8c",
+      "size": 364
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Bed_Bunk.fbx",
+      "google_drive_file_id": "1rhWI7nHfufIycAspb05f3LvLtKVB2VtE",
+      "sha256": "42048987dbc4304c8d36702221a57e22676ab19142568287908f7f90969274b4",
+      "size": 31980
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Bed_Single.fbx",
+      "google_drive_file_id": "1sgmwNraONKrnuJ8ApmjCaKABl05TK9nj",
+      "sha256": "fc66e91a3f41c7a77b6a01b40a9c74408bb29cfdda1b9bc92593ec52882e211b",
+      "size": 28012
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Bookshelf.fbx",
+      "google_drive_file_id": "1Nk71nbt5Qbs57l5uuB0pNULrSsGwb_xR",
+      "sha256": "6125bb56f3cb545d82498af9bc3f72d7b98a53b0360b327b99275ea0ce8c0bca",
+      "size": 15676
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Chair_1.fbx",
+      "google_drive_file_id": "1i2qZ87oZKH8iuaRgdrV-W1rL0KWHe8k7",
+      "sha256": "1e9ac9b362e04c1bd31a973d6511ee2e94d4690743c95b326354804b9ed60616",
+      "size": 17212
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Drawer_2.fbx",
+      "google_drive_file_id": "15h1qg53vOVssDpz1TvUV8frvAUbhq_Nu",
+      "sha256": "b826f60ad7a7fb2b35aa2a37239afcc9f41188a0a79a1c8ac8e189a8ee3fa37b",
+      "size": 23292
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Kitchen_1Drawers.fbx",
+      "google_drive_file_id": "1RBhL6QYtoTLSBxg4RDW8jg2o_XXNZ1X0",
+      "sha256": "f9375028f76910a45801503338c2fb1a941a5a66f826cdf3d101fadb3a92cb1f",
+      "size": 17564
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Kitchen_2Drawers.fbx",
+      "google_drive_file_id": "1WG4hVHw5b7p0Ehb7ijCpTucEospKKyxX",
+      "sha256": "7f21cf3932163811aaa2b7fb3799087c2621afaf20cab974cdf0140d25bd1811",
+      "size": 18268
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Kitchen_Cabinet1.fbx",
+      "google_drive_file_id": "1NK8mJ-8Eg2mJx8bTR8ib-ElJYmptzRGa",
+      "sha256": "1c16eeaf7daf751c0c8872c886aec5a57a3922324cfa458cb83738a7b5a0d205",
+      "size": 16300
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Kitchen_Cabinet2.fbx",
+      "google_drive_file_id": "1Hfiz8TQaN0mDscMtIQGNk3ybEfWbOdMT",
+      "sha256": "7a43c4377cde977de45d1137c95cd085e02234aa08e631ecd3978eb10460f8ae",
+      "size": 16332
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Kitchen_CabinetSmall.fbx",
+      "google_drive_file_id": "1XTlYicBUoOBpXoHXMj4WjuV7Dbj2zZKD",
+      "sha256": "986883cd72b8ee82155ca93034c63e19facc96e7911612ccdb0f88584d338f70",
+      "size": 16332
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Kitchen_Fridge.fbx",
+      "google_drive_file_id": "19H7xQggbdDdivPE3JsfnnDMCOMPZHYIU",
+      "sha256": "e7a6c73a6188f67a99be2ad8fe6225d4c85dc6bf3110c3a4be24c2d3c110c534",
+      "size": 22972
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Kitchen_Oven_Large.fbx",
+      "google_drive_file_id": "1OgkNd5e_trTBgiqc_yBGNAvsYnDehrSD",
+      "sha256": "61e049e1e02a2d6230b4ea812f56975d1cb6f4be23e41caeaca10abcbe622993",
+      "size": 26876
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Kitchen_Sink.fbx",
+      "google_drive_file_id": "1I84whoB0PKq2Y-a4-ZbiM4vVOhbhGy32",
+      "sha256": "c20d9c1a4785890f887a781fb3befd626508e1b813333293e7c4001a35125350",
+      "size": 23468
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/NightStand_1.fbx",
+      "google_drive_file_id": "1gi3yvFlKxc0NesfWmvEPNl9KOtVPVdbq",
+      "sha256": "3d6437151b8a7b62220fa3128af0cb34a71b34e1e6653010f28a6a07689f4670",
+      "size": 18252
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Plate_1.fbx",
+      "google_drive_file_id": "15uLYVMSN-WG7Emgq8h2-PwZ5hg-6oa2H",
+      "sha256": "fa739f25fdd9abbc0dfe1ba39952396b16490bc3da2c43c52d62e1cb96566027",
+      "size": 17052
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Shelf_Large.fbx",
+      "google_drive_file_id": "1Tg38yLmwbVUcV21le7Xeo_ogvWPprf-C",
+      "sha256": "3a1c3c3117c9d923f74fd7694a5d2697520ef78f19e2ba8caa9931bc07b0d83e",
+      "size": 16844
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Stool.fbx",
+      "google_drive_file_id": "1cofdkMUkCIbj1ZRh3bO4DGz9C7PRjaYU",
+      "sha256": "8bf5230240a39e2b97a3f5a05e0bc821cf91cb385dd42c9ea95a5a46395b6500",
+      "size": 25612
+    },
+    {
+      "file": "SourceAssets/Quaternius/UltimateHouseInterior/Selected/Models/Table_RoundLarge.fbx",
+      "google_drive_file_id": "1BjJYEq8Gd4jwcrQsxmgDR-MQ0G0yUvOL",
+      "sha256": "b6c452cdd0c9b5eef1585a241fd3391c16ba3a38b28442f9178ad5a2f122878c",
+      "size": 23388
+    }
+  ]
+}

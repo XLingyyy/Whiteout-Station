@@ -1,4 +1,4 @@
-"""Import the selected CC0 Quaternius station meshes for the v0.2 assembly."""
+"""Import the selected Quaternius CC0 interior FBX files for v0.2 zones."""
 
 from __future__ import annotations
 
@@ -9,16 +9,14 @@ import unreal
 
 
 REPO_ROOT = Path(unreal.Paths.project_dir()).resolve().parent
-SELECTED_ROOT = (
-    REPO_ROOT / "SourceAssets" / "Quaternius" / "ModularSciFiMegaKit" / "Selected"
-)
+SELECTED_ROOT = REPO_ROOT / "SourceAssets" / "Quaternius" / "UltimateHouseInterior" / "Selected"
 MANIFEST_PATH = SELECTED_ROOT / "manifest.json"
-MESH_ROOT = "/Game/WindStation/Art/Environment/Quaternius"
+MESH_ROOT = "/Game/WindStation/Art/Environment/Quaternius/Interior"
 
 
-def import_static_mesh(source_file: Path, destination_path: str) -> None:
+def import_static_mesh(source_file: Path) -> None:
     object_name = source_file.stem
-    asset_path = f"{destination_path}/{object_name}"
+    asset_path = f"{MESH_ROOT}/{object_name}"
     if unreal.EditorAssetLibrary.does_asset_exist(asset_path):
         unreal.log(f"WhiteoutStation v0.2: verified existing {asset_path}")
         return
@@ -36,7 +34,7 @@ def import_static_mesh(source_file: Path, destination_path: str) -> None:
 
     task = unreal.AssetImportTask()
     task.set_editor_property("filename", str(source_file))
-    task.set_editor_property("destination_path", destination_path)
+    task.set_editor_property("destination_path", MESH_ROOT)
     task.set_editor_property("destination_name", object_name)
     task.set_editor_property("automated", True)
     task.set_editor_property("replace_existing", False)
@@ -55,16 +53,13 @@ def main() -> None:
         if str(entry["file"]).lower().endswith(".fbx")
     ]
     if not model_files:
-        raise RuntimeError("Quaternius selected manifest contains no FBX files")
+        raise RuntimeError("Quaternius interior manifest contains no FBX files")
 
+    unreal.EditorAssetLibrary.make_directory(MESH_ROOT)
     for source_file in model_files:
-        relative = source_file.relative_to(SELECTED_ROOT / "Models")
-        destination = f"{MESH_ROOT}/{relative.parent.as_posix()}"
-        unreal.EditorAssetLibrary.make_directory(destination)
-        import_static_mesh(source_file, destination)
-        unreal.log(f"WhiteoutStation v0.2: imported {relative.as_posix()}")
-
-    unreal.log(f"WhiteoutStation v0.2: imported {len(model_files)} environment meshes")
+        import_static_mesh(source_file)
+        unreal.log(f"WhiteoutStation v0.2: imported interior {source_file.name}")
+    unreal.log(f"WhiteoutStation v0.2: imported {len(model_files)} interior meshes")
 
 
 if __name__ == "__main__":

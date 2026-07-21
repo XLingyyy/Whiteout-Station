@@ -9,6 +9,7 @@ class UDirectionalLightComponent;
 class UPointLightComponent;
 class UWSStationAssemblyData;
 struct FWSStationMeshPlacement;
+struct FWSStationLightPlacement;
 struct FWSActionResult;
 
 UCLASS()
@@ -24,15 +25,20 @@ private:
 	UPROPERTY()
 	TArray<TObjectPtr<UPointLightComponent>> RuntimeLights;
 
+	TArray<bool> RuntimeEmergencyLights;
+	TArray<bool> RuntimeGeneratorLights;
+	TArray<float> RuntimeBaseLightIntensities;
+
 	UPROPERTY()
 	TObjectPtr<UDirectionalLightComponent> ExteriorLight;
 
 	void BuildStation();
 	void SpawnStationAssembly();
 	void SpawnAssemblyMesh(const FWSStationMeshPlacement& Placement);
+	void SpawnAssemblyLight(const FWSStationLightPlacement& Placement);
 	void SpawnBlock(const FString& Label, FVector Location, FVector Scale, FLinearColor Color);
 	void SpawnSign(const FString& Text, FVector Location, FRotator Rotation, FLinearColor Color);
-	void SpawnPointLight(const FString& Label, FVector Location, FLinearColor Color, float Intensity, float Radius);
+	void SpawnPointLight(const FString& Label, FName Zone, FVector Location, FLinearColor Color, float Intensity, float Radius, bool bEmergencyRed, bool bGeneratorPowered);
 	AWSInteractableActor* SpawnHotspot(
 		const TCHAR* ActionId,
 		const TCHAR* Label,
@@ -44,4 +50,5 @@ private:
 	void HandleActionCommitted(const FWSActionResult& Result);
 
 	void ApplyCrisisLighting();
+	void RestoreGeneratorLighting();
 };

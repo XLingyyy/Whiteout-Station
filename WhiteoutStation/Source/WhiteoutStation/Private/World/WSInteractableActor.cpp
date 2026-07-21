@@ -58,6 +58,14 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 	{
 		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_Barrel_Large.Prop_Barrel_Large");
 	}
+	else if (ActionId == TEXT("repair_generator"))
+	{
+		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Columns/Column_Pipes.Column_Pipes");
+	}
+	else if (ActionId == TEXT("calibrate_antenna"))
+	{
+		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Columns/Column_MetalSupport.Column_MetalSupport");
+	}
 	if (PresentationMeshPath)
 	{
 		if (UStaticMesh* PresentationMesh = LoadObject<UStaticMesh>(nullptr, PresentationMeshPath))
@@ -81,13 +89,15 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 
 	const bool bIndustrialSurface = ActionId == TEXT("inspect_control_cabinet")
 		|| ActionId == TEXT("repair_generator") || ActionId == TEXT("forced_self_repair")
-		|| ActionId == TEXT("dismantle_kitchen_heater") || ActionId == TEXT("calibrate_antenna")
-		|| ActionId == TEXT("send_signal");
-	if (bIndustrialSurface)
+		|| ActionId == TEXT("dismantle_kitchen_heater") || ActionId == TEXT("calibrate_antenna");
+	if (!bCharacter)
 	{
+		const TCHAR* SurfaceMaterialPath = bIndustrialSurface
+			? TEXT("/Game/WindStation/Art/Materials/M_WS_RustedMetal.M_WS_RustedMetal")
+			: TEXT("/Game/WindStation/Art/Materials/M_WS_PaintedMetal.M_WS_PaintedMetal");
 		if (UMaterialInterface* SurfaceMaterial = LoadObject<UMaterialInterface>(
 			nullptr,
-			TEXT("/Game/WindStation/Art/Materials/M_WS_RustedMetal.M_WS_RustedMetal")))
+			SurfaceMaterialPath))
 		{
 			for (int32 Index = 0; Index < Mesh->GetNumMaterials(); ++Index)
 			{

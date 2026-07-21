@@ -23,25 +23,53 @@ namespace
 		Placement.Material = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(MaterialPath));
 		Placement.bCollision = bCollision;
 	}
+
+	void AddLight(
+		TArray<FWSStationLightPlacement>& Lights,
+		const TCHAR* Label,
+		const TCHAR* Zone,
+		const FVector Location,
+		const FLinearColor Color,
+		const float Intensity,
+		const float Radius,
+		const bool bEmergencyRed = false,
+		const bool bGeneratorPowered = false)
+	{
+		FWSStationLightPlacement& Light = Lights.AddDefaulted_GetRef();
+		Light.Label = FName(Label);
+		Light.Zone = FName(Zone);
+		Light.Location = Location;
+		Light.Color = Color;
+		Light.Intensity = Intensity;
+		Light.Radius = Radius;
+		Light.bEmergencyRed = bEmergencyRed;
+		Light.bGeneratorPowered = bGeneratorPowered;
+	}
 }
 
 UWSStationAssemblyData::UWSStationAssemblyData()
 {
 	const TCHAR* Q = TEXT("/Game/WindStation/Art/Environment/Quaternius/");
+	const TCHAR* I = TEXT("/Game/WindStation/Art/Environment/Quaternius/Interior/");
 	const TCHAR* Paint = TEXT("/Game/WindStation/Art/Materials/M_WS_PaintedMetal.M_WS_PaintedMetal");
 	const TCHAR* Rust = TEXT("/Game/WindStation/Art/Materials/M_WS_RustedMetal.M_WS_RustedMetal");
 	const TCHAR* Concrete = TEXT("/Game/WindStation/Art/Materials/M_WS_Concrete.M_WS_Concrete");
+	const TCHAR* Fabric = TEXT("/Game/WindStation/Art/Materials/M_WS_WinterFabric.M_WS_WinterFabric");
 
-	// Control room sample: modular wall skin, window rhythm and a dense radio desk.
-	AddPlacement(Placements, TEXT("控制室墙板01"), TEXT("Control"), FString(Q) + TEXT("Walls/WallAstra_Straight.WallAstra_Straight"), FVector(-180, -284, 120), FRotator(0, 0, 0), FVector(1.0f), Paint, false);
-	AddPlacement(Placements, TEXT("控制室墙板02"), TEXT("Control"), FString(Q) + TEXT("Walls/WallAstra_Straight_Window.WallAstra_Straight_Window"), FVector(60, -284, 120), FRotator(0, 0, 0), FVector(1.0f), Paint, false);
-	AddPlacement(Placements, TEXT("控制室墙板03"), TEXT("Control"), FString(Q) + TEXT("Walls/WallBand_Straight.WallBand_Straight"), FVector(300, -284, 120), FRotator(0, 0, 0), FVector(1.0f), Paint, false);
-	AddPlacement(Placements, TEXT("控制台主机01"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_Computer.Prop_Computer"), FVector(-115, -150, 58), FRotator(0, 90, 0), FVector(1.15f), Paint);
-	AddPlacement(Placements, TEXT("控制台主机02"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_Computer.Prop_Computer"), FVector(20, -150, 58), FRotator(0, 90, 0), FVector(1.15f), Paint);
-	AddPlacement(Placements, TEXT("控制台主机03"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_Computer.Prop_Computer"), FVector(155, -150, 58), FRotator(0, 90, 0), FVector(1.15f), Paint);
+	AddLight(Lights, TEXT("控制室冷色补光"), TEXT("Control"), FVector(80, 130, 250), FLinearColor(0.2f, 0.55f, 1.0f), 1550.0f, 850.0f);
+	AddLight(Lights, TEXT("控制台暖色任务灯"), TEXT("Control"), FVector(40, -80, 205), FLinearColor(1.0f, 0.46f, 0.18f), 650.0f, 420.0f, true);
+	AddLight(Lights, TEXT("维修间警示灯"), TEXT("Repair"), FVector(1120, 120, 260), FLinearColor(1.0f, 0.28f, 0.08f), 2100.0f, 820.0f, true, true);
+	AddLight(Lights, TEXT("医务室任务灯"), TEXT("Medical"), FVector(80, 780, 245), FLinearColor(0.35f, 0.85f, 0.72f), 2300.0f, 820.0f);
+	AddLight(Lights, TEXT("厨房宿舍生活灯"), TEXT("Quarters"), FVector(1120, 780, 245), FLinearColor(1.0f, 0.62f, 0.22f), 1900.0f, 820.0f, true);
+	AddLight(Lights, TEXT("天线检修灯"), TEXT("Outdoor"), FVector(2100, 400, 330), FLinearColor(0.28f, 0.48f, 1.0f), 2600.0f, 1000.0f);
+
+	// Control room sample: a dense radio desk against the station's collision-safe shell.
+	AddPlacement(Placements, TEXT("控制台主机01"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_Computer.Prop_Computer"), FVector(-155, -190, 38), FRotator(0, 90, 0), FVector(0.72f), Paint);
+	AddPlacement(Placements, TEXT("控制台主机02"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_Computer.Prop_Computer"), FVector(0, -190, 38), FRotator(0, 90, 0), FVector(0.72f), Paint);
+	AddPlacement(Placements, TEXT("控制台主机03"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_Computer.Prop_Computer"), FVector(155, -190, 38), FRotator(0, 90, 0), FVector(0.72f), Paint);
 	AddPlacement(Placements, TEXT("无线电接入点"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_AccessPoint.Prop_AccessPoint"), FVector(385, -210, 115), FRotator(0, 90, 0), FVector(1.1f), Rust);
-	AddPlacement(Placements, TEXT("顶棚线槽"), TEXT("Control"), FString(Q) + TEXT("Walls/TopCables_Straight.TopCables_Straight"), FVector(60, -260, 310), FRotator(0, 0, 0), FVector(1.0f), Rust, false);
-	AddPlacement(Placements, TEXT("控制室灯带"), TEXT("Control"), FString(Q) + TEXT("Props/Prop_Light_Wide.Prop_Light_Wide"), FVector(80, 120, 325), FRotator(90, 0, 0), FVector(1.15f), Paint, false);
+	AddPlacement(Placements, TEXT("控制台座椅01"), TEXT("Control"), FString(I) + TEXT("Chair_1.Chair_1"), FVector(-85, -55, 0), FRotator(0, -90, 0), FVector(0.55f), Fabric);
+	AddPlacement(Placements, TEXT("控制台座椅02"), TEXT("Control"), FString(I) + TEXT("Chair_1.Chair_1"), FVector(115, -55, 0), FRotator(0, -90, 0), FVector(0.55f), Fabric);
 
 	AddPlacement(Placements, TEXT("维修间结构柱"), TEXT("Repair"), FString(Q) + TEXT("Columns/Column_MetalSupport.Column_MetalSupport"), FVector(760, -250, 0), FRotator::ZeroRotator, FVector(1.1f), Rust);
 	AddPlacement(Placements, TEXT("维修间管束"), TEXT("Repair"), FString(Q) + TEXT("Columns/Column_Pipes.Column_Pipes"), FVector(1510, -245, 0), FRotator::ZeroRotator, FVector(1.0f), Rust);
@@ -52,10 +80,25 @@ UWSStationAssemblyData::UWSStationAssemblyData()
 	AddPlacement(Placements, TEXT("医务室墙灯"), TEXT("Medical"), FString(Q) + TEXT("Props/Prop_Light_Corner.Prop_Light_Corner"), FVector(-220, 750, 240), FRotator(0, 90, 0), FVector(1.0f), Paint, false);
 	AddPlacement(Placements, TEXT("医务室设备"), TEXT("Medical"), FString(Q) + TEXT("Props/Prop_Computer.Prop_Computer"), FVector(-125, 910, 70), FRotator(0, -90, 0), FVector(0.9f), Paint);
 	AddPlacement(Placements, TEXT("医务室通风口"), TEXT("Medical"), FString(Q) + TEXT("Props/Prop_Vent_Wide.Prop_Vent_Wide"), FVector(360, 1080, 230), FRotator(0, 180, 0), FVector(1.2f), Paint, false);
+	AddPlacement(Placements, TEXT("医务床"), TEXT("Medical"), FString(I) + TEXT("Bed_Single.Bed_Single"), FVector(330, 690, 0), FRotator(0, 90, 0), FVector(0.65f), Fabric);
+	AddPlacement(Placements, TEXT("医务器械柜"), TEXT("Medical"), FString(I) + TEXT("Kitchen_Cabinet1.Kitchen_Cabinet1"), FVector(-205, 945, 72), FRotator(0, 90, 0), FVector(0.65f), Paint);
+	AddPlacement(Placements, TEXT("医务抽屉柜"), TEXT("Medical"), FString(I) + TEXT("Drawer_2.Drawer_2"), FVector(365, 985, 0), FRotator(0, 180, 0), FVector(0.6f), Paint);
+	AddPlacement(Placements, TEXT("医务床头柜"), TEXT("Medical"), FString(I) + TEXT("NightStand_1.NightStand_1"), FVector(420, 720, 0), FRotator(0, 90, 0), FVector(0.6f), Paint);
 
 	AddPlacement(Placements, TEXT("宿舍物资箱01"), TEXT("Quarters"), FString(Q) + TEXT("Props/Prop_Crate4.Prop_Crate4"), FVector(1460, 980, 45), FRotator(0, -12, 0), FVector(1.0f), Paint);
 	AddPlacement(Placements, TEXT("宿舍物资箱02"), TEXT("Quarters"), FString(Q) + TEXT("Props/Prop_Crate3.Prop_Crate3"), FVector(1515, 890, 40), FRotator(0, 8, 0), FVector(0.8f), Paint);
 	AddPlacement(Placements, TEXT("厨房排风"), TEXT("Quarters"), FString(Q) + TEXT("Props/Prop_Fan_Small.Prop_Fan_Small"), FVector(1290, 1080, 210), FRotator(0, 180, 0), FVector(1.25f), Rust, false);
+	AddPlacement(Placements, TEXT("宿舍双层床01"), TEXT("Quarters"), FString(I) + TEXT("Bed_Bunk.Bed_Bunk"), FVector(830, 560, 0), FRotator(0, 90, 0), FVector(0.65f), Fabric);
+	AddPlacement(Placements, TEXT("宿舍双层床02"), TEXT("Quarters"), FString(I) + TEXT("Bed_Bunk.Bed_Bunk"), FVector(830, 930, 0), FRotator(0, 90, 0), FVector(0.65f), Fabric);
+	AddPlacement(Placements, TEXT("厨房水槽"), TEXT("Quarters"), FString(I) + TEXT("Kitchen_Sink.Kitchen_Sink"), FVector(1180, 1030, 0), FRotator(0, 180, 0), FVector(0.65f), Paint);
+	AddPlacement(Placements, TEXT("厨房灶台"), TEXT("Quarters"), FString(I) + TEXT("Kitchen_Oven_Large.Kitchen_Oven_Large"), FVector(1370, 1030, 0), FRotator(0, 180, 0), FVector(0.65f), Rust);
+	AddPlacement(Placements, TEXT("厨房抽屉"), TEXT("Quarters"), FString(I) + TEXT("Kitchen_2Drawers.Kitchen_2Drawers"), FVector(1020, 1030, 0), FRotator(0, 180, 0), FVector(0.65f), Paint);
+	AddPlacement(Placements, TEXT("厨房壁柜01"), TEXT("Quarters"), FString(I) + TEXT("Kitchen_Cabinet1.Kitchen_Cabinet1"), FVector(1090, 1060, 175), FRotator(0, 180, 0), FVector(0.6f), Paint, false);
+	AddPlacement(Placements, TEXT("厨房壁柜02"), TEXT("Quarters"), FString(I) + TEXT("Kitchen_Cabinet2.Kitchen_Cabinet2"), FVector(1280, 1060, 175), FRotator(0, 180, 0), FVector(0.6f), Paint, false);
+	AddPlacement(Placements, TEXT("厨房餐桌"), TEXT("Quarters"), FString(I) + TEXT("Table_RoundLarge.Table_RoundLarge"), FVector(1190, 655, 0), FRotator::ZeroRotator, FVector(0.6f), Paint);
+	AddPlacement(Placements, TEXT("厨房凳01"), TEXT("Quarters"), FString(I) + TEXT("Stool.Stool"), FVector(1080, 650, 0), FRotator::ZeroRotator, FVector(0.6f), Paint);
+	AddPlacement(Placements, TEXT("厨房凳02"), TEXT("Quarters"), FString(I) + TEXT("Stool.Stool"), FVector(1300, 650, 0), FRotator::ZeroRotator, FVector(0.6f), Paint);
+	AddPlacement(Placements, TEXT("宿舍货架"), TEXT("Quarters"), FString(I) + TEXT("Shelf_Large.Shelf_Large"), FVector(1600, 580, 0), FRotator(0, -90, 0), FVector(0.65f), Rust);
 
 	AddPlacement(Placements, TEXT("室外平台01"), TEXT("Outdoor"), FString(Q) + TEXT("Platforms/Platform_Metal.Platform_Metal"), FVector(2050, 400, 5), FRotator::ZeroRotator, FVector(2.2f, 2.2f, 1.0f), Rust);
 	AddPlacement(Placements, TEXT("室外平台02"), TEXT("Outdoor"), FString(Q) + TEXT("Platforms/Platform_Metal.Platform_Metal"), FVector(2420, 400, 5), FRotator::ZeroRotator, FVector(2.2f, 2.2f, 1.0f), Rust);

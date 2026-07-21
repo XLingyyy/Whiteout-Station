@@ -13,22 +13,24 @@ UI_ROOT = "/Game/WindStation/UI"
 CSV_PATH = REPO_ROOT / "SourceAssets" / "UI" / "WhiteoutStation_zh.csv"
 
 
-def ensure_data_asset(name: str, asset_class) -> object:
+def ensure_data_asset(name: str, asset_class, refresh_properties: tuple[str, ...] = ()) -> object:
     asset_path = f"{ASSET_ROOT}/{name}"
-    existing = unreal.load_asset(asset_path)
-    if existing:
-        unreal.log(f"WhiteoutStation v0.2: verified existing {asset_path}")
-        return existing
-    factory = unreal.DataAssetFactory()
-    factory.set_editor_property("data_asset_class", asset_class)
-    created = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
-        name, ASSET_ROOT, asset_class, factory
-    )
-    if not created:
+    asset = unreal.load_asset(asset_path)
+    if not asset:
+        factory = unreal.DataAssetFactory()
+        factory.set_editor_property("data_asset_class", asset_class)
+        asset = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+            name, ASSET_ROOT, asset_class, factory
+        )
+    if not asset:
         raise RuntimeError(f"Unable to create {asset_path}")
-    unreal.EditorAssetLibrary.save_loaded_asset(created)
-    unreal.log(f"WhiteoutStation v0.2: created {asset_path}")
-    return created
+    if refresh_properties:
+        defaults = unreal.get_default_object(asset_class)
+        for property_name in refresh_properties:
+            asset.set_editor_property(property_name, defaults.get_editor_property(property_name))
+    unreal.EditorAssetLibrary.save_loaded_asset(asset)
+    unreal.log(f"WhiteoutStation v0.2: populated {asset_path}")
+    return asset
 
 
 def ensure_string_table() -> object:
@@ -54,9 +56,9 @@ def ensure_string_table() -> object:
 def main() -> None:
     unreal.EditorAssetLibrary.make_directory(ASSET_ROOT)
     unreal.EditorAssetLibrary.make_directory(UI_ROOT)
-    ensure_data_asset("DA_WS_StationAssembly", unreal.WSStationAssemblyData)
+    ensure_data_asset("DA_WS_StationAssembly", unreal.WSStationAssemblyData, ("placements", "lights"))
     ensure_data_asset("DA_WS_UIDesign", unreal.WSUIDesignData)
-    ensure_data_asset("DA_WS_RejectionCopy", unreal.WSReasonPresentationData)
+    ensure_data_asset("DA_WS_RejectionCopy", unreal.WSReasonPresentationData, ("reasons",))
     ensure_string_table()
 
 

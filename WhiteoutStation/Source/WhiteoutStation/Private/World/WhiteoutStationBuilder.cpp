@@ -8,6 +8,7 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/PointLight.h"
+#include "Engine/PostProcessVolume.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Engine/SkyLight.h"
 #include "Engine/StaticMeshActor.h"
@@ -69,11 +70,24 @@ void AWhiteoutStationBuilder::BuildStation()
 		SkyLight->GetLightComponent()->SetMobility(EComponentMobility::Movable);
 		SkyLight->GetLightComponent()->RecaptureSky();
 	}
-	SpawnPointLight(TEXT("Control emergency light"), FVector(80, 130, 250), FLinearColor(0.2f, 0.55f, 1.0f), 2400.0f, 850.0f);
-	SpawnPointLight(TEXT("Repair warning light"), FVector(1120, 120, 260), FLinearColor(1.0f, 0.28f, 0.08f), 2100.0f, 820.0f);
-	SpawnPointLight(TEXT("Medical task light"), FVector(80, 780, 245), FLinearColor(0.35f, 0.85f, 0.72f), 2300.0f, 820.0f);
-	SpawnPointLight(TEXT("Quarters practical"), FVector(1120, 780, 245), FLinearColor(1.0f, 0.62f, 0.22f), 1900.0f, 820.0f);
-	SpawnPointLight(TEXT("Antenna work light"), FVector(2100, 400, 330), FLinearColor(0.28f, 0.48f, 1.0f), 2600.0f, 1000.0f);
+	if (APostProcessVolume* PostProcess = GetWorld()->SpawnActor<APostProcessVolume>())
+	{
+		PostProcess->Tags.Add(TEXT("WSRuntimePresentation"));
+		PostProcess->bUnbound = true;
+		PostProcess->Priority = 10.0f;
+		PostProcess->Settings.bOverride_WhiteTemp = true;
+		PostProcess->Settings.WhiteTemp = 6500.0f;
+		PostProcess->Settings.bOverride_ColorSaturation = true;
+		PostProcess->Settings.ColorSaturation = FVector4(0.92f, 0.96f, 1.02f, 1.0f);
+		PostProcess->Settings.bOverride_ColorContrast = true;
+		PostProcess->Settings.ColorContrast = FVector4(1.08f, 1.08f, 1.10f, 1.0f);
+		PostProcess->Settings.bOverride_AutoExposureBias = true;
+		PostProcess->Settings.AutoExposureBias = -0.20f;
+		PostProcess->Settings.bOverride_BloomIntensity = true;
+		PostProcess->Settings.BloomIntensity = 0.28f;
+		PostProcess->Settings.bOverride_VignetteIntensity = true;
+		PostProcess->Settings.VignetteIntensity = 0.22f;
+	}
 	GetWorld()->SpawnActor<AWhiteoutSnowField>(FVector::ZeroVector, FRotator::ZeroRotator);
 	const FLinearColor Control(0.15f, 0.55f, 0.9f);
 	const FLinearColor Repair(0.95f, 0.36f, 0.12f);
@@ -98,15 +112,10 @@ void AWhiteoutStationBuilder::BuildStation()
 	SpawnBlock(TEXT("Cross Partition B"), FVector(1300, 400, 150), FVector(8, 0.2f, 3.5f), WallColor);
 	SpawnStationAssembly();
 
-	// Silhouette props make every room legible before bespoke meshes arrive.
+	// Generator and pipe volumes remain collision-safe shells underneath the imported machinery.
 	SpawnBlock(TEXT("Metal Generator Base"), FVector(1260, -120, 42), FVector(3.0f, 0.9f, 0.55f), Repair);
 	SpawnBlock(TEXT("Metal Pipe Run A"), FVector(1080, -245, 292), FVector(7.0f, 0.12f, 0.12f), Repair);
 	SpawnBlock(TEXT("Metal Pipe Run B"), FVector(1520, 150, 292), FVector(0.12f, 4.0f, 0.12f), Repair);
-	SpawnBlock(TEXT("Medical Bed"), FVector(330, 690, 42), FVector(2.3f, 0.85f, 0.35f), Medical);
-	SpawnBlock(TEXT("Medical Cabinet"), FVector(-170, 930, 90), FVector(0.65f, 1.0f, 1.55f), Medical);
-	SpawnBlock(TEXT("Kitchen Counter"), FVector(1260, 1015, 55), FVector(3.8f, 0.6f, 0.85f), Quarter);
-	SpawnBlock(TEXT("Quarters Bunk A"), FVector(820, 560, 40), FVector(2.4f, 0.7f, 0.32f), Quarter);
-	SpawnBlock(TEXT("Quarters Bunk B"), FVector(820, 930, 40), FVector(2.4f, 0.7f, 0.32f), Quarter);
 
 	SpawnSign(TEXT("控制室"), FVector(-180, 365, 215), FRotator(0, 90, 0), FLinearColor(0.35f, 0.75f, 1.0f));
 	SpawnSign(TEXT("维修间"), FVector(820, 365, 215), FRotator(0, 90, 0), FLinearColor(1.0f, 0.55f, 0.15f));
@@ -114,8 +123,8 @@ void AWhiteoutStationBuilder::BuildStation()
 	SpawnSign(TEXT("厨房与宿舍"), FVector(820, 1080, 215), FRotator(0, 90, 0), FLinearColor(0.95f, 0.8f, 0.35f));
 	SpawnSign(TEXT("室外天线"), FVector(2050, 650, 215), FRotator(0, 180, 0), FLinearColor(0.45f, 0.75f, 1.0f));
 
-	SpawnHotspot(TEXT("investigate_generator_log"), TEXT("发电机运行记录"), FVector(-120, 50, 70), Control, FVector(0.9f));
-	SpawnHotspot(TEXT("send_signal"), TEXT("应急无线电"), FVector(280, 50, 70), Control, FVector(0.82f));
+	SpawnHotspot(TEXT("investigate_generator_log"), TEXT("发电机运行记录"), FVector(-120, 50, 70), Control, FVector(0.62f));
+	SpawnHotspot(TEXT("send_signal"), TEXT("应急无线电"), FVector(280, 50, 70), Control, FVector(0.58f));
 	SpawnHotspot(TEXT("inspect_control_cabinet"), TEXT("烧毁的控制柜"), FVector(850, 20, 70), Repair, FVector(0.9f));
 	SpawnHotspot(TEXT("heat_repair_room"), TEXT("维修间供暖控制器"), FVector(1050, -80, 70), Repair, FVector(0.7f));
 	SpawnHotspot(TEXT("repair_generator"), TEXT("柴油发电机"), FVector(1250, 80, 90), Repair, FVector(1.2f, 0.7f, 1.1f));
@@ -145,7 +154,11 @@ void AWhiteoutStationBuilder::SpawnStationAssembly()
 	{
 		SpawnAssemblyMesh(Placement);
 	}
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: spawned %d presentation meshes"), Assembly->Placements.Num());
+	for (const FWSStationLightPlacement& Placement : Assembly->Lights)
+	{
+		SpawnAssemblyLight(Placement);
+	}
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: spawned %d presentation meshes and %d data-driven lights"), Assembly->Placements.Num(), Assembly->Lights.Num());
 }
 
 void AWhiteoutStationBuilder::SpawnAssemblyMesh(const FWSStationMeshPlacement& Placement)
@@ -180,6 +193,19 @@ void AWhiteoutStationBuilder::SpawnAssemblyMesh(const FWSStationMeshPlacement& P
 			Component->SetMaterial(Index, Material);
 		}
 	}
+}
+
+void AWhiteoutStationBuilder::SpawnAssemblyLight(const FWSStationLightPlacement& Placement)
+{
+	SpawnPointLight(
+		Placement.Label.ToString(),
+		Placement.Zone,
+		Placement.Location,
+		Placement.Color,
+		Placement.Intensity,
+		Placement.Radius,
+		Placement.bEmergencyRed,
+		Placement.bGeneratorPowered);
 }
 
 void AWhiteoutStationBuilder::SpawnBlock(
@@ -244,10 +270,13 @@ void AWhiteoutStationBuilder::SpawnSign(
 
 void AWhiteoutStationBuilder::SpawnPointLight(
 	const FString& Label,
+	const FName Zone,
 	const FVector Location,
 	const FLinearColor Color,
 	const float Intensity,
-	const float Radius)
+	const float Radius,
+	const bool bEmergencyRed,
+	const bool bGeneratorPowered)
 {
 	APointLight* PointLight = GetWorld()->SpawnActor<APointLight>(Location, FRotator::ZeroRotator);
 	if (!PointLight)
@@ -258,12 +287,21 @@ void AWhiteoutStationBuilder::SpawnPointLight(
 	PointLight->SetActorLabel(Label);
 #endif
 	PointLight->Tags.Add(TEXT("WSRuntimeLight"));
+	PointLight->Tags.Add(Zone);
 	UPointLightComponent* Component = CastChecked<UPointLightComponent>(PointLight->GetLightComponent());
 	Component->SetMobility(EComponentMobility::Movable);
-	Component->SetIntensity(Intensity);
+	bool bGeneratorOnline = false;
+	if (const UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	{
+		bGeneratorOnline = StateSubsystem->GetStateSnapshot().Tasks.GeneratorProgress >= 2;
+	}
+	Component->SetIntensity(bGeneratorPowered && !bGeneratorOnline ? Intensity * 0.22f : Intensity);
 	Component->SetAttenuationRadius(Radius);
 	Component->SetLightColor(Color);
 	RuntimeLights.Add(Component);
+	RuntimeEmergencyLights.Add(bEmergencyRed);
+	RuntimeGeneratorLights.Add(bGeneratorPowered);
+	RuntimeBaseLightIntensities.Add(Intensity);
 }
 
 void AWhiteoutStationBuilder::HandleActionCommitted(const FWSActionResult& Result)
@@ -271,6 +309,10 @@ void AWhiteoutStationBuilder::HandleActionCommitted(const FWSActionResult& Resul
 	if (Result.bCrisisTriggered)
 	{
 		ApplyCrisisLighting();
+	}
+	if (Result.ActionId == TEXT("repair_generator"))
+	{
+		RestoreGeneratorLighting();
 	}
 }
 
@@ -286,11 +328,29 @@ void AWhiteoutStationBuilder::ApplyCrisisLighting()
 	{
 		if (UPointLightComponent* Light = RuntimeLights[Index])
 		{
-			const bool bEmergencyRed = Index == 1 || Index == 3;
+			const bool bEmergencyRed = RuntimeEmergencyLights.IsValidIndex(Index) && RuntimeEmergencyLights[Index];
 			Light->SetLightColor(bEmergencyRed ? FLinearColor(1.0f, 0.035f, 0.01f) : FLinearColor(0.06f, 0.16f, 0.32f));
 			Light->SetIntensity(bEmergencyRed ? 1650.0f : 480.0f);
 		}
 	}
+}
+
+void AWhiteoutStationBuilder::RestoreGeneratorLighting()
+{
+	const UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	if (!StateSubsystem || StateSubsystem->GetStateSnapshot().Tasks.GeneratorProgress < 2)
+	{
+		return;
+	}
+	for (int32 Index = 0; Index < RuntimeLights.Num(); ++Index)
+	{
+		if (RuntimeGeneratorLights.IsValidIndex(Index) && RuntimeGeneratorLights[Index] && RuntimeBaseLightIntensities.IsValidIndex(Index))
+		{
+			RuntimeLights[Index]->SetIntensity(RuntimeBaseLightIntensities[Index]);
+			RuntimeLights[Index]->SetLightColor(FLinearColor(1.0f, 0.42f, 0.12f));
+		}
+	}
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: generator-powered repair lighting restored"));
 }
 
 AWSInteractableActor* AWhiteoutStationBuilder::SpawnHotspot(

@@ -92,12 +92,12 @@ void AWhiteoutGameMode::BeginBaselineCapture()
 {
 	BaselineLocations = {
 		FVector(-190, 245, 105),
-		FVector(500, 120, 105),
-		FVector(300, -235, 105)};
+		FVector(520, 300, 105),
+		FVector(150, 250, 105)};
 	BaselineRotations = {
 		FRotator(0, -72, 0),
-		FRotator(-4, -150, 0),
-		FRotator(-2, 92, 0)};
+		FRotator(-4, -142, 0),
+		FRotator(-2, -90, 0)};
 	BaselineNames = {
 		TEXT("ControlRoom_01_Entry"),
 		TEXT("ControlRoom_02_Consoles"),

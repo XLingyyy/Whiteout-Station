@@ -33,6 +33,36 @@ struct FWSStationMeshPlacement
 };
 
 USTRUCT(BlueprintType)
+struct FWSStationLightPlacement
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FName Label;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FName Zone;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FVector Location = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FLinearColor Color = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float Intensity = 1500.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float Radius = 800.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	bool bEmergencyRed = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	bool bGeneratorPowered = false;
+};
+
+USTRUCT(BlueprintType)
 struct FWSReasonPresentation
 {
 	GENERATED_BODY()
@@ -54,6 +84,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Station Assembly")
 	TArray<FWSStationMeshPlacement> Placements;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Station Assembly")
+	TArray<FWSStationLightPlacement> Lights;
 };
 
 UCLASS(BlueprintType)

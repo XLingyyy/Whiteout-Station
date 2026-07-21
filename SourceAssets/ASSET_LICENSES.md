@@ -32,6 +32,14 @@ The Freesound source page marks sound 344887 as Creative Commons Zero. The track
 
 The archive's `License_Standard.txt` declares CC0 1.0 Universal. The pinned archive SHA-256 and each selected extracted input are recorded by `python -X utf8 Tools/Assets/prepare_quaternius_megakit.py` in `Quaternius/ModularSciFiMegaKit/Selected/manifest.json`.
 
+## Quaternius Ultimate House Interior Pack — CC0 1.0
+
+| Asset | Author | Project use | Source |
+|---|---|---|---|
+| Ultimate House Interior Pack (audited FBX subset) | Quaternius | medical bed and cabinet, bunk beds, kitchen units, shelves, seating and small living props | https://quaternius.com/packs/ultimatehomeinterior.html |
+
+The official public Google Drive folder contains Blend, FBX and OBJ copies. `python -X utf8 Tools/Assets/download_quaternius_interior.py` downloads only 18 selected FBX files plus the original CC0 `License.txt`; its manifest pins every public file ID, size and SHA-256 value.
+
 ## Noto Sans SC — SIL Open Font License 1.1
 
 | Asset | Author | Project use | Source |
