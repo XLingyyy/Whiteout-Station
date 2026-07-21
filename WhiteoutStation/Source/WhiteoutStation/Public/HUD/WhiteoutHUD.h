@@ -17,13 +17,17 @@ public:
 	virtual void DrawHUD() override;
 
 	void SetInteractionPrompt(const FText& Prompt);
-	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview);
+	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, bool bDialogue = false);
 	void ClearInteractionFocus();
 	void SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview, bool bPromiseCreated = false);
 	void ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview);
 	void HideActionPreview();
 	void ToggleEvidence();
-	void ShowDialogueMenu(int32 SelectedIndex, bool bVisible);
+	void ShowDialogueMenu(FName NPCActionId, bool bVisible);
+	void ShowDialoguePromiseChoices();
+	void ShowDialogueWheelChoices();
+	void ShowDialogueFreeTextForCapture();
+	void SetDialogueIntentStatus(const FString& Message, bool bProcessing);
 	void SetSystemMessage(const FString& Message);
 	void DismissOpening();
 	void TogglePauseMenu();

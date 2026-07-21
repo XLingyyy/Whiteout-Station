@@ -1,5 +1,6 @@
 #include "Player/WhiteoutCharacter.h"
 
+#include "Agents/WSAgentGateway.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "EnhancedInputComponent.h"
@@ -36,7 +37,6 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 	EvidenceAction = CreateDefaultSubobject<UInputAction>(TEXT("EvidenceAction"));
 	RestartAction = CreateDefaultSubobject<UInputAction>(TEXT("RestartAction"));
 	SettleAction = CreateDefaultSubobject<UInputAction>(TEXT("SettleAction"));
-	DialogueModeAction = CreateDefaultSubobject<UInputAction>(TEXT("DialogueModeAction"));
 	ContinueAction = CreateDefaultSubobject<UInputAction>(TEXT("ContinueAction"));
 
 	MoveForwardAction->ValueType = EInputActionValueType::Boolean;
@@ -48,7 +48,6 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 	EvidenceAction->ValueType = EInputActionValueType::Boolean;
 	RestartAction->ValueType = EInputActionValueType::Boolean;
 	SettleAction->ValueType = EInputActionValueType::Boolean;
-	DialogueModeAction->ValueType = EInputActionValueType::Boolean;
 	ContinueAction->ValueType = EInputActionValueType::Boolean;
 
 	RuntimeInputContext->MapKey(MoveForwardAction, EKeys::W);
@@ -60,7 +59,6 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 	RuntimeInputContext->MapKey(EvidenceAction, EKeys::E);
 	RuntimeInputContext->MapKey(RestartAction, EKeys::R);
 	RuntimeInputContext->MapKey(SettleAction, EKeys::Enter);
-	RuntimeInputContext->MapKey(DialogueModeAction, EKeys::Q);
 	RuntimeInputContext->MapKey(ContinueAction, EKeys::C);
 }
 
@@ -87,11 +85,23 @@ void AWhiteoutCharacter::BeginPlay()
 		nullptr,
 		TEXT("/Game/WindStation/Audio/Foley/S_FootstepConcrete_Original.S_FootstepConcrete_Original"));
 	LastFootstepLocation = GetActorLocation();
+	DialogueIntentGateway = NewObject<UWSAgentGateway>(this);
+	DialogueIntentGateway->Initialize();
 }
 
 void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (ActiveDialogueTarget)
+	{
+		if (FocusedInteractable != ActiveDialogueTarget)
+		{
+			if (FocusedInteractable) FocusedInteractable->SetInteractionFocused(false);
+			FocusedInteractable = ActiveDialogueTarget;
+			FocusedInteractable->SetInteractionFocused(true);
+		}
+		return;
+	}
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
@@ -119,7 +129,8 @@ void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 			{
 				HUD->SetInteractionFocus(
 					Interactable->DisplayName,
-					Interactable->PreviewInteraction(SelectedDialogueAct(), SelectedPromiseCondition()));
+					Interactable->PreviewInteraction(),
+					Interactable->IsCharacterHotspot());
 			}
 			else
 			{
@@ -144,15 +155,8 @@ void AWhiteoutCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		EnhancedInput->BindAction(EvidenceAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::ToggleEvidence);
 		EnhancedInput->BindAction(RestartAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::RestartRun);
 		EnhancedInput->BindAction(SettleAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::Settle);
-		EnhancedInput->BindAction(DialogueModeAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::CycleDialogueMode);
 		EnhancedInput->BindAction(ContinueAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::ContinueRun);
 	}
-	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue1);
-	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue2);
-	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue3);
-	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue4);
-	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue5);
-	PlayerInputComponent->BindKey(EKeys::Six, IE_Pressed, this, &AWhiteoutCharacter::SelectDialogue6);
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AWhiteoutCharacter::DismissOpening);
 	FInputKeyBinding& PauseBinding = PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AWhiteoutCharacter::TogglePauseMenu);
 	PauseBinding.bExecuteWhenPaused = true;
@@ -189,6 +193,11 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 {
 	if (AWSInteractableActor* Interactable = FindLookedAtInteractable())
 	{
+		if (Interactable->IsCharacterHotspot())
+		{
+			BeginDialogue(Interactable);
+			return;
+		}
 		if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 		{
 			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
@@ -197,7 +206,7 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 				{
 					if (bPreviewCanExecute)
 					{
-						Interactable->Interact(this, SelectedDialogueAct(), SelectedPromiseCondition());
+						Interactable->Interact(this);
 					}
 					else
 					{
@@ -208,7 +217,7 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 					return;
 				}
 
-				const FWSActionPreview Preview = Interactable->PreviewInteraction(SelectedDialogueAct(), SelectedPromiseCondition());
+				const FWSActionPreview Preview = Interactable->PreviewInteraction();
 				HUD->ShowActionPreview(Interactable->DisplayName, Preview);
 				PreviewedInteractable = Interactable;
 				bPreviewCanExecute = Preview.bCanExecute;
@@ -217,37 +226,143 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 	}
 }
 
-void AWhiteoutCharacter::CycleDialogueMode(const FInputActionValue& Value)
+void AWhiteoutCharacter::BeginDialogue(AWSInteractableActor* Interactable)
 {
-	bDialogueMenuVisible = !bDialogueMenuVisible;
+	if (!Interactable || !Interactable->IsCharacterHotspot() || ActiveDialogueTarget)
+	{
+		return;
+	}
+	ActiveDialogueTarget = Interactable;
+	bDialogueChoiceCommitted = false;
+	bDialogueIntentPending = false;
+	PreviewedInteractable = nullptr;
+	bPreviewCanExecute = false;
+	Interactable->SetDialogueLookAtActive(true);
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
+		const FVector CameraLocation = FirstPersonCamera->GetComponentLocation();
+		const FVector TargetLocation = Interactable->GetActorLocation() + FVector(0.0f, 0.0f, 145.0f);
+		PlayerController->SetControlRotation((TargetLocation - CameraLocation).Rotation());
+		PlayerController->SetIgnoreMoveInput(true);
+		PlayerController->SetIgnoreLookInput(true);
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->ShowDialogueMenu(DialogueModeIndex, bDialogueMenuVisible);
+			HUD->HideActionPreview();
+			HUD->ShowDialogueMenu(Interactable->ActionId, true);
 		}
 	}
 }
 
-void AWhiteoutCharacter::SelectDialogue1() { SelectDialogueIndex(0); }
-void AWhiteoutCharacter::SelectDialogue2() { SelectDialogueIndex(1); }
-void AWhiteoutCharacter::SelectDialogue3() { SelectDialogueIndex(2); }
-void AWhiteoutCharacter::SelectDialogue4() { SelectDialogueIndex(3); }
-void AWhiteoutCharacter::SelectDialogue5() { SelectDialogueIndex(4); }
-void AWhiteoutCharacter::SelectDialogue6() { SelectDialogueIndex(5); }
-
-void AWhiteoutCharacter::SelectDialogueIndex(const int32 Index)
+void AWhiteoutCharacter::ChooseDialogueAct(const EWSDialogueAct DialogueAct)
 {
-	DialogueModeIndex = FMath::Clamp(Index, 0, 5);
-	bDialogueMenuVisible = true;
-	PreviewedInteractable = nullptr;
-	bPreviewCanExecute = false;
+	if (DialogueAct == EWSDialogueAct::Promise)
+	{
+		if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+		{
+			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+			{
+				HUD->ShowDialoguePromiseChoices();
+			}
+		}
+		return;
+	}
+	CommitDialogueChoice(DialogueAct, NAME_None);
+}
+
+void AWhiteoutCharacter::ChooseDialoguePromise(const FName PromiseCondition)
+{
+	CommitDialogueChoice(EWSDialogueAct::Promise, PromiseCondition);
+}
+
+void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, const FName PromiseCondition)
+{
+	if (!ActiveDialogueTarget || bDialogueChoiceCommitted || bDialogueIntentPending)
+	{
+		return;
+	}
+	const bool bAllowedAct = DialogueAct == EWSDialogueAct::Ask || DialogueAct == EWSDialogueAct::Challenge
+		|| DialogueAct == EWSDialogueAct::Promise || DialogueAct == EWSDialogueAct::Reassure;
+	const bool bAllowedPromise = DialogueAct != EWSDialogueAct::Promise
+		|| PromiseCondition == TEXT("keep_records") || PromiseCondition == TEXT("reserve_medicine") || PromiseCondition == TEXT("heat_repair_room");
+	if (!bAllowedAct || !bAllowedPromise)
+	{
+		return;
+	}
+	bDialogueChoiceCommitted = true;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->HideActionPreview();
-			HUD->ShowDialogueMenu(DialogueModeIndex, true);
+			HUD->SetDialogueIntentStatus(TEXT("交涉已提交，正在组织回应……"), true);
+		}
+	}
+	ActiveDialogueTarget->Interact(this, DialogueAct, PromiseCondition);
+}
+
+void AWhiteoutCharacter::SubmitDialogueText(const FString& UserText)
+{
+	if (!ActiveDialogueTarget || bDialogueChoiceCommitted || bDialogueIntentPending || !DialogueIntentGateway)
+	{
+		return;
+	}
+	bDialogueIntentPending = true;
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->SetDialogueIntentStatus(TEXT("正在识别你的交涉意图……"), true);
+		}
+	}
+	TWeakObjectPtr<AWhiteoutCharacter> WeakThis(this);
+	DialogueIntentGateway->RequestDialogueIntent(
+		UserText,
+		true,
+		FWSDialogueIntentCallback::CreateLambda(
+			[WeakThis](const FWSDialogueIntentResult& Intent)
+			{
+				if (!WeakThis.IsValid() || !WeakThis->ActiveDialogueTarget)
+				{
+					return;
+				}
+				WeakThis->bDialogueIntentPending = false;
+				APlayerController* PlayerController = Cast<APlayerController>(WeakThis->Controller);
+				AWhiteoutHUD* HUD = PlayerController ? Cast<AWhiteoutHUD>(PlayerController->GetHUD()) : nullptr;
+				if (!Intent.bMapped)
+				{
+					if (HUD)
+					{
+						HUD->SetDialogueIntentStatus(TEXT("无法可靠识别：已回退到安全轮盘，请直接选择一种交涉方式。"), false);
+						HUD->ShowDialogueWheelChoices();
+					}
+					return;
+				}
+				if (HUD)
+				{
+					const FString SourceLabel = Intent.Source == TEXT("online_model") ? TEXT("在线模型") : TEXT("本地意图词典");
+					HUD->SetDialogueIntentStatus(FString::Printf(TEXT("%s 已映射到规则内交涉方式（置信度 %.0f%%）。"), *SourceLabel, Intent.Confidence * 100.0f), true);
+				}
+				WeakThis->CommitDialogueChoice(Intent.DialogueAct, Intent.PromiseCondition);
+			}));
+}
+
+void AWhiteoutCharacter::CancelDialogue()
+{
+	if (ActiveDialogueTarget)
+	{
+		ActiveDialogueTarget->SetDialogueLookAtActive(false);
+	}
+	ActiveDialogueTarget = nullptr;
+	bDialogueChoiceCommitted = false;
+	bDialogueIntentPending = false;
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		PlayerController->ResetIgnoreMoveInput();
+		PlayerController->ResetIgnoreLookInput();
+		PlayerController->SetShowMouseCursor(false);
+		PlayerController->SetInputMode(FInputModeGameOnly());
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->ShowDialogueMenu(NAME_None, false);
 		}
 	}
 }
@@ -289,22 +404,6 @@ void AWhiteoutCharacter::ContinueRun(const FInputActionValue& Value)
 			HUD->SetSystemMessage(bLoaded ? TEXT("已恢复自动存档") : TEXT("没有找到自动存档"));
 		}
 	}
-}
-
-EWSDialogueAct AWhiteoutCharacter::SelectedDialogueAct() const
-{
-	if (DialogueModeIndex == 1) return EWSDialogueAct::Challenge;
-	if (DialogueModeIndex >= 2 && DialogueModeIndex <= 4) return EWSDialogueAct::Promise;
-	if (DialogueModeIndex == 5) return EWSDialogueAct::Reassure;
-	return EWSDialogueAct::Ask;
-}
-
-FName AWhiteoutCharacter::SelectedPromiseCondition() const
-{
-	if (DialogueModeIndex == 2) return TEXT("heat_repair_room");
-	if (DialogueModeIndex == 3) return TEXT("reserve_medicine");
-	if (DialogueModeIndex == 4) return TEXT("keep_records");
-	return NAME_None;
 }
 
 void AWhiteoutCharacter::ToggleEvidence(const FInputActionValue& Value)

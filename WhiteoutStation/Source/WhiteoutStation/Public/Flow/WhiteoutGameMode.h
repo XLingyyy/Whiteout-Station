@@ -6,6 +6,8 @@
 
 class UAudioComponent;
 class ACameraActor;
+class APointLight;
+class UWSAgentGateway;
 
 UCLASS()
 class WHITEOUTSTATION_API AWhiteoutGameMode : public AGameModeBase
@@ -21,6 +23,12 @@ public:
 private:
 	UPROPERTY()
 	TObjectPtr<ACameraActor> OpeningCamera;
+
+	UPROPERTY()
+	TObjectPtr<UWSAgentGateway> IntentProbeGateway;
+
+	UPROPERTY()
+	TObjectPtr<APointLight> LookAtCaptureLight;
 
 	FTimerHandle OpeningFinishTimer;
 	bool bOpeningFinished = false;

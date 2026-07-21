@@ -8,6 +8,7 @@
 class UStaticMeshComponent;
 class USceneComponent;
 class USkeletalMeshComponent;
+class UWSLookAtSkeletalMeshComponent;
 class UAnimSequence;
 class UMaterialInterface;
 
@@ -30,7 +31,7 @@ public:
 	TObjectPtr<UStaticMeshComponent> HeadMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
-	TObjectPtr<USkeletalMeshComponent> CharacterMesh;
+	TObjectPtr<UWSLookAtSkeletalMeshComponent> CharacterMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
 	TObjectPtr<UStaticMeshComponent> InjuryWrap;
@@ -48,6 +49,7 @@ public:
 	void Configure(FName InActionId, const FText& InDisplayName, FLinearColor InAccentColor);
 
 	void SetCharacterPreviewMood(bool bHighTrust);
+	void SetDialogueLookAtActive(bool bActive);
 	void SetInteractionFocused(bool bFocused);
 	bool IsCharacterHotspot() const;
 
@@ -83,7 +85,10 @@ private:
 
 	bool bCharacterPresentation = false;
 	bool bReactionActive = false;
+	bool bDialogueLookAtActive = false;
 	float ReactionUntilTime = 0.0f;
+	float CurrentLookAtYaw = 0.0f;
+	float CurrentLookAtPitch = 0.0f;
 
 	void ConfigureCharacterPresentation();
 	void PlayCharacterAnimation(UAnimSequence* Animation, bool bLoop = true);

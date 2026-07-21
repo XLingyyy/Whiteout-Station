@@ -26,9 +26,9 @@ void AWhiteoutHUD::SetInteractionPrompt(const FText& Prompt)
 	if (HUDWidget) HUDWidget->SetInteractionPrompt(Prompt);
 }
 
-void AWhiteoutHUD::SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview)
+void AWhiteoutHUD::SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, const bool bDialogue)
 {
-	if (HUDWidget) HUDWidget->SetInteractionFocus(ActionName, Preview);
+	if (HUDWidget) HUDWidget->SetInteractionFocus(ActionName, Preview, bDialogue);
 }
 
 void AWhiteoutHUD::ClearInteractionFocus()
@@ -60,9 +60,29 @@ void AWhiteoutHUD::ToggleEvidence()
 	if (HUDWidget) HUDWidget->ToggleEvidence();
 }
 
-void AWhiteoutHUD::ShowDialogueMenu(const int32 SelectedIndex, const bool bVisible)
+void AWhiteoutHUD::ShowDialogueMenu(const FName NPCActionId, const bool bVisible)
 {
-	if (HUDWidget) HUDWidget->ShowDialogueMenu(SelectedIndex, bVisible);
+	if (HUDWidget) HUDWidget->ShowDialogueMenu(NPCActionId, bVisible);
+}
+
+void AWhiteoutHUD::ShowDialoguePromiseChoices()
+{
+	if (HUDWidget) HUDWidget->ShowDialoguePromiseChoices();
+}
+
+void AWhiteoutHUD::ShowDialogueWheelChoices()
+{
+	if (HUDWidget) HUDWidget->ShowDialogueWheelChoices();
+}
+
+void AWhiteoutHUD::ShowDialogueFreeTextForCapture()
+{
+	if (HUDWidget) HUDWidget->ShowDialogueFreeTextForCapture();
+}
+
+void AWhiteoutHUD::SetDialogueIntentStatus(const FString& Message, const bool bProcessing)
+{
+	if (HUDWidget) HUDWidget->SetDialogueIntentStatus(Message, bProcessing);
 }
 
 void AWhiteoutHUD::SetSystemMessage(const FString& Message)

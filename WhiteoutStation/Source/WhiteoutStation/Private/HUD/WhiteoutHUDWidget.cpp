@@ -5,6 +5,7 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
@@ -26,6 +27,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Presentation/WSPresentationText.h"
+#include "Player/WhiteoutCharacter.h"
 #include "State/WindStationStateSubsystem.h"
 #include "Styling/CoreStyle.h"
 #include "Sound/SoundBase.h"
@@ -117,7 +119,26 @@ void UWhiteoutHUDWidget::NativeConstruct()
 	{
 		BuildWidgetTree();
 	}
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			StateSubsystem->OnDialogueLine.AddUniqueDynamic(this, &UWhiteoutHUDWidget::HandleDialogueLine);
+		}
+	}
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: native UMG widget added to viewport"));
+}
+
+void UWhiteoutHUDWidget::NativeDestruct()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			StateSubsystem->OnDialogueLine.RemoveDynamic(this, &UWhiteoutHUDWidget::HandleDialogueLine);
+		}
+	}
+	Super::NativeDestruct();
 }
 
 void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
@@ -186,12 +207,21 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 	if (bPresentationCaptureOverride)
 	{
 		UpdateFromState(PresentationCaptureState);
+		if (bDialogueVisible)
+		{
+			UpdateDialogueCard(PresentationCaptureState);
+		}
 	}
 	else if (const UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (const UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
 		{
-			UpdateFromState(StateSubsystem->GetStateSnapshot());
+			const FWSGameState Snapshot = StateSubsystem->GetStateSnapshot();
+			UpdateFromState(Snapshot);
+			if (bDialogueVisible)
+			{
+				UpdateDialogueCard(Snapshot);
+			}
 		}
 	}
 }
@@ -362,9 +392,125 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	EvidenceBorder->SetContent(EvidenceBox);
 	EvidenceBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	DialogueBorder = MakePanel(Canvas, TEXT("DialoguePanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.010f, 0.023f, 0.040f, 1.0f));
-	DialogueText = MakeText(TEXT("DialogueText"), 19, Body);
-	DialogueBorder->SetContent(DialogueText);
+	DialogueBorder = MakePanel(Canvas, TEXT("DialoguePanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.004f, 0.014f, 0.026f, 0.97f));
+	DialogueBorder->SetPadding(FMargin(0));
+	UCanvasPanel* DialogueCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("DialogueCanvas"));
+	DialogueBorder->SetContent(DialogueCanvas);
+	DialogueText = MakeText(TEXT("DialogueTitle"), 27, Body, false);
+	DialogueText->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_title"), TEXT("交涉方式｜先选意图，再由规则结算")));
+	DialogueText->SetJustification(ETextJustify::Center);
+	UCanvasPanelSlot* DialogueTitleSlot = DialogueCanvas->AddChildToCanvas(DialogueText);
+	DialogueTitleSlot->SetAnchors(FAnchors(0.10f, 0.055f, 0.68f, 0.13f));
+	DialogueTitleSlot->SetOffsets(FMargin(0));
+
+	DialogueWheelPanel = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("DialogueWheel"));
+	UCanvasPanelSlot* WheelSlot = DialogueCanvas->AddChildToCanvas(DialogueWheelPanel);
+	WheelSlot->SetAnchors(FAnchors(0.05f, 0.14f, 0.69f, 0.83f));
+	WheelSlot->SetOffsets(FMargin(0));
+	UBorder* WheelCenter = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DialogueWheelCenter"));
+	WheelCenter->SetBrushColor(FLinearColor(0.08f, 0.16f, 0.21f, 0.94f));
+	WheelCenter->SetPadding(FMargin(10));
+	UTextBlock* WheelCenterText = MakeText(TEXT("DialogueWheelCenterText"), 19, Cyan, false);
+	WheelCenterText->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_wheel_center"), TEXT("交涉\n方式")));
+	WheelCenterText->SetJustification(ETextJustify::Center);
+	WheelCenter->SetContent(WheelCenterText);
+	UCanvasPanelSlot* WheelCenterSlot = DialogueWheelPanel->AddChildToCanvas(WheelCenter);
+	WheelCenterSlot->SetAnchors(FAnchors(0.50f, 0.50f));
+	WheelCenterSlot->SetAlignment(FVector2D(0.5f));
+	WheelCenterSlot->SetOffsets(FMargin(-61, -61, 122, 122));
+	UButton* AskButton = MakeDialogueChoiceButton(DialogueWheelPanel, FWSPresentationText::UI(TEXT("dialogue_ask"), TEXT("询问")), TEXT("I_Dialogue_Inquire"), TEXT("DialogueAsk"), FAnchors(0.50f, 0.18f), FMargin(-82, -43, 164, 86));
+	UButton* ChallengeButton = MakeDialogueChoiceButton(DialogueWheelPanel, FWSPresentationText::UI(TEXT("dialogue_challenge"), TEXT("质疑")), TEXT("I_Dialogue_Doubt"), TEXT("DialogueChallenge"), FAnchors(0.79f, 0.38f), FMargin(-82, -43, 164, 86));
+	UButton* PromiseButton = MakeDialogueChoiceButton(DialogueWheelPanel, FWSPresentationText::UI(TEXT("dialogue_promise"), TEXT("承诺")), TEXT("I_Dialogue_Promise"), TEXT("DialoguePromise"), FAnchors(0.68f, 0.76f), FMargin(-82, -43, 164, 86));
+	UButton* ReassureButton = MakeDialogueChoiceButton(DialogueWheelPanel, FWSPresentationText::UI(TEXT("dialogue_reassure"), TEXT("安抚")), TEXT("I_Dialogue_Comfort"), TEXT("DialogueReassure"), FAnchors(0.32f, 0.76f), FMargin(-82, -43, 164, 86));
+	UButton* FreeTextButton = MakeDialogueChoiceButton(DialogueWheelPanel, FWSPresentationText::UI(TEXT("dialogue_free_text"), TEXT("自由输入")), TEXT("I_Dialogue_FreeText"), TEXT("DialogueFreeText"), FAnchors(0.21f, 0.38f), FMargin(-82, -43, 164, 86));
+	AskButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChooseDialogueAsk);
+	ChallengeButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChooseDialogueChallenge);
+	PromiseButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChooseDialoguePromise);
+	ReassureButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChooseDialogueReassure);
+	FreeTextButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::OpenDialogueFreeText);
+
+	DialoguePromiseBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DialoguePromisePanel"));
+	DialoguePromiseBorder->SetBrushColor(FLinearColor(0.025f, 0.060f, 0.086f, 0.98f));
+	DialoguePromiseBorder->SetPadding(FMargin(24));
+	UVerticalBox* PromiseBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialoguePromiseBox"));
+	DialoguePromiseBorder->SetContent(PromiseBox);
+	UTextBlock* PromiseTitle = MakeText(TEXT("DialoguePromiseTitle"), 23, Amber);
+	PromiseTitle->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_promise_title"), TEXT("选择可由现有规则记录的承诺")));
+	PromiseBox->AddChildToVerticalBox(PromiseTitle)->SetPadding(FMargin(0, 0, 0, 14));
+	UButton* KeepRecordsButton = MakeButton(PromiseBox, FWSPresentationText::UI(TEXT("dialogue_promise_records"), TEXT("不弃站｜保存记录")), TEXT("PromiseKeepRecords"));
+	UButton* PreventSelfHarmButton = MakeButton(PromiseBox, FWSPresentationText::UI(TEXT("dialogue_promise_medicine"), TEXT("不放任自伤｜保留药品")), TEXT("PromisePreventSelfHarm"));
+	UButton* RepairTogetherButton = MakeButton(PromiseBox, FWSPresentationText::UI(TEXT("dialogue_promise_heat"), TEXT("配合修复｜维修间升温")), TEXT("PromiseRepairTogether"));
+	UButton* PromiseBackButton = MakeButton(PromiseBox, FWSPresentationText::UI(TEXT("ui_dialogue_back"), TEXT("返回轮盘")), TEXT("PromiseBack"));
+	KeepRecordsButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromiseKeepRecords);
+	PreventSelfHarmButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromisePreventSelfHarm);
+	RepairTogetherButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromiseRepairTogether);
+	PromiseBackButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ShowDialogueWheelChoices);
+	UCanvasPanelSlot* PromisePanelSlot = DialogueCanvas->AddChildToCanvas(DialoguePromiseBorder);
+	PromisePanelSlot->SetAnchors(FAnchors(0.12f, 0.22f, 0.66f, 0.74f));
+	PromisePanelSlot->SetOffsets(FMargin(0));
+	DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
+
+	DialogueFreeTextBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DialogueFreeTextPanel"));
+	DialogueFreeTextBorder->SetBrushColor(FLinearColor(0.025f, 0.060f, 0.086f, 0.98f));
+	DialogueFreeTextBorder->SetPadding(FMargin(24));
+	UVerticalBox* FreeTextBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueFreeTextBox"));
+	DialogueFreeTextBorder->SetContent(FreeTextBox);
+	UTextBlock* FreeTextTitle = MakeText(TEXT("DialogueFreeTextTitle"), 23, Amber);
+	FreeTextTitle->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_free_title"), TEXT("用自己的话交涉")));
+	FreeTextBox->AddChildToVerticalBox(FreeTextTitle)->SetPadding(FMargin(0, 0, 0, 8));
+	UTextBlock* FreeTextHelp = MakeText(TEXT("DialogueFreeTextHelp"), 14, Secondary);
+	FreeTextHelp->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_free_help"), TEXT("系统只识别询问 / 质疑 / 承诺 / 安抚，不执行文本中的状态或规则指令。")));
+	FreeTextBox->AddChildToVerticalBox(FreeTextHelp)->SetPadding(FMargin(0, 0, 0, 14));
+	DialogueFreeTextInput = WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("DialogueFreeTextInput"));
+	DialogueFreeTextInput->SetHintText(FWSPresentationText::UI(TEXT("ui_dialogue_free_hint"), TEXT("例如：我保证会和你一起修好发电机")));
+	FEditableTextBoxStyle DialogueInputStyle = DialogueFreeTextInput->GetWidgetStyle();
+	DialogueInputStyle.SetFont(UIFont(18));
+	DialogueFreeTextInput->SetWidgetStyle(DialogueInputStyle);
+	DialogueFreeTextInput->SetForegroundColor(FLinearColor::White);
+	DialogueFreeTextInput->OnTextCommitted.AddDynamic(this, &UWhiteoutHUDWidget::HandleDialogueTextCommitted);
+	FreeTextBox->AddChildToVerticalBox(DialogueFreeTextInput)->SetPadding(FMargin(12, 5, 12, 14));
+	UButton* SubmitTextButton = MakeButton(FreeTextBox, FWSPresentationText::UI(TEXT("ui_dialogue_submit"), TEXT("识别并提交")), TEXT("DialogueTextSubmit"));
+	UButton* FreeTextBackButton = MakeButton(FreeTextBox, FWSPresentationText::UI(TEXT("ui_dialogue_back"), TEXT("返回轮盘")), TEXT("DialogueTextBack"));
+	SubmitTextButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::SubmitDialogueFreeText);
+	FreeTextBackButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ShowDialogueWheelChoices);
+	UCanvasPanelSlot* FreeTextPanelSlot = DialogueCanvas->AddChildToCanvas(DialogueFreeTextBorder);
+	FreeTextPanelSlot->SetAnchors(FAnchors(0.10f, 0.25f, 0.68f, 0.70f));
+	FreeTextPanelSlot->SetOffsets(FMargin(0));
+	DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
+
+	UBorder* NPCCard = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DialogueNPCCard"));
+	NPCCard->SetBrushColor(FLinearColor(0.025f, 0.052f, 0.073f, 0.97f));
+	NPCCard->SetPadding(FMargin(18));
+	UVerticalBox* NPCCardBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueNPCCardBox"));
+	NPCCard->SetContent(NPCCardBox);
+	USizeBox* NPCPortraitBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("DialogueNPCPortraitBox"));
+	NPCPortraitBox->SetHeightOverride(250.0f);
+	DialogueNPCPortrait = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("DialogueNPCPortrait"));
+	NPCPortraitBox->SetContent(DialogueNPCPortrait);
+	NPCCardBox->AddChildToVerticalBox(NPCPortraitBox)->SetPadding(FMargin(0, 0, 0, 12));
+	DialogueNPCText = MakeText(TEXT("DialogueNPCText"), 15, Body);
+	NPCCardBox->AddChildToVerticalBox(DialogueNPCText)->SetPadding(FMargin(0, 0, 0, 12));
+	DialogueNPCBars.Reset();
+	const TArray<FLinearColor> DialogueBarColors = {Danger, Cyan, Amber, FLinearColor(0.58f, 0.76f, 0.92f, 1.0f)};
+	for (int32 Index = 0; Index < DialogueBarColors.Num(); ++Index)
+	{
+		UProgressBar* Bar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), FName(*FString::Printf(TEXT("DialogueNPCBar%d"), Index)));
+		Bar->SetFillColorAndOpacity(DialogueBarColors[Index]);
+		NPCCardBox->AddChildToVerticalBox(Bar)->SetPadding(FMargin(0, 3, 0, 5));
+		DialogueNPCBars.Add(Bar);
+	}
+	UCanvasPanelSlot* NPCCardSlot = DialogueCanvas->AddChildToCanvas(NPCCard);
+	NPCCardSlot->SetAnchors(FAnchors(0.72f, 0.12f, 0.95f, 0.86f));
+	NPCCardSlot->SetOffsets(FMargin(0));
+
+	DialogueStatusText = MakeText(TEXT("DialogueStatusText"), 16, Secondary);
+	DialogueStatusText->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_footer"), TEXT("选择交涉方式；自由输入会自动降级，规则结果始终确定。")));
+	DialogueStatusText->SetJustification(ETextJustify::Center);
+	UCanvasPanelSlot* DialogueStatusSlot = DialogueCanvas->AddChildToCanvas(DialogueStatusText);
+	DialogueStatusSlot->SetAnchors(FAnchors(0.08f, 0.86f, 0.68f, 0.94f));
+	DialogueStatusSlot->SetOffsets(FMargin(0));
+	UButton* DialogueCancelButton = MakeDialogueChoiceButton(DialogueCanvas, FWSPresentationText::UI(TEXT("ui_dialogue_cancel"), TEXT("取消 / 返回现场")), TEXT(""), TEXT("DialogueCancel"), FAnchors(0.74f, 0.89f, 0.94f, 0.96f), FMargin(0));
+	DialogueCancelButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CancelDialogue);
 	DialogueBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	ResultsBorder = MakePanel(Canvas, TEXT("ResultsPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.004f, 0.014f, 0.026f, 1.0f));
@@ -567,6 +713,50 @@ UButton* UWhiteoutHUDWidget::MakeButton(UVerticalBox* Box, const FText& Label, c
 	return Button;
 }
 
+UButton* UWhiteoutHUDWidget::MakeDialogueChoiceButton(
+	UCanvasPanel* Canvas,
+	const FText& Label,
+	const FString& IconName,
+	const FName Name,
+	const FAnchors& Anchors,
+	const FMargin& Offsets)
+{
+	UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+	Button->SetBackgroundColor(FLinearColor(0.045f, 0.105f, 0.145f, 0.96f));
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*(Name.ToString() + TEXT("Row"))));
+	if (!IconName.IsEmpty())
+	{
+		const FString IconPath = FString::Printf(TEXT("/Game/WindStation/UI/v03/Icons/%s.%s"), *IconName, *IconName);
+		if (UTexture2D* IconTexture = LoadObject<UTexture2D>(nullptr, *IconPath))
+		{
+			USizeBox* IconBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*(Name.ToString() + TEXT("IconBox"))));
+			IconBox->SetWidthOverride(42.0f);
+			IconBox->SetHeightOverride(42.0f);
+			UImage* Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), FName(*(Name.ToString() + TEXT("Icon"))));
+			Icon->SetBrushFromTexture(IconTexture, true);
+			Icon->SetColorAndOpacity(Amber);
+			IconBox->SetContent(Icon);
+			Row->AddChildToHorizontalBox(IconBox)->SetPadding(FMargin(7, 0, 8, 0));
+		}
+	}
+	UTextBlock* LabelText = MakeText(FName(*(Name.ToString() + TEXT("Label"))), 16, Body, false);
+	LabelText->SetText(Label);
+	LabelText->SetJustification(ETextJustify::Center);
+	UHorizontalBoxSlot* LabelSlot = Row->AddChildToHorizontalBox(LabelText);
+	LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	LabelSlot->SetVerticalAlignment(VAlign_Center);
+	Button->SetContent(Row);
+	Button->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
+	UCanvasPanelSlot* CanvasButtonSlot = Canvas->AddChildToCanvas(Button);
+	CanvasButtonSlot->SetAnchors(Anchors);
+	CanvasButtonSlot->SetOffsets(Offsets);
+	if (Anchors.Minimum == Anchors.Maximum)
+	{
+		CanvasButtonSlot->SetAlignment(FVector2D(0.0f));
+	}
+	return Button;
+}
+
 FSlateFontInfo UWhiteoutHUDWidget::UIFont(const int32 Size, const bool bBold) const
 {
 	if (UIFontFamily)
@@ -687,6 +877,51 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	PromptText->SetText(InteractionPrompt);
 	UpdateEvidence(State);
 	UpdateResults(State);
+}
+
+void UWhiteoutHUDWidget::UpdateDialogueCard(const FWSGameState& State)
+{
+	if (!DialogueNPCText || !DialogueNPCPortrait)
+	{
+		return;
+	}
+	const bool bGuHeng = ActiveDialogueActionId == TEXT("talk_gu_heng");
+	const EWSCharacterId CharacterId = bGuHeng ? EWSCharacterId::GuHeng : EWSCharacterId::YeCheng;
+	const FWSCharacterState* Character = State.Characters.Find(CharacterId);
+	const FWSCharacterState SafeState = Character ? *Character : FWSCharacterState();
+	const FString Relationship = SafeState.Trust >= 12.0f ? TEXT("信任")
+		: SafeState.Trust >= 0.0f ? TEXT("可合作")
+		: SafeState.Trust >= -8.0f ? TEXT("有所保留") : TEXT("戒备");
+	FString Stance;
+	if (bGuHeng)
+	{
+		Stance = State.Flags.bGuHengCooperative ? TEXT("愿意配合维修")
+			: State.Flags.bGuHengTreated ? TEXT("等待维修条件")
+			: State.Flags.bGuHengDiagnosed ? TEXT("带伤防御")
+			: TEXT("警惕并回避伤情");
+		DialogueNPCPortrait->SetBrushFromTexture(GuHengPortraitTexture, true);
+	}
+	else
+	{
+		Stance = State.Flags.bGuHengTreated ? TEXT("持续监测伤员")
+			: State.Flags.bMedicalRoomHeated ? TEXT("准备诊疗")
+			: TEXT("优先恢复医疗条件");
+		DialogueNPCPortrait->SetBrushFromTexture(YeChengPortraitTexture, true);
+	}
+	const FString Identity = bGuHeng
+		? FWSPresentationText::UI(TEXT("character_gu_heng"), TEXT("顾衡｜工程师｜41 岁")).ToString()
+		: FWSPresentationText::UI(TEXT("character_ye_cheng"), TEXT("叶澄｜医生｜31 岁")).ToString();
+	DialogueNPCText->SetText(FText::FromString(FString::Printf(
+		TEXT("%s\n\n关系　%s（信任 %.0f）\n立场　%s\n\n状态概览\n健康 %.0f　体温 %.0f\n压力 %.0f　信任 %.0f"),
+		*Identity, *Relationship, SafeState.Trust, *Stance,
+		SafeState.Health, SafeState.Temperature, SafeState.Pressure, SafeState.Trust)));
+	if (DialogueNPCBars.Num() >= 4)
+	{
+		DialogueNPCBars[0]->SetPercent(ScoreRatio(SafeState.Health, 100.0f));
+		DialogueNPCBars[1]->SetPercent(ScoreRatio(SafeState.Temperature, 100.0f));
+		DialogueNPCBars[2]->SetPercent(ScoreRatio(SafeState.Pressure, 100.0f));
+		DialogueNPCBars[3]->SetPercent(FMath::Clamp((SafeState.Trust + 20.0f) / 40.0f, 0.0f, 1.0f));
+	}
 }
 
 void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
@@ -935,7 +1170,7 @@ void UWhiteoutHUDWidget::SetInteractionPrompt(const FText& Prompt)
 	InteractionPrompt = Prompt;
 }
 
-void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview)
+void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, const bool bDialogue)
 {
 	const FString NewName = ActionName.ToString();
 	if (FocusedActionName != NewName)
@@ -955,10 +1190,20 @@ void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSA
 			? FLinearColor(0.0f, 0.0f, 0.0f, 0.28f)
 			: FLinearColor(0.12f, 0.01f, 0.008f, 0.72f));
 		FocusText->SetColorAndOpacity(FSlateColor(Preview.bCanExecute ? Body : Danger));
-		const FString Format = FWSPresentationText::UI(
-			TEXT("ui_focus_format"),
-			TEXT("{0}　｜　{1} AP　｜　[F] 查看行动")).ToString();
-		FocusText->SetText(FText::FromString(FString::Format(*Format, {NewName, Preview.APCost})));
+		if (bDialogue)
+		{
+			const FString DialogueFormat = FWSPresentationText::UI(
+				TEXT("ui_focus_dialogue_format"),
+				TEXT("{0}　｜　[F] 开始对话")).ToString();
+			FocusText->SetText(FText::FromString(FString::Format(*DialogueFormat, {NewName})));
+		}
+		else
+		{
+			const FString Format = FWSPresentationText::UI(
+				TEXT("ui_focus_format"),
+				TEXT("{0}　｜　{1} AP　｜　[F] 查看行动")).ToString();
+			FocusText->SetText(FText::FromString(FString::Format(*Format, {NewName, Preview.APCost})));
+		}
 	}
 }
 
@@ -1085,9 +1330,10 @@ void UWhiteoutHUDWidget::ToggleEvidence()
 	}
 }
 
-void UWhiteoutHUDWidget::ShowDialogueMenu(const int32 SelectedIndex, const bool bVisible)
+void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bVisible)
 {
 	bDialogueVisible = bVisible;
+	ActiveDialogueActionId = bVisible ? NPCActionId : NAME_None;
 	DialogueBorder->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	if (!bVisible)
 	{
@@ -1095,20 +1341,179 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const int32 SelectedIndex, const bool 
 	}
 	HideActionPreview();
 	bEvidenceVisible = false;
-	const TArray<FString> Options = {
-		FWSPresentationText::UI(TEXT("dialogue_ask"), TEXT("询问　｜　获取对方愿意公开的信息")).ToString(),
-		FWSPresentationText::UI(TEXT("dialogue_challenge"), TEXT("质疑　｜　用现有证据追问矛盾")).ToString(),
-		FWSPresentationText::UI(TEXT("dialogue_promise_heat"), TEXT("承诺：恢复维修间供暖")).ToString(),
-		FWSPresentationText::UI(TEXT("dialogue_promise_medicine"), TEXT("承诺：为顾衡保留药品")).ToString(),
-		FWSPresentationText::UI(TEXT("dialogue_promise_records"), TEXT("承诺：保存完整维修记录")).ToString(),
-		FWSPresentationText::UI(TEXT("dialogue_reassure"), TEXT("安抚　｜　降低压力，争取合作")).ToString()};
-	FString Copy = FWSPresentationText::UI(TEXT("ui_dialogue_title"), TEXT("选择对话方式　　　　　　　　　　　　　按 Q 关闭\n\n")).ToString();
-	for (int32 Index = 0; Index < Options.Num(); ++Index)
+	ShowDialogueWheelChoices();
+	DialogueStatusText->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_footer"), TEXT("选择交涉方式；自由输入会自动降级，规则结果始终确定。")));
+	if (const UGameInstance* GameInstance = GetGameInstance())
 	{
-		Copy += FString::Printf(TEXT("%s %d　%s\n\n"), Index == SelectedIndex ? TEXT("▶") : TEXT("　"), Index + 1, *Options[Index]);
+		if (const UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			UpdateDialogueCard(StateSubsystem->GetStateSnapshot());
+		}
 	}
-	Copy += FWSPresentationText::UI(TEXT("ui_dialogue_footer"), TEXT("选择后看向顾衡或叶澄，按 F 查看这次交谈的成本与影响。所有选项均有明确意图，不会暗中循环。 ")).ToString();
-	DialogueText->SetText(FText::FromString(Copy));
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		PlayerController->SetShowMouseCursor(true);
+		FInputModeUIOnly InputMode;
+		InputMode.SetWidgetToFocus(DialogueWheelPanel->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PlayerController->SetInputMode(InputMode);
+	}
+}
+
+void UWhiteoutHUDWidget::ShowDialogueWheelChoices()
+{
+	if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Visible);
+	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UWhiteoutHUDWidget::ShowDialoguePromiseChoices()
+{
+	if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Collapsed);
+	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UWhiteoutHUDWidget::ShowDialogueFreeTextForCapture()
+{
+	OpenDialogueFreeText();
+}
+
+void UWhiteoutHUDWidget::SetDialogueIntentStatus(const FString& Message, const bool bProcessing)
+{
+	if (DialogueStatusText)
+	{
+		DialogueStatusText->SetText(FText::FromString(Message));
+		DialogueStatusText->SetColorAndOpacity(FSlateColor(bProcessing ? Amber : Secondary));
+	}
+	if (bProcessing)
+	{
+		if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Collapsed);
+		if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
+		if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UWhiteoutHUDWidget::ChooseDialogueAsk()
+{
+	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
+	{
+		Character->ChooseDialogueAct(EWSDialogueAct::Ask);
+	}
+}
+
+void UWhiteoutHUDWidget::ChooseDialogueChallenge()
+{
+	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
+	{
+		Character->ChooseDialogueAct(EWSDialogueAct::Challenge);
+	}
+}
+
+void UWhiteoutHUDWidget::ChooseDialoguePromise()
+{
+	ShowDialoguePromiseChoices();
+}
+
+void UWhiteoutHUDWidget::ChooseDialogueReassure()
+{
+	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
+	{
+		Character->ChooseDialogueAct(EWSDialogueAct::Reassure);
+	}
+}
+
+void UWhiteoutHUDWidget::OpenDialogueFreeText()
+{
+	if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Collapsed);
+	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Visible);
+	if (DialogueFreeTextInput)
+	{
+		DialogueFreeTextInput->SetText(FText::GetEmpty());
+		DialogueFreeTextInput->SetKeyboardFocus();
+	}
+	if (DialogueStatusText)
+	{
+		DialogueStatusText->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_offline"), TEXT("在线模型不可用时会自动使用本地词典；仍不确定时回到轮盘。")));
+	}
+}
+
+void UWhiteoutHUDWidget::ChoosePromiseKeepRecords()
+{
+	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
+	{
+		Character->ChooseDialoguePromise(TEXT("keep_records"));
+	}
+}
+
+void UWhiteoutHUDWidget::ChoosePromisePreventSelfHarm()
+{
+	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
+	{
+		Character->ChooseDialoguePromise(TEXT("reserve_medicine"));
+	}
+}
+
+void UWhiteoutHUDWidget::ChoosePromiseRepairTogether()
+{
+	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
+	{
+		Character->ChooseDialoguePromise(TEXT("heat_repair_room"));
+	}
+}
+
+void UWhiteoutHUDWidget::SubmitDialogueFreeText()
+{
+	if (!DialogueFreeTextInput)
+	{
+		return;
+	}
+	const FString UserText = DialogueFreeTextInput->GetText().ToString().TrimStartAndEnd();
+	if (UserText.IsEmpty())
+	{
+		SetDialogueIntentStatus(TEXT("请输入一句完整的交涉内容。"), false);
+		return;
+	}
+	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
+	{
+		Character->SubmitDialogueText(UserText);
+	}
+}
+
+void UWhiteoutHUDWidget::CancelDialogue()
+{
+	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
+	{
+		Character->CancelDialogue();
+	}
+}
+
+void UWhiteoutHUDWidget::HandleDialogueTextCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
+{
+	if (CommitMethod == ETextCommit::OnEnter)
+	{
+		SubmitDialogueFreeText();
+	}
+}
+
+void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
+{
+	if (!bDialogueVisible || Reply.ActionId != ActiveDialogueActionId || !DialogueStatusText)
+	{
+		return;
+	}
+	if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Collapsed);
+	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
+	const FString Speaker = Reply.Speaker == EWSCharacterId::GuHeng ? TEXT("顾衡") : TEXT("叶澄");
+	const FString Provider = Reply.bFallback ? TEXT("本地确定性表达") : TEXT("在线表达（已校验）");
+	DialogueStatusText->SetText(FText::FromString(FString::Printf(
+		TEXT("%s：%s\n\n%s｜点击右下角返回现场"),
+		*Speaker,
+		*Reply.Utterance,
+		*Provider)));
+	DialogueStatusText->SetColorAndOpacity(FSlateColor(Body));
 }
 
 void UWhiteoutHUDWidget::ResetPresentationCapture()

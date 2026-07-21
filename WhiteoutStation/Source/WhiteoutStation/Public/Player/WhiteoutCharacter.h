@@ -10,6 +10,7 @@ class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
 class AWSInteractableActor;
+class UWSAgentGateway;
 class USoundBase;
 
 UCLASS()
@@ -25,6 +26,12 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
+
+	void ChooseDialogueAct(EWSDialogueAct DialogueAct);
+	void ChooseDialoguePromise(FName PromiseCondition);
+	void SubmitDialogueText(const FString& UserText);
+	void CancelDialogue();
+	bool IsDialogueActive() const { return ActiveDialogueTarget != nullptr; }
 
 private:
 	UPROPERTY(Transient)
@@ -58,20 +65,23 @@ private:
 	TObjectPtr<UInputAction> SettleAction;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UInputAction> DialogueModeAction;
-
-	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ContinueAction;
 
-	int32 DialogueModeIndex = 0;
-	bool bDialogueMenuVisible = false;
 	bool bPreviewCanExecute = false;
+	bool bDialogueChoiceCommitted = false;
+	bool bDialogueIntentPending = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AWSInteractableActor> PreviewedInteractable;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AWSInteractableActor> FocusedInteractable;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AWSInteractableActor> ActiveDialogueTarget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWSAgentGateway> DialogueIntentGateway;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USoundBase> SnowFootstepSound;
@@ -94,19 +104,11 @@ private:
 	void ToggleEvidence(const FInputActionValue& Value);
 	void RestartRun(const FInputActionValue& Value);
 	void Settle(const FInputActionValue& Value);
-	void CycleDialogueMode(const FInputActionValue& Value);
 	void ContinueRun(const FInputActionValue& Value);
-	void SelectDialogue1();
-	void SelectDialogue2();
-	void SelectDialogue3();
-	void SelectDialogue4();
-	void SelectDialogue5();
-	void SelectDialogue6();
-	void SelectDialogueIndex(int32 Index);
 	void DismissOpening();
 	void TogglePauseMenu();
-	EWSDialogueAct SelectedDialogueAct() const;
-	FName SelectedPromiseCondition() const;
+	void BeginDialogue(AWSInteractableActor* Interactable);
+	void CommitDialogueChoice(EWSDialogueAct DialogueAct, FName PromiseCondition);
 	AWSInteractableActor* FindLookedAtInteractable() const;
 	void UpdateFootsteps();
 };

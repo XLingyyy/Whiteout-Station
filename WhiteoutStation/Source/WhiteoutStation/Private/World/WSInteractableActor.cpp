@@ -1,4 +1,5 @@
 #include "World/WSInteractableActor.h"
+#include "World/WSLookAtSkeletalMeshComponent.h"
 
 #include "Animation/AnimBlueprint.h"
 #include "Animation/AnimSequence.h"
@@ -31,7 +32,7 @@ AWSInteractableActor::AWSInteractableActor()
 	HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	HeadMesh->SetVisibility(false);
 	HeadMesh->SetCastShadow(true);
-	CharacterMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh"));
+	CharacterMesh = CreateDefaultSubobject<UWSLookAtSkeletalMeshComponent>(TEXT("CharacterMesh"));
 	CharacterMesh->SetupAttachment(SceneRoot);
 	CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CharacterMesh->SetVisibility(false);
@@ -72,17 +73,21 @@ void AWSInteractableActor::Tick(const float DeltaSeconds)
 	}
 
 	const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
-	if (!PlayerPawn || FVector::DistSquared2D(PlayerPawn->GetActorLocation(), GetActorLocation()) > FMath::Square(850.0f))
+	const bool bPlayerInRange = PlayerPawn
+		&& FVector::DistSquared2D(PlayerPawn->GetActorLocation(), GetActorLocation()) <= FMath::Square(bDialogueLookAtActive ? 1300.0f : 850.0f);
+	float TargetYaw = 0.0f;
+	float TargetPitch = 0.0f;
+	if (bPlayerInRange)
 	{
-		return;
+		const FVector HeadLocation = CharacterMesh->GetBoneLocation(TEXT("head"), EBoneSpaces::WorldSpace);
+		const FVector ToPlayer = PlayerPawn->GetPawnViewLocation() - HeadLocation;
+		const FRotator TargetRotation = ToPlayer.Rotation();
+		TargetYaw = FMath::Clamp(FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, TargetRotation.Yaw), -55.0f, 55.0f);
+		TargetPitch = FMath::Clamp(TargetRotation.Pitch, -20.0f, 25.0f);
 	}
-	const FVector ToPlayer = PlayerPawn->GetActorLocation() - GetActorLocation();
-	const float DesiredYaw = ToPlayer.Rotation().Yaw;
-	const FRotator CurrentRotation = GetActorRotation();
-	SetActorRotation(FRotator(
-		0.0f,
-		FMath::FInterpTo(CurrentRotation.Yaw, DesiredYaw, DeltaSeconds, 3.4f),
-		0.0f));
+	CurrentLookAtYaw = FMath::FInterpTo(CurrentLookAtYaw, TargetYaw, DeltaSeconds, bPlayerInRange ? 4.8f : 3.2f);
+	CurrentLookAtPitch = FMath::FInterpTo(CurrentLookAtPitch, TargetPitch, DeltaSeconds, bPlayerInRange ? 4.8f : 3.2f);
+	CharacterMesh->SetLookAtAngles(CurrentLookAtYaw, CurrentLookAtPitch);
 }
 
 void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisplayName, const FLinearColor InAccentColor)
@@ -356,8 +361,17 @@ void AWSInteractableActor::SetCharacterPreviewMood(const bool bHighTrust)
 	PlayCharacterAnimation(bHighTrust ? GestureAnimation : GuardedAnimation);
 }
 
+void AWSInteractableActor::SetDialogueLookAtActive(const bool bActive)
+{
+	bDialogueLookAtActive = bCharacterPresentation && bActive;
+}
+
 FText AWSInteractableActor::GetInteractionPrompt() const
 {
+	if (bCharacterPresentation)
+	{
+		return FText::Format(FText::FromString(TEXT("[F] 开始对话：{0}")), DisplayName);
+	}
 	return FText::Format(FText::FromString(TEXT("[F] 查看行动：{0}")), DisplayName);
 }
 

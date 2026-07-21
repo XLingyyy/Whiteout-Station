@@ -2,12 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/EditableTextBox.h"
 #include "State/WindStationTypes.h"
 #include "WhiteoutHUDWidget.generated.h"
 
 class UBorder;
 class UButton;
 class UCanvasPanel;
+class UEditableTextBox;
 class UImage;
 class UProgressBar;
 class UScrollBox;
@@ -26,16 +28,22 @@ class WHITEOUTSTATION_API UWhiteoutHUDWidget : public UUserWidget
 public:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	void SetInteractionPrompt(const FText& Prompt);
-	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview);
+	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, bool bDialogue = false);
 	void ClearInteractionFocus();
 	void SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview, bool bPromiseCreated = false);
 	void ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview);
 	void HideActionPreview();
 	void ToggleEvidence();
-	void ShowDialogueMenu(int32 SelectedIndex, bool bVisible);
+	void ShowDialogueMenu(FName NPCActionId, bool bVisible);
+	void ShowDialoguePromiseChoices();
+	UFUNCTION()
+	void ShowDialogueWheelChoices();
+	void ShowDialogueFreeTextForCapture();
+	void SetDialogueIntentStatus(const FString& Message, bool bProcessing);
 	void SetSystemMessage(const FString& Message);
 	void DismissOpening();
 	void TogglePauseMenu();
@@ -126,6 +134,30 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> DialogueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCanvasPanel> DialogueWheelPanel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> DialoguePromiseBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> DialogueFreeTextBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UEditableTextBox> DialogueFreeTextInput;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> DialogueStatusText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> DialogueNPCText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UImage> DialogueNPCPortrait;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UProgressBar>> DialogueNPCBars;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> OpeningBorder;
@@ -232,6 +264,7 @@ private:
 	EWSEndingType ActiveEnding = EWSEndingType::SurvivalWait;
 	bool bEvidenceVisible = false;
 	bool bDialogueVisible = false;
+	FName ActiveDialogueActionId;
 	bool bPresentationCaptureOverride = false;
 	FWSGameState PresentationCaptureState;
 
@@ -239,6 +272,7 @@ private:
 	void InitializeUIFontFamily();
 	void UpdateFromState(const FWSGameState& State);
 	void UpdateEvidence(const FWSGameState& State);
+	void UpdateDialogueCard(const FWSGameState& State);
 	void UpdateResults(const FWSGameState& State);
 	void ApplyOpeningStage(int32 Stage);
 	void ApplyCrisisStage(int32 Stage);
@@ -248,6 +282,13 @@ private:
 	UTextBlock* MakeText(const FName Name, int32 Size, const FLinearColor& Color, bool bWrap = true);
 	UBorder* MakePanel(UCanvasPanel* Canvas, const FName Name, const FAnchors& Anchors, const FMargin& Offsets, const FLinearColor& Color);
 	UButton* MakeButton(UVerticalBox* Box, const FText& Label, const FName Name);
+	UButton* MakeDialogueChoiceButton(
+		UCanvasPanel* Canvas,
+		const FText& Label,
+		const FString& IconName,
+		const FName Name,
+		const FAnchors& Anchors,
+		const FMargin& Offsets);
 	FSlateFontInfo UIFont(int32 Size, bool bBold = false) const;
 	static FString APCells(int32 Remaining);
 	static FString ClockForAP(int32 Remaining);
@@ -267,4 +308,40 @@ private:
 
 	UFUNCTION()
 	void PlayHoverSound();
+
+	UFUNCTION()
+	void ChooseDialogueAsk();
+
+	UFUNCTION()
+	void ChooseDialogueChallenge();
+
+	UFUNCTION()
+	void ChooseDialoguePromise();
+
+	UFUNCTION()
+	void ChooseDialogueReassure();
+
+	UFUNCTION()
+	void OpenDialogueFreeText();
+
+	UFUNCTION()
+	void ChoosePromiseKeepRecords();
+
+	UFUNCTION()
+	void ChoosePromisePreventSelfHarm();
+
+	UFUNCTION()
+	void ChoosePromiseRepairTogether();
+
+	UFUNCTION()
+	void SubmitDialogueFreeText();
+
+	UFUNCTION()
+	void CancelDialogue();
+
+	UFUNCTION()
+	void HandleDialogueTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+
+	UFUNCTION()
+	void HandleDialogueLine(const FWSAgentReply& Reply);
 };
