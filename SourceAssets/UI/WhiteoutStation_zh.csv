@@ -30,8 +30,8 @@ ending_task_success,"信号穿过风雪"
 ending_survival_wait,"等待天明"
 ending_cost_uncontrolled,"求救成功，代价失控"
 ending_total_collapse,"气象站失守"
-ui_initial_message,"靠近带有蓝色轮廓的设备，按 F 查看行动。"
-ui_help,"WASD 移动　鼠标观察　F 预览/确认　Q 对话方式　1–6 选择　E 证据板　Enter 结束　R 重开　Esc 暂停/退出"
+ui_initial_message,"靠近带有白色轮廓的设备，按 F 查看行动。"
+ui_help,"WASD 移动　鼠标观察　Space 跳跃　F 互动/对话　E 证据板　Enter 结束　Esc 暂停"
 ui_opening,"风雪站：断电前夜
 
 暴风雪正在封锁山区，备用电池只够支撑最后一轮抢修。
@@ -283,6 +283,19 @@ trust_hostile,"敌对"
 knowledge_confirmed,"已确认"
 knowledge_suspected,"有根据的推测"
 knowledge_claimed,"单方说法"
+ui_help_v03,"WASD 移动　鼠标观察　Space 跳跃　F 互动/对话　E 证据板　Enter 结束　Esc 暂停"
+ui_top_format_v03,"风雪站：断电前夜
+{0}　｜　AP {1} / 8
+{2}　·　{3}"
+ui_crew_header_v03,"值班组状态"
+ui_evidence_system_v03,"系统证据｜设备记录与现场物证
+"
+ui_evidence_claims_v03,"角色说法｜尚待交叉核验
+"
+ui_evidence_confirmed_v03,"已证实事实｜可用于行动判断
+"
+ui_evidence_promises_v03,"承诺追踪｜兑现状态
+"
 knowledge_unknown,"未知"
 ui_gallery_title,"界面控件测试页｜Dev_TestMap"
 ui_gallery_typography,"标题 30　正文 18　辅助 15｜Noto Sans SC Regular / Bold"

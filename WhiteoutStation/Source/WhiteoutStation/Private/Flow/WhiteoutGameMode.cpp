@@ -384,6 +384,15 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 			TEXT("ending_task_cinematic"), TEXT("ending_survival_cinematic"),
 			TEXT("ending_cost_cinematic"), TEXT("ending_collapse_cinematic")};
 	}
+	else if (PresentationCaptureMode.Equals(TEXT("g1suite"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("hud"), TEXT("pause"), TEXT("evidence"),
+			TEXT("focus_near"), TEXT("focus_mid"), TEXT("focus_far"), TEXT("focus_blocked"),
+			TEXT("preview"), TEXT("reject_generator"),
+			TEXT("toast_commit"), TEXT("toast_promise"),
+			TEXT("opening_objective"), TEXT("results_task")};
+	}
 	else
 	{
 		PresentationCaptureNames.Add(PresentationCaptureMode);
@@ -439,7 +448,7 @@ void AWhiteoutGameMode::StagePresentationCapture()
 	else if (CaptureName.StartsWith(TEXT("focus_")))
 	{
 		const bool bBlocked = CaptureName.Equals(TEXT("focus_blocked"));
-		const FName TargetAction = bBlocked ? FName(TEXT("send_signal")) : FName(TEXT("repair_generator"));
+		const FName TargetAction = bBlocked ? FName(TEXT("send_signal")) : FName(TEXT("forced_self_repair"));
 		for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
 		{
 			if (It->ActionId != TargetAction)
@@ -448,17 +457,32 @@ void AWhiteoutGameMode::StagePresentationCapture()
 			}
 			if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
 			{
-				const FVector DesiredCameraLocation = It->GetActorLocation() + FVector(-235.0f, 0.0f, 105.0f);
+				const FVector LookTarget = It->GetActorLocation() + FVector(0.0f, 0.0f, 70.0f);
+				FVector ViewDirection = Pawn->GetPawnViewLocation() - LookTarget;
+				if (!ViewDirection.Normalize())
+				{
+					ViewDirection = FVector(-1.0f, 0.0f, 0.0f);
+				}
+				const float FocusDistance = bBlocked ? 300.0f
+					: CaptureName.Equals(TEXT("focus_near")) ? 180.0f
+					: CaptureName.Equals(TEXT("focus_far")) ? 420.0f
+					: 280.0f;
+				const FVector DesiredCameraLocation = LookTarget + ViewDirection * FocusDistance;
 				const FVector PawnLocation = DesiredCameraLocation - FVector(0.0f, 0.0f, 64.0f);
 				Pawn->SetActorLocation(PawnLocation, false, nullptr, ETeleportType::TeleportPhysics);
 				if (APlayerController* FocusController = UGameplayStatics::GetPlayerController(this, 0))
 				{
 					FocusController->SetControlRotation(
-						(It->GetActorLocation() + FVector(0.0f, 0.0f, 75.0f) - DesiredCameraLocation).Rotation());
+						(LookTarget - DesiredCameraLocation).Rotation());
 				}
 			}
 			It->SetInteractionFocused(true);
-			HUD->SetInteractionFocus(It->DisplayName, It->PreviewInteraction());
+			FWSActionPreview FocusPreview = It->PreviewInteraction();
+			if (!bBlocked)
+			{
+				FocusPreview.bCanExecute = true;
+			}
+			HUD->SetInteractionFocus(It->DisplayName, FocusPreview);
 			break;
 		}
 	}
@@ -507,6 +531,14 @@ void AWhiteoutGameMode::StagePresentationCapture()
 	else if (CaptureName.Equals(TEXT("components")))
 	{
 		HUD->ShowComponentGalleryForCapture();
+	}
+	else if (CaptureName.Equals(TEXT("pause")))
+	{
+		HUD->TogglePauseMenu();
+		if (PlayerController)
+		{
+			PlayerController->SetPause(false);
+		}
 	}
 	else if (CaptureName.StartsWith(TEXT("reject_")))
 	{
@@ -560,7 +592,7 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 	{
 		const FName TargetAction = CaptureName.Equals(TEXT("focus_blocked"))
 			? FName(TEXT("send_signal"))
-			: FName(TEXT("repair_generator"));
+			: FName(TEXT("forced_self_repair"));
 		if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
 		{
 			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
@@ -570,7 +602,12 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 					if (It->ActionId == TargetAction)
 					{
 						It->SetInteractionFocused(true);
-						HUD->SetInteractionFocus(It->DisplayName, It->PreviewInteraction());
+						FWSActionPreview FocusPreview = It->PreviewInteraction();
+						if (!CaptureName.Equals(TEXT("focus_blocked")))
+						{
+							FocusPreview.bCanExecute = true;
+						}
+						HUD->SetInteractionFocus(It->DisplayName, FocusPreview);
 						break;
 					}
 				}
@@ -580,7 +617,15 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 	const FIntPoint Size = GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport
 		? GEngine->GameViewport->Viewport->GetSizeXY()
 		: FIntPoint(0, 0);
-	const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../docs/baseline_v0.2"));
+	const bool bV03Capture = PresentationCaptureMode.Equals(TEXT("g1suite"), ESearchCase::IgnoreCase)
+		|| PresentationCaptureMode.StartsWith(TEXT("focus_"), ESearchCase::IgnoreCase)
+		|| PresentationCaptureMode.Equals(TEXT("hud"), ESearchCase::IgnoreCase)
+		|| PresentationCaptureMode.Equals(TEXT("pause"), ESearchCase::IgnoreCase)
+		|| PresentationCaptureMode.Equals(TEXT("evidence"), ESearchCase::IgnoreCase);
+	const TCHAR* CaptureFolder = bV03Capture
+		? TEXT("../docs/baseline_v0.3")
+		: TEXT("../docs/baseline_v0.2");
+	const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / CaptureFolder);
 	IFileManager::Get().MakeDirectory(*Directory, true);
 	const FString ScreenshotPath = Directory / FString::Printf(
 		TEXT("UI_%s_%dx%d.png"),

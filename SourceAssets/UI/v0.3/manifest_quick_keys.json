@@ -1,0 +1,67 @@
+{
+  "source": "SourceAssets/UI/v0.3/Atlas_QuickKeys.png",
+  "columns": 4,
+  "rows": 3,
+  "icons": [
+    {
+      "name": "I_Quick_Map",
+      "source_cell": 0,
+      "sha256": "14cd0977aa7e233237cd9bd4216d0793db264820ebd356b1256f701b2f2c869b"
+    },
+    {
+      "name": "I_Quick_Log",
+      "source_cell": 1,
+      "sha256": "6a32a7edb2b233c606cf86001ee2638c7a6a22daef736b757cdbead162d897d3"
+    },
+    {
+      "name": "I_Quick_Tasks",
+      "source_cell": 2,
+      "sha256": "5420ffba090a0830dafb30ae60312265391da4b115f8d8ee5f5ac564246f65a1"
+    },
+    {
+      "name": "I_Quick_Relations",
+      "source_cell": 3,
+      "sha256": "ac435727c285e51584cbbed7892e81759cd90217eda42dbb933fe18a598d93f1"
+    },
+    {
+      "name": "I_Quick_System",
+      "source_cell": 4,
+      "sha256": "2a64fcca2eaa19e7af5bb1bd442a49db2e3a0ef834c80e244a54588166d6d5a5"
+    },
+    {
+      "name": "I_Key_Move",
+      "source_cell": 5,
+      "sha256": "51460ff769284a79a90032a83bae42521347478c1b88000e56424d9403a39a2c"
+    },
+    {
+      "name": "I_Key_Mouse",
+      "source_cell": 6,
+      "sha256": "60a42161541e0c6bf7de5fc38387c47c6c51891f1e3bb92a6a0a02b6913a5420"
+    },
+    {
+      "name": "I_Key_F",
+      "source_cell": 7,
+      "sha256": "d123f060b7cef63e71427206b9ca37ab46ecedfc427d32e35afd9d2c4b833613"
+    },
+    {
+      "name": "I_Key_E",
+      "source_cell": 8,
+      "sha256": "709a848bec88696ad323621f90dd3eeb9530142d7d69b7284d799ddc80bf4382"
+    },
+    {
+      "name": "I_Key_Q",
+      "source_cell": 9,
+      "sha256": "3c1d293754d3108c8fe72f8072f81d658d53144be37181e63909bfab19142bd4"
+    },
+    {
+      "name": "I_Key_Space",
+      "source_cell": 10,
+      "sha256": "feda29d7ffc75fb1a035a164e7a5aa29e8455c6dae64dfcd94e94635583cc4ad"
+    },
+    {
+      "name": "I_Key_Enter",
+      "source_cell": 11,
+      "sha256": "897a6522843a6c7a1a577729480abee69d7f5d3236079e925097f05039a27af4"
+    }
+  ]
+}

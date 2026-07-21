@@ -8,12 +8,15 @@
 class UBorder;
 class UButton;
 class UCanvasPanel;
+class UImage;
 class UProgressBar;
 class UScrollBox;
 class UTextBlock;
+class UUniformGridPanel;
 class UVerticalBox;
 class UFont;
 class USoundBase;
+class UTexture2D;
 
 UCLASS()
 class WHITEOUTSTATION_API UWhiteoutHUDWidget : public UUserWidget
@@ -56,6 +59,15 @@ private:
 	TObjectPtr<UTextBlock> CrewText;
 
 	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> CrewCardTexts;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UProgressBar>> CrewStatusBars;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UProgressBar>> CrewTrustBars;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> FeedbackText;
 
 	UPROPERTY(Transient)
@@ -93,6 +105,18 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> EvidenceText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> EvidenceTitleText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> EvidenceFilterText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUniformGridPanel> EvidenceCardGrid;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> EvidenceProgressText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UScrollBox> EvidenceScroll;
@@ -149,6 +173,18 @@ private:
 	TObjectPtr<UBorder> PauseBorder;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> PauseStatusText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> PauseHelpText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> PauseSituationText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> PauseDefaultButton;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBorder> ComponentGalleryBorder;
 
 	UPROPERTY(Transient)
@@ -168,6 +204,18 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USoundBase> UIPromiseSound;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> InkBrushTexture;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> PlayerPortraitTexture;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> GuHengPortraitTexture;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> YeChengPortraitTexture;
 
 	FText InteractionPrompt;
 	FString FocusedActionName;
@@ -202,6 +250,7 @@ private:
 	UButton* MakeButton(UVerticalBox* Box, const FText& Label, const FName Name);
 	FSlateFontInfo UIFont(int32 Size, bool bBold = false) const;
 	static FString APCells(int32 Remaining);
+	static FString ClockForAP(int32 Remaining);
 	static float ScoreRatio(float Value, float Maximum);
 
 	UFUNCTION()
@@ -209,6 +258,9 @@ private:
 
 	UFUNCTION()
 	void RestartGame();
+
+	UFUNCTION()
+	void ToggleControls();
 
 	UFUNCTION()
 	void QuitGame();

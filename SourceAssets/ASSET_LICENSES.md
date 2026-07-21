@@ -1,6 +1,16 @@
 # Third-party asset record
 
-All files listed here are source inputs for the Whiteout Station v0.1/v0.2 demo. Imported Unreal assets remain subject to the same license.
+All files listed here are source inputs for the Whiteout Station v0.1/v0.2/v0.3 demo. Imported Unreal assets remain subject to the same license.
+
+## Whiteout Station v0.3 AI-generated UI — original project output
+
+| Assets | Generator / date | Project use | Terms / provenance |
+|---|---|---|---|
+| 44 monoline menu, state, resource, evidence, dialogue, quick-menu and key-hint icons | Codex built-in `image_gen`, 2026-07-22 | all v0.3 runtime UI iconography | original output generated for this repository; subject to OpenAI service terms |
+| `T_UI_InkBrush` | Codex built-in `image_gen`, 2026-07-22 | interaction card, toast and compact notice nine-slice | original output; chroma master and deterministic alpha post-process retained |
+| 顾衡、叶澄写实肖像与玩家剪影 | Codex built-in `image_gen`, 2026-07-22 | HUD and dialogue NPC cards | original fictional-character output; feedback mock used only as identity/presentation reference |
+
+Prompt summaries, processing commands and deliverable inventory are recorded in `UI/v0.3/README.md`; atlas cell order and per-icon hashes are in `UI/v0.3/manifest_*.json`. Raw chroma masters are retained for audit. Generated outputs contain no requested third-party logos, trademarks or stock imagery.
 
 ## Poly Haven textures — CC0 1.0
 

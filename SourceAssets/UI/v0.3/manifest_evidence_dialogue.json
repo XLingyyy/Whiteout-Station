@@ -1,0 +1,67 @@
+{
+  "source": "SourceAssets/UI/v0.3/Atlas_EvidenceDialogue.png",
+  "columns": 4,
+  "rows": 3,
+  "icons": [
+    {
+      "name": "I_Evidence_File",
+      "source_cell": 0,
+      "sha256": "6ab46393763cf56334084dd1233705900c6d20cf743803530ef509d85e143097"
+    },
+    {
+      "name": "I_Evidence_Item",
+      "source_cell": 1,
+      "sha256": "f7e822bfb06f25ac19306d62d397445da130d20cf123bbf44bffab40d26bfdaa"
+    },
+    {
+      "name": "I_Evidence_Witness",
+      "source_cell": 2,
+      "sha256": "db4ff79070080af05e4bf094a128954acf643b0dc170319e3a14d4182d93e0ea"
+    },
+    {
+      "name": "I_Evidence_Dialogue",
+      "source_cell": 3,
+      "sha256": "722d68631880aff20907b81a1d724bd66e77192e4073b02d66bc13825e32804a"
+    },
+    {
+      "name": "I_Importance_Critical",
+      "source_cell": 4,
+      "sha256": "a61b6978765015701cd3fcd4811da1fddf00722098de1990293419bbab14278f"
+    },
+    {
+      "name": "I_Importance_Important",
+      "source_cell": 5,
+      "sha256": "b3def6607a9eeb23beb546c258f16b08b962b23dd0e4ebd507d7d9e2f2804fbb"
+    },
+    {
+      "name": "I_Importance_Normal",
+      "source_cell": 6,
+      "sha256": "0b50ec8d82b02889bb87a700b377f8d9b1fc976708bd7559577868b57c225860"
+    },
+    {
+      "name": "I_Dialogue_Inquire",
+      "source_cell": 7,
+      "sha256": "58b973b3c42e28bfcb2b5bdfe7b044017da847879df8e1e3d6916b692e06a47d"
+    },
+    {
+      "name": "I_Dialogue_Doubt",
+      "source_cell": 8,
+      "sha256": "26e351b81b0314dc6217e5ecad8bce9bd4adb2e03d02392ae9de082da366b78a"
+    },
+    {
+      "name": "I_Dialogue_Promise",
+      "source_cell": 9,
+      "sha256": "0f4fc9a60855075f79982318edaa9a33a5c74c7c236b85fcbd9a069cf4b4870f"
+    },
+    {
+      "name": "I_Dialogue_Comfort",
+      "source_cell": 10,
+      "sha256": "9ea6bed8f2935e3abcdb773b5d3a202417782eb92de8415ada17600fd8c54869"
+    },
+    {
+      "name": "I_Dialogue_FreeText",
+      "source_cell": 11,
+      "sha256": "7d6ab6e09961fd9058f89eff0fc4942e18787d0481ffaa194d39ee2316485898"
+    }
+  ]
+}

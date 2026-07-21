@@ -1,0 +1,47 @@
+{
+  "source": "SourceAssets/UI/v0.3/Atlas_Menu.png",
+  "columns": 4,
+  "rows": 2,
+  "icons": [
+    {
+      "name": "I_Menu_Continue",
+      "source_cell": 0,
+      "sha256": "234165f08522df16ddd5219d39a672003fe5c612a802cd589cf5273860cf5333"
+    },
+    {
+      "name": "I_Menu_Settings",
+      "source_cell": 1,
+      "sha256": "4b36acf866e5124cd91a7576150bdfe280f39ada253858697e88e3afb91fcc7d"
+    },
+    {
+      "name": "I_Menu_Help",
+      "source_cell": 2,
+      "sha256": "1d85b4e10b15393e1a6e3aea1ebd6cc542fe134fbd7db01a3d007d0847dd9361"
+    },
+    {
+      "name": "I_Menu_Restart",
+      "source_cell": 3,
+      "sha256": "248a5c9154b1bfac4c01491f488d8ce7c23628f6c80a785f4d64e8b840683b1b"
+    },
+    {
+      "name": "I_Menu_Main",
+      "source_cell": 4,
+      "sha256": "ef883aac351b6caf4be454d0dbbb175aa8ceed659d68704445e62a4a03e419fd"
+    },
+    {
+      "name": "I_Menu_Save",
+      "source_cell": 5,
+      "sha256": "818a9ff5d7d9951d777c14442e9df4cc6540e05a8273738bc7fd93ef5fd72b60"
+    },
+    {
+      "name": "I_Menu_Load",
+      "source_cell": 6,
+      "sha256": "a7d451270661b9bc179fba1f4ebe1c5edf52a1c654518c24ce7c13a72157dd9c"
+    },
+    {
+      "name": "I_Menu_Close",
+      "source_cell": 7,
+      "sha256": "013e8339205669503b42ea19d74d52476d79de82cdf4bf0ab25a1ef3fca30f4f"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "source": "SourceAssets/UI/v0.3/Atlas_StatusResources.png",
+  "columns": 4,
+  "rows": 3,
+  "icons": [
+    {
+      "name": "I_Status_Health",
+      "source_cell": 0,
+      "sha256": "8a7815e339e36e9c89808003097788cfb3337ac0caebddb1c4bfd122205328e4"
+    },
+    {
+      "name": "I_Status_Temperature",
+      "source_cell": 1,
+      "sha256": "60cfc62c804bd238f7a6da096971bc27b61f542bf63f7dd47dfe695471bb6591"
+    },
+    {
+      "name": "I_Status_Energy",
+      "source_cell": 2,
+      "sha256": "20a4ded07f9835ba3b5fbe822ebf4d216db7dcc7dac253f5456cbc9dc0d26fd3"
+    },
+    {
+      "name": "I_Status_Hunger",
+      "source_cell": 3,
+      "sha256": "5cc4e1a4be58292bf4c69b8a43c43f369a0ee0e14a75833f57467e1eab2c9212"
+    },
+    {
+      "name": "I_Status_Stress",
+      "source_cell": 4,
+      "sha256": "53511e6934da1f5d07937622fb59d3850dfd538f106b5b6dfa3f4bc93f739805"
+    },
+    {
+      "name": "I_Status_Trust",
+      "source_cell": 5,
+      "sha256": "38192ab5557421119d2d23110ef69a601f831241db8bba1333b38553476bf81c"
+    },
+    {
+      "name": "I_Resource_Fuel",
+      "source_cell": 6,
+      "sha256": "b21421e911c59f8e614f138e92b0e956b58d9b660885c9dd64c5ba5df3880e5f"
+    },
+    {
+      "name": "I_Resource_Food",
+      "source_cell": 7,
+      "sha256": "560b290463634af3c36d7cb451320545d771784bcdf8c0cec5eae85c8494a8fe"
+    },
+    {
+      "name": "I_Resource_Medicine",
+      "source_cell": 8,
+      "sha256": "93d66e4940dce3952a939d8dfefc144cd0a2ae61fdbf0d974bdedeec83f7fa83"
+    },
+    {
+      "name": "I_Resource_Relay",
+      "source_cell": 9,
+      "sha256": "385381578625ef6eb587da48bac9ee78ccc24b14b73710f6f29094af39bbd549"
+    },
+    {
+      "name": "I_Resource_HeatPack",
+      "source_cell": 10,
+      "sha256": "993507356979ac2fbf389620997d5a010cf4c4ee17c75c82d1175b729b9ec39f"
+    },
+    {
+      "name": "I_Resource_Evidence",
+      "source_cell": 11,
+      "sha256": "e592897c10504bc5b501a8e15c84943cb53d5b656de4202675238bf5281c3374"
+    }
+  ]
+}
