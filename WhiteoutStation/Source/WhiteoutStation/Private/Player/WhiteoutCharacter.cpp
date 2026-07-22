@@ -394,7 +394,7 @@ void AWhiteoutCharacter::TogglePauseMenu()
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->TogglePauseMenu();
+			HUD->HandleBackRequested();
 		}
 	}
 }

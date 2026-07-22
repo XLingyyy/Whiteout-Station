@@ -100,6 +100,11 @@ void AWhiteoutHUD::TogglePauseMenu()
 	if (HUDWidget) HUDWidget->TogglePauseMenu();
 }
 
+void AWhiteoutHUD::HandleBackRequested()
+{
+	if (HUDWidget) HUDWidget->HandleBackRequested();
+}
+
 void AWhiteoutHUD::ResetPresentationCapture()
 {
 	if (HUDWidget) HUDWidget->ResetPresentationCapture();

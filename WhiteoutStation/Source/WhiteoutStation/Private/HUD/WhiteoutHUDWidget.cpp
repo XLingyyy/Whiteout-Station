@@ -27,6 +27,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "InputCoreTypes.h"
 #include "Presentation/WSPresentationText.h"
 #include "Player/WhiteoutCharacter.h"
 #include "Settings/WhiteoutSettingsSubsystem.h"
@@ -66,6 +67,7 @@ namespace
 void UWhiteoutHUDWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	SetIsFocusable(true);
 	UIStringTableAsset = LoadObject<UObject>(
 		nullptr,
 		TEXT("/Game/WindStation/UI/ST_WhiteoutStation_zh.ST_WhiteoutStation_zh"));
@@ -228,6 +230,21 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 	}
 }
 
+FReply UWhiteoutHUDWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Escape)
+	{
+		HandleBackRequested();
+		return FReply::Handled();
+	}
+	if (InKeyEvent.GetKey() == EKeys::E && CurrentLayer == EWSUILayer::Evidence)
+	{
+		CloseEvidence();
+		return FReply::Handled();
+	}
+	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
 void UWhiteoutHUDWidget::BuildWidgetTree()
 {
 	if (!WidgetTree || WidgetTree->RootWidget)
@@ -237,15 +254,15 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UCanvasPanel* Canvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDRoot"));
 	WidgetTree->RootWidget = Canvas;
 
-	UBorder* TopPanel = MakePanel(Canvas, TEXT("TopPanel"), FAnchors(0, 0), FMargin(20, 20, 340, 122), PanelColor);
+	TopPanel = MakePanel(Canvas, TEXT("TopPanel"), FAnchors(0, 0), FMargin(20, 20, 340, 122), PanelColor);
 	TopText = MakeText(TEXT("TopText"), 16, Body);
 	TopPanel->SetContent(TopText);
 
-	UBorder* ObjectivePanel = MakePanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 154, 308, 342), PanelColor);
+	ObjectivePanel = MakePanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 154, 308, 342), PanelColor);
 	ObjectiveText = MakeText(TEXT("ObjectiveText"), 15, Body);
 	ObjectivePanel->SetContent(ObjectiveText);
 
-	UBorder* CrewPanel = MakePanel(Canvas, TEXT("CrewPanel"), FAnchors(1, 0), FMargin(-352, 20, 332, 520), PanelColor);
+	CrewPanel = MakePanel(Canvas, TEXT("CrewPanel"), FAnchors(1, 0), FMargin(-352, 20, 332, 520), PanelColor);
 	UVerticalBox* CrewBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("CrewBox"));
 	CrewPanel->SetContent(CrewBox);
 	CrewText = MakeText(TEXT("CrewHeader"), 16, Body);
@@ -318,7 +335,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		CrewBox->AddChildToVerticalBox(CardRow)->SetPadding(FMargin(0, 0, 0, 10));
 	}
 
-	UBorder* BottomPanel = MakePanel(Canvas, TEXT("BottomPanel"), FAnchors(0.5f, 1.0f), FMargin(-420, -142, 840, 122), FLinearColor(0.035f, 0.071f, 0.102f, 0.72f));
+	BottomPanel = MakePanel(Canvas, TEXT("BottomPanel"), FAnchors(0.5f, 1.0f), FMargin(-420, -142, 840, 122), FLinearColor(0.035f, 0.071f, 0.102f, 0.72f));
 	UVerticalBox* BottomBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("BottomBox"));
 	BottomPanel->SetContent(BottomBox);
 	FeedbackText = MakeText(TEXT("FeedbackText"), 14, Body);
@@ -338,21 +355,36 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	CrosshairSlot->SetAnchors(FAnchors(0.5f, 0.5f));
 	CrosshairSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 	CrosshairSlot->SetOffsets(FMargin(-22.0f, -22.0f, 44.0f, 44.0f));
-	FocusBorder = MakePanel(Canvas, TEXT("FocusPanel"), FAnchors(0.5f, 0.5f), FMargin(-270, 42, 540, 78), FLinearColor(0.0f, 0.0f, 0.0f, 0.34f));
+	FocusBorder = MakePanel(Canvas, TEXT("FocusPanel"), FAnchors(0.5f, 0.5f), FMargin(-270, 42, 540, 78), FLinearColor::Transparent);
 	FocusBorder->SetPadding(FMargin(8));
 	UOverlay* FocusOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("FocusOverlay"));
 	if (InkBrushTexture)
 	{
 		UImage* FocusBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("FocusBrush"));
 		FocusBrush->SetBrushFromTexture(InkBrushTexture, true);
-		FocusBrush->SetColorAndOpacity(FLinearColor(Amber.R, Amber.G, Amber.B, 0.76f));
+		FocusBrush->SetColorAndOpacity(FLinearColor(0.02f, 0.03f, 0.05f, 0.92f));
 		FocusOverlay->AddChildToOverlay(FocusBrush);
 	}
+	UVerticalBox* FocusContent = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FocusContent"));
+	UTextBlock* FocusMarker = MakeText(TEXT("FocusMarker"), 11, Amber, false);
+	FocusMarker->SetText(FText::FromString(TEXT("◆")));
+	FocusMarker->SetJustification(ETextJustify::Center);
+	FocusContent->AddChildToVerticalBox(FocusMarker);
+	UHorizontalBox* FocusLine = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FocusLine"));
 	FocusText = MakeText(TEXT("FocusText"), 15, Body, false);
 	FocusText->SetJustification(ETextJustify::Center);
-	UOverlaySlot* FocusTextSlot = FocusOverlay->AddChildToOverlay(FocusText);
-	FocusTextSlot->SetHorizontalAlignment(HAlign_Center);
-	FocusTextSlot->SetVerticalAlignment(VAlign_Center);
+	FocusLine->AddChildToHorizontalBox(FocusText)->SetVerticalAlignment(VAlign_Center);
+	FocusAPText = MakeText(TEXT("FocusAPText"), 15, Amber, false);
+	FocusAPText->SetJustification(ETextJustify::Center);
+	FocusLine->AddChildToHorizontalBox(FocusAPText)->SetVerticalAlignment(VAlign_Center);
+	FocusKeyText = MakeText(TEXT("FocusKeyText"), 15, Body, false);
+	FocusKeyText->SetJustification(ETextJustify::Center);
+	FocusLine->AddChildToHorizontalBox(FocusKeyText)->SetVerticalAlignment(VAlign_Center);
+	UVerticalBoxSlot* FocusLineSlot = FocusContent->AddChildToVerticalBox(FocusLine);
+	FocusLineSlot->SetHorizontalAlignment(HAlign_Center);
+	UOverlaySlot* FocusContentSlot = FocusOverlay->AddChildToOverlay(FocusContent);
+	FocusContentSlot->SetHorizontalAlignment(HAlign_Center);
+	FocusContentSlot->SetVerticalAlignment(VAlign_Center);
 	FocusBorder->SetContent(FocusOverlay);
 	FocusBorder->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -377,15 +409,68 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UBorder* FilterPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("EvidenceFilterPanel"));
 	FilterPanel->SetBrushColor(FLinearColor(0.025f, 0.050f, 0.070f, 0.78f));
 	FilterPanel->SetPadding(FMargin(14));
-	EvidenceFilterText = MakeText(TEXT("EvidenceFilters"), 14, Secondary);
-	FilterPanel->SetContent(EvidenceFilterText);
+	UVerticalBox* FilterBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("EvidenceFilterBox"));
+	EvidenceFilterText = MakeText(TEXT("EvidenceFilters"), 13, Secondary);
+	EvidenceFilterText->SetText(FText::FromString(TEXT("类型过滤")));
+	FilterBox->AddChildToVerticalBox(EvidenceFilterText)->SetPadding(FMargin(0, 0, 0, 10));
+	EvidenceFilterButtons.Reset();
+	EvidenceFilterIndicators.Reset();
+	EvidenceFilterLabels.Reset();
+	EvidenceFilterCounts.Reset();
+	const TArray<FString> FilterLabels = {TEXT("全部"), TEXT("文件记录"), TEXT("物品证据"), TEXT("目击信息"), TEXT("对话记录")};
+	for (int32 FilterIndex = 0; FilterIndex < FilterLabels.Num(); ++FilterIndex)
+	{
+		UButton* FilterButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), FName(*FString::Printf(TEXT("EvidenceFilterButton%d"), FilterIndex)));
+		FilterButton->SetBackgroundColor(FLinearColor::Transparent);
+		FilterButton->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
+		switch (FilterIndex)
+		{
+		case 0: FilterButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::FilterEvidenceAll); break;
+		case 1: FilterButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::FilterEvidenceFiles); break;
+		case 2: FilterButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::FilterEvidenceItems); break;
+		case 3: FilterButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::FilterEvidenceWitnesses); break;
+		default: FilterButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::FilterEvidenceDialogue); break;
+		}
+		UHorizontalBox* FilterRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*FString::Printf(TEXT("EvidenceFilterRow%d"), FilterIndex)));
+		USizeBox* IndicatorSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*FString::Printf(TEXT("EvidenceFilterIndicatorSize%d"), FilterIndex)));
+		IndicatorSize->SetWidthOverride(2.0f);
+		UBorder* Indicator = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), FName(*FString::Printf(TEXT("EvidenceFilterIndicator%d"), FilterIndex)));
+		Indicator->SetBrushColor(FilterIndex == 0 ? Amber : FLinearColor::Transparent);
+		IndicatorSize->SetContent(Indicator);
+		FilterRow->AddChildToHorizontalBox(IndicatorSize)->SetPadding(FMargin(0, 2, 10, 2));
+		UTextBlock* Label = MakeText(FName(*FString::Printf(TEXT("EvidenceFilterLabel%d"), FilterIndex)), 13, FilterIndex == 0 ? Body : Secondary, false);
+		Label->SetText(FText::FromString(FilterLabels[FilterIndex]));
+		UHorizontalBoxSlot* LabelSlot = FilterRow->AddChildToHorizontalBox(Label);
+		LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		LabelSlot->SetVerticalAlignment(VAlign_Center);
+		UTextBlock* Count = MakeText(FName(*FString::Printf(TEXT("EvidenceFilterCount%d"), FilterIndex)), 12, Secondary, false);
+		Count->SetText(FText::FromString(TEXT("00")));
+		FilterRow->AddChildToHorizontalBox(Count)->SetVerticalAlignment(VAlign_Center);
+		FilterButton->SetContent(FilterRow);
+		FilterBox->AddChildToVerticalBox(FilterButton)->SetPadding(FMargin(0, 3));
+		EvidenceFilterButtons.Add(FilterButton);
+		EvidenceFilterIndicators.Add(Indicator);
+		EvidenceFilterLabels.Add(Label);
+		EvidenceFilterCounts.Add(Count);
+	}
+	FilterPanel->SetContent(FilterBox);
 	FilterSize->SetContent(FilterPanel);
 	EvidenceMain->AddChildToHorizontalBox(FilterSize)->SetPadding(FMargin(0, 0, 14, 0));
+	UVerticalBox* EvidenceContent = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("EvidenceContent"));
 	EvidenceScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("EvidenceScroll"));
 	EvidenceCardGrid = WidgetTree->ConstructWidget<UUniformGridPanel>(UUniformGridPanel::StaticClass(), TEXT("EvidenceCardGrid"));
 	EvidenceCardGrid->SetMinDesiredSlotWidth(300.0f);
 	EvidenceScroll->AddChild(EvidenceCardGrid);
-	UHorizontalBoxSlot* EvidenceCardsSlot = EvidenceMain->AddChildToHorizontalBox(EvidenceScroll);
+	UVerticalBoxSlot* EvidenceScrollSlot = EvidenceContent->AddChildToVerticalBox(EvidenceScroll);
+	EvidenceScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	UBorder* EvidenceDetailPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("EvidenceDetailPanel"));
+	EvidenceDetailPanel->SetBrushColor(FLinearColor(0.025f, 0.050f, 0.070f, 0.78f));
+	EvidenceDetailPanel->SetPadding(FMargin(12));
+	EvidenceDetailText = MakeText(TEXT("EvidenceDetailText"), 14, Body);
+	EvidenceDetailText->SetText(FText::FromString(TEXT("选择一条记录查看细节。")));
+	EvidenceDetailPanel->SetContent(EvidenceDetailText);
+	EvidenceContent->AddChildToVerticalBox(EvidenceDetailPanel)->SetPadding(FMargin(0, 10, 0, 0));
+	UHorizontalBoxSlot* EvidenceCardsSlot = EvidenceMain->AddChildToHorizontalBox(EvidenceContent);
 	EvidenceCardsSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	UVerticalBoxSlot* EvidenceMainSlot = EvidenceBox->AddChildToVerticalBox(EvidenceMain);
 	EvidenceMainSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -584,13 +669,13 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	GalleryBox->AddChildToVerticalBox(GalleryToast)->SetPadding(FMargin(0, 14, 0, 0));
 	ComponentGalleryBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	ToastBorder = MakePanel(Canvas, TEXT("ActionToast"), FAnchors(0.27f, 0.70f, 0.73f, 0.70f), FMargin(0, 0, 0, 104), FLinearColor(0.0f, 0.0f, 0.0f, 0.30f));
+	ToastBorder = MakePanel(Canvas, TEXT("ActionToast"), FAnchors(0.27f, 0.70f, 0.73f, 0.70f), FMargin(0, 0, 0, 104), FLinearColor::Transparent);
 	UOverlay* ToastOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("ToastOverlay"));
 	if (InkBrushTexture)
 	{
 		UImage* ToastBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("ToastBrush"));
 		ToastBrush->SetBrushFromTexture(InkBrushTexture, true);
-		ToastBrush->SetColorAndOpacity(FLinearColor(Amber.R, Amber.G, Amber.B, 0.72f));
+		ToastBrush->SetColorAndOpacity(FLinearColor(0.02f, 0.03f, 0.05f, 0.92f));
 		ToastOverlay->AddChildToOverlay(ToastBrush);
 	}
 	ToastText = MakeText(TEXT("ActionToastText"), 17, Body, false);
@@ -861,6 +946,80 @@ float UWhiteoutHUDWidget::ScoreRatio(const float Value, const float Maximum)
 	return Maximum > 0.0f ? FMath::Clamp(Value / Maximum, 0.0f, 1.0f) : 0.0f;
 }
 
+void UWhiteoutHUDWidget::SetBaseHudHidden(const bool bHidden)
+{
+	const ESlateVisibility PanelVisibility = bHidden ? ESlateVisibility::Hidden : ESlateVisibility::Visible;
+	if (TopPanel) TopPanel->SetVisibility(PanelVisibility);
+	if (ObjectivePanel) ObjectivePanel->SetVisibility(PanelVisibility);
+	if (CrewPanel) CrewPanel->SetVisibility(PanelVisibility);
+	if (BottomPanel) BottomPanel->SetVisibility(PanelVisibility);
+}
+
+void UWhiteoutHUDWidget::SetLayer(const EWSUILayer Layer)
+{
+	CurrentLayer = Layer;
+	const bool bHideBaseHud = Layer == EWSUILayer::Evidence
+		|| Layer == EWSUILayer::Dialogue
+		|| Layer == EWSUILayer::Pause
+		|| Layer == EWSUILayer::Settings
+		|| Layer == EWSUILayer::Results;
+	SetBaseHudHidden(bHideBaseHud);
+	if (bHideBaseHud)
+	{
+		ClearInteractionFocus();
+	}
+	if (CrosshairText)
+	{
+		CrosshairText->SetVisibility(bHideBaseHud ? ESlateVisibility::Hidden : ESlateVisibility::Visible);
+	}
+}
+
+void UWhiteoutHUDWidget::SetEvidenceFilter(const int32 FilterIndex)
+{
+	EvidenceFilterIndex = FMath::Clamp(FilterIndex, 0, 4);
+	ShowEvidenceDetail(TEXT("选择一条记录查看细节。"));
+	if (bPresentationCaptureOverride)
+	{
+		UpdateEvidence(PresentationCaptureState);
+		return;
+	}
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			UpdateEvidence(StateSubsystem->GetStateSnapshot());
+		}
+	}
+}
+
+void UWhiteoutHUDWidget::ShowEvidenceDetail(const FString& DetailCopy)
+{
+	if (EvidenceDetailText)
+	{
+		EvidenceDetailText->SetText(FText::FromString(DetailCopy));
+	}
+}
+
+void UWhiteoutHUDWidget::FilterEvidenceAll() { SetEvidenceFilter(0); }
+void UWhiteoutHUDWidget::FilterEvidenceFiles() { SetEvidenceFilter(1); }
+void UWhiteoutHUDWidget::FilterEvidenceItems() { SetEvidenceFilter(2); }
+void UWhiteoutHUDWidget::FilterEvidenceWitnesses() { SetEvidenceFilter(3); }
+void UWhiteoutHUDWidget::FilterEvidenceDialogue() { SetEvidenceFilter(4); }
+
+void UWhiteoutHUDWidget::ShowHoveredEvidenceDetail()
+{
+	for (int32 Index = 0; Index < EvidenceCardButtons.Num(); ++Index)
+	{
+		const UButton* Button = EvidenceCardButtons[Index];
+		if (Button && (Button->IsHovered() || Button->HasKeyboardFocus()) && EvidenceCardDetailCopies.IsValidIndex(Index))
+		{
+			ShowEvidenceDetail(EvidenceCardDetailCopies[Index]);
+			PlayUISound(UIConfirmSound, 0.52f);
+			return;
+		}
+	}
+}
+
 void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 {
 	const FString Crisis = State.bMidCrisisTriggered
@@ -1030,23 +1189,48 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 	}
 	const int32 DialogueCount = ClaimCount + State.Promises.Num();
 	const int32 TotalCards = FileCount + ItemCount + WitnessCount + DialogueCount;
-	EvidenceTitleText->SetText(FText::FromString(FString::Printf(TEXT("证据板　%02d 条记录　　　　　　　　　[E] 关闭"), TotalCards)));
-	EvidenceFilterText->SetText(FText::FromString(FString::Printf(
-		TEXT("类型过滤\n\n● 全部　　　　 %02d\n\n　文件记录　　 %02d\n\n　物品证据　　 %02d\n\n　目击信息　　 %02d\n\n　对话记录　　 %02d"),
-		TotalCards, FileCount, ItemCount, WitnessCount, DialogueCount)));
+	EvidenceTitleText->SetText(FText::FromString(FString::Printf(TEXT("证据板　%02d 条记录　　　　　　　　　[E / Esc] 关闭"), TotalCards)));
+	const TArray<int32> FilterCounts = {TotalCards, FileCount, ItemCount, WitnessCount, DialogueCount};
+	for (int32 Index = 0; Index < FilterCounts.Num(); ++Index)
+	{
+		if (EvidenceFilterCounts.IsValidIndex(Index) && EvidenceFilterCounts[Index])
+		{
+			EvidenceFilterCounts[Index]->SetText(FText::FromString(FString::Printf(TEXT("%02d"), FilterCounts[Index])));
+		}
+		if (EvidenceFilterIndicators.IsValidIndex(Index) && EvidenceFilterIndicators[Index])
+		{
+			EvidenceFilterIndicators[Index]->SetBrushColor(Index == EvidenceFilterIndex ? Amber : FLinearColor::Transparent);
+		}
+		if (EvidenceFilterLabels.IsValidIndex(Index) && EvidenceFilterLabels[Index])
+		{
+			EvidenceFilterLabels[Index]->SetColorAndOpacity(FSlateColor(Index == EvidenceFilterIndex ? Body : Secondary));
+		}
+	}
 	EvidenceProgressText->SetText(FText::FromString(FString::Printf(
 		TEXT("重要性　● 关键　　● 重要　　● 普通　　　　　　　　　　　　　　收集进度 %02d / 18"),
 		FMath::Clamp(State.Evidence.Num(), 0, 18))));
 
 	EvidenceCardGrid->ClearChildren();
+	EvidenceCardButtons.Reset();
+	EvidenceCardDetailCopies.Reset();
 	int32 CardIndex = 0;
 	const auto AddCard = [this, &CardIndex](
 		const FString& Title,
 		const FString& Type,
 		const FString& Summary,
 		const FLinearColor& Importance,
-		const TCHAR* IconName)
+		const FString& ImportanceLabel,
+		const TCHAR* IconName,
+		const int32 Category)
 	{
+		if (EvidenceFilterIndex != 0 && Category != EvidenceFilterIndex)
+		{
+			return;
+		}
+		UButton* CardButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), FName(*FString::Printf(TEXT("EvidenceCardButton%d"), CardIndex)));
+		CardButton->SetBackgroundColor(FLinearColor::Transparent);
+		CardButton->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
+		CardButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ShowHoveredEvidenceDetail);
 		UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), FName(*FString::Printf(TEXT("EvidenceCard%d"), CardIndex)));
 		Card->SetBrushColor(FLinearColor(0.030f, 0.060f, 0.082f, 0.82f));
 		Card->SetPadding(FMargin(14));
@@ -1069,9 +1253,12 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 		CopySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		CopySlot->SetVerticalAlignment(VAlign_Center);
 		Card->SetContent(CardRow);
-		UUniformGridSlot* CardSlot = EvidenceCardGrid->AddChildToUniformGrid(Card, CardIndex / 2, CardIndex % 2);
+		CardButton->SetContent(Card);
+		UUniformGridSlot* CardSlot = EvidenceCardGrid->AddChildToUniformGrid(CardButton, CardIndex / 2, CardIndex % 2);
 		CardSlot->SetHorizontalAlignment(HAlign_Fill);
 		CardSlot->SetVerticalAlignment(VAlign_Fill);
+		EvidenceCardButtons.Add(CardButton);
+		EvidenceCardDetailCopies.Add(FString::Printf(TEXT("%s｜%s｜%s\n%s"), *Title, *Type, *ImportanceLabel, *Summary));
 		++CardIndex;
 	};
 
@@ -1090,7 +1277,9 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 			bFile ? TEXT("文件记录") : bWitness ? TEXT("目击信息") : TEXT("物品证据"),
 			Summary,
 			bFile ? Amber : bWitness ? Danger : Body,
-			bFile ? TEXT("I_Evidence_File") : bWitness ? TEXT("I_Evidence_Witness") : TEXT("I_Evidence_Item"));
+			bWitness ? TEXT("关键") : bFile ? TEXT("重要") : TEXT("普通"),
+			bFile ? TEXT("I_Evidence_File") : bWitness ? TEXT("I_Evidence_Witness") : TEXT("I_Evidence_Item"),
+			bFile ? 1 : bWitness ? 3 : 2);
 	}
 	for (const TPair<FName, EWSKnowledgeLevel>& Pair : State.PlayerKnowledge)
 	{
@@ -1101,7 +1290,9 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 				TEXT("对话记录"),
 				TEXT("待交叉核验｜") + FWSPresentationText::KnowledgeLevel(Pair.Value).ToString(),
 				Amber,
-				TEXT("I_Evidence_Dialogue"));
+				TEXT("重要"),
+				TEXT("I_Evidence_Dialogue"),
+				4);
 		}
 	}
 	for (const TPair<FName, EWSKnowledgeLevel>& Pair : State.PlayerKnowledge)
@@ -1113,7 +1304,9 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 				TEXT("目击信息"),
 				TEXT("交叉核验完成，可用于行动判断。"),
 				Danger,
-				TEXT("I_Evidence_Witness"));
+				TEXT("关键"),
+				TEXT("I_Evidence_Witness"),
+				3);
 		}
 	}
 	for (const FWSPromiseRecord& Promise : State.Promises)
@@ -1125,11 +1318,14 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 			TEXT("对话记录"),
 			TEXT("承诺状态｜") + FWSPresentationText::UI(StatusKey, StatusFallback).ToString(),
 			Promise.bSettled && !Promise.bFulfilled ? Danger : Amber,
-			TEXT("I_Evidence_Dialogue"));
+			Promise.bSettled && !Promise.bFulfilled ? TEXT("关键") : TEXT("重要"),
+			TEXT("I_Evidence_Dialogue"),
+			4);
 	}
 	if (CardIndex == 0)
 	{
-		AddCard(TEXT("尚未取得证据"), TEXT("系统"), TEXT("调查设备、现场物品或与队员交谈。"), Body, TEXT("I_Evidence_File"));
+		const int32 EmptyCategory = EvidenceFilterIndex == 0 ? 0 : EvidenceFilterIndex;
+		AddCard(TEXT("尚未取得证据"), TEXT("系统"), TEXT("调查设备、现场物品或与队员交谈。"), Body, TEXT("普通"), TEXT("I_Evidence_File"), EmptyCategory);
 	}
 	EvidenceBorder->SetVisibility(bEvidenceVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 }
@@ -1141,7 +1337,15 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 	{
 		ResultsBorder->SetVisibility(ESlateVisibility::Collapsed);
 		bWasShowingResults = false;
+		if (CurrentLayer == EWSUILayer::Results)
+		{
+			SetLayer(EWSUILayer::Game);
+		}
 		return;
+	}
+	if (CurrentLayer != EWSUILayer::Pause && CurrentLayer != EWSUILayer::Settings)
+	{
+		SetLayer(EWSUILayer::Results);
 	}
 	if (bPresentationCaptureOverride && !bEndingCinematicCapture)
 	{
@@ -1245,6 +1449,10 @@ void UWhiteoutHUDWidget::SetInteractionPrompt(const FText& Prompt)
 
 void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, const bool bDialogue)
 {
+	if (CurrentLayer != EWSUILayer::Game && CurrentLayer != EWSUILayer::Preview)
+	{
+		return;
+	}
 	const FString NewName = ActionName.ToString();
 	if (FocusedActionName != NewName)
 	{
@@ -1253,29 +1461,26 @@ void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSA
 	}
 	if (CrosshairText)
 	{
-		CrosshairText->SetText(FText::FromString(TEXT("◆")));
-		CrosshairText->SetColorAndOpacity(FSlateColor(Preview.bCanExecute ? Amber : Danger));
+		CrosshairText->SetText(FText::FromString(TEXT("+")));
+		CrosshairText->SetFont(UIFont(28, true));
+		CrosshairText->SetColorAndOpacity(FSlateColor(Body));
 	}
-	if (FocusBorder && FocusText)
+	if (FocusBorder && FocusText && FocusAPText && FocusKeyText)
 	{
 		FocusBorder->SetVisibility(ESlateVisibility::Visible);
-		FocusBorder->SetBrushColor(Preview.bCanExecute
-			? FLinearColor(0.0f, 0.0f, 0.0f, 0.28f)
-			: FLinearColor(0.12f, 0.01f, 0.008f, 0.72f));
-		FocusText->SetColorAndOpacity(FSlateColor(Preview.bCanExecute ? Body : Danger));
+		FocusBorder->SetBrushColor(FLinearColor::Transparent);
+		FocusText->SetColorAndOpacity(FSlateColor(Body));
+		FocusText->SetText(FText::FromString(NewName + TEXT("　")));
 		if (bDialogue)
 		{
-			const FString DialogueFormat = FWSPresentationText::UI(
-				TEXT("ui_focus_dialogue_format"),
-				TEXT("{0}　｜　[F] 开始对话")).ToString();
-			FocusText->SetText(FText::FromString(FString::Format(*DialogueFormat, {NewName})));
+			FocusAPText->SetVisibility(ESlateVisibility::Collapsed);
+			FocusKeyText->SetText(FText::FromString(TEXT("｜　[F] 开始对话")));
 		}
 		else
 		{
-			const FString Format = FWSPresentationText::UI(
-				TEXT("ui_focus_format"),
-				TEXT("{0}　｜　{1} AP　｜　[F] 查看行动")).ToString();
-			FocusText->SetText(FText::FromString(FString::Format(*Format, {NewName, Preview.APCost})));
+			FocusAPText->SetVisibility(ESlateVisibility::Visible);
+			FocusAPText->SetText(FText::FromString(FString::Printf(TEXT("｜　%d AP　"), Preview.APCost)));
+			FocusKeyText->SetText(FText::FromString(TEXT("｜　[F] 查看行动")));
 		}
 	}
 }
@@ -1286,7 +1491,11 @@ void UWhiteoutHUDWidget::ClearInteractionFocus()
 	if (CrosshairText)
 	{
 		CrosshairText->SetText(FText::FromString(TEXT("+")));
+		CrosshairText->SetFont(UIFont(28, false));
 		CrosshairText->SetColorAndOpacity(FSlateColor(Body));
+		CrosshairText->SetVisibility(CurrentLayer == EWSUILayer::Game || CurrentLayer == EWSUILayer::Preview
+			? ESlateVisibility::Visible
+			: ESlateVisibility::Hidden);
 	}
 	if (FocusBorder)
 	{
@@ -1296,6 +1505,7 @@ void UWhiteoutHUDWidget::ClearInteractionFocus()
 
 void UWhiteoutHUDWidget::ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview)
 {
+	SetLayer(EWSUILayer::Preview);
 	PreviewBorder->SetVisibility(ESlateVisibility::Visible);
 	PreviewTitleText->SetText(ActionName);
 	if (Preview.bCanExecute)
@@ -1340,6 +1550,10 @@ void UWhiteoutHUDWidget::HideActionPreview()
 	{
 		PreviewBorder->SetVisibility(ESlateVisibility::Collapsed);
 	}
+	if (CurrentLayer == EWSUILayer::Preview)
+	{
+		SetLayer(EWSUILayer::Game);
+	}
 }
 
 void UWhiteoutHUDWidget::SetActionFeedback(
@@ -1383,9 +1597,7 @@ void UWhiteoutHUDWidget::SetActionFeedback(
 	{
 		ToastText->SetText(FText::FromString(SystemMessage));
 		ToastText->SetColorAndOpacity(FSlateColor(Result.bCommitted ? Body : FLinearColor(1.0f, 0.72f, 0.62f, 1.0f)));
-		ToastBorder->SetBrushColor(Result.bCommitted
-			? FLinearColor(0.0f, 0.0f, 0.0f, 0.18f)
-			: FLinearColor(0.10f, 0.0f, 0.0f, 0.34f));
+		ToastBorder->SetBrushColor(FLinearColor::Transparent);
 		ToastBorder->SetVisibility(ESlateVisibility::Visible);
 		ToastBorder->SetRenderOpacity(1.0f);
 		ToastRemaining = 2.7f;
@@ -1394,12 +1606,39 @@ void UWhiteoutHUDWidget::SetActionFeedback(
 
 void UWhiteoutHUDWidget::ToggleEvidence()
 {
-	bEvidenceVisible = !bEvidenceVisible;
 	if (bEvidenceVisible)
 	{
-		HideActionPreview();
-		DialogueBorder->SetVisibility(ESlateVisibility::Collapsed);
-		bDialogueVisible = false;
+		CloseEvidence();
+		return;
+	}
+	HideActionPreview();
+	if (bDialogueVisible)
+	{
+		CancelDialogue();
+	}
+	bEvidenceVisible = true;
+	if (EvidenceBorder) EvidenceBorder->SetVisibility(ESlateVisibility::Visible);
+	SetLayer(EWSUILayer::Evidence);
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		PlayerController->SetShowMouseCursor(true);
+		FInputModeUIOnly InputMode;
+		InputMode.SetWidgetToFocus(TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PlayerController->SetInputMode(InputMode);
+		SetKeyboardFocus();
+	}
+}
+
+void UWhiteoutHUDWidget::CloseEvidence()
+{
+	bEvidenceVisible = false;
+	if (EvidenceBorder) EvidenceBorder->SetVisibility(ESlateVisibility::Collapsed);
+	SetLayer(EWSUILayer::Game);
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		PlayerController->SetShowMouseCursor(false);
+		PlayerController->SetInputMode(FInputModeGameOnly());
 	}
 }
 
@@ -1410,10 +1649,16 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bV
 	DialogueBorder->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	if (!bVisible)
 	{
+		if (CurrentLayer == EWSUILayer::Dialogue)
+		{
+			SetLayer(EWSUILayer::Game);
+		}
 		return;
 	}
 	HideActionPreview();
 	bEvidenceVisible = false;
+	if (EvidenceBorder) EvidenceBorder->SetVisibility(ESlateVisibility::Collapsed);
+	SetLayer(EWSUILayer::Dialogue);
 	ShowDialogueWheelChoices();
 	DialogueStatusText->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_footer"), TEXT("选择交涉方式；自由输入会自动降级，规则结果始终确定。")));
 	if (const UGameInstance* GameInstance = GetGameInstance())
@@ -1611,6 +1856,7 @@ void UWhiteoutHUDWidget::ResetPresentationCapture()
 	CrisisElapsed = -1.0f;
 	EndingElapsed = -1.0f;
 	HideActionPreview();
+	SetLayer(EWSUILayer::Game);
 }
 
 void UWhiteoutHUDWidget::SetPresentationCaptureState(const FWSGameState& State)
@@ -1626,6 +1872,7 @@ void UWhiteoutHUDWidget::ShowEvidenceForCapture()
 	bDialogueVisible = false;
 	HideActionPreview();
 	if (DialogueBorder) DialogueBorder->SetVisibility(ESlateVisibility::Collapsed);
+	SetLayer(EWSUILayer::Evidence);
 	if (bPresentationCaptureOverride)
 	{
 		UpdateEvidence(PresentationCaptureState);
@@ -1687,6 +1934,7 @@ void UWhiteoutHUDWidget::SetEndingCaptureStage(const EWSEndingType Ending, const
 		bEndingResultsRevealed = true;
 		if (EndingCinematicBorder) EndingCinematicBorder->SetVisibility(ESlateVisibility::Collapsed);
 		if (ResultsBorder) ResultsBorder->SetVisibility(ESlateVisibility::Visible);
+		SetLayer(EWSUILayer::Results);
 		return;
 	}
 	bEndingResultsRevealed = false;
@@ -1857,6 +2105,43 @@ bool UWhiteoutHUDWidget::IsPauseMenuVisible() const
 		|| (SettingsBorder && SettingsBorder->GetVisibility() == ESlateVisibility::Visible);
 }
 
+void UWhiteoutHUDWidget::HandleBackRequested()
+{
+	// v0.4 global back routing (single source of truth):
+	// Settings -> CloseSettings (Pause)
+	// Pause -> ResumeGame
+	// Evidence -> CloseEvidence
+	// Dialogue -> AWhiteoutCharacter::CancelDialogue
+	// Preview -> HideActionPreview
+	// Results -> open Pause
+	// Game -> open Pause
+	switch (CurrentLayer)
+	{
+	case EWSUILayer::Settings:
+		CloseSettings();
+		break;
+	case EWSUILayer::Pause:
+		ResumeGame();
+		break;
+	case EWSUILayer::Evidence:
+		CloseEvidence();
+		break;
+	case EWSUILayer::Dialogue:
+		CancelDialogue();
+		break;
+	case EWSUILayer::Preview:
+		HideActionPreview();
+		break;
+	case EWSUILayer::Results:
+		TogglePauseMenu();
+		break;
+	case EWSUILayer::Game:
+	default:
+		TogglePauseMenu();
+		break;
+	}
+}
+
 void UWhiteoutHUDWidget::TogglePauseMenu()
 {
 	if (IsPauseMenuVisible())
@@ -1870,6 +2155,7 @@ void UWhiteoutHUDWidget::TogglePauseMenu()
 		SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	PauseBorder->SetVisibility(ESlateVisibility::Visible);
+	SetLayer(EWSUILayer::Pause);
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
 		PlayerController->SetPause(true);
@@ -1892,6 +2178,7 @@ void UWhiteoutHUDWidget::ResumeGame()
 	{
 		PauseHelpText->SetVisibility(ESlateVisibility::Collapsed);
 	}
+	SetLayer(EWSUILayer::Game);
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
 		PlayerController->SetPause(false);
@@ -1911,6 +2198,7 @@ void UWhiteoutHUDWidget::OpenSettings()
 	{
 		SettingsBorder->SetVisibility(ESlateVisibility::Visible);
 	}
+	SetLayer(EWSUILayer::Settings);
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
 		FInputModeUIOnly InputMode;
@@ -1931,6 +2219,7 @@ void UWhiteoutHUDWidget::CloseSettings()
 	{
 		PauseBorder->SetVisibility(ESlateVisibility::Visible);
 	}
+	SetLayer(EWSUILayer::Pause);
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
 		FInputModeUIOnly InputMode;

@@ -21,6 +21,17 @@ class UFont;
 class USoundBase;
 class UTexture2D;
 
+enum class EWSUILayer : uint8
+{
+	Game,
+	Preview,
+	Evidence,
+	Dialogue,
+	Pause,
+	Settings,
+	Results
+};
+
 UCLASS()
 class WHITEOUTSTATION_API UWhiteoutHUDWidget : public UUserWidget
 {
@@ -31,6 +42,7 @@ public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	void SetInteractionPrompt(const FText& Prompt);
 	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, bool bDialogue = false);
@@ -39,6 +51,7 @@ public:
 	void ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview);
 	void HideActionPreview();
 	void ToggleEvidence();
+	void CloseEvidence();
 	void ShowDialogueMenu(FName NPCActionId, bool bVisible);
 	void ShowDialoguePromiseChoices();
 	UFUNCTION()
@@ -48,6 +61,7 @@ public:
 	void SetSystemMessage(const FString& Message);
 	void DismissOpening();
 	void TogglePauseMenu();
+	void HandleBackRequested();
 	bool IsPauseMenuVisible() const;
 	void ResetPresentationCapture();
 	void SetPresentationCaptureState(const FWSGameState& State);
@@ -59,6 +73,18 @@ public:
 	void SetEndingCaptureStage(EWSEndingType Ending, bool bShowResults);
 
 private:
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> TopPanel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> ObjectivePanel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> CrewPanel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> BottomPanel;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> TopText;
 
@@ -93,6 +119,12 @@ private:
 	TObjectPtr<UTextBlock> FocusText;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FocusAPText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FocusKeyText;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBorder> ToastBorder;
 
 	UPROPERTY(Transient)
@@ -121,6 +153,24 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> EvidenceFilterText;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UButton>> EvidenceFilterButtons;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UBorder>> EvidenceFilterIndicators;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> EvidenceFilterLabels;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> EvidenceFilterCounts;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> EvidenceDetailText;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UButton>> EvidenceCardButtons;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUniformGridPanel> EvidenceCardGrid;
@@ -300,6 +350,9 @@ private:
 	bool bEvidenceVisible = false;
 	bool bDialogueVisible = false;
 	bool bUpdatingSettings = false;
+	int32 EvidenceFilterIndex = 0;
+	EWSUILayer CurrentLayer = EWSUILayer::Game;
+	TArray<FString> EvidenceCardDetailCopies;
 	FName ActiveDialogueActionId;
 	bool bPresentationCaptureOverride = false;
 	FWSGameState PresentationCaptureState;
@@ -308,6 +361,10 @@ private:
 	void InitializeUIFontFamily();
 	void UpdateFromState(const FWSGameState& State);
 	void UpdateEvidence(const FWSGameState& State);
+	void SetLayer(EWSUILayer Layer);
+	void SetBaseHudHidden(bool bHidden);
+	void SetEvidenceFilter(int32 FilterIndex);
+	void ShowEvidenceDetail(const FString& DetailCopy);
 	void UpdateDialogueCard(const FWSGameState& State);
 	void UpdateResults(const FWSGameState& State);
 	void ApplyOpeningStage(int32 Stage);
@@ -367,6 +424,24 @@ private:
 
 	UFUNCTION()
 	void PlayHoverSound();
+
+	UFUNCTION()
+	void FilterEvidenceAll();
+
+	UFUNCTION()
+	void FilterEvidenceFiles();
+
+	UFUNCTION()
+	void FilterEvidenceItems();
+
+	UFUNCTION()
+	void FilterEvidenceWitnesses();
+
+	UFUNCTION()
+	void FilterEvidenceDialogue();
+
+	UFUNCTION()
+	void ShowHoveredEvidenceDetail();
 
 	UFUNCTION()
 	void ChooseDialogueAsk();

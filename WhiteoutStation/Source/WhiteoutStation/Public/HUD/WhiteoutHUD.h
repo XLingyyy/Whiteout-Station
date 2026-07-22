@@ -31,6 +31,7 @@ public:
 	void SetSystemMessage(const FString& Message);
 	void DismissOpening();
 	void TogglePauseMenu();
+	void HandleBackRequested();
 	void ResetPresentationCapture();
 	void SetPresentationCaptureState(const FWSGameState& State);
 	void ShowEvidenceForCapture();

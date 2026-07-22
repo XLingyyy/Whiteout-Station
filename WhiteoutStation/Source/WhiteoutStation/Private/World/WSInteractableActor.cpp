@@ -195,7 +195,8 @@ void AWSInteractableActor::SetInteractionFocused(const bool bFocused)
 		}
 		Component->SetRenderCustomDepth(bFocused);
 		Component->SetCustomDepthStencilValue(241);
-		Component->SetOverlayMaterial(bFocused ? FocusOverlayMaterial.Get() : nullptr);
+		// v0.4: keep the source material intact and use only the CustomDepth outline.
+		// FocusOverlayMaterial remains loaded for rollback until the art milestone.
 	};
 	ApplyFocus(Mesh);
 	ApplyFocus(HeadMesh);
