@@ -1,0 +1,45 @@
+{
+  "schema": "whiteout.v0.4.no_key_smoke.v1",
+  "passed": true,
+  "routes": [
+    {
+      "route": "medical",
+      "exit_code": 0,
+      "ending": "TaskSuccess",
+      "events": 8,
+      "remaining_ap": 0,
+      "score": 76.63999938964844,
+      "model_calls": 0,
+      "screenshot": "1280x720",
+      "api_key_present_in_child_environment": false,
+      "llm_enabled_present_in_child_environment": false,
+      "llm_forced_off_by_command_line": true
+    },
+    {
+      "route": "technical",
+      "exit_code": 0,
+      "ending": "TaskSuccess",
+      "events": 8,
+      "remaining_ap": 0,
+      "score": 71.9000015258789,
+      "model_calls": 0,
+      "screenshot": "1280x720",
+      "api_key_present_in_child_environment": false,
+      "llm_enabled_present_in_child_environment": false,
+      "llm_forced_off_by_command_line": true
+    },
+    {
+      "route": "quick",
+      "exit_code": 0,
+      "ending": "TaskSuccess",
+      "events": 6,
+      "remaining_ap": 2,
+      "score": 72.05999755859375,
+      "model_calls": 0,
+      "screenshot": "1280x720",
+      "api_key_present_in_child_environment": false,
+      "llm_enabled_present_in_child_environment": false,
+      "llm_forced_off_by_command_line": true
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schema": "whiteout.v0.3.performance.v1",
+  "passed": true,
+  "resolution": "1920x1080",
+  "samples": 1641,
+  "average_fps": 109.34,
+  "one_percent_low_fps": 98.96,
+  "p95_frame_ms": 9.592,
+  "p99_frame_ms": 9.854,
+  "max_frame_ms": 12.057,
+  "minimum_average_fps": 60.0,
+  "minimum_one_percent_low_fps": 60.0
+}

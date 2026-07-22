@@ -1,0 +1,94 @@
+{
+  "schema": "whiteout.v0.4.navigation_smoke.v1",
+  "requested_resolution": "1280x720 windowed; OS client capture may be DPI-scaled",
+  "llm_enabled": false,
+  "verified_paths": [
+    1,
+    2,
+    5,
+    6,
+    7,
+    10,
+    11,
+    12
+  ],
+  "excluded_paths": {
+    "3": "Settings transition is covered by Dev baseline plus state-machine inspection.",
+    "4": "Settings-to-pause is covered by state-machine inspection; pause-to-game is Shipping-verified by path 2.",
+    "8": "Dialogue transition is covered by Dev baseline plus state-machine inspection.",
+    "9": "Evidence preview transition is covered by Dev baseline plus state-machine inspection."
+  },
+  "supplemental_dev_baselines": [
+    "03_pause_settings.png",
+    "03_settings_esc_pause.png"
+  ],
+  "derived_shipping_capture": {
+    "04_pause_esc_game.png": "Copy of independently Shipping-verified path 2."
+  },
+  "captures": [
+    {
+      "name": "12_opening_esc_pause",
+      "file": "12_opening_esc_pause.png",
+      "size": [
+        1280,
+        720
+      ]
+    },
+    {
+      "name": "01_game_esc_pause",
+      "file": "01_game_esc_pause.png",
+      "size": [
+        1280,
+        720
+      ]
+    },
+    {
+      "name": "02_pause_esc_game",
+      "file": "02_pause_esc_game.png",
+      "size": [
+        1280,
+        720
+      ]
+    },
+    {
+      "name": "05_e_evidence",
+      "file": "05_e_evidence.png",
+      "size": [
+        1280,
+        720
+      ]
+    },
+    {
+      "name": "06_evidence_esc_game",
+      "file": "06_evidence_esc_game.png",
+      "size": [
+        1280,
+        720
+      ]
+    },
+    {
+      "name": "07_evidence_e_game",
+      "file": "07_evidence_e_game.png",
+      "size": [
+        1280,
+        720
+      ]
+    },
+    {
+      "name": "11_results",
+      "file": "11_results.png",
+      "size": [
+        1280,
+        720
+      ]
+    },
+    {
+      "name": "11_results_esc_pause",
+      "file": "11_results_esc_pause.png",
+      "size": [
+        1280,
+        720
+      ]
+    }
+  ]
+}

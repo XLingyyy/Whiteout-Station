@@ -1,0 +1,129 @@
+{
+	"rules_version": "0.1.0",
+	"events": [
+		{
+			"index": 1,
+			"action_id": "talk_ye_cheng",
+			"transaction_id": "908F7C4D40479B122AB60FA1C95BCDFB",
+			"ap_before": 8,
+			"ap_after": 7,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Evidence acquired: EVIDENCE_MEDICAL_DIAGNOSIS",
+				"Fact updated: FACT_HAND_INJURY",
+				"Fact updated: FACT_MEDICAL_DIAGNOSIS",
+				"Evidence acquired: EVIDENCE_HEAT_PACK",
+				"Fact updated: FACT_HEAT_PACK",
+				"Ye Cheng trust +4, pressure -4",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 2,
+			"action_id": "heat_medical_room",
+			"transaction_id": "B5D7713247947E951C390C81B8205679",
+			"ap_before": 7,
+			"ap_after": 6,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Medical room heated; fuel -1",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 3,
+			"action_id": "treat_gu_heng",
+			"transaction_id": "4100473A452B4ACF8D4E1D9B6FCD0F7A",
+			"ap_before": 6,
+			"ap_after": 5,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Gu Heng treated with medicine",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 4,
+			"action_id": "talk_gu_heng",
+			"transaction_id": "7860776A483307D3B135DBA5D70FF13F",
+			"ap_before": 5,
+			"ap_after": 4,
+			"reason_code": "Committed",
+			"crisis_triggered": true,
+			"changes": [
+				"Gu Heng accepts cooperation after treatment",
+				"Promise recognized: heat_repair_room",
+				"Environment settled for 1 AP",
+				"Mid-crisis: backup battery voltage collapsed"
+			]
+		},
+		{
+			"index": 5,
+			"action_id": "heat_repair_room",
+			"transaction_id": "B0CAB0204198BEB016AA898572FE4749",
+			"ap_before": 4,
+			"ap_after": 3,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Repair room heated; fuel -1",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 6,
+			"action_id": "repair_generator",
+			"transaction_id": "5184FD1843A4DE961045D8BC894BDCF3",
+			"ap_before": 3,
+			"ap_after": 2,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Generator progress +2",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 7,
+			"action_id": "calibrate_antenna",
+			"transaction_id": "B612375A433D7B6B343EC096FCCB9B1D",
+			"ap_before": 2,
+			"ap_after": 0,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Antenna calibrated",
+				"Environment settled for 2 AP"
+			]
+		},
+		{
+			"index": 8,
+			"action_id": "send_signal",
+			"transaction_id": "94377A53404B226AA91039AD1EC24B22",
+			"ap_before": 0,
+			"ap_after": 0,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Rescue signal sent"
+			]
+		}
+	],
+	"remaining_ap": 0,
+	"signal_sent": true,
+	"ending": "TaskSuccess",
+	"score": 76.639999389648438,
+	"rating": "B",
+	"model_calls": 0,
+	"promises": [
+		{
+			"promise_id": "player_to_gu_heng:heat_repair_room",
+			"condition_id": "heat_repair_room",
+			"settled": true,
+			"fulfilled": true
+		}
+	]
+}

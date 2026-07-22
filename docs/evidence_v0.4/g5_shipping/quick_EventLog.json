@@ -1,0 +1,90 @@
+{
+	"rules_version": "0.1.0",
+	"events": [
+		{
+			"index": 1,
+			"action_id": "heat_repair_room",
+			"transaction_id": "4AE0B572402BB7330B6570B868B578FF",
+			"ap_before": 8,
+			"ap_after": 7,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Repair room heated; fuel -1",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 2,
+			"action_id": "distribute_food",
+			"transaction_id": "B325B21B4CB75FE0E96E8DA5FAFB2A23",
+			"ap_before": 7,
+			"ap_after": 6,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Food allocated: player=1 gu=1 ye=0",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 3,
+			"action_id": "repair_generator",
+			"transaction_id": "445DED5A432E39D33632F7912EC5963B",
+			"ap_before": 6,
+			"ap_after": 5,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Generator progress +1",
+				"Environment settled for 1 AP"
+			]
+		},
+		{
+			"index": 4,
+			"action_id": "repair_generator",
+			"transaction_id": "2D8B57964E2C5256D36AA286151520BB",
+			"ap_before": 5,
+			"ap_after": 4,
+			"reason_code": "Committed",
+			"crisis_triggered": true,
+			"changes": [
+				"Generator progress +1",
+				"Environment settled for 1 AP",
+				"Mid-crisis: backup battery voltage collapsed"
+			]
+		},
+		{
+			"index": 5,
+			"action_id": "calibrate_antenna",
+			"transaction_id": "FD364BEF45D2E426CDB2CAB1349888C8",
+			"ap_before": 4,
+			"ap_after": 2,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Antenna calibrated",
+				"Environment settled for 2 AP"
+			]
+		},
+		{
+			"index": 6,
+			"action_id": "send_signal",
+			"transaction_id": "EDBFA18A42CFA05263FA279F5C63C139",
+			"ap_before": 2,
+			"ap_after": 2,
+			"reason_code": "Committed",
+			"crisis_triggered": false,
+			"changes": [
+				"Rescue signal sent"
+			]
+		}
+	],
+	"remaining_ap": 2,
+	"signal_sent": true,
+	"ending": "TaskSuccess",
+	"score": 72.05999755859375,
+	"rating": "B",
+	"model_calls": 0,
+	"promises": []
+}

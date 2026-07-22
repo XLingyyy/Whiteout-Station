@@ -1,0 +1,132 @@
+﻿{
+	"devices": [
+		{
+			"deviceName": "LAPTOP-R8NPOP05",
+			"instance": "0F7BA07E4B306B8B3230628306BC8B7A",
+			"instanceName": "LAPTOP-R8NPOP05-27752",
+			"platform": "WindowsEditor",
+			"oSVersion": "Windows 11 (24H2) [10.0.26100.4351] ",
+			"model": "Default",
+			"gPU": "NVIDIA GeForce RTX 4060 Laptop GPU",
+			"cPUModel": "13th Gen Intel(R) Core(TM) i7-13650HX",
+			"rAMInGB": 16,
+			"renderMode": "SM6",
+			"rHI": "",
+			"appInstanceLog": ""
+		}
+	],
+	"reportCreatedOn": "2026.07.22-09.36.26",
+	"succeeded": 6,
+	"succeededWithWarnings": 0,
+	"failed": 0,
+	"notRun": 0,
+	"inProcess": 0,
+	"totalDuration": 0.11132261157035828,
+	"comparisonExported": false,
+	"comparisonExportDirectory": "",
+	"tests": [
+		{
+			"testDisplayName": "DialogueBoundary",
+			"fullTestPath": "WhiteoutStation.Agents.DialogueBoundary",
+			"tags": [],
+			"state": "Success",
+			"deviceInstance": [
+				"0F7BA07E4B306B8B3230628306BC8B7A"
+			],
+			"duration": 0.016476500779390335,
+			"dateTime": "2026.07.22-09.36.26",
+			"entries": [
+				{
+					"event":
+					{
+						"type": "Info",
+						"message": "v0.3 local Chinese intent set: 30/30 = 100.0%",
+						"context": "",
+						"artifact": "00000000000000000000000000000000"
+					},
+					"filename": "",
+					"lineNumber": -1,
+					"timestamp": "2026.07.22-09.36.26"
+				}
+			],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "ModelBudget",
+			"fullTestPath": "WhiteoutStation.Agents.ModelBudget",
+			"tags": [],
+			"state": "Success",
+			"deviceInstance": [
+				"0F7BA07E4B306B8B3230628306BC8B7A"
+			],
+			"duration": 0.016117502003908157,
+			"dateTime": "2026.07.22-09.36.26",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "APFlow",
+			"fullTestPath": "WhiteoutStation.Rules.APFlow",
+			"tags": [],
+			"state": "Success",
+			"deviceInstance": [
+				"0F7BA07E4B306B8B3230628306BC8B7A"
+			],
+			"duration": 0.03024359792470932,
+			"dateTime": "2026.07.22-09.36.26",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "KnowledgeAndAgentValidation",
+			"fullTestPath": "WhiteoutStation.Rules.KnowledgeAndAgentValidation",
+			"tags": [],
+			"state": "Success",
+			"deviceInstance": [
+				"0F7BA07E4B306B8B3230628306BC8B7A"
+			],
+			"duration": 0.015879299491643906,
+			"dateTime": "2026.07.22-09.36.26",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "Routes",
+			"fullTestPath": "WhiteoutStation.Rules.Routes",
+			"tags": [],
+			"state": "Success",
+			"deviceInstance": [
+				"0F7BA07E4B306B8B3230628306BC8B7A"
+			],
+			"duration": 0.01645210012793541,
+			"dateTime": "2026.07.22-09.36.26",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		},
+		{
+			"testDisplayName": "Transactions",
+			"fullTestPath": "WhiteoutStation.Rules.Transactions",
+			"tags": [],
+			"state": "Success",
+			"deviceInstance": [
+				"0F7BA07E4B306B8B3230628306BC8B7A"
+			],
+			"duration": 0.016153600066900253,
+			"dateTime": "2026.07.22-09.36.26",
+			"entries": [],
+			"warnings": 0,
+			"errors": 0,
+			"artifacts": []
+		}
+	]
+}
