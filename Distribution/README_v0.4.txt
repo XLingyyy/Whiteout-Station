@@ -42,5 +42,9 @@ WHITEOUT STATION: BEFORE THE BLACKOUT — v0.4
   失败会回退到本地路径。请通过 WHITEOUT_LLM_API_KEY 环境变量
   或本机 LocalConfig/WhiteoutLLM.ini 注入密钥，切勿写入游戏目录。
 
+已知限制
+  顾衡与叶澄使用的指定 Idle 源动画会让前臂略微前伸、手掌上翻。
+  这只影响角色静止姿势，不影响碰撞、交互、规则、对话或结算。
+
 免费与生成资产的来源、工具、许可和校验值见随包
 ASSET_LICENSES.md。

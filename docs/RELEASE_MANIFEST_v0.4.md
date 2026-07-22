@@ -9,7 +9,7 @@
 - 项目版本：0.4.0
 - 平台/配置：Windows 64-bit / Shipping
 - 文件数：42
-- 总大小：774,388,637 bytes（约 738.5 MiB）
+- 总大小：774,388,831 bytes（约 738.5 MiB）
 - 包体预算：2,500,000,000 bytes；实际占用约 31.0%
 - 构建工具：Unreal Automation Tool `BuildCookRun` / UE 5.8
 - Cook：694 个总包 / 687 个运行时包
@@ -44,4 +44,4 @@
 
 `RELEASE VALIDATION v0.4: PASS`
 
-构建复现见 `docs/BUILD_AND_PLAY_v0.4.md`，验收详情见 `docs/QA_REPORT_v0.4.md`。整版发布仍需按 `docs/GATE_G3_v0.4.md` 处理 Idle 源动画决定。
+构建复现见 `docs/BUILD_AND_PLAY_v0.4.md`，验收详情见 `docs/QA_REPORT_v0.4.md`。用户已接受 `docs/GATE_G3_v0.4.md` 登记的 Idle 源动画姿势限制，G0—G5 全部门禁关闭。
