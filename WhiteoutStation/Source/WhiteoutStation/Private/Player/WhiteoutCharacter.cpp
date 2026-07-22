@@ -89,8 +89,6 @@ void AWhiteoutCharacter::BeginPlay()
 		nullptr,
 		TEXT("/Game/WindStation/Audio/Foley/S_FootstepConcrete_Original.S_FootstepConcrete_Original"));
 	LastFootstepLocation = GetActorLocation();
-	DialogueIntentGateway = NewObject<UWSAgentGateway>(this);
-	DialogueIntentGateway->Initialize();
 	if (UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
 	{
 		Settings->Apply(this);
@@ -245,6 +243,7 @@ void AWhiteoutCharacter::BeginDialogue(AWSInteractableActor* Interactable)
 	ActiveDialogueTarget = Interactable;
 	bDialogueChoiceCommitted = false;
 	bDialogueIntentPending = false;
+	PendingPlayerSaid.Reset();
 	PreviewedInteractable = nullptr;
 	bPreviewCanExecute = false;
 	Interactable->SetDialogueLookAtActive(true);
@@ -276,12 +275,25 @@ void AWhiteoutCharacter::ChooseDialogueAct(const EWSDialogueAct DialogueAct)
 		}
 		return;
 	}
-	CommitDialogueChoice(DialogueAct, NAME_None);
+	SubmitDialogueChoice(DialogueAct, NAME_None, FString());
 }
 
 void AWhiteoutCharacter::ChooseDialoguePromise(const FName PromiseCondition)
 {
-	CommitDialogueChoice(EWSDialogueAct::Promise, PromiseCondition);
+	SubmitDialogueChoice(EWSDialogueAct::Promise, PromiseCondition, FString());
+}
+
+FWSActionPreview AWhiteoutCharacter::PreviewActiveDialogue(
+	const EWSDialogueAct DialogueAct,
+	const FName PromiseCondition) const
+{
+	if (ActiveDialogueTarget)
+	{
+		return ActiveDialogueTarget->PreviewInteraction(DialogueAct, PromiseCondition);
+	}
+	FWSActionPreview Preview;
+	Preview.ReasonCode = EWSReasonCode::UnknownAction;
+	return Preview;
 }
 
 void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, const FName PromiseCondition)
@@ -298,6 +310,11 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 	{
 		return;
 	}
+	const FWSActionPreview Preview = ActiveDialogueTarget->PreviewInteraction(DialogueAct, PromiseCondition);
+	if (!Preview.bCanExecute)
+	{
+		return;
+	}
 	bDialogueChoiceCommitted = true;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
@@ -306,53 +323,50 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 			HUD->SetDialogueIntentStatus(TEXT("交涉已提交，正在组织回应……"), true);
 		}
 	}
+	UWSAgentGateway::QueuePlayerSaid(ActiveDialogueTarget->ActionId, PendingPlayerSaid);
 	ActiveDialogueTarget->Interact(this, DialogueAct, PromiseCondition);
+	PendingPlayerSaid.Reset();
 }
 
 void AWhiteoutCharacter::SubmitDialogueText(const FString& UserText)
 {
-	if (!ActiveDialogueTarget || bDialogueChoiceCommitted || bDialogueIntentPending || !DialogueIntentGateway)
+	SubmitDialogueChoice(EWSDialogueAct::Ask, NAME_None, UserText);
+}
+
+void AWhiteoutCharacter::SubmitDialogueChoice(
+	const EWSDialogueAct DialogueAct,
+	const FName PromiseCondition,
+	const FString& PlayerSaid)
+{
+	if (!ActiveDialogueTarget || bDialogueChoiceCommitted || bDialogueIntentPending)
 	{
 		return;
 	}
-	bDialogueIntentPending = true;
+	PendingPlayerSaid = PlayerSaid.TrimStartAndEnd().Left(280);
+	if (!PendingPlayerSaid.IsEmpty() && UWSAgentGateway::ContainsAdversarialInstruction(PendingPlayerSaid))
+	{
+		PendingPlayerSaid.Reset();
+		return;
+	}
+	CommitDialogueChoice(DialogueAct, PromiseCondition);
+}
+
+void AWhiteoutCharacter::ContinueDialogue()
+{
+	if (!ActiveDialogueTarget)
+	{
+		return;
+	}
+	bDialogueChoiceCommitted = false;
+	bDialogueIntentPending = false;
+	PendingPlayerSaid.Reset();
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->SetDialogueIntentStatus(TEXT("正在识别你的交涉意图……"), true);
+			HUD->ShowDialogueWheelChoices();
 		}
 	}
-	TWeakObjectPtr<AWhiteoutCharacter> WeakThis(this);
-	DialogueIntentGateway->RequestDialogueIntent(
-		UserText,
-		true,
-		FWSDialogueIntentCallback::CreateLambda(
-			[WeakThis](const FWSDialogueIntentResult& Intent)
-			{
-				if (!WeakThis.IsValid() || !WeakThis->ActiveDialogueTarget)
-				{
-					return;
-				}
-				WeakThis->bDialogueIntentPending = false;
-				APlayerController* PlayerController = Cast<APlayerController>(WeakThis->Controller);
-				AWhiteoutHUD* HUD = PlayerController ? Cast<AWhiteoutHUD>(PlayerController->GetHUD()) : nullptr;
-				if (!Intent.bMapped)
-				{
-					if (HUD)
-					{
-						HUD->SetDialogueIntentStatus(TEXT("无法可靠识别：已回退到安全轮盘，请直接选择一种交涉方式。"), false);
-						HUD->ShowDialogueWheelChoices();
-					}
-					return;
-				}
-				if (HUD)
-				{
-					const FString SourceLabel = Intent.Source == TEXT("online_model") ? TEXT("在线模型") : TEXT("本地意图词典");
-					HUD->SetDialogueIntentStatus(FString::Printf(TEXT("%s 已映射到规则内交涉方式（置信度 %.0f%%）。"), *SourceLabel, Intent.Confidence * 100.0f), true);
-				}
-				WeakThis->CommitDialogueChoice(Intent.DialogueAct, Intent.PromiseCondition);
-			}));
 }
 
 void AWhiteoutCharacter::CancelDialogue()
@@ -364,6 +378,7 @@ void AWhiteoutCharacter::CancelDialogue()
 	ActiveDialogueTarget = nullptr;
 	bDialogueChoiceCommitted = false;
 	bDialogueIntentPending = false;
+	PendingPlayerSaid.Reset();
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		PlayerController->ResetIgnoreMoveInput();

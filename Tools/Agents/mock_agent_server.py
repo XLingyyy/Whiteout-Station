@@ -14,16 +14,18 @@ class AgentHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         try:
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
-            speaker = str(payload["speaker"])
-            response_type = str(payload["response_type"])
-            action_id = str(payload["action_id"])
+            messages = payload.get("messages", [])
+            context = json.loads(messages[-1].get("content", "{}")) if messages else payload
+            speaker = str(context["speaker"])
+            response_type = str(context["response_type"])
+            action_id = str(context["action_id"])
         except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
             self.send_error(400, "invalid request")
             return
 
         response = {
             "utterance": f"{speaker}：收到。按当前决定继续处理 {action_id}。",
-            "emotion": str(payload.get("emotion", "focused")),
+            "emotion": str(context.get("emotion", "focused")),
             "response_type": response_type,
             "referenced_fact_ids": [],
         }

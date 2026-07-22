@@ -228,6 +228,39 @@ FText FWSPresentationText::CharacterName(const EWSCharacterId CharacterId)
 	return TableText(TEXT("character_player"), TEXT("你｜值班负责人"));
 }
 
+FText FWSPresentationText::DialogueOpening(const EWSCharacterId CharacterId, const FWSGameState& State)
+{
+	if (CharacterId == EWSCharacterId::GuHeng)
+	{
+		if (State.Flags.bGuHengCooperative)
+		{
+			return TableText(TEXT("dlg_open_gu_cooperative"), TEXT("工具和备件都点过了，听你安排。"));
+		}
+		if (State.Flags.bGuHengTreated)
+		{
+			return TableText(TEXT("dlg_open_gu_treated"), TEXT("手能用了。维修间有温度，我就上发电机。"));
+		}
+		if (State.Flags.bGuHengDiagnosed)
+		{
+			return TableText(TEXT("dlg_open_gu_diagnosed"), TEXT("手使不上力，别问太多。要帮忙，先把医务室弄暖。"));
+		}
+		return TableText(TEXT("dlg_open_gu_default"), TEXT("……说事。发电机房还等着我。"));
+	}
+	if (CharacterId == EWSCharacterId::YeCheng)
+	{
+		if (State.Flags.bGuHengTreated)
+		{
+			return TableText(TEXT("dlg_open_ye_treated"), TEXT("他的手在恢复。别再让那只手受冻。"));
+		}
+		if (State.Flags.bMedicalRoomHeated)
+		{
+			return TableText(TEXT("dlg_open_ye_heated"), TEXT("医务室能用了。他随时可以接受治疗。"));
+		}
+		return TableText(TEXT("dlg_open_ye_default"), TEXT("我在。先说伤员，还是先说设备？"));
+	}
+	return FText::GetEmpty();
+}
+
 FText FWSPresentationText::ConditionLevel(const float Value)
 {
 	if (Value >= 70.0f) return TableText(TEXT("level_stable"), TEXT("稳定"));

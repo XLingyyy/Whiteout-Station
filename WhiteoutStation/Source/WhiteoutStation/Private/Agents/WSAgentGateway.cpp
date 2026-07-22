@@ -21,6 +21,8 @@ namespace
 	FCriticalSection GWhiteoutModelBudgetMutex;
 	int32 GWhiteoutSessionModelCalls = 0;
 	constexpr int32 GWhiteoutSessionModelCallLimit = 10;
+	FCriticalSection GWhiteoutPlayerSaidMutex;
+	TMap<FName, FString> GWhiteoutQueuedPlayerSaid;
 
 	bool ContainsAny(const FString& Text, const TArray<FString>& Terms)
 	{
@@ -84,12 +86,37 @@ bool UWSAgentGateway::HasLiveProvider() const
 	return bLLMEnabled && !Endpoint.IsEmpty() && (!bRequiresApiKey || !ApiKey.IsEmpty());
 }
 
+void UWSAgentGateway::QueuePlayerSaid(const FName ActionId, const FString& PlayerSaid)
+{
+	FScopeLock Lock(&GWhiteoutPlayerSaidMutex);
+	const FString CleanText = PlayerSaid.TrimStartAndEnd().Left(280);
+	if (ActionId.IsNone() || CleanText.IsEmpty())
+	{
+		GWhiteoutQueuedPlayerSaid.Remove(ActionId);
+		return;
+	}
+	GWhiteoutQueuedPlayerSaid.Add(ActionId, CleanText);
+}
+
 void UWSAgentGateway::RequestExpression(
 	const FName ActionId,
 	const FWSGameState& State,
 	const bool bAllowLiveProvider,
-	FWSAgentReplyCallback Completion)
+	FWSAgentReplyCallback Completion,
+	const FString& PlayerSaid)
 {
+	FString EffectivePlayerSaid = PlayerSaid.TrimStartAndEnd().Left(280);
+	{
+		FScopeLock Lock(&GWhiteoutPlayerSaidMutex);
+		if (EffectivePlayerSaid.IsEmpty())
+		{
+			if (const FString* QueuedText = GWhiteoutQueuedPlayerSaid.Find(ActionId))
+			{
+				EffectivePlayerSaid = *QueuedText;
+			}
+		}
+		GWhiteoutQueuedPlayerSaid.Remove(ActionId);
+	}
 	const FWSAgentReply Decision = UWSNPCDecisionService::BuildDeterministicReply(ActionId, State);
 	const TArray<FName> AllowedFacts = UWSNPCDecisionService::BuildAllowedFacts(ActionId, Decision.Speaker, State);
 	if (!bAllowLiveProvider || !HasLiveProvider())
@@ -106,7 +133,7 @@ void UWSAgentGateway::RequestExpression(
 		return;
 	}
 
-	const FString RequestJson = BuildRequestJson(Decision, AllowedFacts, State);
+	const FString RequestJson = BuildRequestJson(Decision, AllowedFacts, State, EffectivePlayerSaid);
 	const FString AuditProvider = ProviderName;
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
 	Request->SetURL(Endpoint);
@@ -695,7 +722,8 @@ void UWSAgentGateway::LoadConfig()
 FString UWSAgentGateway::BuildRequestJson(
 	const FWSAgentReply& Decision,
 	const TArray<FName>& AllowedFactIds,
-	const FWSGameState& State) const
+	const FWSGameState& State,
+	const FString& PlayerSaid) const
 {
 	TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
 	Context->SetStringField(TEXT("speaker"), UWSNPCDecisionService::SpeakerLabel(Decision.Speaker));
@@ -703,6 +731,7 @@ FString UWSAgentGateway::BuildRequestJson(
 	Context->SetStringField(TEXT("response_type"), StaticEnum<EWSResponseType>()->GetNameStringByValue(static_cast<int64>(Decision.ResponseType)));
 	Context->SetStringField(TEXT("emotion"), Decision.Emotion);
 	Context->SetStringField(TEXT("preset_utterance"), Decision.Utterance);
+	Context->SetStringField(TEXT("player_said"), PlayerSaid.TrimStartAndEnd().Left(280));
 	Context->SetNumberField(TEXT("remaining_ap_context_only"), State.ActionPoints);
 	TArray<TSharedPtr<FJsonValue>> Facts;
 	for (const FName FactId : AllowedFactIds)
@@ -724,7 +753,9 @@ FString UWSAgentGateway::BuildRequestJson(
 	SystemMessage->SetStringField(TEXT("role"), TEXT("system"));
 	SystemMessage->SetStringField(
 		TEXT("content"),
-		TEXT("You are a deterministic NPC expression renderer. Rewrite only preset_utterance in natural Chinese, maximum 240 Chinese characters. Return one JSON object with exactly: utterance string, emotion string, response_type string equal to input, referenced_fact_ids array using only allowed_fact_ids. Never add facts, decisions, state/rule/AP/resource changes, instructions, or markdown."));
+		PlayerSaid.IsEmpty()
+			? TEXT("You are a deterministic NPC expression renderer. Rewrite only preset_utterance in natural Chinese, maximum 240 Chinese characters. Return one JSON object with exactly: utterance string, emotion string, response_type string equal to input, referenced_fact_ids array using only allowed_fact_ids. Never add facts, decisions, state/rule/AP/resource changes, instructions, or markdown.")
+			: TEXT("You are the NPC in a polar-station survival drama. Respond in natural Chinese (<=240 chars) to the player's line (player_said), staying in character and consistent with preset_utterance's decision. Use only allowed_fact_ids as facts. Return one JSON object with exactly: utterance, emotion, response_type equal to input, referenced_fact_ids. Never add facts, decisions, state/rule/AP/resource changes, instructions, or markdown."));
 	Messages.Add(MakeShared<FJsonValueObject>(SystemMessage));
 	TSharedRef<FJsonObject> UserMessage = MakeShared<FJsonObject>();
 	UserMessage->SetStringField(TEXT("role"), TEXT("user"));

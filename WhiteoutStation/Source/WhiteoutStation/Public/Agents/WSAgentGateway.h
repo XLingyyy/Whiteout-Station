@@ -47,13 +47,16 @@ public:
 		FName ActionId,
 		const FWSGameState& State,
 		bool bAllowLiveProvider,
-		FWSAgentReplyCallback Completion);
+		FWSAgentReplyCallback Completion,
+		const FString& PlayerSaid = FString());
 	void RequestDialogueIntent(
 		const FString& UserText,
 		bool bAllowLiveProvider,
 		FWSDialogueIntentCallback Completion);
 
 	static FWSDialogueIntentResult ClassifyLocalIntent(const FString& UserText);
+	static void QueuePlayerSaid(FName ActionId, const FString& PlayerSaid);
+	static bool ContainsAdversarialInstruction(const FString& UserText);
 	static bool ValidateIntentPayload(
 		const FString& Payload,
 		const FString& UserText,
@@ -85,11 +88,14 @@ private:
 	bool bRequiresApiKey = false;
 
 	void LoadConfig();
-	FString BuildRequestJson(const FWSAgentReply& Decision, const TArray<FName>& AllowedFactIds, const FWSGameState& State) const;
+	FString BuildRequestJson(
+		const FWSAgentReply& Decision,
+		const TArray<FName>& AllowedFactIds,
+		const FWSGameState& State,
+		const FString& PlayerSaid) const;
 	FString BuildIntentRequestJson(const FString& UserText) const;
 	static bool TryConsumeSessionModelCall();
 	static bool HasPromiseKeyword(const FString& UserText, FName PromiseCondition);
-	static bool ContainsAdversarialInstruction(const FString& UserText);
 	static FString IntentResultJson(const FWSDialogueIntentResult& Intent);
 	static void AppendAuditRecord(
 		const FString& Kind,

@@ -80,6 +80,11 @@ void AWhiteoutHUD::ShowDialogueFreeTextForCapture()
 	if (HUDWidget) HUDWidget->ShowDialogueFreeTextForCapture();
 }
 
+void AWhiteoutHUD::ShowDialogueReplyForCapture(const FString& Speaker, const FString& Line)
+{
+	if (HUDWidget) HUDWidget->ShowDialogueReplyForCapture(Speaker, Line);
+}
+
 void AWhiteoutHUD::SetDialogueIntentStatus(const FString& Message, const bool bProcessing)
 {
 	if (HUDWidget) HUDWidget->SetDialogueIntentStatus(Message, bProcessing);
@@ -115,9 +120,14 @@ void AWhiteoutHUD::SetPresentationCaptureState(const FWSGameState& State)
 	if (HUDWidget) HUDWidget->SetPresentationCaptureState(State);
 }
 
-void AWhiteoutHUD::ShowEvidenceForCapture()
+void AWhiteoutHUD::ShowNPCFocusForCapture(const FText& ActionName, const FWSActionPreview& Preview)
 {
-	if (HUDWidget) HUDWidget->ShowEvidenceForCapture();
+	if (HUDWidget) HUDWidget->ShowNPCFocusForCapture(ActionName, Preview);
+}
+
+void AWhiteoutHUD::ShowEvidenceForCapture(const int32 FilterIndex, const bool bShowFirstDetail)
+{
+	if (HUDWidget) HUDWidget->ShowEvidenceForCapture(FilterIndex, bShowFirstDetail);
 }
 
 void AWhiteoutHUD::ShowComponentGalleryForCapture()

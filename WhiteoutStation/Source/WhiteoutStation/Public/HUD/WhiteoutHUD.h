@@ -27,6 +27,7 @@ public:
 	void ShowDialoguePromiseChoices();
 	void ShowDialogueWheelChoices();
 	void ShowDialogueFreeTextForCapture();
+	void ShowDialogueReplyForCapture(const FString& Speaker, const FString& Line);
 	void SetDialogueIntentStatus(const FString& Message, bool bProcessing);
 	void SetSystemMessage(const FString& Message);
 	void DismissOpening();
@@ -34,7 +35,8 @@ public:
 	void HandleBackRequested();
 	void ResetPresentationCapture();
 	void SetPresentationCaptureState(const FWSGameState& State);
-	void ShowEvidenceForCapture();
+	void ShowNPCFocusForCapture(const FText& ActionName, const FWSActionPreview& Preview);
+	void ShowEvidenceForCapture(int32 FilterIndex = 0, bool bShowFirstDetail = false);
 	void ShowComponentGalleryForCapture();
 	void ShowSettingsForCapture();
 	void SetOpeningCaptureStage(int32 Stage);

@@ -30,8 +30,13 @@ public:
 	void ChooseDialogueAct(EWSDialogueAct DialogueAct);
 	void ChooseDialoguePromise(FName PromiseCondition);
 	void SubmitDialogueText(const FString& UserText);
+	void SubmitDialogueChoice(EWSDialogueAct DialogueAct, FName PromiseCondition, const FString& PlayerSaid);
+	void ContinueDialogue();
 	void CancelDialogue();
 	bool IsDialogueActive() const { return ActiveDialogueTarget != nullptr; }
+	FWSActionPreview PreviewActiveDialogue(
+		EWSDialogueAct DialogueAct = EWSDialogueAct::Ask,
+		FName PromiseCondition = NAME_None) const;
 
 private:
 	UPROPERTY(Transient)
@@ -70,6 +75,7 @@ private:
 	bool bPreviewCanExecute = false;
 	bool bDialogueChoiceCommitted = false;
 	bool bDialogueIntentPending = false;
+	FString PendingPlayerSaid;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AWSInteractableActor> PreviewedInteractable;
@@ -79,9 +85,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AWSInteractableActor> ActiveDialogueTarget;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UWSAgentGateway> DialogueIntentGateway;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USoundBase> SnowFootstepSound;

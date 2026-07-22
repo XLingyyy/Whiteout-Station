@@ -311,34 +311,15 @@ void AWSInteractableActor::PlayCharacterAnimation(UAnimSequence* Animation, cons
 
 void AWSInteractableActor::ApplyCharacterState(const FWSGameState& State)
 {
-	if (!bCharacterPresentation || bReactionActive)
+	if (!bCharacterPresentation)
 	{
 		return;
 	}
-	const EWSCharacterId CharacterId = ActionId == TEXT("talk_gu_heng")
-		? EWSCharacterId::GuHeng
-		: EWSCharacterId::YeCheng;
-	const FWSCharacterState* Character = State.Characters.Find(CharacterId);
-	const float Trust = Character ? Character->Trust : 0.0f;
-	if (ActionId == TEXT("talk_gu_heng"))
-	{
-		if (State.Tasks.GeneratorProgress > 0 && !State.Tasks.bSignalSent)
-		{
-			PlayCharacterAnimation(WorkAnimation);
-		}
-		else if (Trust < -15.0f)
-		{
-			PlayCharacterAnimation(GuardedAnimation);
-		}
-		else
-		{
-			PlayCharacterAnimation(IdleAnimation);
-		}
-	}
-	else
-	{
-		PlayCharacterAnimation(Trust < -15.0f ? GuardedAnimation : IdleAnimation);
-	}
+	static_cast<void>(State);
+	// v0.4: all trust/task-driven animation switching is suspended until the
+	// character art milestone. Guarded/Gesture/Work stay loaded for rollback.
+	bReactionActive = false;
+	PlayCharacterAnimation(IdleAnimation);
 }
 
 void AWSInteractableActor::HandleCharacterStateChanged(const FWSGameState& State)
@@ -348,17 +329,13 @@ void AWSInteractableActor::HandleCharacterStateChanged(const FWSGameState& State
 
 void AWSInteractableActor::HandleCharacterActionCommitted(const FWSActionResult& Result)
 {
-	const bool bMyDialogue = (ActionId == TEXT("talk_gu_heng") && Result.ActionId == TEXT("talk_gu_heng"))
-		|| (ActionId == TEXT("talk_ye_cheng") && Result.ActionId == TEXT("talk_ye_cheng"));
-	const bool bEngineerWork = ActionId == TEXT("talk_gu_heng") && Result.ActionId == TEXT("repair_generator");
-	const bool bEngineerTreatment = ActionId == TEXT("talk_gu_heng") && Result.ActionId == TEXT("treat_gu_heng");
-	if (!Result.bCommitted || (!bMyDialogue && !bEngineerWork && !bEngineerTreatment))
+	static_cast<void>(Result);
+	if (!bCharacterPresentation)
 	{
 		return;
 	}
-	bReactionActive = true;
-	ReactionUntilTime = GetWorld()->GetTimeSeconds() + (bEngineerWork ? 3.2f : 2.1f);
-	PlayCharacterAnimation(bEngineerWork ? WorkAnimation : GestureAnimation);
+	bReactionActive = false;
+	PlayCharacterAnimation(IdleAnimation);
 }
 
 void AWSInteractableActor::SetCharacterPreviewMood(const bool bHighTrust)
@@ -367,9 +344,9 @@ void AWSInteractableActor::SetCharacterPreviewMood(const bool bHighTrust)
 	{
 		return;
 	}
-	bReactionActive = true;
-	ReactionUntilTime = TNumericLimits<float>::Max();
-	PlayCharacterAnimation(bHighTrust ? IdleAnimation : GuardedAnimation);
+	static_cast<void>(bHighTrust);
+	bReactionActive = false;
+	PlayCharacterAnimation(IdleAnimation);
 }
 
 void AWSInteractableActor::SetDialogueLookAtActive(const bool bActive)

@@ -8,17 +8,21 @@
 #include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/PointLight.h"
+#include "Engine/StaticMeshActor.h"
+#include "Engine/StaticMesh.h"
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/IConsoleManager.h"
 #include "Components/PointLightComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "DrawDebugHelpers.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformTime.h"
 #include "HAL/FileManager.h"
 #include "HUD/WhiteoutHUD.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInterface.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
@@ -251,6 +255,49 @@ void AWhiteoutGameMode::BeginPlay()
 				}));
 	}
 
+	FString ExpressionProbeText;
+	const bool bExpressionProbeRequested = FParse::Value(
+		FCommandLine::Get(),
+		TEXT("WhiteoutExpressionProbe="),
+		ExpressionProbeText);
+	if (bExpressionProbeRequested)
+	{
+		IntentProbeGateway = NewObject<UWSAgentGateway>(this);
+		IntentProbeGateway->Initialize();
+		const UWindStationStateSubsystem* ProbeSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+		const FWSGameState ProbeState = ProbeSubsystem
+			? ProbeSubsystem->GetStateSnapshot()
+			: FWSGameState();
+		TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
+		IntentProbeGateway->RequestExpression(
+			TEXT("talk_gu_heng"),
+			ProbeState,
+			true,
+			FWSAgentReplyCallback::CreateLambda(
+				[WeakThis](const FWSAgentReply& Reply)
+				{
+					UE_LOG(
+						LogTemp,
+						Display,
+						TEXT("WhiteoutStation ExpressionProbe: provider=%s fallback=%s validation=%s utterance=%s calls=%d"),
+						*Reply.Provider,
+						Reply.bFallback ? TEXT("true") : TEXT("false"),
+						*Reply.ValidationReason,
+						*Reply.Utterance,
+						UWSAgentGateway::GetSessionModelCalls());
+					if (WeakThis.IsValid())
+					{
+						FTimerHandle ExitTimer;
+						WeakThis->GetWorldTimerManager().SetTimer(
+							ExitTimer,
+							[]() { FPlatformMisc::RequestExit(false); },
+							0.4f,
+							false);
+					}
+				}),
+			ExpressionProbeText);
+	}
+
 	if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoCapture")))
 	{
 		FTimerHandle CaptureTimer;
@@ -281,7 +328,7 @@ void AWhiteoutGameMode::BeginPlay()
 	if (FParse::Value(FCommandLine::Get(), TEXT("WhiteoutPresentationCapture="), PresentationCaptureMode))
 	{
 		FTimerHandle PresentationTimer;
-		GetWorldTimerManager().SetTimer(PresentationTimer, this, &AWhiteoutGameMode::BeginPresentationCapture, 2.0f, false);
+		GetWorldTimerManager().SetTimer(PresentationTimer, this, &AWhiteoutGameMode::BeginPresentationCapture, 4.0f, false);
 	}
 
 	FString SettingsAuditMode;
@@ -303,6 +350,7 @@ void AWhiteoutGameMode::BeginPlay()
 
 	if (AutoRoute.IsEmpty()
 		&& !bIntentProbeRequested
+		&& !bExpressionProbeRequested
 		&& !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutBaselineCapture"))
 		&& SettingsAuditMode.IsEmpty()
 		&& !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutJumpAudit"))
@@ -508,6 +556,31 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 			TEXT("character_gu_near"), TEXT("character_gu_mid"),
 			TEXT("character_ye_near"), TEXT("character_ye_mid")};
 	}
+	else if (PresentationCaptureMode.Equals(TEXT("v04dialogue"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("dialogue_gu_default"), TEXT("dialogue_gu_diagnosed"),
+			TEXT("dialogue_gu_treated"), TEXT("dialogue_gu_cooperative"),
+			TEXT("dialogue_ye_default"), TEXT("dialogue_ye_heated"), TEXT("dialogue_ye_treated"),
+			TEXT("dialogue_promise"), TEXT("dialogue_ask_entry"), TEXT("dialogue_reply")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v04characters"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("character_gu_front"), TEXT("character_gu_side"), TEXT("character_gu_feet"),
+			TEXT("character_ye_front"), TEXT("character_ye_side"), TEXT("character_ye_feet"),
+			TEXT("character_ye_back"), TEXT("character_ye_arm")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v04evidence"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("evidence_all"), TEXT("evidence_files"), TEXT("evidence_items"),
+			TEXT("evidence_witnesses"), TEXT("evidence_dialogue"), TEXT("evidence_detail")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v04focus"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {TEXT("focus_npc")};
+	}
 	else if (PresentationCaptureMode.Equals(TEXT("g4systems"), ESearchCase::IgnoreCase))
 	{
 		PresentationCaptureNames = {
@@ -578,7 +651,11 @@ void AWhiteoutGameMode::StagePresentationCapture()
 	else if (CaptureName.StartsWith(TEXT("focus_")))
 	{
 		const bool bBlocked = CaptureName.Equals(TEXT("focus_blocked"));
-		const FName TargetAction = bBlocked ? FName(TEXT("send_signal")) : FName(TEXT("forced_self_repair"));
+		const bool bNPC = CaptureName.Equals(TEXT("focus_npc"));
+		const FName TargetAction = bNPC ? FName(TEXT("talk_gu_heng"))
+			: bBlocked ? FName(TEXT("send_signal")) : FName(TEXT("forced_self_repair"));
+		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.4 focus capture name=%s npc=%d target=%s"),
+			*CaptureName, bNPC ? 1 : 0, *TargetAction.ToString());
 		for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
 		{
 			if (It->ActionId != TargetAction)
@@ -587,13 +664,39 @@ void AWhiteoutGameMode::StagePresentationCapture()
 			}
 			if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
 			{
+				if (bNPC)
+				{
+					const FVector FocusInspectionLocation(10000.0f, 10000.0f, 0.0f);
+					It->SetActorLocation(FocusInspectionLocation, false, nullptr, ETeleportType::TeleportPhysics);
+					It->SetActorRotation(FRotator(0.0f, 180.0f, 0.0f));
+					if (PlayerController && PlayerController->PlayerCameraManager)
+					{
+						PlayerController->PlayerCameraManager->SetFOV(55.0f);
+					}
+					if (!LookAtCaptureLight)
+					{
+						LookAtCaptureLight = GetWorld()->SpawnActor<APointLight>(FocusInspectionLocation, FRotator::ZeroRotator);
+						if (LookAtCaptureLight && LookAtCaptureLight->PointLightComponent)
+						{
+							LookAtCaptureLight->PointLightComponent->SetMobility(EComponentMobility::Movable);
+							LookAtCaptureLight->PointLightComponent->SetIntensity(1800.0f);
+							LookAtCaptureLight->PointLightComponent->SetAttenuationRadius(850.0f);
+							LookAtCaptureLight->PointLightComponent->SetLightColor(FLinearColor(0.62f, 0.74f, 1.0f));
+							LookAtCaptureLight->PointLightComponent->SetCastShadows(false);
+						}
+					}
+					if (LookAtCaptureLight)
+					{
+						LookAtCaptureLight->SetActorLocation(FocusInspectionLocation + FVector(70.0f, 110.0f, 205.0f));
+					}
+				}
 				const FVector LookTarget = It->GetActorLocation() + FVector(0.0f, 0.0f, 70.0f);
-				FVector ViewDirection = Pawn->GetPawnViewLocation() - LookTarget;
+				FVector ViewDirection = bNPC ? -It->GetActorRightVector() : Pawn->GetPawnViewLocation() - LookTarget;
 				if (!ViewDirection.Normalize())
 				{
 					ViewDirection = FVector(-1.0f, 0.0f, 0.0f);
 				}
-				const float FocusDistance = bBlocked ? 300.0f
+				const float FocusDistance = bNPC ? 220.0f : bBlocked ? 300.0f
 					: CaptureName.Equals(TEXT("focus_near")) ? 180.0f
 					: CaptureName.Equals(TEXT("focus_far")) ? 420.0f
 					: 280.0f;
@@ -607,12 +710,20 @@ void AWhiteoutGameMode::StagePresentationCapture()
 				}
 			}
 			It->SetInteractionFocused(true);
+			It->SetDialogueLookAtActive(bNPC);
 			FWSActionPreview FocusPreview = It->PreviewInteraction();
 			if (!bBlocked)
 			{
 				FocusPreview.bCanExecute = true;
 			}
-			HUD->SetInteractionFocus(It->DisplayName, FocusPreview);
+			if (bNPC)
+			{
+				HUD->ShowNPCFocusForCapture(It->DisplayName, FocusPreview);
+			}
+			else
+			{
+				HUD->SetInteractionFocus(It->DisplayName, FocusPreview);
+			}
 			break;
 		}
 	}
@@ -754,6 +865,10 @@ void AWhiteoutGameMode::StagePresentationCapture()
 	else if (CaptureName.StartsWith(TEXT("dialogue_")))
 	{
 		FWSGameState DialogueState = StateSubsystem->GetStateSnapshot();
+		DialogueState.Flags.bGuHengDiagnosed = false;
+		DialogueState.Flags.bGuHengTreated = false;
+		DialogueState.Flags.bGuHengCooperative = false;
+		DialogueState.Flags.bMedicalRoomHeated = false;
 		if (FWSCharacterState* GuHeng = DialogueState.Characters.Find(EWSCharacterId::GuHeng))
 		{
 			GuHeng->Trust = 8.0f;
@@ -768,17 +883,20 @@ void AWhiteoutGameMode::StagePresentationCapture()
 			YeCheng->Temperature = 63.0f;
 			YeCheng->Pressure = 55.0f;
 		}
-		DialogueState.Flags.bMedicalRoomHeated = true;
-		DialogueState.Flags.bGuHengDiagnosed = true;
+		if (CaptureName.Equals(TEXT("dialogue_gu_diagnosed"))) DialogueState.Flags.bGuHengDiagnosed = true;
+		else if (CaptureName.Equals(TEXT("dialogue_gu_treated"))) DialogueState.Flags.bGuHengTreated = true;
+		else if (CaptureName.Equals(TEXT("dialogue_gu_cooperative"))) DialogueState.Flags.bGuHengCooperative = true;
+		else if (CaptureName.Equals(TEXT("dialogue_ye_heated"))) DialogueState.Flags.bMedicalRoomHeated = true;
+		else if (CaptureName.Equals(TEXT("dialogue_ye_treated"))) DialogueState.Flags.bGuHengTreated = true;
 		HUD->SetPresentationCaptureState(DialogueState);
-		const FName NPCAction = CaptureName.Equals(TEXT("dialogue_ye_wheel"))
+		const FName NPCAction = CaptureName.StartsWith(TEXT("dialogue_ye_"))
 			? FName(TEXT("talk_ye_cheng")) : FName(TEXT("talk_gu_heng"));
 		HUD->ShowDialogueMenu(NPCAction, true);
 		if (CaptureName.Equals(TEXT("dialogue_promise")))
 		{
 			HUD->ShowDialoguePromiseChoices();
 		}
-		else if (CaptureName.Equals(TEXT("dialogue_free")))
+		else if (CaptureName.Equals(TEXT("dialogue_free")) || CaptureName.Equals(TEXT("dialogue_ask_entry")))
 		{
 			HUD->ShowDialogueFreeTextForCapture();
 		}
@@ -786,9 +904,11 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		{
 			HUD->SetDialogueIntentStatus(TEXT("离线模式｜当前使用本地意图词典；无法可靠识别时将回到安全轮盘。"), false);
 		}
-		else if (CaptureName.Equals(TEXT("dialogue_response")))
+		else if (CaptureName.Equals(TEXT("dialogue_response")) || CaptureName.Equals(TEXT("dialogue_reply")))
 		{
-			HUD->SetDialogueIntentStatus(TEXT("顾衡：手还不能精细操作。把维修间升温，我就配合修复发电机。\n\n本地确定性表达｜点击右下角返回现场"), true);
+			HUD->ShowDialogueReplyForCapture(
+				TEXT("顾衡"),
+				TEXT("手还不能精细操作。把维修间升温，我就配合修复发电机。"));
 		}
 	}
 	else if (CaptureName.StartsWith(TEXT("lookat_")))
@@ -854,7 +974,10 @@ void AWhiteoutGameMode::StagePresentationCapture()
 			TEXT("scene_07_after_repair_grounding"), TEXT("scene_08_after_medical_layout"),
 			TEXT("scene_09_after_ye_idle"), TEXT("scene_10_after_bed_passage"),
 			TEXT("character_gu_near"), TEXT("character_gu_mid"),
-			TEXT("character_ye_near"), TEXT("character_ye_mid")};
+			TEXT("character_ye_near"), TEXT("character_ye_mid"),
+			TEXT("character_gu_front"), TEXT("character_gu_side"), TEXT("character_gu_feet"),
+			TEXT("character_ye_front"), TEXT("character_ye_side"), TEXT("character_ye_feet"),
+			TEXT("character_ye_back"), TEXT("character_ye_arm")};
 		const TArray<FVector> SceneCaptureLocations = {
 			FVector(520, 300, 105), FVector(520, 300, 105),
 			FVector(520, 300, 105), FVector(860, 720, 115),
@@ -862,7 +985,10 @@ void AWhiteoutGameMode::StagePresentationCapture()
 			FVector(1600, 300, 105), FVector(-180, 520, 105),
 			FVector(120, 1120, 105), FVector(1500, 520, 105),
 			FVector(735, 160, 105), FVector(600, 160, 110),
-			FVector(120, 690, 105), FVector(120, 560, 110)};
+			FVector(120, 690, 105), FVector(120, 560, 110),
+			FVector(735, 160, 105), FVector(735, 160, 105), FVector(735, 160, 105),
+			FVector(120, 690, 105), FVector(120, 690, 105), FVector(120, 690, 105),
+			FVector(120, 690, 105), FVector(120, 690, 105)};
 		const TArray<FRotator> SceneCaptureRotations = {
 			FRotator(-2, -142, 0), FRotator(-4, -142, 0),
 			FRotator(-2, 0, 0), FRotator(-2, 0, 0),
@@ -870,6 +996,9 @@ void AWhiteoutGameMode::StagePresentationCapture()
 			FRotator(-3, -145, 0), FRotator(-2, 30, 0),
 			FRotator(-1, -90, 0), FRotator(-2, 143, 0),
 			FRotator(-1, 0, 0), FRotator(-1, 0, 0),
+			FRotator(-1, 90, 0), FRotator(-1, 90, 0),
+			FRotator(-1, 0, 0), FRotator(-1, 0, 0), FRotator(-1, 0, 0),
+			FRotator(-1, 90, 0), FRotator(-1, 90, 0), FRotator(-1, 90, 0),
 			FRotator(-1, 90, 0), FRotator(-1, 90, 0)};
 		const int32 ViewIndex = SceneCaptureNames.IndexOfByKey(CaptureName);
 		APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
@@ -892,6 +1021,37 @@ void AWhiteoutGameMode::StagePresentationCapture()
 			}
 			const bool bEngineer = CaptureName.Contains(TEXT("_gu_"));
 			const FName TargetAction = bEngineer ? FName(TEXT("talk_gu_heng")) : FName(TEXT("talk_ye_cheng"));
+			const FVector InspectionLocation = bEngineer
+				? FVector(10000.0f, 10000.0f, 0.0f)
+				: FVector(10000.0f, 10600.0f, 0.0f);
+			if (!CharacterCaptureGround)
+			{
+				CharacterCaptureGround = GetWorld()->SpawnActor<AStaticMeshActor>(InspectionLocation, FRotator::ZeroRotator);
+				if (CharacterCaptureGround)
+				{
+					if (UStaticMesh* GroundMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")))
+					{
+						CharacterCaptureGround->GetStaticMeshComponent()->SetStaticMesh(GroundMesh);
+					}
+					if (UMaterialInterface* GridMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial")))
+					{
+						CharacterCaptureGround->GetStaticMeshComponent()->SetMaterial(0, GridMaterial);
+					}
+					CharacterCaptureGround->SetActorScale3D(FVector(12.0f, 12.0f, 0.1f));
+				}
+			}
+			if (CharacterCaptureGround)
+			{
+				CharacterCaptureGround->SetActorLocation(InspectionLocation - FVector(0.0f, 0.0f, 5.0f));
+			}
+			for (int32 GridLine = -6; GridLine <= 6; ++GridLine)
+			{
+				const float GridOffset = static_cast<float>(GridLine) * 50.0f;
+				DrawDebugLine(GetWorld(), InspectionLocation + FVector(GridOffset, -300.0f, 0.5f),
+					InspectionLocation + FVector(GridOffset, 300.0f, 0.5f), FColor(42, 73, 98), false, 120.0f, 0, 1.5f);
+				DrawDebugLine(GetWorld(), InspectionLocation + FVector(-300.0f, GridOffset, 0.5f),
+					InspectionLocation + FVector(300.0f, GridOffset, 0.5f), FColor(42, 73, 98), false, 120.0f, 0, 1.5f);
+			}
 			for (TActorIterator<AWSInteractableActor> CharacterIt(GetWorld()); CharacterIt; ++CharacterIt)
 			{
 				const bool bIsCharacter = CharacterIt->ActionId == TEXT("talk_gu_heng")
@@ -907,21 +1067,23 @@ void AWhiteoutGameMode::StagePresentationCapture()
 				{
 					continue;
 				}
-				const FVector InspectionLocation = bEngineer
-					? FVector(10000.0f, 10000.0f, 0.0f)
-					: FVector(10000.0f, 10600.0f, 0.0f);
 				It->SetActorLocation(InspectionLocation, false, nullptr, ETeleportType::TeleportPhysics);
 				It->SetActorRotation(FRotator(0.0f, 180.0f, 0.0f));
 				It->SetCharacterPreviewMood(true);
 				const FVector Forward = It->GetActorForwardVector();
 				const FVector Right = It->GetActorRightVector();
-				const FVector ViewDirection = -Right;
-				const float Distance = CaptureName.EndsWith(TEXT("_near")) ? 240.0f : 420.0f;
+				FVector ViewDirection = -Right;
+				if (CaptureName.EndsWith(TEXT("_side"))) ViewDirection = Forward;
+				else if (CaptureName.EndsWith(TEXT("_back"))) ViewDirection = Right;
+				else if (CaptureName.EndsWith(TEXT("_arm"))) ViewDirection = (-Right + Forward).GetSafeNormal();
+				const bool bMidView = CaptureName.EndsWith(TEXT("_mid"));
+				const bool bFeetView = CaptureName.EndsWith(TEXT("_feet"));
+				const float Distance = bMidView ? 420.0f : bFeetView ? 280.0f : 240.0f;
 				FVector PawnLocation = It->GetActorLocation() + ViewDirection * Distance;
 				PawnLocation.Z = 105.0f;
 				Pawn->SetActorLocation(PawnLocation, false, nullptr, ETeleportType::TeleportPhysics);
 				const FVector CameraLocation = Pawn->GetPawnViewLocation();
-				const float LookTargetHeight = CaptureName.EndsWith(TEXT("_near")) ? 145.0f : 92.0f;
+				const float LookTargetHeight = bFeetView ? 26.0f : bMidView ? 92.0f : 145.0f;
 				const FVector LookTarget = It->GetActorLocation() + FVector(0.0f, 0.0f, LookTargetHeight);
 				PlayerController->SetControlRotation((LookTarget - CameraLocation).Rotation());
 				if (!LookAtCaptureLight)
@@ -955,7 +1117,7 @@ void AWhiteoutGameMode::StagePresentationCapture()
 			}
 		}
 	}
-	else if (CaptureName.Equals(TEXT("evidence")))
+	else if (CaptureName.Equals(TEXT("evidence")) || CaptureName.StartsWith(TEXT("evidence_")))
 	{
 		FWSGameState EvidenceState = StateSubsystem->GetStateSnapshot();
 		EvidenceState.Evidence = {TEXT("generator_log"), TEXT("relay_burn_pattern"), TEXT("relay_compatibility")};
@@ -968,7 +1130,12 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		Promise.ConditionId = TEXT("heat_repair_room");
 		Promise.bRecognized = true;
 		HUD->SetPresentationCaptureState(EvidenceState);
-		HUD->ShowEvidenceForCapture();
+		const int32 EvidenceFilter = CaptureName.Equals(TEXT("evidence_files")) ? 1
+			: CaptureName.Equals(TEXT("evidence_items")) ? 2
+			: CaptureName.Equals(TEXT("evidence_witnesses")) ? 3
+			: CaptureName.Equals(TEXT("evidence_dialogue")) ? 4
+			: 0;
+		HUD->ShowEvidenceForCapture(EvidenceFilter, CaptureName.Equals(TEXT("evidence_detail")));
 	}
 	else if (CaptureName.StartsWith(TEXT("results_")))
 	{
@@ -994,6 +1161,37 @@ void AWhiteoutGameMode::StagePresentationCapture()
 void AWhiteoutGameMode::CapturePresentationFrame()
 {
 	const FString& CaptureName = PresentationCaptureNames[PresentationCaptureIndex];
+	if (CaptureName.Equals(TEXT("focus_npc")))
+	{
+		if (APlayerController* CaptureController = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			if (AWhiteoutHUD* CaptureHUD = Cast<AWhiteoutHUD>(CaptureController->GetHUD()))
+			{
+				for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+				{
+					if (It->ActionId == TEXT("talk_gu_heng"))
+					{
+						CaptureHUD->ShowNPCFocusForCapture(It->DisplayName, It->PreviewInteraction());
+						const FVector LookTarget = It->GetActorLocation() + FVector(0.0f, 0.0f, 105.0f);
+						const FVector CameraLocation = LookTarget - It->GetActorRightVector() * 300.0f;
+						ACameraActor* CaptureCamera = GetWorld()->SpawnActor<ACameraActor>(
+							CameraLocation, (LookTarget - CameraLocation).Rotation());
+						if (CaptureCamera && CaptureCamera->GetCameraComponent())
+						{
+							CaptureCamera->GetCameraComponent()->SetFieldOfView(55.0f);
+							CaptureCamera->SetLifeSpan(2.0f);
+							CaptureController->SetViewTarget(CaptureCamera);
+						}
+						if (CaptureController->PlayerCameraManager)
+						{
+							CaptureController->PlayerCameraManager->UpdateCamera(0.0f);
+						}
+						break;
+					}
+				}
+			}
+		}
+	}
 	if (CaptureName.StartsWith(TEXT("scene_")) || CaptureName.StartsWith(TEXT("character_")) || CaptureName.StartsWith(TEXT("lighting_")))
 	{
 		if (APlayerController* CaptureController = UGameplayStatics::GetPlayerController(this, 0))
@@ -1019,8 +1217,9 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 	}
 	if (CaptureName.StartsWith(TEXT("focus_")))
 	{
-		const FName TargetAction = CaptureName.Equals(TEXT("focus_blocked"))
-			? FName(TEXT("send_signal"))
+		const bool bNPC = CaptureName.Equals(TEXT("focus_npc"));
+		const FName TargetAction = bNPC ? FName(TEXT("talk_gu_heng"))
+			: CaptureName.Equals(TEXT("focus_blocked")) ? FName(TEXT("send_signal"))
 			: FName(TEXT("forced_self_repair"));
 		if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
 		{
@@ -1036,7 +1235,14 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 						{
 							FocusPreview.bCanExecute = true;
 						}
-						HUD->SetInteractionFocus(It->DisplayName, FocusPreview);
+						if (bNPC)
+						{
+							HUD->ShowNPCFocusForCapture(It->DisplayName, FocusPreview);
+						}
+						else
+						{
+							HUD->SetInteractionFocus(It->DisplayName, FocusPreview);
+						}
 						break;
 					}
 				}
@@ -1058,9 +1264,10 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 		|| PresentationCaptureMode.Equals(TEXT("hud"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("pause"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("evidence"), ESearchCase::IgnoreCase);
-	const TCHAR* CaptureFolder = bV03Capture
-		? TEXT("../docs/baseline_v0.3")
-		: TEXT("../docs/baseline_v0.2");
+	const bool bV04Capture = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV04Capture"));
+	const TCHAR* CaptureFolder = bV04Capture
+		? TEXT("../docs/baseline_v0.4")
+		: bV03Capture ? TEXT("../docs/baseline_v0.3") : TEXT("../docs/baseline_v0.2");
 	const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / CaptureFolder);
 	IFileManager::Get().MakeDirectory(*Directory, true);
 	const FString ScreenshotPath = Directory / FString::Printf(

@@ -7,6 +7,7 @@
 class UAudioComponent;
 class ACameraActor;
 class APointLight;
+class AStaticMeshActor;
 class UWSAgentGateway;
 
 UCLASS()
@@ -29,6 +30,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<APointLight> LookAtCaptureLight;
+
+	UPROPERTY()
+	TObjectPtr<AStaticMeshActor> CharacterCaptureGround;
 
 	FTimerHandle OpeningFinishTimer;
 	bool bOpeningFinished = false;

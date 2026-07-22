@@ -22,6 +22,7 @@ public:
 	static FText EndingAdvice(EWSEndingType Ending);
 	static FText ScoreAttribution(FName ScoreId);
 	static FText CharacterName(EWSCharacterId CharacterId);
+	static FText DialogueOpening(EWSCharacterId CharacterId, const FWSGameState& State);
 	static FText ConditionLevel(float Value);
 	static FText TrustLevel(float Value);
 	static FText KnowledgeLevel(EWSKnowledgeLevel Level);

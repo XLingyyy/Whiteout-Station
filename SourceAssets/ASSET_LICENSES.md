@@ -85,3 +85,5 @@ This is official Unreal Engine template content supplied with the installed engi
 | `elvs_emt_uniform_jacket_female`, `elvs_emt_uniform_pants_female` | Elvaerwyn + Punkduck | CC BY 4.0 | 叶澄 insulated emergency-medical uniform | https://static.makehumancommunity.org/assets/assetpacks/suits03.html |
 
 The MakeHuman application is used only as an offline exporter; its AGPL code is neither linked nor redistributed. Exact download URLs and SHA-256 values are pinned in `Tools/Assets/download_makehuman_inputs.py`; the generated FBX files, textures and detailed attribution are stored under `SourceAssets/MakeHuman/`.
+
+v0.4 (2026-07-22): 叶澄夹克贴图已在原 CC BY 4.0 资产基础上做去徽章化修改；移除救援组织文字与红十字圆徽，不新增标识或文字，修改脚本为 `Tools/Assets/process_v04_jacket.py`。

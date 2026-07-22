@@ -32,6 +32,14 @@ enum class EWSUILayer : uint8
 	Results
 };
 
+enum class EWSDialogueStage : uint8
+{
+	Opening,
+	IntentPick,
+	TextEntry,
+	Reply
+};
+
 UCLASS()
 class WHITEOUTSTATION_API UWhiteoutHUDWidget : public UUserWidget
 {
@@ -51,12 +59,14 @@ public:
 	void ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview);
 	void HideActionPreview();
 	void ToggleEvidence();
+	UFUNCTION()
 	void CloseEvidence();
 	void ShowDialogueMenu(FName NPCActionId, bool bVisible);
 	void ShowDialoguePromiseChoices();
 	UFUNCTION()
 	void ShowDialogueWheelChoices();
 	void ShowDialogueFreeTextForCapture();
+	void ShowDialogueReplyForCapture(const FString& Speaker, const FString& Line);
 	void SetDialogueIntentStatus(const FString& Message, bool bProcessing);
 	void SetSystemMessage(const FString& Message);
 	void DismissOpening();
@@ -65,7 +75,8 @@ public:
 	bool IsPauseMenuVisible() const;
 	void ResetPresentationCapture();
 	void SetPresentationCaptureState(const FWSGameState& State);
-	void ShowEvidenceForCapture();
+	void ShowNPCFocusForCapture(const FText& ActionName, const FWSActionPreview& Preview);
+	void ShowEvidenceForCapture(int32 FilterIndex = 0, bool bShowFirstDetail = false);
 	void ShowComponentGalleryForCapture();
 	void ShowSettingsForCapture();
 	void SetOpeningCaptureStage(int32 Stage);
@@ -87,6 +98,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> TopText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TopStatusText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TopConditionText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ObjectiveText;
@@ -188,6 +205,12 @@ private:
 	TObjectPtr<UTextBlock> DialogueText;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> DialogueNameText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> DialogueLineText;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UCanvasPanel> DialogueWheelPanel;
 
 	UPROPERTY(Transient)
@@ -197,6 +220,12 @@ private:
 	TObjectPtr<UBorder> DialogueFreeTextBorder;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UBorder> DialogueReplyBorder;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UButton>> DialogueIntentButtons;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UEditableTextBox> DialogueFreeTextInput;
 
 	UPROPERTY(Transient)
@@ -204,9 +233,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> DialogueNPCText;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UImage> DialogueNPCPortrait;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UProgressBar>> DialogueNPCBars;
@@ -264,6 +290,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> PauseSituationText;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> PauseSituationValues;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> PauseDefaultButton;
@@ -334,6 +363,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> YeChengPortraitTexture;
 
+	UPROPERTY(Transient)
+	TMap<TObjectPtr<UBorder>, TObjectPtr<UBorder>> GlassPanelContentSlots;
+
 	FText InteractionPrompt;
 	FString FocusedActionName;
 	FString SystemMessage;
@@ -352,9 +384,14 @@ private:
 	bool bUpdatingSettings = false;
 	int32 EvidenceFilterIndex = 0;
 	EWSUILayer CurrentLayer = EWSUILayer::Game;
+	EWSDialogueStage DialogueStage = EWSDialogueStage::Opening;
+	EWSDialogueAct PendingDialogueAct = EWSDialogueAct::Ask;
+	FName PendingPromiseCondition;
 	TArray<FString> EvidenceCardDetailCopies;
 	FName ActiveDialogueActionId;
 	bool bPresentationCaptureOverride = false;
+	bool bInteractionFocusCaptureLock = false;
+	FString InteractionFocusCaptureName;
 	FWSGameState PresentationCaptureState;
 
 	void BuildWidgetTree();
@@ -365,6 +402,9 @@ private:
 	void SetBaseHudHidden(bool bHidden);
 	void SetEvidenceFilter(int32 FilterIndex);
 	void ShowEvidenceDetail(const FString& DetailCopy);
+	void OpenDialogueTextEntry(EWSDialogueAct DialogueAct, FName PromiseCondition = NAME_None);
+	void RefreshDialogueAvailability();
+	void ShowDialogueReplyActions();
 	void UpdateDialogueCard(const FWSGameState& State);
 	void UpdateResults(const FWSGameState& State);
 	void ApplyOpeningStage(int32 Stage);
@@ -374,6 +414,10 @@ private:
 	void PlayUISound(USoundBase* Sound, float Volume = 1.0f);
 	UTextBlock* MakeText(const FName Name, int32 Size, const FLinearColor& Color, bool bWrap = true);
 	UBorder* MakePanel(UCanvasPanel* Canvas, const FName Name, const FAnchors& Anchors, const FMargin& Offsets, const FLinearColor& Color);
+	UBorder* MakeGlassPanel(UCanvasPanel* Canvas, FName Name, const FAnchors& Anchors,
+		const FMargin& Offsets, float BlurStrength, const FLinearColor& Tint, bool bHairline = true);
+	void SetGlassPanelContent(UBorder* Panel, UWidget* Content);
+	void SetGlassPanelPadding(UBorder* Panel, const FMargin& ContentPadding);
 	UButton* MakeButton(UVerticalBox* Box, const FText& Label, const FName Name);
 	UButton* MakeDialogueChoiceButton(
 		UCanvasPanel* Canvas,
@@ -442,6 +486,9 @@ private:
 
 	UFUNCTION()
 	void ShowHoveredEvidenceDetail();
+
+	UFUNCTION()
+	void ContinueDialogue();
 
 	UFUNCTION()
 	void ChooseDialogueAsk();
