@@ -27,6 +27,7 @@
 #include "Engine/Texture2D.h"
 #include "Flow/WhiteoutGameMode.h"
 #include "GameFramework/PlayerController.h"
+#include "HUD/WSUITokens.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "InputCoreTypes.h"
@@ -39,13 +40,14 @@
 
 namespace
 {
-	const FLinearColor PanelColor(0.035f, 0.071f, 0.102f, 0.82f);
-	const FLinearColor DeepPanel(0.020f, 0.035f, 0.050f, 0.91f);
-	const FLinearColor Cyan(0.49f, 0.71f, 0.84f, 1.0f);
-	const FLinearColor Amber(0.949f, 0.549f, 0.157f, 1.0f);
-	const FLinearColor Danger(0.851f, 0.329f, 0.302f, 1.0f);
-	const FLinearColor Body(0.953f, 0.961f, 0.969f, 1.0f);
-	const FLinearColor Secondary(0.72f, 0.76f, 0.79f, 1.0f);
+	// 颜色别名 —— 全部来自 WSUITokens 单一可信来源
+	const FLinearColor& PanelColor = WSUITokens::Color::SurfacePanel;
+	const FLinearColor& DeepPanel = WSUITokens::Color::SurfaceDeep;
+	const FLinearColor& Cyan = WSUITokens::Color::AccentInfo;
+	const FLinearColor& Amber = WSUITokens::Color::AccentAction;
+	const FLinearColor& Danger = WSUITokens::Color::AccentWarning;
+	const FLinearColor& Body = WSUITokens::Color::TextPrimary;
+	const FLinearColor& Secondary = WSUITokens::Color::TextSecondary;
 
 	FString ButtonIconName(const FName ButtonName)
 	{
@@ -150,6 +152,7 @@ void UWhiteoutHUDWidget::NativeDestruct()
 void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	TickPanelAnimations(InDeltaTime);
 	OpeningElapsed += InDeltaTime;
 	if (OpeningBorder && OpeningBorder->GetVisibility() == ESlateVisibility::Visible)
 	{
@@ -256,7 +259,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UCanvasPanel* Canvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDRoot"));
 	WidgetTree->RootWidget = Canvas;
 
-	TopPanel = MakeGlassPanel(Canvas, TEXT("TopPanel"), FAnchors(0, 0), FMargin(20, 20, 340, 96), 12.0f, FLinearColor(0.035f, 0.071f, 0.102f, 0.78f));
+	TopPanel = MakeGlassPanel(Canvas, TEXT("TopPanel"), FAnchors(0, 0), FMargin(20, 20, 340, 96), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(TopPanel, FMargin(10, 7));
 	UVerticalBox* TopBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("TopBox"));
 	TopText = MakeText(TEXT("TopText"), 16, Body, false);
@@ -268,13 +271,13 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	TopBox->AddChildToVerticalBox(TopConditionText)->SetPadding(FMargin(0, 2, 0, 0));
 	SetGlassPanelContent(TopPanel, TopBox);
 
-	ObjectivePanel = MakeGlassPanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 128, 300, 342), 12.0f, FLinearColor(0.035f, 0.071f, 0.102f, 0.78f));
+	ObjectivePanel = MakeGlassPanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 128, 300, 342), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(ObjectivePanel, FMargin(12));
 	ObjectiveText = MakeText(TEXT("ObjectiveText"), 13, Body, false);
 	ObjectiveText->SetLineHeightPercentage(1.25f);
 	SetGlassPanelContent(ObjectivePanel, ObjectiveText);
 
-	CrewPanel = MakeGlassPanel(Canvas, TEXT("CrewPanel"), FAnchors(1, 0), FMargin(-300, 20, 280, 520), 12.0f, FLinearColor(0.035f, 0.071f, 0.102f, 0.78f));
+	CrewPanel = MakeGlassPanel(Canvas, TEXT("CrewPanel"), FAnchors(1, 0), FMargin(-300, 20, 280, 520), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(CrewPanel, FMargin(12));
 	UVerticalBox* CrewBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("CrewBox"));
 	SetGlassPanelContent(CrewPanel, CrewBox);
@@ -282,11 +285,11 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	CrewText->SetText(FText::FromString(TEXT("值班组状态")));
 	CrewBox->AddChildToVerticalBox(CrewText)->SetPadding(FMargin(0, 0, 0, 8));
 	const TArray<FLinearColor> StatusColors = {
-		Danger,
-		Cyan,
-		Amber,
-		FLinearColor(0.83f, 0.70f, 0.38f, 1.0f),
-		FLinearColor(0.72f, 0.50f, 0.78f, 1.0f)};
+		WSUITokens::Color::StatusHealth,
+		WSUITokens::Color::StatusTemperature,
+		WSUITokens::Color::StatusEnergy,
+		WSUITokens::Color::StatusHunger,
+		WSUITokens::Color::StatusPressure};
 	CrewCardTexts.Reset();
 	CrewStatusBars.Reset();
 	CrewTrustBars.Reset();
@@ -306,10 +309,10 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		}
 
 		UVerticalBox* CardInfo = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), FName(*FString::Printf(TEXT("CrewInfo%d"), CharacterIndex)));
-		UTextBlock* CardText = MakeText(FName(*FString::Printf(TEXT("CrewText%d"), CharacterIndex)), 13, Body);
+		UTextBlock* CardText = MakeText(FName(*FString::Printf(TEXT("CrewText%d"), CharacterIndex)), 13, WSUITokens::Color::TextPrimary);
 		CardInfo->AddChildToVerticalBox(CardText)->SetPadding(FMargin(0, 0, 0, 4));
 		CrewCardTexts.Add(CardText);
-		UTextBlock* StatusLegend = MakeText(FName(*FString::Printf(TEXT("CrewLegend%d"), CharacterIndex)), 10, Secondary, false);
+		UTextBlock* StatusLegend = MakeText(FName(*FString::Printf(TEXT("CrewLegend%d"), CharacterIndex)), 10, WSUITokens::Color::TextSecondary, false);
 		StatusLegend->SetText(FText::FromString(TEXT("健　温　精　饥　压")));
 		CardInfo->AddChildToVerticalBox(StatusLegend)->SetPadding(FMargin(0, 0, 0, 2));
 		UHorizontalBox* StatusRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*FString::Printf(TEXT("CrewBars%d"), CharacterIndex)));
@@ -318,9 +321,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 			USizeBox* BarBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*FString::Printf(TEXT("CrewBarBox%d_%d"), CharacterIndex, StatusIndex)));
 			BarBox->SetWidthOverride(31.0f);
 			BarBox->SetHeightOverride(7.0f);
-			UProgressBar* Bar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), FName(*FString::Printf(TEXT("CrewBar%d_%d"), CharacterIndex, StatusIndex)));
-			Bar->SetPercent(0.5f);
-			Bar->SetFillColorAndOpacity(StatusColors[StatusIndex]);
+			UProgressBar* Bar = MakeProgressBar(FName(*FString::Printf(TEXT("CrewBar%d_%d"), CharacterIndex, StatusIndex)), StatusColors[StatusIndex]);
 			BarBox->SetContent(Bar);
 			StatusRow->AddChildToHorizontalBox(BarBox)->SetPadding(FMargin(0, 0, 3, 0));
 			CrewStatusBars.Add(Bar);
@@ -328,13 +329,12 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		CardInfo->AddChildToVerticalBox(StatusRow)->SetPadding(FMargin(0, 0, 0, 4));
 		if (CharacterIndex > 0)
 		{
-			UTextBlock* TrustLabel = MakeText(FName(*FString::Printf(TEXT("CrewTrustLabel%d"), CharacterIndex)), 10, Secondary, false);
+			UTextBlock* TrustLabel = MakeText(FName(*FString::Printf(TEXT("CrewTrustLabel%d"), CharacterIndex)), 10, WSUITokens::Color::TextSecondary, false);
 			TrustLabel->SetText(FText::FromString(TEXT("信任")));
 			CardInfo->AddChildToVerticalBox(TrustLabel);
 			USizeBox* TrustBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*FString::Printf(TEXT("CrewTrustBox%d"), CharacterIndex)));
 			TrustBox->SetHeightOverride(6.0f);
-			UProgressBar* TrustBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), FName(*FString::Printf(TEXT("CrewTrust%d"), CharacterIndex)));
-			TrustBar->SetFillColorAndOpacity(Cyan);
+			UProgressBar* TrustBar = MakeProgressBar(FName(*FString::Printf(TEXT("CrewTrust%d"), CharacterIndex)), WSUITokens::Color::TrustBar);
 			TrustBox->SetContent(TrustBar);
 			CardInfo->AddChildToVerticalBox(TrustBox);
 			CrewTrustBars.Add(TrustBar);
@@ -348,7 +348,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		CrewBox->AddChildToVerticalBox(CardRow)->SetPadding(FMargin(0, 0, 0, 10));
 	}
 
-	BottomPanel = MakeGlassPanel(Canvas, TEXT("BottomPanel"), FAnchors(0.5f, 1.0f), FMargin(-420, -142, 840, 122), 12.0f, FLinearColor(0.035f, 0.071f, 0.102f, 0.78f));
+	BottomPanel = MakeGlassPanel(Canvas, TEXT("BottomPanel"), FAnchors(0.5f, 1.0f), FMargin(-420, -142, 840, 122), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(BottomPanel, FMargin(12, 8));
 	UVerticalBox* BottomBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("BottomBox"));
 	SetGlassPanelContent(BottomPanel, BottomBox);
@@ -402,7 +402,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	FocusBorder->SetContent(FocusOverlay);
 	FocusBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	PreviewBorder = MakePanel(Canvas, TEXT("PreviewPanel"), FAnchors(0.16f, 0.10f, 0.84f, 0.90f), FMargin(0), FLinearColor(0.008f, 0.025f, 0.045f, 0.985f));
+	PreviewBorder = MakePanel(Canvas, TEXT("PreviewPanel"), FAnchors(0.16f, 0.10f, 0.84f, 0.90f), FMargin(0), WSUITokens::Color::SurfacePreview);
 	UVerticalBox* PreviewBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PreviewBox"));
 	PreviewBorder->SetContent(PreviewBox);
 	PreviewTitleText = MakeText(TEXT("PreviewTitle"), 28, Cyan);
@@ -413,7 +413,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PreviewBox->AddChildToVerticalBox(PreviewFooterText);
 	PreviewBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	EvidenceBorder = MakeGlassPanel(Canvas, TEXT("EvidencePanel"), FAnchors(0.12f, 0.08f, 0.88f, 0.92f), FMargin(0), 16.0f, FLinearColor(0.020f, 0.035f, 0.050f, 0.88f));
+	EvidenceBorder = MakeGlassPanel(Canvas, TEXT("EvidencePanel"), FAnchors(0.12f, 0.08f, 0.88f, 0.92f), FMargin(0), 16.0f, WSUITokens::Color::SurfaceDeep);
 	SetGlassPanelPadding(EvidenceBorder, FMargin(18));
 	UVerticalBox* EvidenceBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("EvidenceBox"));
 	UHorizontalBox* EvidenceTitleRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("EvidenceTitleRow"));
@@ -423,7 +423,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	EvidenceTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	EvidenceTitleSlot->SetVerticalAlignment(VAlign_Center);
 	UButton* EvidenceCloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("EvidenceCloseButton"));
-	EvidenceCloseButton->SetBackgroundColor(FLinearColor(0.055f, 0.10f, 0.14f, 0.55f));
+	EvidenceCloseButton->SetBackgroundColor(WSUITokens::Color::ButtonNormal);
 	UTextBlock* EvidenceCloseText = MakeText(TEXT("EvidenceCloseText"), 13, Secondary, false);
 	EvidenceCloseText->SetText(FText::FromString(TEXT("✕ 关闭")));
 	EvidenceCloseButton->SetContent(EvidenceCloseText);
@@ -435,7 +435,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	USizeBox* FilterSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("EvidenceFilterSize"));
 	FilterSize->SetWidthOverride(205.0f);
 	UBorder* FilterPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("EvidenceFilterPanel"));
-	FilterPanel->SetBrushColor(FLinearColor(0.025f, 0.050f, 0.070f, 0.78f));
+	FilterPanel->SetBrushColor(WSUITokens::Color::SurfaceFilter);
 	FilterPanel->SetPadding(FMargin(14));
 	UVerticalBox* FilterBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("EvidenceFilterBox"));
 	EvidenceFilterText = MakeText(TEXT("EvidenceFilters"), 13, Secondary);
@@ -492,7 +492,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UVerticalBoxSlot* EvidenceScrollSlot = EvidenceContent->AddChildToVerticalBox(EvidenceScroll);
 	EvidenceScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	UBorder* EvidenceDetailPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("EvidenceDetailPanel"));
-	EvidenceDetailPanel->SetBrushColor(FLinearColor(0.025f, 0.050f, 0.070f, 0.78f));
+	EvidenceDetailPanel->SetBrushColor(WSUITokens::Color::SurfaceFilter);
 	EvidenceDetailPanel->SetPadding(FMargin(12));
 	EvidenceDetailText = MakeText(TEXT("EvidenceDetailText"), 14, Body);
 	EvidenceDetailText->SetText(FText::FromString(TEXT("选择一条记录查看细节。")));
@@ -511,7 +511,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	DialogueBorder->SetPadding(FMargin(0));
 	UCanvasPanel* DialogueCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("DialogueCanvas"));
 	DialogueBorder->SetContent(DialogueCanvas);
-	UBorder* DialogueBar = MakeGlassPanel(DialogueCanvas, TEXT("DialogueBar"), FAnchors(0.18f, 0.68f, 0.82f, 0.97f), FMargin(0), 18.0f, FLinearColor(0.020f, 0.035f, 0.050f, 0.94f));
+	UBorder* DialogueBar = MakeGlassPanel(DialogueCanvas, TEXT("DialogueBar"), FAnchors(0.18f, 0.68f, 0.82f, 0.97f), FMargin(0), 18.0f, WSUITokens::Color::SurfaceDialogue);
 	SetGlassPanelPadding(DialogueBar, FMargin(14, 10));
 	UVerticalBox* DialogueBarBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueBarBox"));
 	SetGlassPanelContent(DialogueBar, DialogueBarBox);
@@ -570,11 +570,11 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	DialogueFreeTextInput->SetHintText(FWSPresentationText::UI(TEXT("dlg_hint_ask_v04"), TEXT("例：继电器烧了之后，还有什么能替？")));
 	FEditableTextBoxStyle DialogueInputStyle = DialogueFreeTextInput->GetWidgetStyle();
 	DialogueInputStyle.SetFont(UIFont(15));
-	DialogueInputStyle.BackgroundImageNormal.TintColor = FSlateColor(FLinearColor(0.025f, 0.055f, 0.075f, 0.98f));
-	DialogueInputStyle.BackgroundImageHovered.TintColor = FSlateColor(FLinearColor(0.045f, 0.095f, 0.125f, 0.98f));
-	DialogueInputStyle.BackgroundImageFocused.TintColor = FSlateColor(FLinearColor(0.045f, 0.095f, 0.125f, 0.98f));
-	DialogueInputStyle.ForegroundColor = FSlateColor(Body);
-	DialogueInputStyle.BackgroundColor = FSlateColor(FLinearColor(0.025f, 0.055f, 0.075f, 0.98f));
+	DialogueInputStyle.BackgroundImageNormal.TintColor = FSlateColor(WSUITokens::Color::SurfaceInput);
+	DialogueInputStyle.BackgroundImageHovered.TintColor = FSlateColor(WSUITokens::Color::SurfaceInputFocused);
+	DialogueInputStyle.BackgroundImageFocused.TintColor = FSlateColor(WSUITokens::Color::SurfaceInputFocused);
+	DialogueInputStyle.ForegroundColor = FSlateColor(WSUITokens::Color::TextPrimary);
+	DialogueInputStyle.BackgroundColor = FSlateColor(WSUITokens::Color::SurfaceInput);
 	DialogueFreeTextInput->SetWidgetStyle(DialogueInputStyle);
 	DialogueFreeTextInput->SetForegroundColor(FLinearColor::White);
 	DialogueFreeTextInput->OnTextCommitted.AddDynamic(this, &UWhiteoutHUDWidget::HandleDialogueTextCommitted);
@@ -602,11 +602,10 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	DialogueNPCText = MakeText(TEXT("DialogueNPCText"), 13, Body);
 	NPCCardBox->AddChildToVerticalBox(DialogueNPCText)->SetPadding(FMargin(0, 0, 0, 4));
 	DialogueNPCBars.Reset();
-	const TArray<FLinearColor> DialogueBarColors = {Danger, Cyan, Amber, FLinearColor(0.58f, 0.76f, 0.92f, 1.0f)};
+	const TArray<FLinearColor> DialogueBarColors = {WSUITokens::Color::AccentWarning, WSUITokens::Color::AccentInfo, WSUITokens::Color::AccentAction, FLinearColor(0.58f, 0.76f, 0.92f, 1.0f)};
 	for (int32 Index = 0; Index < DialogueBarColors.Num(); ++Index)
 	{
-		UProgressBar* Bar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), FName(*FString::Printf(TEXT("DialogueNPCBar%d"), Index)));
-		Bar->SetFillColorAndOpacity(DialogueBarColors[Index]);
+		UProgressBar* Bar = MakeProgressBar(FName(*FString::Printf(TEXT("DialogueNPCBar%d"), Index)), DialogueBarColors[Index]);
 		NPCCardBox->AddChildToVerticalBox(Bar)->SetPadding(FMargin(0, 1, 0, 2));
 		DialogueNPCBars.Add(Bar);
 	}
@@ -614,7 +613,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	DialogueCancelButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CancelDialogue);
 	DialogueBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	ResultsBorder = MakePanel(Canvas, TEXT("ResultsPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.004f, 0.014f, 0.026f, 1.0f));
+	ResultsBorder = MakePanel(Canvas, TEXT("ResultsPanel"), FAnchors(0, 0, 1, 1), FMargin(0), WSUITokens::Color::SurfaceFullscreen);
 	ResultsScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("ResultsScroll"));
 	UVerticalBox* ResultsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ResultsBox"));
 	ResultsScroll->AddChild(ResultsBox);
@@ -626,15 +625,14 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		FWSPresentationText::UI(TEXT("score_reserves"), TEXT("有效储备")),
 		FWSPresentationText::UI(TEXT("score_social"), TEXT("社会稳定")),
 		FWSPresentationText::UI(TEXT("score_information"), TEXT("信息责任"))};
-	const TArray<FLinearColor> ScoreColors = {Cyan, FLinearColor(0.40f, 0.88f, 0.62f), Amber, FLinearColor(0.72f, 0.55f, 1.0f), FLinearColor(0.45f, 0.72f, 1.0f)};
+	const TArray<FLinearColor> ScoreColors = {WSUITokens::Color::AccentInfo, WSUITokens::Color::AccentSuccess, WSUITokens::Color::AccentAction, FLinearColor(0.72f, 0.55f, 1.0f), FLinearColor(0.45f, 0.72f, 1.0f)};
 	for (int32 Index = 0; Index < ScoreLabels.Num(); ++Index)
 	{
-		UTextBlock* ScoreText = MakeText(FName(*FString::Printf(TEXT("ResultScoreText%d"), Index)), 16, Body);
+		UTextBlock* ScoreText = MakeText(FName(*FString::Printf(TEXT("ResultScoreText%d"), Index)), 16, WSUITokens::Color::TextPrimary);
 		ScoreText->SetText(ScoreLabels[Index]);
 		ResultsBox->AddChildToVerticalBox(ScoreText)->SetPadding(FMargin(0, 5, 0, 3));
-		UProgressBar* ScoreBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), FName(*FString::Printf(TEXT("ResultScoreBar%d"), Index)));
+		UProgressBar* ScoreBar = MakeProgressBar(FName(*FString::Printf(TEXT("ResultScoreBar%d"), Index)), ScoreColors[Index]);
 		ScoreBar->SetPercent(0.0f);
-		ScoreBar->SetFillColorAndOpacity(ScoreColors[Index]);
 		ResultsBox->AddChildToVerticalBox(ScoreBar)->SetPadding(FMargin(0, 0, 0, 7));
 		ResultScoreTexts.Add(ScoreText);
 		ResultScoreBars.Add(ScoreBar);
@@ -667,7 +665,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		USizeBox* SampleSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*FString::Printf(TEXT("GalleryGlassSize%d"), SampleIndex)));
 		SampleSize->SetWidthOverride(GlassSampleSizes[SampleIndex].X);
 		SampleSize->SetHeightOverride(GlassSampleSizes[SampleIndex].Y);
-		UBorder* SamplePanel = MakeGlassPanel(nullptr, FName(*FString::Printf(TEXT("GalleryGlassPanel%d"), SampleIndex)), FAnchors(), FMargin(), 12.0f + SampleIndex * 2.0f, FLinearColor(0.035f, 0.071f, 0.102f, 0.78f));
+		UBorder* SamplePanel = MakeGlassPanel(nullptr, FName(*FString::Printf(TEXT("GalleryGlassPanel%d"), SampleIndex)), FAnchors(), FMargin(), 12.0f + SampleIndex * 2.0f, WSUITokens::Color::SurfacePanel);
 		SetGlassPanelPadding(SamplePanel, FMargin(8));
 		UTextBlock* SampleText = MakeText(FName(*FString::Printf(TEXT("GalleryGlassText%d"), SampleIndex)), 13, Body, false);
 		SampleText->SetText(FText::FromString(FString::Printf(TEXT("毛玻璃 %d｜Blur %.0f"), SampleIndex + 1, 12.0f + SampleIndex * 2.0f)));
@@ -718,24 +716,83 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	ToastBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	EndingCinematicBorder = MakePanel(Canvas, TEXT("EndingCinematicPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.004f, 0.012f, 0.022f, 0.94f));
-	EndingCinematicText = MakeText(TEXT("EndingCinematicText"), 38, Body);
-	EndingCinematicText->SetJustification(ETextJustify::Center);
-	EndingCinematicBorder->SetContent(EndingCinematicText);
+	EndingCinematicBorder->SetPadding(FMargin(0));
+	{
+		UOverlay* EndingOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("EndingOverlay"));
+		if (InkBrushTexture)
+		{
+			UImage* EndingBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("EndingBrush"));
+			EndingBrush->SetBrushFromTexture(InkBrushTexture, true);
+			EndingBrush->SetColorAndOpacity(FLinearColor(0.008f, 0.012f, 0.022f, 0.6f));
+			EndingOverlay->AddChildToOverlay(EndingBrush);
+		}
+		UVerticalBox* EndingBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("EndingBox"));
+		EndingCinematicText = MakeText(TEXT("EndingCinematicTitleText"), 38, WSUITokens::Color::TextPrimary, false);
+		EndingCinematicText->SetJustification(ETextJustify::Center);
+		EndingBox->AddChildToVerticalBox(EndingCinematicText)->SetPadding(FMargin(0, 0, 0, 10));
+		EndingDivider = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("EndingDivider"));
+		EndingDivider->SetBrushColor(WSUITokens::Color::StrokeDivider);
+		USizeBox* EndingDividerSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("EndingDividerSize"));
+		EndingDividerSize->SetWidthOverride(220.0f);
+		EndingDividerSize->SetHeightOverride(1.0f);
+		EndingDividerSize->SetContent(EndingDivider);
+		UVerticalBoxSlot* EndingDividerSlot = EndingBox->AddChildToVerticalBox(EndingDividerSize);
+		EndingDividerSlot->SetHorizontalAlignment(HAlign_Center);
+		EndingDividerSlot->SetPadding(FMargin(0, 0, 0, 14));
+		EndingSubtitleText = MakeText(TEXT("EndingSubtitleText"), 20, WSUITokens::Color::TextSecondary);
+		EndingSubtitleText->SetJustification(ETextJustify::Center);
+		EndingBox->AddChildToVerticalBox(EndingSubtitleText);
+		UOverlaySlot* EndingBoxSlot = EndingOverlay->AddChildToOverlay(EndingBox);
+		EndingBoxSlot->SetHorizontalAlignment(HAlign_Center);
+		EndingBoxSlot->SetVerticalAlignment(VAlign_Center);
+		EndingCinematicBorder->SetContent(EndingOverlay);
+	}
 	EndingCinematicBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	CrisisBorder = MakePanel(Canvas, TEXT("CrisisPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.23f, 0.005f, 0.003f, 0.72f));
-	CrisisText = MakeText(TEXT("CrisisText"), 40, Danger);
+	CrisisText = MakeText(TEXT("CrisisText"), 40, WSUITokens::Color::AccentWarning);
 	CrisisText->SetJustification(ETextJustify::Center);
 	CrisisBorder->SetContent(CrisisText);
 	CrisisBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	OpeningBorder = MakePanel(Canvas, TEXT("OpeningPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.003f, 0.010f, 0.020f, 0.96f));
-	OpeningText = MakeText(TEXT("OpeningText"), 31, Body);
-	OpeningText->SetJustification(ETextJustify::Center);
-	OpeningBorder->SetContent(OpeningText);
+	OpeningBorder->SetPadding(FMargin(0));
+	{
+		UOverlay* OpeningOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("OpeningOverlay"));
+		if (InkBrushTexture)
+		{
+			UImage* OpeningBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("OpeningBrush"));
+			OpeningBrush->SetBrushFromTexture(InkBrushTexture, true);
+			OpeningBrush->SetColorAndOpacity(FLinearColor(0.01f, 0.015f, 0.025f, 0.55f));
+			OpeningOverlay->AddChildToOverlay(OpeningBrush);
+		}
+		UVerticalBox* OpeningBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("OpeningBox"));
+		OpeningText = MakeText(TEXT("OpeningTitleText"), 42, WSUITokens::Color::TextPrimary, false);
+		OpeningText->SetJustification(ETextJustify::Center);
+		OpeningBox->AddChildToVerticalBox(OpeningText)->SetPadding(FMargin(0, 0, 0, 10));
+		OpeningDivider = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("OpeningDivider"));
+		OpeningDivider->SetBrushColor(WSUITokens::Color::StrokeDivider);
+		USizeBox* OpeningDividerSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("OpeningDividerSize"));
+		OpeningDividerSize->SetWidthOverride(280.0f);
+		OpeningDividerSize->SetHeightOverride(1.0f);
+		OpeningDividerSize->SetContent(OpeningDivider);
+		UVerticalBoxSlot* OpeningDividerSlot = OpeningBox->AddChildToVerticalBox(OpeningDividerSize);
+		OpeningDividerSlot->SetHorizontalAlignment(HAlign_Center);
+		OpeningDividerSlot->SetPadding(FMargin(0, 0, 0, 14));
+		OpeningSubtitleText = MakeText(TEXT("OpeningSubtitleText"), 20, WSUITokens::Color::TextCinematicWarm);
+		OpeningSubtitleText->SetJustification(ETextJustify::Center);
+		OpeningBox->AddChildToVerticalBox(OpeningSubtitleText)->SetPadding(FMargin(0, 0, 0, 18));
+		OpeningFooterText = MakeText(TEXT("OpeningFooterText"), 14, WSUITokens::Color::TextSecondary, false);
+		OpeningFooterText->SetJustification(ETextJustify::Center);
+		OpeningBox->AddChildToVerticalBox(OpeningFooterText);
+		UOverlaySlot* OpeningBoxSlot = OpeningOverlay->AddChildToOverlay(OpeningBox);
+		OpeningBoxSlot->SetHorizontalAlignment(HAlign_Center);
+		OpeningBoxSlot->SetVerticalAlignment(VAlign_Center);
+		OpeningBorder->SetContent(OpeningOverlay);
+	}
 	ApplyOpeningStage(0);
 
-	PauseBorder = MakeGlassPanel(Canvas, TEXT("PausePanel"), FAnchors(0.5f, 0.5f), FMargin(-280, -350, 560, 700), 16.0f, FLinearColor(0.020f, 0.035f, 0.050f, 0.88f));
+	PauseBorder = MakeGlassPanel(Canvas, TEXT("PausePanel"), FAnchors(0.5f, 0.5f), FMargin(-280, -350, 560, 700), 16.0f, WSUITokens::Color::SurfaceDeep);
 	SetGlassPanelPadding(PauseBorder, FMargin(14));
 	UVerticalBox* PauseBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PauseBox"));
 	SetGlassPanelContent(PauseBorder, PauseBox);
@@ -747,7 +804,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PauseTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	PauseTitleSlot->SetVerticalAlignment(VAlign_Center);
 	UButton* PauseCloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("PauseCloseButton"));
-	PauseCloseButton->SetBackgroundColor(FLinearColor(0.055f, 0.10f, 0.14f, 0.55f));
+	PauseCloseButton->SetBackgroundColor(WSUITokens::Color::ButtonNormal);
 	UTextBlock* PauseCloseText = MakeText(TEXT("PauseCloseText"), 13, Secondary, false);
 	PauseCloseText->SetText(FText::FromString(TEXT("✕ 关闭")));
 	PauseCloseButton->SetContent(PauseCloseText);
@@ -770,9 +827,9 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	SaveButton->SetIsEnabled(false);
 	LoadButton->SetIsEnabled(false);
 	MainMenuButton->SetIsEnabled(false);
-	SaveButton->SetColorAndOpacity(FLinearColor(0.467f, 0.518f, 0.557f, 1.0f));
-	LoadButton->SetColorAndOpacity(FLinearColor(0.467f, 0.518f, 0.557f, 1.0f));
-	MainMenuButton->SetColorAndOpacity(FLinearColor(0.467f, 0.518f, 0.557f, 1.0f));
+	SaveButton->SetColorAndOpacity(WSUITokens::Color::TextMuted);
+	LoadButton->SetColorAndOpacity(WSUITokens::Color::TextMuted);
+	MainMenuButton->SetColorAndOpacity(WSUITokens::Color::TextMuted);
 	ResumeButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ResumeGame);
 	SettingsButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::OpenSettings);
 	HelpButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ToggleControls);
@@ -789,7 +846,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		USizeBox* SituationSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*FString::Printf(TEXT("PauseSituationSize%d"), SituationIndex)));
 		SituationSize->SetWidthOverride(96.0f);
 		SituationSize->SetHeightOverride(56.0f);
-		UBorder* SituationPanel = MakeGlassPanel(nullptr, FName(*FString::Printf(TEXT("PauseSituationPanel%d"), SituationIndex)), FAnchors(), FMargin(), 12.0f, FLinearColor(0.035f, 0.071f, 0.102f, 0.78f));
+		UBorder* SituationPanel = MakeGlassPanel(nullptr, FName(*FString::Printf(TEXT("PauseSituationPanel%d"), SituationIndex)), FAnchors(), FMargin(), 12.0f, WSUITokens::Color::SurfacePanel);
 		SetGlassPanelPadding(SituationPanel, FMargin(6, 5));
 		UVerticalBox* SituationBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), FName(*FString::Printf(TEXT("PauseSituationBox%d"), SituationIndex)));
 		UTextBlock* SituationLabel = MakeText(FName(*FString::Printf(TEXT("PauseSituationLabel%d"), SituationIndex)), 11, Secondary, false);
@@ -812,7 +869,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PauseBox->AddChildToVerticalBox(PauseHelpText)->SetPadding(FMargin(8, 12, 8, 0));
 	PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	SettingsBorder = MakeGlassPanel(Canvas, TEXT("SettingsPanel"), FAnchors(0.5f, 0.5f), FMargin(-330, -300, 660, 600), 16.0f, FLinearColor(0.020f, 0.035f, 0.050f, 0.88f));
+	SettingsBorder = MakeGlassPanel(Canvas, TEXT("SettingsPanel"), FAnchors(0.5f, 0.5f), FMargin(-330, -300, 660, 600), 16.0f, WSUITokens::Color::SurfaceDeep);
 	SetGlassPanelPadding(SettingsBorder, FMargin(18));
 	UVerticalBox* SettingsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SettingsBox"));
 	SetGlassPanelContent(SettingsBorder, SettingsBox);
@@ -839,8 +896,8 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		Slider->SetMinValue(0.0f);
 		Slider->SetMaxValue(1.0f);
 		Slider->SetStepSize(0.01f);
-		Slider->SetSliderBarColor(FLinearColor(0.09f, 0.13f, 0.17f, 1.0f));
-		Slider->SetSliderHandleColor(FLinearColor(0.49f, 0.71f, 0.84f, 1.0f));
+		Slider->SetSliderBarColor(WSUITokens::Color::SliderBar);
+		Slider->SetSliderHandleColor(WSUITokens::Color::SliderHandle);
 		SliderBox->SetContent(Slider);
 		Row->AddChildToHorizontalBox(SliderBox)->SetVerticalAlignment(VAlign_Center);
 		USizeBox* ValueBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*(Name.ToString() + TEXT("ValueBox"))));
@@ -919,11 +976,9 @@ UBorder* UWhiteoutHUDWidget::MakeGlassPanel(
 	const FLinearColor& Tint,
 	const bool bHairline)
 {
-	// UMG's native blur is intentionally kept rectangular in v0.4. The project
-	// uses one restrained 1 px hairline instead of introducing bespoke nine-slice assets.
 	UBorder* Shell = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), Name);
 	Shell->SetBrushColor(bHairline
-		? FLinearColor(0.863f, 0.906f, 0.933f, 0.06f)
+		? WSUITokens::Color::StrokeHairline
 		: FLinearColor::Transparent);
 	Shell->SetPadding(FMargin(bHairline ? 1.0f : 0.0f));
 	Shell->SetHorizontalAlignment(HAlign_Fill);
@@ -936,6 +991,8 @@ UBorder* UWhiteoutHUDWidget::MakeGlassPanel(
 	Blur->SetPadding(FMargin(0));
 	Blur->SetHorizontalAlignment(HAlign_Fill);
 	Blur->SetVerticalAlignment(VAlign_Fill);
+	const float CornerRadius = FMath::Clamp(BlurStrength * 0.72f, WSUITokens::Radius::Small, WSUITokens::Radius::Modal);
+	Blur->SetCornerRadius(FVector4(CornerRadius, CornerRadius, CornerRadius, CornerRadius));
 	Shell->SetContent(Blur);
 
 	UOverlay* Layers = WidgetTree->ConstructWidget<UOverlay>(
@@ -991,9 +1048,13 @@ UButton* UWhiteoutHUDWidget::MakeButton(UVerticalBox* Box, const FText& Label, c
 {
 	UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
 	FButtonStyle ButtonStyle = Button->GetStyle();
-	ButtonStyle.Normal.TintColor = FSlateColor(FLinearColor(0.055f, 0.10f, 0.14f, 0.55f));
-	ButtonStyle.Hovered.TintColor = FSlateColor(FLinearColor(0.16f, 0.22f, 0.28f, 0.85f));
-	ButtonStyle.Pressed.TintColor = FSlateColor(FLinearColor(0.949f, 0.549f, 0.157f, 0.25f));
+	ButtonStyle.Normal.TintColor = FSlateColor(WSUITokens::Color::ButtonNormal);
+	ButtonStyle.Hovered.TintColor = FSlateColor(WSUITokens::Color::ButtonHover);
+	ButtonStyle.Pressed.TintColor = FSlateColor(WSUITokens::Color::ButtonPressed);
+	ButtonStyle.NormalForeground = FSlateColor(WSUITokens::Color::TextSecondary);
+	ButtonStyle.HoveredForeground = FSlateColor(WSUITokens::Color::TextPrimary);
+	ButtonStyle.PressedForeground = FSlateColor(WSUITokens::Color::TextPrimary);
+	ButtonStyle.DisabledForeground = FSlateColor(WSUITokens::Color::TextMuted);
 	Button->SetStyle(ButtonStyle);
 	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*(Name.ToString() + TEXT("Row"))));
 	const FString IconName = ButtonIconName(Name);
@@ -1007,12 +1068,12 @@ UButton* UWhiteoutHUDWidget::MakeButton(UVerticalBox* Box, const FText& Label, c
 			IconBox->SetHeightOverride(24.0f);
 			UImage* Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), FName(*(Name.ToString() + TEXT("Icon"))));
 			Icon->SetBrushFromTexture(IconTexture, true);
-			Icon->SetColorAndOpacity(Body);
+			Icon->SetColorAndOpacity(WSUITokens::Color::TextPrimary);
 			IconBox->SetContent(Icon);
 			Row->AddChildToHorizontalBox(IconBox)->SetPadding(FMargin(10, 0, 14, 0));
 		}
 	}
-	UTextBlock* LabelText = MakeText(FName(*(Name.ToString() + TEXT("Label"))), 16, Body, false);
+	UTextBlock* LabelText = MakeText(FName(*(Name.ToString() + TEXT("Label"))), 16, WSUITokens::Color::TextPrimary, false);
 	LabelText->SetText(Label);
 	UHorizontalBoxSlot* LabelSlot = Row->AddChildToHorizontalBox(LabelText);
 	LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -1034,7 +1095,15 @@ UButton* UWhiteoutHUDWidget::MakeDialogueChoiceButton(
 	const FMargin& Offsets)
 {
 	UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
-	Button->SetBackgroundColor(FLinearColor(0.045f, 0.105f, 0.145f, 0.96f));
+	FButtonStyle ButtonStyle = Button->GetStyle();
+	ButtonStyle.Normal.TintColor = FSlateColor(WSUITokens::Color::DialogueChoiceNormal);
+	ButtonStyle.Hovered.TintColor = FSlateColor(WSUITokens::Color::DialogueChoiceHover);
+	ButtonStyle.Pressed.TintColor = FSlateColor(WSUITokens::Color::ButtonPressed);
+	ButtonStyle.NormalForeground = FSlateColor(WSUITokens::Color::TextSecondary);
+	ButtonStyle.HoveredForeground = FSlateColor(WSUITokens::Color::TextPrimary);
+	ButtonStyle.PressedForeground = FSlateColor(WSUITokens::Color::TextPrimary);
+	Button->SetStyle(ButtonStyle);
+	Button->SetBackgroundColor(WSUITokens::Color::DialogueChoiceNormal);
 	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*(Name.ToString() + TEXT("Row"))));
 	if (!IconName.IsEmpty())
 	{
@@ -1077,6 +1146,18 @@ FSlateFontInfo UWhiteoutHUDWidget::UIFont(const int32 Size, const bool bBold) co
 	}
 	UE_LOG(LogTemp, Warning, TEXT("WhiteoutStation v0.2: UI font family is unavailable"));
 	return FSlateFontInfo(FCoreStyle::GetDefaultFont(), Size);
+}
+
+UProgressBar* UWhiteoutHUDWidget::MakeProgressBar(const FName Name, const FLinearColor& FillColor, const float Height)
+{
+	UProgressBar* Bar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), Name);
+	Bar->SetPercent(0.5f);
+	Bar->SetFillColorAndOpacity(FillColor);
+	FProgressBarStyle Style = Bar->GetWidgetStyle();
+	Style.BackgroundImage.TintColor = FSlateColor(WSUITokens::Color::ProgressBarBackground);
+	Style.FillImage.TintColor = FSlateColor(FillColor);
+	Bar->SetWidgetStyle(Style);
+	return Bar;
 }
 
 FString UWhiteoutHUDWidget::APCells(const int32 Remaining)
@@ -1390,7 +1471,7 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 		CardButton->SetBackgroundColor(FLinearColor::Transparent);
 		CardButton->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
 		CardButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ShowHoveredEvidenceDetail);
-		UBorder* Card = MakeGlassPanel(nullptr, FName(*FString::Printf(TEXT("EvidenceCard%d"), CardIndex)), FAnchors(), FMargin(), 12.0f, FLinearColor(0.035f, 0.071f, 0.102f, 0.78f));
+		UBorder* Card = MakeGlassPanel(nullptr, FName(*FString::Printf(TEXT("EvidenceCard%d"), CardIndex)), FAnchors(), FMargin(), 12.0f, WSUITokens::Color::SurfacePanel);
 		SetGlassPanelPadding(Card, FMargin(12));
 		UHorizontalBox* CardRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*FString::Printf(TEXT("EvidenceCardRow%d"), CardIndex)));
 		const FString IconPath = FString::Printf(TEXT("/Game/WindStation/UI/v03/Icons/%s.%s"), IconName, IconName);
@@ -1485,7 +1566,12 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 		const int32 EmptyCategory = EvidenceFilterIndex == 0 ? 0 : EvidenceFilterIndex;
 		AddCard(TEXT("尚未取得证据"), TEXT("系统"), TEXT("调查设备、现场物品或与队员交谈。"), Body, TEXT("普通"), TEXT("I_Evidence_File"), EmptyCategory);
 	}
-	EvidenceBorder->SetVisibility(bEvidenceVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	const bool bEvidenceAnimating = ActivePanelAnimations.ContainsByPredicate(
+		[this](const FPanelAnimation& A) { return A.Panel.Get() == EvidenceBorder; });
+	if (!bEvidenceAnimating)
+	{
+		EvidenceBorder->SetVisibility(bEvidenceVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
 }
 
 void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
@@ -1672,7 +1758,7 @@ void UWhiteoutHUDWidget::ClearInteractionFocus()
 void UWhiteoutHUDWidget::ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview)
 {
 	SetLayer(EWSUILayer::Preview);
-	PreviewBorder->SetVisibility(ESlateVisibility::Visible);
+	ShowPanelAnimated(PreviewBorder, true, WSUITokens::Anim::Fast, false);
 	PreviewTitleText->SetText(ActionName);
 	if (Preview.bCanExecute)
 	{
@@ -1714,7 +1800,7 @@ void UWhiteoutHUDWidget::HideActionPreview()
 {
 	if (PreviewBorder)
 	{
-		PreviewBorder->SetVisibility(ESlateVisibility::Collapsed);
+		ShowPanelAnimated(PreviewBorder, false, WSUITokens::Anim::Fast, false);
 	}
 	if (CurrentLayer == EWSUILayer::Preview)
 	{
@@ -1783,7 +1869,7 @@ void UWhiteoutHUDWidget::ToggleEvidence()
 		CancelDialogue();
 	}
 	bEvidenceVisible = true;
-	if (EvidenceBorder) EvidenceBorder->SetVisibility(ESlateVisibility::Visible);
+	if (EvidenceBorder) ShowPanelAnimated(EvidenceBorder, true, WSUITokens::Anim::Normal);
 	SetLayer(EWSUILayer::Evidence);
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
@@ -1799,7 +1885,7 @@ void UWhiteoutHUDWidget::ToggleEvidence()
 void UWhiteoutHUDWidget::CloseEvidence()
 {
 	bEvidenceVisible = false;
-	if (EvidenceBorder) EvidenceBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (EvidenceBorder) ShowPanelAnimated(EvidenceBorder, false, WSUITokens::Anim::Fast);
 	SetLayer(EWSUILayer::Game);
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
@@ -1812,7 +1898,7 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bV
 {
 	bDialogueVisible = bVisible;
 	ActiveDialogueActionId = bVisible ? NPCActionId : NAME_None;
-	DialogueBorder->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	ShowPanelAnimated(DialogueBorder, bVisible, WSUITokens::Anim::Normal);
 	if (!bVisible)
 	{
 		if (CurrentLayer == EWSUILayer::Dialogue)
@@ -2109,15 +2195,25 @@ void UWhiteoutHUDWidget::ResetPresentationCapture()
 	InteractionFocusCaptureName.Reset();
 	bEvidenceVisible = false;
 	bDialogueVisible = false;
-	if (EvidenceBorder) EvidenceBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialogueBorder) DialogueBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (ResultsBorder) ResultsBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (ComponentGalleryBorder) ComponentGalleryBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (ToastBorder) ToastBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (CrisisBorder) CrisisBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (EndingCinematicBorder) EndingCinematicBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (PauseBorder) PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (SettingsBorder) SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
+	ActivePanelAnimations.Reset();
+	auto ResetPanelVisual = [](UBorder* Panel)
+	{
+		if (Panel)
+		{
+			Panel->SetRenderOpacity(1.0f);
+			Panel->SetRenderScale(FVector2D(1.0f));
+			Panel->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	};
+	ResetPanelVisual(EvidenceBorder);
+	ResetPanelVisual(DialogueBorder);
+	ResetPanelVisual(ResultsBorder);
+	ResetPanelVisual(ComponentGalleryBorder);
+	ResetPanelVisual(ToastBorder);
+	ResetPanelVisual(CrisisBorder);
+	ResetPanelVisual(EndingCinematicBorder);
+	ResetPanelVisual(PauseBorder);
+	ResetPanelVisual(SettingsBorder);
 	if (PauseHelpText) PauseHelpText->SetVisibility(ESlateVisibility::Collapsed);
 	bEndingCinematicCapture = false;
 	bWasShowingResults = false;
@@ -2149,10 +2245,11 @@ void UWhiteoutHUDWidget::ShowEvidenceForCapture(const int32 FilterIndex, const b
 {
 	bEvidenceVisible = true;
 	bDialogueVisible = false;
-	HideActionPreview();
-	if (DialogueBorder) DialogueBorder->SetVisibility(ESlateVisibility::Collapsed);
+	ShowPanelInstant(PreviewBorder, false);
+	ShowPanelInstant(DialogueBorder, false);
 	SetLayer(EWSUILayer::Evidence);
 	EvidenceFilterIndex = FMath::Clamp(FilterIndex, 0, 4);
+	ShowPanelInstant(EvidenceBorder, true);
 	if (bPresentationCaptureOverride)
 	{
 		UpdateEvidence(PresentationCaptureState);
@@ -2167,19 +2264,29 @@ void UWhiteoutHUDWidget::ShowComponentGalleryForCapture()
 {
 	ResetPresentationCapture();
 	DismissOpening();
-	if (ComponentGalleryBorder)
-	{
-		ComponentGalleryBorder->SetVisibility(ESlateVisibility::Visible);
-	}
+	ShowPanelInstant(ComponentGalleryBorder, true);
 }
 
 void UWhiteoutHUDWidget::ShowSettingsForCapture()
 {
 	if (!IsPauseMenuVisible())
 	{
-		TogglePauseMenu();
+		ShowPanelInstant(PauseBorder, true);
+		SetLayer(EWSUILayer::Pause);
+		if (APlayerController* PlayerController = GetOwningPlayer())
+		{
+			PlayerController->SetPause(true);
+			PlayerController->bShowMouseCursor = true;
+			FInputModeUIOnly InputMode;
+			InputMode.SetWidgetToFocus(PauseDefaultButton ? PauseDefaultButton->TakeWidget() : PauseBorder->TakeWidget());
+			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+			PlayerController->SetInputMode(InputMode);
+		}
 	}
-	OpenSettings();
+	RefreshSettingsUI();
+	ShowPanelInstant(PauseBorder, false);
+	ShowPanelInstant(SettingsBorder, true);
+	SetLayer(EWSUILayer::Settings);
 }
 
 void UWhiteoutHUDWidget::SetOpeningCaptureStage(const int32 Stage)
@@ -2244,42 +2351,104 @@ void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
 		return;
 	}
 	ActiveOpeningStage = Stage;
+	auto SplitText = [](const FText& FullText, FText& OutTitle, FText& OutSubtitle, FText& OutFooter)
+	{
+		TArray<FString> Parts;
+		FullText.ToString().ParseIntoArray(Parts, TEXT("\n\n"), false);
+		OutTitle = FText::FromString(Parts.Num() > 0 ? Parts[0].TrimStartAndEnd() : TEXT(""));
+		OutSubtitle = FText::FromString(Parts.Num() > 1 ? Parts[1].TrimStartAndEnd() : TEXT(""));
+		OutFooter = FText::FromString(Parts.Num() > 2 ? Parts[2].TrimStartAndEnd() : TEXT(""));
+	};
+	auto SetDividerVisible = [&](bool bVisible)
+	{
+		if (OpeningDivider) OpeningDivider->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	};
+	auto SetFooterVisible = [&](bool bVisible)
+	{
+		if (OpeningFooterText) OpeningFooterText->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	};
 	if (Stage == 0)
 	{
 		OpeningBorder->SetBrushColor(FLinearColor(0.002f, 0.008f, 0.016f, 0.985f));
 		OpeningText->SetFont(UIFont(42, true));
-		OpeningText->SetColorAndOpacity(FSlateColor(Body));
-		OpeningText->SetText(FWSPresentationText::UI(
-			TEXT("ui_opening_title"),
-			TEXT("风雪站：断电前夜\n\n08:15｜海拔 4,126 米｜极夜值班")));
+		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
+		FText Title, Subtitle, Footer;
+		SplitText(FWSPresentationText::UI(TEXT("ui_opening_title"), TEXT("风雪站：断电前夜\n\n08:15｜海拔 4,126 米｜极夜值班")), Title, Subtitle, Footer);
+		OpeningText->SetText(Title);
+		if (OpeningSubtitleText)
+		{
+			OpeningSubtitleText->SetText(Subtitle);
+			OpeningSubtitleText->SetFont(UIFont(20, false));
+			OpeningSubtitleText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextCinematicWarm));
+		}
+		SetFooterVisible(false);
+		SetDividerVisible(true);
 	}
 	else if (Stage == 1)
 	{
 		OpeningBorder->SetBrushColor(FLinearColor(0.002f, 0.012f, 0.024f, 0.34f));
 		OpeningText->SetFont(UIFont(31, true));
-		OpeningText->SetColorAndOpacity(FSlateColor(FLinearColor(0.82f, 0.92f, 1.0f, 1.0f)));
-		const FString EstablishingCopy = FWSPresentationText::UI(
-			TEXT("ui_opening_establishing"),
-			TEXT("08:15｜暴雪封山\n备用电池正在衰减\n\n按空格跳过")).ToString();
-		OpeningText->SetText(FText::FromString(TEXT("\n\n") + EstablishingCopy));
+		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextCinematicWarm));
+		FText Title, Subtitle, Footer;
+		SplitText(FWSPresentationText::UI(TEXT("ui_opening_establishing"), TEXT("08:15｜暴雪封山\n\n备用电池正在衰减\n\n按空格跳过")), Title, Subtitle, Footer);
+		OpeningText->SetText(Title);
+		if (OpeningSubtitleText)
+		{
+			OpeningSubtitleText->SetText(Subtitle);
+			OpeningSubtitleText->SetFont(UIFont(20, false));
+			OpeningSubtitleText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextCinematicWarm));
+		}
+		if (OpeningFooterText)
+		{
+			OpeningFooterText->SetText(Footer);
+			OpeningFooterText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextSecondary));
+		}
+		SetFooterVisible(true);
+		SetDividerVisible(true);
 	}
 	else if (Stage == 2)
 	{
 		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.010f, 0.020f, 0.88f));
 		OpeningText->SetFont(UIFont(29, true));
-		OpeningText->SetColorAndOpacity(FSlateColor(Body));
-		OpeningText->SetText(FWSPresentationText::UI(
-			TEXT("ui_opening_objective"),
-			TEXT("08:15 → 18:15｜最后一轮抢修\n\n① 修复发电机\n② 校准室外天线\n③ 发出求救信号\n\n预算：8 点行动力\n越过中段后，备用电池将发生一次故障\n\n按空格跳过")));
+		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
+		FText Title, Subtitle, Footer;
+		SplitText(FWSPresentationText::UI(TEXT("ui_opening_objective"), TEXT("08:15 → 18:15｜最后一轮抢修\n\n① 修复发电机\n② 校准室外天线\n③ 发出求救信号\n\n预算：8 点行动力\n越过中段后，备用电池将发生一次故障\n\n按空格跳过")), Title, Subtitle, Footer);
+		OpeningText->SetText(Title);
+		if (OpeningSubtitleText)
+		{
+			OpeningSubtitleText->SetText(Subtitle);
+			OpeningSubtitleText->SetFont(UIFont(20, false));
+			OpeningSubtitleText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
+		}
+		if (OpeningFooterText)
+		{
+			OpeningFooterText->SetText(Footer);
+			OpeningFooterText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextSecondary));
+		}
+		SetFooterVisible(true);
+		SetDividerVisible(true);
 	}
 	else
 	{
 		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.010f, 0.020f, 0.91f));
 		OpeningText->SetFont(UIFont(27, true));
-		OpeningText->SetColorAndOpacity(FSlateColor(Cyan));
-		OpeningText->SetText(FWSPresentationText::UI(
-			TEXT("ui_opening_controls"),
-			TEXT("08:15｜每次行动都先预览，再确认\n\nWASD 移动　鼠标观察　Space 跳跃\nF 预览 / 再按 F 确认\nE 证据板　Q 对话方式　Esc 暂停/退出\n\n控制权交还")));
+		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::AccentInfo));
+		FText Title, Subtitle, Footer;
+		SplitText(FWSPresentationText::UI(TEXT("ui_opening_controls"), TEXT("每次行动都先预览，再确认\n\nWASD 移动　鼠标观察　Space 跳跃\nF 预览 / 再按 F 确认\nE 证据板　Esc 暂停/退出\n\n控制权交还")), Title, Subtitle, Footer);
+		OpeningText->SetText(Title);
+		if (OpeningSubtitleText)
+		{
+			OpeningSubtitleText->SetText(Subtitle);
+			OpeningSubtitleText->SetFont(UIFont(20, false));
+			OpeningSubtitleText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
+		}
+		if (OpeningFooterText)
+		{
+			OpeningFooterText->SetText(Footer);
+			OpeningFooterText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::AccentInfo));
+		}
+		SetFooterVisible(true);
+		SetDividerVisible(true);
 	}
 }
 
@@ -2355,7 +2524,30 @@ void UWhiteoutHUDWidget::ApplyEndingCinematic(const EWSEndingType Ending)
 	}
 	EndingCinematicBorder->SetBrushColor(Panel);
 	EndingCinematicText->SetColorAndOpacity(FSlateColor(TextColor));
-	EndingCinematicText->SetText(FWSPresentationText::UI(Key, Fallback));
+	const FText FullText = FWSPresentationText::UI(Key, Fallback);
+	const FString FullString = FullText.ToString();
+	int32 NewlineIndex = INDEX_NONE;
+	if (FullString.FindChar(TEXT('\n'), NewlineIndex))
+	{
+		EndingCinematicText->SetText(FText::FromString(FullString.Left(NewlineIndex).TrimStartAndEnd()));
+		if (EndingSubtitleText)
+		{
+			EndingSubtitleText->SetText(FText::FromString(FullString.Mid(NewlineIndex + 1).TrimStartAndEnd()));
+			EndingSubtitleText->SetColorAndOpacity(FSlateColor(TextColor));
+		}
+		if (EndingDivider)
+		{
+			EndingDivider->SetBrushColor(FLinearColor(
+				TextColor.R, TextColor.G, TextColor.B, WSUITokens::Color::StrokeDivider.A));
+			EndingDivider->SetVisibility(ESlateVisibility::Visible);
+		}
+	}
+	else
+	{
+		EndingCinematicText->SetText(FullText);
+		if (EndingSubtitleText) EndingSubtitleText->SetText(FText::GetEmpty());
+		if (EndingDivider) EndingDivider->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 void UWhiteoutHUDWidget::PlayUISound(USoundBase* Sound, const float Volume)
@@ -2364,6 +2556,116 @@ void UWhiteoutHUDWidget::PlayUISound(USoundBase* Sound, const float Volume)
 	{
 		UGameplayStatics::PlaySound2D(this, Sound, Volume);
 	}
+}
+
+void UWhiteoutHUDWidget::ShowPanelAnimated(UBorder* Panel, const bool bShow, const float Duration, const bool bScaleWithFade)
+{
+	if (!Panel)
+	{
+		return;
+	}
+	CancelPanelAnimation(Panel);
+	if (bScaleWithFade)
+	{
+		Panel->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+	}
+	if (bShow)
+	{
+		Panel->SetVisibility(ESlateVisibility::Visible);
+		FPanelAnimation Anim;
+		Anim.Panel = Panel;
+		Anim.StartOpacity = 0.0f;
+		Anim.TargetOpacity = 1.0f;
+		Anim.Elapsed = 0.0f;
+		Anim.Duration = FMath::Max(0.01f, Duration);
+		Anim.bCollapseOnComplete = false;
+		Anim.bScaleWithFade = bScaleWithFade;
+		ActivePanelAnimations.Add(Anim);
+		Panel->SetRenderOpacity(0.0f);
+		if (bScaleWithFade)
+		{
+			Panel->SetRenderScale(FVector2D(0.97f));
+		}
+	}
+	else
+	{
+		FPanelAnimation Anim;
+		Anim.Panel = Panel;
+		Anim.StartOpacity = Panel->GetRenderOpacity();
+		Anim.TargetOpacity = 0.0f;
+		Anim.Elapsed = 0.0f;
+		Anim.Duration = FMath::Max(0.01f, Duration);
+		Anim.bCollapseOnComplete = true;
+		Anim.bScaleWithFade = bScaleWithFade;
+		ActivePanelAnimations.Add(Anim);
+	}
+}
+
+void UWhiteoutHUDWidget::TickPanelAnimations(const float DeltaTime)
+{
+	for (int32 i = ActivePanelAnimations.Num() - 1; i >= 0; --i)
+	{
+		FPanelAnimation& Anim = ActivePanelAnimations[i];
+		UBorder* Panel = Anim.Panel.Get();
+		if (!Panel)
+		{
+			ActivePanelAnimations.RemoveAtSwap(i);
+			continue;
+		}
+		Anim.Elapsed += DeltaTime;
+		const float T = FMath::Clamp(Anim.Elapsed / Anim.Duration, 0.0f, 1.0f);
+		const float EasedT = 1.0f - FMath::Pow(1.0f - T, WSUITokens::Anim::EaseOutExponent);
+		const float Opacity = FMath::Lerp(Anim.StartOpacity, Anim.TargetOpacity, EasedT);
+		Panel->SetRenderOpacity(Opacity);
+		if (Anim.bScaleWithFade)
+		{
+			const bool bShowing = Anim.TargetOpacity > 0.5f;
+			const float Scale = bShowing
+				? FMath::Lerp(0.97f, 1.0f, EasedT)
+				: FMath::Lerp(1.0f, 0.97f, EasedT);
+			Panel->SetRenderScale(FVector2D(Scale));
+		}
+		if (T >= 1.0f)
+		{
+			if (Anim.bCollapseOnComplete)
+			{
+				Panel->SetVisibility(ESlateVisibility::Collapsed);
+			}
+			if (Anim.bScaleWithFade)
+			{
+				Panel->SetRenderScale(FVector2D(1.0f));
+			}
+			Panel->SetRenderOpacity(Anim.TargetOpacity);
+			ActivePanelAnimations.RemoveAtSwap(i);
+		}
+	}
+}
+
+void UWhiteoutHUDWidget::CancelPanelAnimation(UBorder* Panel)
+{
+	if (!Panel)
+	{
+		return;
+	}
+	for (int32 i = ActivePanelAnimations.Num() - 1; i >= 0; --i)
+	{
+		if (ActivePanelAnimations[i].Panel.Get() == Panel)
+		{
+			ActivePanelAnimations.RemoveAtSwap(i);
+		}
+	}
+}
+
+void UWhiteoutHUDWidget::ShowPanelInstant(UBorder* Panel, const bool bShow)
+{
+	if (!Panel)
+	{
+		return;
+	}
+	CancelPanelAnimation(Panel);
+	Panel->SetRenderOpacity(1.0f);
+	Panel->SetRenderScale(FVector2D(1.0f));
+	Panel->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 }
 
 void UWhiteoutHUDWidget::PlayHoverSound()
@@ -2436,9 +2738,9 @@ void UWhiteoutHUDWidget::TogglePauseMenu()
 	DismissOpening();
 	if (SettingsBorder)
 	{
-		SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
+		ShowPanelAnimated(SettingsBorder, false, WSUITokens::Anim::Fast);
 	}
-	PauseBorder->SetVisibility(ESlateVisibility::Visible);
+	ShowPanelAnimated(PauseBorder, true, WSUITokens::Anim::Normal);
 	SetLayer(EWSUILayer::Pause);
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
@@ -2453,10 +2755,10 @@ void UWhiteoutHUDWidget::TogglePauseMenu()
 
 void UWhiteoutHUDWidget::ResumeGame()
 {
-	PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
+	ShowPanelAnimated(PauseBorder, false, WSUITokens::Anim::Fast);
 	if (SettingsBorder)
 	{
-		SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
+		ShowPanelAnimated(SettingsBorder, false, WSUITokens::Anim::Fast);
 	}
 	if (PauseHelpText)
 	{
@@ -2476,11 +2778,11 @@ void UWhiteoutHUDWidget::OpenSettings()
 	RefreshSettingsUI();
 	if (PauseBorder)
 	{
-		PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
+		ShowPanelAnimated(PauseBorder, false, WSUITokens::Anim::Fast);
 	}
 	if (SettingsBorder)
 	{
-		SettingsBorder->SetVisibility(ESlateVisibility::Visible);
+		ShowPanelAnimated(SettingsBorder, true, WSUITokens::Anim::Normal);
 	}
 	SetLayer(EWSUILayer::Settings);
 	if (APlayerController* PlayerController = GetOwningPlayer())
@@ -2497,11 +2799,11 @@ void UWhiteoutHUDWidget::CloseSettings()
 {
 	if (SettingsBorder)
 	{
-		SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
+		ShowPanelAnimated(SettingsBorder, false, WSUITokens::Anim::Fast);
 	}
 	if (PauseBorder)
 	{
-		PauseBorder->SetVisibility(ESlateVisibility::Visible);
+		ShowPanelAnimated(PauseBorder, true, WSUITokens::Anim::Fast);
 	}
 	SetLayer(EWSUILayer::Pause);
 	if (APlayerController* PlayerController = GetOwningPlayer())

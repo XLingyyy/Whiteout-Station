@@ -40,6 +40,18 @@ enum class EWSDialogueStage : uint8
 	Reply
 };
 
+// 轻量 tick 驱动的面板过渡动效
+struct FPanelAnimation
+{
+	TWeakObjectPtr<UBorder> Panel;
+	float StartOpacity = 0.0f;
+	float TargetOpacity = 1.0f;
+	float Elapsed = 0.0f;
+	float Duration = 0.28f;
+	bool bCollapseOnComplete = false;
+	bool bScaleWithFade = true;
+};
+
 UCLASS()
 class WHITEOUTSTATION_API UWhiteoutHUDWidget : public UUserWidget
 {
@@ -244,6 +256,15 @@ private:
 	TObjectPtr<UTextBlock> OpeningText;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UBorder> OpeningDivider;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> OpeningSubtitleText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> OpeningFooterText;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBorder> CrisisBorder;
 
 	UPROPERTY(Transient)
@@ -254,6 +275,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> EndingCinematicText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> EndingDivider;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> EndingSubtitleText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> ResultsBorder;
@@ -394,6 +421,9 @@ private:
 	FString InteractionFocusCaptureName;
 	FWSGameState PresentationCaptureState;
 
+	// 动效系统
+	TArray<FPanelAnimation> ActivePanelAnimations;
+
 	void BuildWidgetTree();
 	void InitializeUIFontFamily();
 	void UpdateFromState(const FWSGameState& State);
@@ -412,6 +442,10 @@ private:
 	void BeginEndingCinematic(EWSEndingType Ending);
 	void ApplyEndingCinematic(EWSEndingType Ending);
 	void PlayUISound(USoundBase* Sound, float Volume = 1.0f);
+	void ShowPanelAnimated(UBorder* Panel, bool bShow, float Duration = 0.28f, bool bScaleWithFade = true);
+	void TickPanelAnimations(float DeltaTime);
+	void CancelPanelAnimation(UBorder* Panel);
+	void ShowPanelInstant(UBorder* Panel, bool bShow);
 	UTextBlock* MakeText(const FName Name, int32 Size, const FLinearColor& Color, bool bWrap = true);
 	UBorder* MakePanel(UCanvasPanel* Canvas, const FName Name, const FAnchors& Anchors, const FMargin& Offsets, const FLinearColor& Color);
 	UBorder* MakeGlassPanel(UCanvasPanel* Canvas, FName Name, const FAnchors& Anchors,
@@ -426,6 +460,7 @@ private:
 		const FName Name,
 		const FAnchors& Anchors,
 		const FMargin& Offsets);
+	UProgressBar* MakeProgressBar(const FName Name, const FLinearColor& FillColor, float Height = 7.0f);
 	FSlateFontInfo UIFont(int32 Size, bool bBold = false) const;
 	static FString APCells(int32 Remaining);
 	static FString ClockForAP(int32 Remaining);
