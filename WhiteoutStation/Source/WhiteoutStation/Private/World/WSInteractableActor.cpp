@@ -38,7 +38,7 @@ AWSInteractableActor::AWSInteractableActor()
 	CharacterMesh->SetVisibility(false);
 	CharacterMesh->SetCastShadow(true);
 	InjuryWrap = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("InjuryWrap"));
-	InjuryWrap->SetupAttachment(CharacterMesh, TEXT("hand_r"));
+	InjuryWrap->SetupAttachment(SceneRoot);
 	InjuryWrap->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	InjuryWrap->SetVisibility(false);
 
@@ -53,6 +53,33 @@ AWSInteractableActor::AWSInteractableActor()
 		HeadMesh->SetStaticMesh(SphereMesh.Object);
 	}
 	SetActorScale3D(FVector(0.55f, 0.55f, 0.9f));
+}
+
+void AWSInteractableActor::BeginPlay()
+{
+	Super::BeginPlay();
+
+	const bool bShouldInitializeCharacter = ActionId == TEXT("talk_gu_heng") || ActionId == TEXT("talk_ye_cheng");
+	if (!bShouldInitializeCharacter || bCharacterPresentation)
+	{
+		return;
+	}
+
+	// Editable level actors already serialize their chosen meshes and materials.
+	// Restore only the runtime behavior here so those instance-level visual edits survive PIE.
+	bCharacterPresentation = true;
+	SetActorTickEnabled(true);
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterStateChanged);
+			StateSubsystem->OnActionCommitted.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterActionCommitted);
+			ApplyCharacterState(StateSubsystem->GetStateSnapshot());
+			return;
+		}
+	}
+	PlayCharacterAnimation(IdleAnimation);
 }
 
 void AWSInteractableActor::Tick(const float DeltaSeconds)
@@ -248,6 +275,10 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 		? FVector(0.0f, -11.6f, 2.7f)
 		: FVector(0.0f, -7.1f, 1.6f));
 	CharacterMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	InjuryWrap->AttachToComponent(
+		CharacterMesh,
+		FAttachmentTransformRules::KeepRelativeTransform,
+		TEXT("hand_r"));
 
 	const FString BlueprintPath = FString::Printf(TEXT("%s/ABP_%s.ABP_%s"), RootPath, *CharacterToken, *CharacterToken);
 	if (const UAnimBlueprint* AnimationBlueprint = LoadObject<UAnimBlueprint>(nullptr, *BlueprintPath))
@@ -287,16 +318,17 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 		}
 	}
 
-	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	if (UGameInstance* GameInstance = GetGameInstance())
 	{
-		StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterStateChanged);
-		StateSubsystem->OnActionCommitted.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterActionCommitted);
-		ApplyCharacterState(StateSubsystem->GetStateSnapshot());
+		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterStateChanged);
+			StateSubsystem->OnActionCommitted.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterActionCommitted);
+			ApplyCharacterState(StateSubsystem->GetStateSnapshot());
+			return;
+		}
 	}
-	else
-	{
-		PlayCharacterAnimation(IdleAnimation);
-	}
+	PlayCharacterAnimation(IdleAnimation);
 }
 
 void AWSInteractableActor::PlayCharacterAnimation(UAnimSequence* Animation, const bool bLoop)

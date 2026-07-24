@@ -33,6 +33,8 @@ Windows Shipping 版本位于 `Builds/WhiteoutStation-v0.4-Win64/Windows/Whiteou
 
 UE 自动化回归可在编辑器 Session Frontend 中运行 `WhiteoutStation` 测试集，也可用命令行运行同名测试集。
 
+关卡中的站体、陈设、灯光、NPC 与交互点均可在编辑器里直接选择、拖动和替换资产，操作说明见 `docs/LEVEL_EDITING.md`。
+
 运行态回归可额外传入 `-WhiteoutAutoRoute=medical|technical|quick -WhiteoutAutoCapture`，自动走完指定路线、结算、导出事件日志并保存 `Saved/WhiteoutRuntimeSmoke.png`。
 
 对话默认使用完全离线的确定性预设。NPC 先开口，玩家显式选择询问、质疑、承诺或安抚，并可输入最多 280 字补充说法。传入 `-WhiteoutAgentEndpoint=http://127.0.0.1:8765` 可连接兼容项目 JSON 协议的表达服务；模型只能改写台词，意图、事实权限和全部游戏状态仍由 C++ 决定。开发烟测服务可运行 `python -X utf8 Tools/Agents/mock_agent_server.py`。

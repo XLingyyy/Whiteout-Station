@@ -19,6 +19,7 @@ class WHITEOUTSTATION_API AWSInteractableActor : public AActor
 
 public:
 	AWSInteractableActor();
+	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
@@ -68,16 +69,16 @@ public:
 		FName PromiseCondition = NAME_None);
 
 private:
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character")
 	TObjectPtr<UAnimSequence> IdleAnimation;
 
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character")
 	TObjectPtr<UAnimSequence> GestureAnimation;
 
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character")
 	TObjectPtr<UAnimSequence> GuardedAnimation;
 
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character")
 	TObjectPtr<UAnimSequence> WorkAnimation;
 
 	UPROPERTY()

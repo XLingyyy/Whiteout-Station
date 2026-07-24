@@ -14,6 +14,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "Engine/TextRenderActor.h"
+#include "EngineUtils.h"
 #include "Components/TextRenderComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/CommandLine.h"
@@ -27,6 +28,18 @@
 #include "World/WSInteractableActor.h"
 #include "World/WhiteoutSnowField.h"
 
+#if WITH_EDITOR
+#include "ScopedTransaction.h"
+#endif
+
+namespace
+{
+	const FName EditableStationTag(TEXT("WSEditableStation"));
+	const FName ExteriorLightTag(TEXT("WSExteriorLight"));
+	const FName EmergencyLightTag(TEXT("WSEmergencyLight"));
+	const FName GeneratorLightTag(TEXT("WSGeneratorPowered"));
+}
+
 AWhiteoutStationBuilder::AWhiteoutStationBuilder()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -35,12 +48,21 @@ AWhiteoutStationBuilder::AWhiteoutStationBuilder()
 void AWhiteoutStationBuilder::BeginPlay()
 {
 	Super::BeginPlay();
-	BuildStation();
+	const bool bUsingEditableLayout = RegisterEditableStationActors();
+	if (!bUsingEditableLayout)
+	{
+		BuildStation();
+	}
+	else if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutSceneAudit")))
+	{
+		GetWorldTimerManager().SetTimer(SceneAuditTimer, this, &AWhiteoutStationBuilder::AuditStationLayout, 1.0f, false);
+	}
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		StateSubsystem->OnActionCommitted.AddDynamic(this, &AWhiteoutStationBuilder::HandleActionCommitted);
 		StateSubsystem->OnStateChanged.AddDynamic(this, &AWhiteoutStationBuilder::HandleStateChanged);
 		const FWSGameState State = StateSubsystem->GetStateSnapshot();
+		SetLightingPreviewState(false, State.Tasks.GeneratorProgress >= 2);
 		if (State.bMidCrisisTriggered)
 		{
 			ApplyCrisisLighting();
@@ -52,19 +74,195 @@ void AWhiteoutStationBuilder::BeginPlay()
 	}
 }
 
+void AWhiteoutStationBuilder::GenerateEditableStationLayout()
+{
+#if WITH_EDITOR
+	UWorld* World = GetWorld();
+	if (!World || World->WorldType != EWorldType::Editor)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("WhiteoutStation: editable layout can only be generated in an editor level"));
+		return;
+	}
+
+	const FScopedTransaction Transaction(
+		NSLOCTEXT("WhiteoutStation", "GenerateEditableLayout", "Reset Whiteout Station Editable Layout"));
+	Modify();
+	ClearEditableStationLayoutInternal();
+	bBuildingEditableLayout = true;
+	BuildStation();
+	bBuildingEditableLayout = false;
+	EditableStationActorCount = GetEditableStationActorCount();
+	if (GetLevel())
+	{
+		GetLevel()->MarkPackageDirty();
+	}
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: generated %d editable level actors"), EditableStationActorCount);
+#endif
+}
+
+void AWhiteoutStationBuilder::ClearEditableStationLayout()
+{
+#if WITH_EDITOR
+	UWorld* World = GetWorld();
+	if (!World || World->WorldType != EWorldType::Editor)
+	{
+		return;
+	}
+
+	const FScopedTransaction Transaction(
+		NSLOCTEXT("WhiteoutStation", "ClearEditableLayout", "Clear Whiteout Station Editable Layout"));
+	Modify();
+	ClearEditableStationLayoutInternal();
+	if (GetLevel())
+	{
+		GetLevel()->MarkPackageDirty();
+	}
+#endif
+}
+
+int32 AWhiteoutStationBuilder::GetEditableStationActorCount() const
+{
+	int32 Count = 0;
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (*It != this && It->ActorHasTag(EditableStationTag))
+			{
+				++Count;
+			}
+		}
+	}
+	return Count;
+}
+
+void AWhiteoutStationBuilder::ResetRuntimeActorCache()
+{
+	RuntimeLights.Reset();
+	RuntimeEmergencyLights.Reset();
+	RuntimeGeneratorLights.Reset();
+	RuntimeBaseLightIntensities.Reset();
+	RuntimeBaseLightColors.Reset();
+	RuntimeAssemblyMeshes.Reset();
+	RuntimeHotspots.Reset();
+	ExteriorLight = nullptr;
+	RuntimeBaseExteriorIntensity = 3.0f;
+	RuntimeBaseExteriorColor = FLinearColor(0.58f, 0.7f, 0.9f);
+}
+
+bool AWhiteoutStationBuilder::RegisterEditableStationActors()
+{
+	ResetRuntimeActorCache();
+	EditableStationActorCount = 0;
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (!Actor || Actor == this || !Actor->ActorHasTag(EditableStationTag))
+		{
+			continue;
+		}
+
+		++EditableStationActorCount;
+		if (ADirectionalLight* DirectionalLight = Cast<ADirectionalLight>(Actor);
+			DirectionalLight && DirectionalLight->ActorHasTag(ExteriorLightTag))
+		{
+			ExteriorLight = Cast<UDirectionalLightComponent>(DirectionalLight->GetLightComponent());
+			if (ExteriorLight)
+			{
+				RuntimeBaseExteriorIntensity = ExteriorLight->Intensity;
+				RuntimeBaseExteriorColor = ExteriorLight->GetLightColor();
+			}
+		}
+		if (APointLight* PointLight = Cast<APointLight>(Actor);
+			PointLight && PointLight->ActorHasTag(TEXT("WSRuntimeLight")))
+		{
+			if (UPointLightComponent* Component = Cast<UPointLightComponent>(PointLight->GetLightComponent()))
+			{
+				RuntimeLights.Add(Component);
+				RuntimeEmergencyLights.Add(PointLight->ActorHasTag(EmergencyLightTag));
+				RuntimeGeneratorLights.Add(PointLight->ActorHasTag(GeneratorLightTag));
+				RuntimeBaseLightIntensities.Add(Component->Intensity);
+				RuntimeBaseLightColors.Add(Component->GetLightColor());
+			}
+		}
+		if (AStaticMeshActor* MeshActor = Cast<AStaticMeshActor>(Actor);
+			MeshActor && MeshActor->ActorHasTag(TEXT("WSRuntimePresentation")))
+		{
+			RuntimeAssemblyMeshes.Add(MeshActor);
+		}
+		if (AWSInteractableActor* Hotspot = Cast<AWSInteractableActor>(Actor);
+			Hotspot && Hotspot->ActorHasTag(TEXT("WSRuntimeHotspot")))
+		{
+			RuntimeHotspots.Add(Hotspot);
+		}
+	}
+
+	if (EditableStationActorCount > 0)
+	{
+		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: using %d editable actors saved in the level"), EditableStationActorCount);
+		return true;
+	}
+	return false;
+}
+
+void AWhiteoutStationBuilder::ClearEditableStationLayoutInternal()
+{
+#if WITH_EDITOR
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	TArray<AActor*> ActorsToDestroy;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (Actor && Actor != this && Actor->ActorHasTag(EditableStationTag))
+		{
+			ActorsToDestroy.Add(Actor);
+		}
+	}
+	for (AActor* Actor : ActorsToDestroy)
+	{
+		Actor->Modify();
+		World->EditorDestroyActor(Actor, true);
+	}
+	EditableStationActorCount = 0;
+	ResetRuntimeActorCache();
+#endif
+}
+
+void AWhiteoutStationBuilder::MarkEditableStationActor(AActor* Actor, const TCHAR* Folder)
+{
+#if WITH_EDITOR
+	if (!bBuildingEditableLayout || !Actor)
+	{
+		return;
+	}
+	Actor->SetFlags(RF_Transactional);
+	Actor->Modify();
+	Actor->Tags.AddUnique(EditableStationTag);
+	Actor->SetFolderPath(FName(*FString::Printf(TEXT("WS Editable Station/%s"), Folder)));
+#endif
+}
+
 void AWhiteoutStationBuilder::BuildStation()
 {
+	ResetRuntimeActorCache();
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: building five-zone station and 13 action hotspots"));
 	ADirectionalLight* DirectionalLight = GetWorld()->SpawnActor<ADirectionalLight>(FVector(600, 400, 900), FRotator(-52, -28, 0));
 	if (DirectionalLight)
 	{
+		DirectionalLight->Tags.AddUnique(ExteriorLightTag);
 		ExteriorLight = CastChecked<UDirectionalLightComponent>(DirectionalLight->GetLightComponent());
-		ExteriorLight->SetIntensity(3.0f);
-		ExteriorLight->SetLightColor(FLinearColor(0.58f, 0.7f, 0.9f));
+		ExteriorLight->SetIntensity(RuntimeBaseExteriorIntensity);
+		ExteriorLight->SetLightColor(RuntimeBaseExteriorColor);
 		ExteriorLight->SetMobility(EComponentMobility::Movable);
 		ExteriorLight->SetAtmosphereSunLight(true);
+		MarkEditableStationActor(DirectionalLight, TEXT("Lighting"));
 	}
-	GetWorld()->SpawnActor<ASkyAtmosphere>(FVector::ZeroVector, FRotator::ZeroRotator);
+	ASkyAtmosphere* SkyAtmosphere = GetWorld()->SpawnActor<ASkyAtmosphere>(FVector::ZeroVector, FRotator::ZeroRotator);
+	MarkEditableStationActor(SkyAtmosphere, TEXT("Lighting"));
 	AExponentialHeightFog* HeightFog = GetWorld()->SpawnActor<AExponentialHeightFog>(FVector(0, 0, -80), FRotator::ZeroRotator);
 	if (HeightFog)
 	{
@@ -73,6 +271,7 @@ void AWhiteoutStationBuilder::BuildStation()
 		HeightFog->GetComponent()->SetFogInscatteringColor(FLinearColor(0.24f, 0.34f, 0.48f));
 		HeightFog->GetComponent()->SetVolumetricFog(true);
 		HeightFog->GetComponent()->SetVolumetricFogExtinctionScale(0.65f);
+		MarkEditableStationActor(HeightFog, TEXT("Lighting"));
 	}
 	ASkyLight* SkyLight = GetWorld()->SpawnActor<ASkyLight>(FVector(600, 400, 500), FRotator::ZeroRotator);
 	if (SkyLight)
@@ -81,6 +280,7 @@ void AWhiteoutStationBuilder::BuildStation()
 		SkyLight->GetLightComponent()->SetLightColor(FLinearColor(0.35f, 0.48f, 0.7f));
 		SkyLight->GetLightComponent()->SetMobility(EComponentMobility::Movable);
 		SkyLight->GetLightComponent()->RecaptureSky();
+		MarkEditableStationActor(SkyLight, TEXT("Lighting"));
 	}
 	if (APostProcessVolume* PostProcess = GetWorld()->SpawnActor<APostProcessVolume>())
 	{
@@ -99,8 +299,10 @@ void AWhiteoutStationBuilder::BuildStation()
 		PostProcess->Settings.BloomIntensity = 0.16f;
 		PostProcess->Settings.bOverride_VignetteIntensity = true;
 		PostProcess->Settings.VignetteIntensity = 0.22f;
+		MarkEditableStationActor(PostProcess, TEXT("Lighting"));
 	}
-	GetWorld()->SpawnActor<AWhiteoutSnowField>(FVector::ZeroVector, FRotator::ZeroRotator);
+	AWhiteoutSnowField* SnowField = GetWorld()->SpawnActor<AWhiteoutSnowField>(FVector::ZeroVector, FRotator::ZeroRotator);
+	MarkEditableStationActor(SnowField, TEXT("VFX"));
 	const FLinearColor Control(0.15f, 0.55f, 0.9f);
 	const FLinearColor Repair(0.95f, 0.36f, 0.12f);
 	const FLinearColor Medical(0.12f, 0.75f, 0.55f);
@@ -223,6 +425,9 @@ void AWhiteoutStationBuilder::SpawnAssemblyMesh(const FWSStationMeshPlacement& P
 		}
 	}
 	RuntimeAssemblyMeshes.Add(MeshActor);
+	MarkEditableStationActor(
+		MeshActor,
+		*FString::Printf(TEXT("Presentation/%s"), *Placement.Zone.ToString()));
 }
 
 void AWhiteoutStationBuilder::SpawnAssemblyLight(const FWSStationLightPlacement& Placement)
@@ -294,6 +499,7 @@ void AWhiteoutStationBuilder::SpawnBlock(
 		DynamicMaterial->SetVectorParameterValue(TEXT("Color"), Color);
 		Block->GetStaticMeshComponent()->SetMaterial(0, DynamicMaterial);
 	}
+	MarkEditableStationActor(Block, TEXT("Geometry"));
 }
 
 void AWhiteoutStationBuilder::SpawnSign(
@@ -315,6 +521,7 @@ void AWhiteoutStationBuilder::SpawnSign(
 	Sign->GetTextRender()->SetTextRenderColor(Color.ToFColor(true));
 	Sign->GetTextRender()->SetHorizontalAlignment(EHorizTextAligment::EHTA_Center);
 	Sign->GetTextRender()->SetWorldSize(48.0f);
+	MarkEditableStationActor(Sign, TEXT("Signs"));
 }
 
 void AWhiteoutStationBuilder::SpawnPointLight(
@@ -337,12 +544,23 @@ void AWhiteoutStationBuilder::SpawnPointLight(
 #endif
 	PointLight->Tags.Add(TEXT("WSRuntimeLight"));
 	PointLight->Tags.Add(Zone);
+	if (bEmergencyRed)
+	{
+		PointLight->Tags.AddUnique(EmergencyLightTag);
+	}
+	if (bGeneratorPowered)
+	{
+		PointLight->Tags.AddUnique(GeneratorLightTag);
+	}
 	UPointLightComponent* Component = CastChecked<UPointLightComponent>(PointLight->GetLightComponent());
 	Component->SetMobility(EComponentMobility::Movable);
-	bool bGeneratorOnline = false;
-	if (const UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	bool bGeneratorOnline = bBuildingEditableLayout;
+	if (const UGameInstance* GameInstance = GetGameInstance())
 	{
-		bGeneratorOnline = StateSubsystem->GetStateSnapshot().Tasks.GeneratorProgress >= 2;
+		if (const UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			bGeneratorOnline = StateSubsystem->GetStateSnapshot().Tasks.GeneratorProgress >= 2;
+		}
 	}
 	Component->SetIntensity(bGeneratorPowered && !bGeneratorOnline ? Intensity * 0.22f : Intensity);
 	Component->SetAttenuationRadius(Radius);
@@ -352,6 +570,7 @@ void AWhiteoutStationBuilder::SpawnPointLight(
 	RuntimeGeneratorLights.Add(bGeneratorPowered);
 	RuntimeBaseLightIntensities.Add(Intensity);
 	RuntimeBaseLightColors.Add(Color);
+	MarkEditableStationActor(PointLight, TEXT("Lighting"));
 }
 
 void AWhiteoutStationBuilder::HandleActionCommitted(const FWSActionResult& Result)
@@ -526,8 +745,8 @@ void AWhiteoutStationBuilder::SetLightingPreviewState(const bool bCrisis, const 
 	}
 	if (ExteriorLight)
 	{
-		ExteriorLight->SetIntensity(3.0f);
-		ExteriorLight->SetLightColor(FLinearColor(0.58f, 0.7f, 0.9f));
+		ExteriorLight->SetIntensity(RuntimeBaseExteriorIntensity);
+		ExteriorLight->SetLightColor(RuntimeBaseExteriorColor);
 	}
 	for (int32 Index = 0; Index < RuntimeLights.Num(); ++Index)
 	{
@@ -571,6 +790,7 @@ AWSInteractableActor* AWhiteoutStationBuilder::SpawnHotspot(
 		}
 		Hotspot->Tags.Add(TEXT("WSRuntimeHotspot"));
 		RuntimeHotspots.Add(Hotspot);
+		MarkEditableStationActor(Hotspot, TEXT("Hotspots"));
 	}
 	return Hotspot;
 }
