@@ -16,31 +16,31 @@ namespace WSUITokens
 	// =========================================================================
 	namespace Color
 	{
-		// 深面板：ESC、证据板主面板
-		inline const FLinearColor SurfaceDeep(0.020f, 0.035f, 0.050f, 0.88f);
-		// 标准面板：HUD、人物卡、轮盘卡
-		inline const FLinearColor SurfacePanel(0.035f, 0.071f, 0.102f, 0.78f);
+		// 深面板：ESC、证据板主面板 — 中性黑
+		inline const FLinearColor SurfaceDeep(0.012f, 0.012f, 0.012f, 0.88f);
+		// 标准面板：HUD、人物卡、轮盘卡 — 中性黑
+		inline const FLinearColor SurfacePanel(0.020f, 0.020f, 0.020f, 0.78f);
 		// 紧凑表面：局部信息背衬、底部提示
-		inline const FLinearColor SurfaceCompact(0.047f, 0.082f, 0.114f, 0.68f);
+		inline const FLinearColor SurfaceCompact(0.028f, 0.028f, 0.028f, 0.68f);
 		// 悬停表面：鼠标悬停、键盘焦点
-		inline const FLinearColor SurfaceHover(0.090f, 0.133f, 0.173f, 0.82f);
+		inline const FLinearColor SurfaceHover(0.055f, 0.055f, 0.055f, 0.82f);
 		// 对话条深底
-		inline const FLinearColor SurfaceDialogue(0.020f, 0.035f, 0.050f, 0.94f);
+		inline const FLinearColor SurfaceDialogue(0.015f, 0.015f, 0.015f, 0.94f);
 		// 结算/全屏暗底
-		inline const FLinearColor SurfaceFullscreen(0.004f, 0.014f, 0.026f, 1.0f);
+		inline const FLinearColor SurfaceFullscreen(0.004f, 0.004f, 0.004f, 1.0f);
 		// 预览面板底
-		inline const FLinearColor SurfacePreview(0.008f, 0.025f, 0.045f, 0.985f);
+		inline const FLinearColor SurfacePreview(0.008f, 0.008f, 0.008f, 0.985f);
 		// 证据过滤/详情子面板
-		inline const FLinearColor SurfaceFilter(0.025f, 0.050f, 0.070f, 0.78f);
+		inline const FLinearColor SurfaceFilter(0.020f, 0.020f, 0.020f, 0.78f);
 		// 对话输入框底
-		inline const FLinearColor SurfaceInput(0.025f, 0.055f, 0.075f, 0.98f);
-		inline const FLinearColor SurfaceInputFocused(0.045f, 0.095f, 0.125f, 0.98f);
+		inline const FLinearColor SurfaceInput(0.020f, 0.020f, 0.020f, 0.98f);
+		inline const FLinearColor SurfaceInputFocused(0.040f, 0.040f, 0.040f, 0.98f);
 
-		// 描边
-		inline const FLinearColor StrokeHairline(0.863f, 0.906f, 0.933f, 0.12f);
-		inline const FLinearColor StrokeHairlineSubtle(0.863f, 0.906f, 0.933f, 0.06f);
-		inline const FLinearColor StrokeFocus(0.953f, 0.961f, 0.969f, 0.92f);
-		inline const FLinearColor StrokeDivider(0.863f, 0.906f, 0.933f, 0.10f);
+		// 描边 — 中性白
+		inline const FLinearColor StrokeHairline(0.86f, 0.86f, 0.86f, 0.12f);
+		inline const FLinearColor StrokeHairlineSubtle(0.86f, 0.86f, 0.86f, 0.06f);
+		inline const FLinearColor StrokeFocus(0.95f, 0.95f, 0.95f, 0.92f);
+		inline const FLinearColor StrokeDivider(0.80f, 0.80f, 0.80f, 0.10f);
 
 		// 文字
 		inline const FLinearColor TextPrimary(0.953f, 0.961f, 0.969f, 1.0f);
@@ -65,20 +65,20 @@ namespace WSUITokens
 		inline const FLinearColor TrustBar(0.491f, 0.714f, 0.839f, 1.0f);
 
 		// 进度条背景槽
-		inline const FLinearColor ProgressBarBackground(0.025f, 0.050f, 0.070f, 0.65f);
+		inline const FLinearColor ProgressBarBackground(0.025f, 0.025f, 0.025f, 0.65f);
 
 		// 按钮状态
-		inline const FLinearColor ButtonNormal(0.055f, 0.10f, 0.14f, 0.55f);
-		inline const FLinearColor ButtonHover(0.090f, 0.133f, 0.173f, 0.85f);
+		inline const FLinearColor ButtonNormal(0.030f, 0.030f, 0.030f, 0.55f);
+		inline const FLinearColor ButtonHover(0.075f, 0.075f, 0.075f, 0.85f);
 		inline const FLinearColor ButtonPressed(0.949f, 0.549f, 0.157f, 0.25f);
-		inline const FLinearColor ButtonDisabled(0.055f, 0.10f, 0.14f, 0.35f);
+		inline const FLinearColor ButtonDisabled(0.030f, 0.030f, 0.030f, 0.35f);
 
 		// 对话意图按钮底
-		inline const FLinearColor DialogueChoiceNormal(0.045f, 0.105f, 0.145f, 0.96f);
-		inline const FLinearColor DialogueChoiceHover(0.09f, 0.16f, 0.22f, 0.96f);
+		inline const FLinearColor DialogueChoiceNormal(0.025f, 0.025f, 0.025f, 0.96f);
+		inline const FLinearColor DialogueChoiceHover(0.070f, 0.070f, 0.070f, 0.96f);
 
 		// 滑块
-		inline const FLinearColor SliderBar(0.09f, 0.13f, 0.17f, 1.0f);
+		inline const FLinearColor SliderBar(0.05f, 0.05f, 0.05f, 1.0f);
 		inline const FLinearColor SliderHandle(0.491f, 0.714f, 0.839f, 1.0f);
 	}
 

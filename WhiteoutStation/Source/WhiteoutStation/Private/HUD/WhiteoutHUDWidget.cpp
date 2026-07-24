@@ -376,7 +376,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	{
 		UImage* FocusBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("FocusBrush"));
 		FocusBrush->SetBrushFromTexture(InkBrushTexture, true);
-		FocusBrush->SetColorAndOpacity(FLinearColor(0.02f, 0.03f, 0.05f, 0.92f));
+		FocusBrush->SetColorAndOpacity(FLinearColor(0.015f, 0.015f, 0.015f, 0.92f));
 		FocusOverlay->AddChildToOverlay(FocusBrush);
 	}
 	UVerticalBox* FocusContent = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FocusContent"));
@@ -595,7 +595,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	DialogueBarBox->AddChildToVerticalBox(DialogueReplyBorder);
 	DialogueReplyBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	UBorder* NPCCard = MakeGlassPanel(DialogueCanvas, TEXT("DialogueNPCCard"), FAnchors(0.76f, 0.06f, 0.97f, 0.28f), FMargin(0), 12.0f, FLinearColor(0.035f, 0.071f, 0.102f, 0.94f));
+	UBorder* NPCCard = MakeGlassPanel(DialogueCanvas, TEXT("DialogueNPCCard"), FAnchors(0.76f, 0.06f, 0.97f, 0.28f), FMargin(0), 12.0f, FLinearColor(0.020f, 0.020f, 0.020f, 0.94f));
 	SetGlassPanelPadding(NPCCard, FMargin(10));
 	UVerticalBox* NPCCardBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueNPCCardBox"));
 	SetGlassPanelContent(NPCCard, NPCCardBox);
@@ -646,7 +646,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	ResultsBorder->SetContent(ResultsScroll);
 	ResultsBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	ComponentGalleryBorder = MakePanel(Canvas, TEXT("ComponentGalleryPanel"), FAnchors(0.015f, 0.015f, 0.985f, 0.985f), FMargin(0), FLinearColor(0.004f, 0.014f, 0.026f, 0.998f));
+	ComponentGalleryBorder = MakePanel(Canvas, TEXT("ComponentGalleryPanel"), FAnchors(0.015f, 0.015f, 0.985f, 0.985f), FMargin(0), FLinearColor(0.004f, 0.004f, 0.004f, 0.998f));
 	UVerticalBox* GalleryBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ComponentGalleryBox"));
 	ComponentGalleryBorder->SetContent(GalleryBox);
 	UTextBlock* GalleryTitle = MakeText(TEXT("GalleryTitle"), 30, Cyan);
@@ -704,7 +704,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	{
 		UImage* ToastBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("ToastBrush"));
 		ToastBrush->SetBrushFromTexture(InkBrushTexture, true);
-		ToastBrush->SetColorAndOpacity(FLinearColor(0.02f, 0.03f, 0.05f, 0.92f));
+		ToastBrush->SetColorAndOpacity(FLinearColor(0.015f, 0.015f, 0.015f, 0.92f));
 		ToastOverlay->AddChildToOverlay(ToastBrush);
 	}
 	ToastText = MakeText(TEXT("ActionToastText"), 17, Body, false);
@@ -715,7 +715,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	ToastBorder->SetContent(ToastOverlay);
 	ToastBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	EndingCinematicBorder = MakePanel(Canvas, TEXT("EndingCinematicPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.004f, 0.012f, 0.022f, 0.94f));
+	EndingCinematicBorder = MakePanel(Canvas, TEXT("EndingCinematicPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.004f, 0.004f, 0.006f, 0.94f));
 	EndingCinematicBorder->SetPadding(FMargin(0));
 	{
 		UOverlay* EndingOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("EndingOverlay"));
@@ -723,7 +723,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		{
 			UImage* EndingBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("EndingBrush"));
 			EndingBrush->SetBrushFromTexture(InkBrushTexture, true);
-			EndingBrush->SetColorAndOpacity(FLinearColor(0.008f, 0.012f, 0.022f, 0.6f));
+			EndingBrush->SetColorAndOpacity(FLinearColor(0.006f, 0.006f, 0.008f, 0.6f));
 			EndingOverlay->AddChildToOverlay(EndingBrush);
 		}
 		UVerticalBox* EndingBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("EndingBox"));
@@ -755,7 +755,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	CrisisBorder->SetContent(CrisisText);
 	CrisisBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	OpeningBorder = MakePanel(Canvas, TEXT("OpeningPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.003f, 0.010f, 0.020f, 0.96f));
+	OpeningBorder = MakePanel(Canvas, TEXT("OpeningPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.003f, 0.003f, 0.005f, 0.96f));
 	OpeningBorder->SetPadding(FMargin(0));
 	{
 		UOverlay* OpeningOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("OpeningOverlay"));
@@ -763,7 +763,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		{
 			UImage* OpeningBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("OpeningBrush"));
 			OpeningBrush->SetBrushFromTexture(InkBrushTexture, true);
-			OpeningBrush->SetColorAndOpacity(FLinearColor(0.01f, 0.015f, 0.025f, 0.55f));
+			OpeningBrush->SetColorAndOpacity(FLinearColor(0.008f, 0.008f, 0.012f, 0.55f));
 			OpeningOverlay->AddChildToOverlay(OpeningBrush);
 		}
 		UVerticalBox* OpeningBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("OpeningBox"));
@@ -2369,7 +2369,7 @@ void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
 	};
 	if (Stage == 0)
 	{
-		OpeningBorder->SetBrushColor(FLinearColor(0.002f, 0.008f, 0.016f, 0.985f));
+		OpeningBorder->SetBrushColor(FLinearColor(0.002f, 0.002f, 0.004f, 0.985f));
 		OpeningText->SetFont(UIFont(42, true));
 		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
 		FText Title, Subtitle, Footer;
@@ -2386,7 +2386,7 @@ void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
 	}
 	else if (Stage == 1)
 	{
-		OpeningBorder->SetBrushColor(FLinearColor(0.002f, 0.012f, 0.024f, 0.34f));
+		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.003f, 0.005f, 0.34f));
 		OpeningText->SetFont(UIFont(31, true));
 		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextCinematicWarm));
 		FText Title, Subtitle, Footer;
@@ -2408,7 +2408,7 @@ void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
 	}
 	else if (Stage == 2)
 	{
-		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.010f, 0.020f, 0.88f));
+		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.003f, 0.005f, 0.88f));
 		OpeningText->SetFont(UIFont(29, true));
 		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
 		FText Title, Subtitle, Footer;
@@ -2430,7 +2430,7 @@ void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
 	}
 	else
 	{
-		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.010f, 0.020f, 0.91f));
+		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.003f, 0.005f, 0.91f));
 		OpeningText->SetFont(UIFont(27, true));
 		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::AccentInfo));
 		FText Title, Subtitle, Footer;
@@ -2466,7 +2466,7 @@ void UWhiteoutHUDWidget::ApplyCrisisStage(const int32 Stage)
 	}
 	else if (Stage == 1)
 	{
-		CrisisBorder->SetBrushColor(FLinearColor(0.015f, 0.018f, 0.028f, 0.92f));
+		CrisisBorder->SetBrushColor(FLinearColor(0.012f, 0.012f, 0.014f, 0.92f));
 		CrisisText->SetText(FWSPresentationText::UI(TEXT("ui_crisis_battery_offline"), TEXT("13:15｜备用电池离线")));
 	}
 	else

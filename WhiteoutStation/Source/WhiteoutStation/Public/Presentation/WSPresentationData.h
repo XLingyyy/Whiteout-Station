@@ -7,6 +7,9 @@
 
 class UMaterialInterface;
 class UStaticMesh;
+class USkeletalMesh;
+class UAnimSequence;
+class UAnimBlueprint;
 
 USTRUCT(BlueprintType)
 struct FWSStationMeshPlacement
@@ -132,4 +135,97 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rejection Copy")
 	TMap<EWSReasonCode, FWSReasonPresentation> Reasons;
+};
+
+// ============================================================================
+// 角色资产表 —— 改一个数据资产即可换角色，无需改 C++
+// 在编辑器里 Content Browser 右键 → Miscellaneous → Data Asset → 选 WSCharacterAssetData
+// 新建实例后填入新模型的路径，再把这个资产拖到关卡里对应 NPC 的
+// "Character Asset" 字段即可。
+// ============================================================================
+
+USTRUCT(BlueprintType)
+struct FWSAnimSetConfig
+{
+	GENERATED_BODY()
+
+	// 待机循环（必填）。其余为可选反应动画，留空即跳过。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TSoftObjectPtr<UAnimSequence> Idle;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TSoftObjectPtr<UAnimSequence> Gesture;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TSoftObjectPtr<UAnimSequence> Guarded;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TSoftObjectPtr<UAnimSequence> Work;
+};
+
+USTRUCT(BlueprintType)
+struct FWSInjuryWrapConfig
+{
+	GENERATED_BODY()
+
+	// 留空 Mesh 即可关闭绷带；填了就挂在角色手部 socket 上。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Injury Wrap")
+	TSoftObjectPtr<UStaticMesh> Mesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Injury Wrap")
+	TSoftObjectPtr<UMaterialInterface> Material;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Injury Wrap")
+	FName AttachSocket = TEXT("hand_r");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Injury Wrap")
+	FVector RelativeScale = FVector(0.006f, 0.006f, 0.0024f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Injury Wrap")
+	FRotator RelativeRotation = FRotator(0.0f, 0.0f, 90.0f);
+};
+
+UCLASS(BlueprintType)
+class WHITEOUTSTATION_API UWSCharacterAssetData : public UDataAsset
+{
+	GENERATED_BODY()
+
+public:
+	UWSCharacterAssetData();
+
+	// 必填：骨骼网格资源。可以是 MakeHuman/MetaHuman/VRM4U 转化的任意 SK 资源。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mesh")
+	TSoftObjectPtr<USkeletalMesh> SkeletalMesh;
+
+	// 动画蓝图。如果新模型用项目自带动画，留空会回退到旧路径或播放 AnimSet。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TSoftObjectPtr<UAnimBlueprint> AnimBlueprint;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	FWSAnimSetConfig Animations;
+
+	// 眼睛材质槽覆盖。SlotName 匹配不上就跳过。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	FName EyeMaterialSlotName = TEXT("high-poly");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	TSoftObjectPtr<UMaterialInterface> EyeMaterial;
+
+	// 角色网格相对 Root 的变换。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transform")
+	FVector MeshLocation = FVector(0.0f, -11.6f, 2.7f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transform")
+	FRotator MeshRotation = FRotator(0.0f, -90.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transform")
+	FVector MeshScale = FVector(0.1f);
+
+	// 角色整体的初始缩放（站立高度）。默认 1.0。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Transform")
+	FVector ActorScale = FVector::OneVector;
+
+	// 绷带/外饰物（顾衡的应急包等）。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Injury Wrap")
+	FWSInjuryWrapConfig InjuryWrap;
 };

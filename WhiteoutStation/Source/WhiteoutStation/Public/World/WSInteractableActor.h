@@ -11,6 +11,7 @@ class USkeletalMeshComponent;
 class UWSLookAtSkeletalMeshComponent;
 class UAnimSequence;
 class UMaterialInterface;
+class UWSCharacterAssetData;
 
 UCLASS()
 class WHITEOUTSTATION_API AWSInteractableActor : public AActor
@@ -45,6 +46,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
 	FLinearColor AccentColor = FLinearColor(0.15f, 0.55f, 0.78f, 1.0f);
+
+	// 角色资源表。留空则回退到旧硬编码路径（兼容现有 v0.4 行为）。
+	// 新建 DA_WS_GuHeng / DA_WS_YeCheng 数据资产，填入网格/动画/材质后指到这里，
+	// 之后换 VRM/SK 模型就只改数据资产，不用碰 C++。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Character", meta = (DisplayName = "Character Asset"))
+	TObjectPtr<UWSCharacterAssetData> CharacterAsset;
 
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void Configure(FName InActionId, const FText& InDisplayName, FLinearColor InAccentColor);

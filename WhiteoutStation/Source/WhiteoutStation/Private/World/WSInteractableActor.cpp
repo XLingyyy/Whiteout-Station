@@ -9,11 +9,13 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/SkeletalMesh.h"
 #include "GameFramework/GameModeBase.h"
 #include "HUD/WhiteoutHUD.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Presentation/WSPresentationData.h"
 #include "State/WindStationStateSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -233,87 +235,172 @@ void AWSInteractableActor::SetInteractionFocused(const bool bFocused)
 
 void AWSInteractableActor::ConfigureCharacterPresentation()
 {
-	const bool bEngineer = ActionId == TEXT("talk_gu_heng");
-	const TCHAR* RootPath = bEngineer
-		? TEXT("/Game/WindStation/Art/Characters/Engineer")
-		: TEXT("/Game/WindStation/Art/Characters/Doctor");
-	const FString CharacterToken = bEngineer ? TEXT("WS_Engineer") : TEXT("WS_Doctor");
-	const FString MeshPath = FString::Printf(TEXT("%s/SK_%s.SK_%s"), RootPath, *CharacterToken, *CharacterToken);
-	if (USkeletalMesh* SkeletalMesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath))
+	if (CharacterAsset)
 	{
-		CharacterMesh->SetSkeletalMesh(SkeletalMesh);
-		if (UMaterialInterface* EyeMaterial = LoadObject<UMaterialInterface>(
-			nullptr,
-			TEXT("/Game/WindStation/Art/Materials/M_WS_Eye.M_WS_Eye")))
+		// ===== 数据资产驱动（推荐路径：换 VRM/SK 模型只改数据资产） =====
+		if (USkeletalMesh* SkeletalMesh = CharacterAsset->SkeletalMesh.IsNull() ? nullptr : CharacterAsset->SkeletalMesh.LoadSynchronous())
 		{
-			const int32 EyeMaterialIndex = CharacterMesh->GetMaterialIndex(TEXT("high-poly"));
-			if (EyeMaterialIndex != INDEX_NONE)
+			CharacterMesh->SetSkeletalMesh(SkeletalMesh);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("WhiteoutStation: CharacterAsset %s 的 SkeletalMesh 为空，无法生成角色"),
+				*CharacterAsset->GetName());
+			return;
+		}
+		SetActorScale3D(CharacterAsset->ActorScale);
+
+		Mesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")));
+		Mesh->SetVisibility(false);
+		Mesh->SetHiddenInGame(true);
+		Mesh->SetRelativeLocation(FVector(0.0f, 0.0f, 86.0f));
+		Mesh->SetRelativeScale3D(FVector(0.55f, 0.55f, 1.72f));
+		Mesh->SetCollisionProfileName(TEXT("BlockAll"));
+
+		CharacterMesh->SetVisibility(true);
+		CharacterMesh->SetHiddenInGame(false);
+		CharacterMesh->SetRelativeLocation(CharacterAsset->MeshLocation);
+		CharacterMesh->SetRelativeRotation(CharacterAsset->MeshRotation);
+		CharacterMesh->SetRelativeScale3D(CharacterAsset->MeshScale);
+		CharacterMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+
+		if (!CharacterAsset->EyeMaterial.IsNull())
+		{
+			if (UMaterialInterface* EyeMat = CharacterAsset->EyeMaterial.LoadSynchronous())
 			{
-				CharacterMesh->SetMaterial(EyeMaterialIndex, EyeMaterial);
+				const int32 Slot = CharacterMesh->GetMaterialIndex(CharacterAsset->EyeMaterialSlotName);
+				if (Slot != INDEX_NONE)
+				{
+					CharacterMesh->SetMaterial(Slot, EyeMat);
+				}
 			}
+		}
+
+		if (!CharacterAsset->AnimBlueprint.IsNull())
+		{
+			if (const UAnimBlueprint* AnimBp = CharacterAsset->AnimBlueprint.LoadSynchronous())
+			{
+				CharacterMesh->SetAnimInstanceClass(AnimBp->GeneratedClass);
+			}
+		}
+
+		IdleAnimation = CharacterAsset->Animations.Idle.IsNull() ? nullptr : CharacterAsset->Animations.Idle.LoadSynchronous();
+		GestureAnimation = CharacterAsset->Animations.Gesture.IsNull() ? nullptr : CharacterAsset->Animations.Gesture.LoadSynchronous();
+		GuardedAnimation = CharacterAsset->Animations.Guarded.IsNull() ? nullptr : CharacterAsset->Animations.Guarded.LoadSynchronous();
+		WorkAnimation = CharacterAsset->Animations.Work.IsNull() ? nullptr : CharacterAsset->Animations.Work.LoadSynchronous();
+
+		const FWSInjuryWrapConfig& WrapCfg = CharacterAsset->InjuryWrap;
+		if (!WrapCfg.Mesh.IsNull())
+		{
+			if (UStaticMesh* WrapMesh = WrapCfg.Mesh.LoadSynchronous())
+			{
+				InjuryWrap->SetStaticMesh(WrapMesh);
+				InjuryWrap->SetVisibility(true);
+				InjuryWrap->SetHiddenInGame(false);
+				InjuryWrap->SetRelativeScale3D(WrapCfg.RelativeScale);
+				InjuryWrap->SetRelativeRotation(WrapCfg.RelativeRotation);
+				if (!WrapCfg.Material.IsNull())
+				{
+					if (UMaterialInterface* WrapMat = WrapCfg.Material.LoadSynchronous())
+					{
+						InjuryWrap->SetMaterial(0, WrapMat);
+					}
+				}
+				InjuryWrap->AttachToComponent(
+					CharacterMesh,
+					FAttachmentTransformRules::KeepRelativeTransform,
+					WrapCfg.AttachSocket);
+			}
+		}
+		else
+		{
+			InjuryWrap->SetVisibility(false);
+			InjuryWrap->SetHiddenInGame(true);
 		}
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation v0.2: missing NPC skeletal mesh %s"), *MeshPath);
-		return;
-	}
-
-	SetActorScale3D(FVector::OneVector);
-	Mesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")));
-	Mesh->SetVisibility(false);
-	Mesh->SetHiddenInGame(true);
-	Mesh->SetRelativeLocation(FVector(0.0f, 0.0f, 86.0f));
-	Mesh->SetRelativeScale3D(FVector(0.55f, 0.55f, 1.72f));
-	Mesh->SetCollisionProfileName(TEXT("BlockAll"));
-
-	CharacterMesh->SetVisibility(true);
-	CharacterMesh->SetHiddenInGame(false);
-	CharacterMesh->SetRelativeScale3D(FVector(0.1f));
-	CharacterMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
-	CharacterMesh->SetRelativeLocation(bEngineer
-		? FVector(0.0f, -11.6f, 2.7f)
-		: FVector(0.0f, -7.1f, 1.6f));
-	CharacterMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
-	InjuryWrap->AttachToComponent(
-		CharacterMesh,
-		FAttachmentTransformRules::KeepRelativeTransform,
-		TEXT("hand_r"));
-
-	const FString BlueprintPath = FString::Printf(TEXT("%s/ABP_%s.ABP_%s"), RootPath, *CharacterToken, *CharacterToken);
-	if (const UAnimBlueprint* AnimationBlueprint = LoadObject<UAnimBlueprint>(nullptr, *BlueprintPath))
-	{
-		CharacterMesh->SetAnimInstanceClass(AnimationBlueprint->GeneratedClass);
-	}
-
-	const auto LoadAnimation = [RootPath, CharacterToken](const TCHAR* Suffix)
-	{
-		const FString Path = FString::Printf(
-			TEXT("%s/AN_%s_%s.AN_%s_%s"),
-			RootPath, *CharacterToken, Suffix, *CharacterToken, Suffix);
-		return LoadObject<UAnimSequence>(nullptr, *Path);
-	};
-	IdleAnimation = LoadAnimation(TEXT("Idle"));
-	GestureAnimation = LoadAnimation(TEXT("Gesture"));
-	GuardedAnimation = LoadAnimation(TEXT("Guarded"));
-	WorkAnimation = LoadAnimation(TEXT("Work"));
-
-	if (bEngineer)
-	{
-		if (UStaticMesh* WrapMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")))
+		// ===== 旧硬编码路径（v0.4 兼容；未指派 CharacterAsset 时使用） =====
+		const bool bEngineer = ActionId == TEXT("talk_gu_heng");
+		const TCHAR* RootPath = bEngineer
+			? TEXT("/Game/WindStation/Art/Characters/Engineer")
+			: TEXT("/Game/WindStation/Art/Characters/Doctor");
+		const FString CharacterToken = bEngineer ? TEXT("WS_Engineer") : TEXT("WS_Doctor");
+		const FString MeshPath = FString::Printf(TEXT("%s/SK_%s.SK_%s"), RootPath, *CharacterToken, *CharacterToken);
+		if (USkeletalMesh* SkeletalMesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath))
 		{
-			InjuryWrap->SetStaticMesh(WrapMesh);
-			InjuryWrap->SetVisibility(true);
-			InjuryWrap->SetHiddenInGame(false);
-			// Imported MakeHuman bones carry a 100x local scale; compensate so
-			// the primitive reads as a hand-sized emergency wrap, not a prop.
-			InjuryWrap->SetRelativeScale3D(FVector(0.006f, 0.006f, 0.0024f));
-			InjuryWrap->SetRelativeRotation(FRotator(0.0f, 0.0f, 90.0f));
-			if (UMaterialInterface* WrapMaterial = LoadObject<UMaterialInterface>(
+			CharacterMesh->SetSkeletalMesh(SkeletalMesh);
+			if (UMaterialInterface* EyeMaterial = LoadObject<UMaterialInterface>(
 				nullptr,
-				TEXT("/Game/WindStation/Art/Materials/M_WS_Snow.M_WS_Snow")))
+				TEXT("/Game/WindStation/Art/Materials/M_WS_Eye.M_WS_Eye")))
 			{
-				InjuryWrap->SetMaterial(0, WrapMaterial);
+				const int32 EyeMaterialIndex = CharacterMesh->GetMaterialIndex(TEXT("high-poly"));
+				if (EyeMaterialIndex != INDEX_NONE)
+				{
+					CharacterMesh->SetMaterial(EyeMaterialIndex, EyeMaterial);
+				}
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("WhiteoutStation v0.2: missing NPC skeletal mesh %s"), *MeshPath);
+			return;
+		}
+
+		SetActorScale3D(FVector::OneVector);
+		Mesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")));
+		Mesh->SetVisibility(false);
+		Mesh->SetHiddenInGame(true);
+		Mesh->SetRelativeLocation(FVector(0.0f, 0.0f, 86.0f));
+		Mesh->SetRelativeScale3D(FVector(0.55f, 0.55f, 1.72f));
+		Mesh->SetCollisionProfileName(TEXT("BlockAll"));
+
+		CharacterMesh->SetVisibility(true);
+		CharacterMesh->SetHiddenInGame(false);
+		CharacterMesh->SetRelativeScale3D(FVector(0.1f));
+		CharacterMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
+		CharacterMesh->SetRelativeLocation(bEngineer
+			? FVector(0.0f, -11.6f, 2.7f)
+			: FVector(0.0f, -7.1f, 1.6f));
+		CharacterMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+		InjuryWrap->AttachToComponent(
+			CharacterMesh,
+			FAttachmentTransformRules::KeepRelativeTransform,
+			TEXT("hand_r"));
+
+		const FString BlueprintPath = FString::Printf(TEXT("%s/ABP_%s.ABP_%s"), RootPath, *CharacterToken, *CharacterToken);
+		if (const UAnimBlueprint* AnimationBlueprint = LoadObject<UAnimBlueprint>(nullptr, *BlueprintPath))
+		{
+			CharacterMesh->SetAnimInstanceClass(AnimationBlueprint->GeneratedClass);
+		}
+
+		const auto LoadAnimation = [RootPath, CharacterToken](const TCHAR* Suffix)
+		{
+			const FString Path = FString::Printf(
+				TEXT("%s/AN_%s_%s.AN_%s_%s"),
+				RootPath, *CharacterToken, Suffix, *CharacterToken, Suffix);
+			return LoadObject<UAnimSequence>(nullptr, *Path);
+		};
+		IdleAnimation = LoadAnimation(TEXT("Idle"));
+		GestureAnimation = LoadAnimation(TEXT("Gesture"));
+		GuardedAnimation = LoadAnimation(TEXT("Guarded"));
+		WorkAnimation = LoadAnimation(TEXT("Work"));
+
+		if (bEngineer)
+		{
+			if (UStaticMesh* WrapMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")))
+			{
+				InjuryWrap->SetStaticMesh(WrapMesh);
+				InjuryWrap->SetVisibility(true);
+				InjuryWrap->SetHiddenInGame(false);
+				InjuryWrap->SetRelativeScale3D(FVector(0.006f, 0.006f, 0.0024f));
+				InjuryWrap->SetRelativeRotation(FRotator(0.0f, 0.0f, 90.0f));
+				if (UMaterialInterface* WrapMaterial = LoadObject<UMaterialInterface>(
+					nullptr,
+					TEXT("/Game/WindStation/Art/Materials/M_WS_Snow.M_WS_Snow")))
+				{
+					InjuryWrap->SetMaterial(0, WrapMaterial);
+				}
 			}
 		}
 	}

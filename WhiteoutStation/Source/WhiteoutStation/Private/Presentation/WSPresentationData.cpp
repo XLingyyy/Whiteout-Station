@@ -147,3 +147,5 @@ UWSReasonPresentationData::UWSReasonPresentationData()
 		Copy.ChangeCondition = FWSPresentationText::ReasonNextStep(Reason);
 	}
 }
+
+UWSCharacterAssetData::UWSCharacterAssetData() = default;
