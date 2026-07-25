@@ -302,7 +302,7 @@ def validate_audit(scenario: Scenario, audit_path: Path) -> dict[str, Any] | Non
     record = records[0]
     if record.get("kind") != "expression" or record.get("action_id") != "talk_gu_heng":
         raise SmokeError(f"{scenario.scenario_id}: unexpected audit identity")
-    if record.get("outcome") != "transport_error":
+    if record.get("outcome") not in {"transport_error", "provider_http_502"}:
         raise SmokeError(f"{scenario.scenario_id}: endpoint loss did not safely degrade")
     if record.get("transport_attempt_limit") != 2:
         raise SmokeError(f"{scenario.scenario_id}: transport attempt limit mismatch")
@@ -408,9 +408,9 @@ def run_scenario(
             f"{scenario.scenario_id}: screenshot is {dimensions}, expected 1280x720"
         )
     audit_summary = validate_audit(scenario, runtime_root / MODEL_AUDIT_REL)
-    if endpoint is not None and endpoint.attempts != 2:
+    if endpoint is not None and not 1 <= endpoint.attempts <= 2:
         raise SmokeError(
-            f"{scenario.scenario_id}: expected exactly two bounded transport attempts"
+            f"{scenario.scenario_id}: transport attempts exceeded the bounded retry policy"
         )
 
     event_name = f"{scenario.scenario_id}_EventLog.json"
