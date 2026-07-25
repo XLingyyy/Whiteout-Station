@@ -12,7 +12,7 @@ Unreal Engine 5.8 C++ 项目，目标是一局 10—15 分钟的社会生存与�
 
 ## 当前开发版本
 
-v0.5 已完成受控 AI 表达和玩法选择的实现与发布前验证：
+v0.5 发布版已完成受控 AI 表达和玩法选择：
 
 - DeepSeek `deepseek-v4-flash` 仅改写 NPC 台词；AP、资源、事实权限、承诺、任务、评分和结局始终由 C++ 决定。
 - 询问、质疑、安抚和承诺以结构化意图进入规则；无效或重复承诺不会消耗 AP。
@@ -20,7 +20,14 @@ v0.5 已完成受控 AI 表达和玩法选择的实现与发布前验证：
 - HUD 统一显示“健 / 温 / 精 / 饱 / 稳”，并修正连续分数评级边界。
 - 顾衡与叶澄的人物模型、骨骼、材质、动作、动画及 LookAt 表现均未修改。用户工作树中的 `MVP_StationMap.umap` 既有改动保持原样。
 
-已确认 Editor Development 构建成功，Python 回归 81 / 81、UE Automation 7 / 7。当前证据与边界见 `docs/QA_REPORT_v0.5.md`，实施进度见 `docs/PROGRESS_v0.5.md`。
+已确认 Editor Development 与 Win64 Shipping 构建成功，Python 回归 81 / 81、UE Automation 7 / 7、Shipping 烟测 5 / 5，源码与发布门禁均为 PASS。当前证据见 `docs/QA_REPORT_v0.5.md`，发布清单见 `docs/RELEASE_MANIFEST_v0.5.md`。
+
+最终 Demo：
+
+- 目录：`Builds/WhiteoutStation-v0.5-Win64-20260725T134938Z-9bd94fab-release`
+- 启动：`Windows/WhiteoutStation.exe`
+- 源提交：`9bd94fab63f446290fbb5ababf809529a91c1b7c`
+- 源树：`bc4ac95f5dd4120fbfa545c4d92719336bfa0ac9`
 
 ## 规则回归
 

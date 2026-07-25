@@ -1,12 +1,28 @@
 # v0.5 构建与游玩说明
 
-本文适用于当前 v0.5 源码与 UE 5.8 Editor Development 版本。已验证 Editor 构建与游玩流程；本文不提供尚未完成验证的 Shipping 归档路径。
+本文适用于 v0.5 发布源码、UE 5.8 Editor Development 版本和最终 Win64 Shipping Demo。
 
 ## 环境
 
 - Windows 64-bit
 - Unreal Engine 5.8，当前工作站安装于 `G:\UnrealEngine\UE_5.8`
 - 项目：`G:\Whiteout Station\WhiteoutStation\WhiteoutStation.uproject`
+
+## 最终 Shipping Demo
+
+发布目录：
+
+```text
+G:\Whiteout Station\Builds\WhiteoutStation-v0.5-Win64-20260725T134938Z-9bd94fab-release
+```
+
+启动：
+
+```powershell
+& 'G:\Whiteout Station\Builds\WhiteoutStation-v0.5-Win64-20260725T134938Z-9bd94fab-release\Windows\WhiteoutStation.exe'
+```
+
+该包绑定源码提交 `9bd94fab63f446290fbb5ababf809529a91c1b7c`。包内 `Validation/ShippingSmoke` 保存三条路线和两类 AI 降级的事件日志、截图与脱敏汇总。
 
 ## 构建 Editor
 
@@ -145,7 +161,7 @@ UE Automation：
   '-ReportExportPath=G:\Whiteout Station\Artifacts\TestResults\manual-v05'
 ```
 
-当前确认结果为 Agents 39 passed、Rules 28 passed、Release 14 passed、UE Automation 7 / 7 且 0 warning / failed / not run。最终自动化报告位于 `Artifacts/TestResults/v05-final-20260725-212000`。
+当前确认结果为 Agents 39 passed、Rules 28 passed、Release 14 passed、UE Automation 7 / 7 且 0 warning / failed / not run。最终自动化报告位于 `Artifacts/TestResults/v05-final-20260725-212000`。最终 Shipping 烟测 5 / 5，源码门禁和发布清单校验均为 PASS。
 
 ## 角色与地图保护
 

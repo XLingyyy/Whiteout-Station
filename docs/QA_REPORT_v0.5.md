@@ -1,10 +1,10 @@
-# v0.5 QA / 发布前验收记录
+# v0.5 QA / 发布验收记录
 
 更新日期：2026-07-25
 
 ## 结论
 
-v0.5 的 AI 表达边界、对话与资源选择、规则一致性、端点安全、重试与离线降级已通过 Editor 级自动化和集成验证。本文仅记录已经执行的验证；Shipping 归档、提交绑定和发布门禁不在本报告结论内。
+v0.5 的 AI 表达边界、对话与资源选择、规则一致性、端点安全、重试、离线降级和最终 Shipping 包均已通过验收。发布包绑定提交 `9bd94fab63f446290fbb5ababf809529a91c1b7c`，源码门禁与发布门禁均为 PASS。
 
 ## 构建与自动化
 
@@ -56,6 +56,22 @@ v0.5 的 AI 表达边界、对话与资源选择、规则一致性、端点安�
 - `Artifacts/Integration/v05-live-final-20260725-210313`
 
 mock 审计同时确认 `thinking_disabled=true`、`stream_disabled=true`、`response_format_json_object=true`，顾衡与叶澄请求都没有向 loopback 发送 Authorization。
+
+## Shipping 验收
+
+最终包：`Builds/WhiteoutStation-v0.5-Win64-20260725T134938Z-9bd94fab-release`
+
+| 场景 | 结果 | 关键断言 |
+|---|---:|---|
+| 默认离线 / medical | PASS | TaskSuccess，76.76，0 AP，0 模型调用 |
+| 默认离线 / technical | PASS | TaskSuccess，72.02，0 AP，0 模型调用 |
+| 默认离线 / quick | PASS | TaskSuccess，72.06，2 AP，0 模型调用 |
+| 启用但无 Key / medical | PASS | TaskSuccess，本地确定性表达，0 模型调用 |
+| loopback 断连 / technical | PASS | HTTP 502 安全降级，模型调用 1，总尝试上限 2 |
+
+五个场景均写出 1280×720 截图和事件日志。脱敏汇总位于 `Validation/ShippingSmoke/shipping_smoke_summary.json`。
+
+首次并行 Shipping 链接因系统提交内存达到 UBA 阈值而失败；失败归档未进入发布。关闭 UBA 并限制两路并行后，Build、Cook 694 / 694、Stage、Pak 和 Archive 全部成功。最终清单含 45 个文件 SHA-256，发布校验确认版本文件、提交、源树、时间、新鲜度和包内容一致。
 
 ## 表达与规则边界
 

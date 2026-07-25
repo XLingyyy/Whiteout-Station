@@ -1,7 +1,7 @@
 # v0.5 实施进度
 
 更新日期：2026-07-25
-当前状态：**功能实现与发布前验证完成；本记录不声明 Shipping 归档或版本发布完成**
+当前状态：**v0.5 Demo 已完成并发布**
 
 ## 本轮结果
 
@@ -54,6 +54,16 @@ UE Automation 报告位于 `Artifacts/TestResults/v05-final-20260725-212000`。�
 | technical | TaskSuccess | 72.02 | B | 0 |
 | quick | TaskSuccess | 72.06 | B | 2 |
 
+## 发布结果
+
+- 源提交：`9bd94fab63f446290fbb5ababf809529a91c1b7c`
+- 源树：`bc4ac95f5dd4120fbfa545c4d92719336bfa0ac9`
+- Shipping：`Builds/WhiteoutStation-v0.5-Win64-20260725T134938Z-9bd94fab-release`
+- Shipping 烟测：5 / 5
+- 源码门禁：PASS
+- 发布清单校验：PASS
+- 清单：`Validation/gate_manifest.json`
+
 ## 范围保护
 
 - `WhiteoutStation/Content/WindStation/Art/Characters/**` 未改。
@@ -61,4 +71,4 @@ UE Automation 报告位于 `Artifacts/TestResults/v05-final-20260725-212000`。�
 - 顾衡与叶澄的 SkeletalMesh、Skeleton、材质、Animation、AnimBP、动作和 LookAt 表现未改。
 - `MVP_StationMap.umap` 在本轮开始前已有用户工作树修改；本轮实现未编辑、覆盖、暂存或清理该文件，原改动保持不变。
 
-保护目录的基线对象记录在 `docs/PROTECTED_CHARACTER_ASSETS_v0.5.json`。本文件只记录已经完成的源码、协议、规则和 Editor 级验证，不包含尚未产生的 Shipping 路径、提交标识或发布通过结论。
+保护目录的基线对象记录在 `docs/PROTECTED_CHARACTER_ASSETS_v0.5.json`。最终 Shipping 包、提交标识与门禁证据记录在 `docs/RELEASE_MANIFEST_v0.5.md` 和 `docs/GATE_G0_v0.5.md` 至 `docs/GATE_G4_v0.5.md`。
