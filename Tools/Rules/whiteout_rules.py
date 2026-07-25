@@ -9,13 +9,25 @@ from typing import Any, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_RULES_PATH = (
-    ROOT
-    / "WhiteoutStation"
-    / "Content"
-    / "Rules"
-    / "WhiteoutStationRules.v0.1.json"
+RULES_DIRECTORY = ROOT / "WhiteoutStation" / "Content" / "Rules"
+DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.5.json"
+LEGACY_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.1.json"
+
+PROMISE_CONDITIONS = frozenset(
+    {"reserve_medicine", "keep_records", "heat_repair_room"}
 )
+
+# The v0.1 rules file predates explicit route intent parameters. Explicit JSON
+# parameters take precedence when the content-side rules version is migrated.
+ROUTE_DIALOGUE_DEFAULTS: dict[tuple[str, str], dict[str, Any]] = {
+    ("medical_cooperation", "talk_gu_heng"): {
+        "dialogue_act": "promise",
+        "promise_condition": "heat_repair_room",
+    },
+    ("technical_replacement", "talk_gu_heng"): {
+        "dialogue_act": "challenge",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -34,7 +46,9 @@ class RuleError(ValueError):
     """Raised when the configuration cannot produce deterministic play."""
 
 
-def load_rules(path: Path | str = DEFAULT_RULES_PATH) -> dict[str, Any]:
+def load_rules(path: Path | str | None = None) -> dict[str, Any]:
+    if path is None:
+        path = DEFAULT_RULES_PATH if DEFAULT_RULES_PATH.exists() else LEGACY_RULES_PATH
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
@@ -81,6 +95,20 @@ def validate_rules(rules: dict[str, Any]) -> list[str]:
     return errors
 
 
+def classify_rating(total: float, ratings: dict[str, list[float]]) -> str:
+    ordered = sorted(
+        ratings.items(),
+        key=lambda item: float(item[1][0]),
+        reverse=True,
+    )
+    if not ordered:
+        raise RuleError("Score ratings cannot be empty")
+    for rating, (minimum, _maximum) in ordered:
+        if total >= float(minimum):
+            return rating
+    return ordered[-1][0]
+
+
 class WhiteoutSimulator:
     """Deterministic, transaction-safe implementation of the v0.1 paper rules."""
 
@@ -121,6 +149,10 @@ class WhiteoutSimulator:
 
     def _action_count(self, action_id: str) -> int:
         return int(self.state["action_counts"].get(action_id, 0))
+
+    @staticmethod
+    def _promise_condition(params: dict[str, Any]) -> Any:
+        return params.get("promise_condition", params.get("condition"))
 
     def _knows(self, fact_id: str, at_least: str = "suspected") -> bool:
         current = self.state["player_knowledge"].get(fact_id, "unknown")
@@ -164,6 +196,26 @@ class WhiteoutSimulator:
         resources = self.state["resources"]
         tasks = self.state["tasks"]
         gu = self.state["characters"]["gu_heng"]
+        dialogue_act = str(params.get("dialogue_act", "ask")).strip().lower()
+
+        if action_id in {"talk_gu_heng", "talk_ye_cheng"}:
+            if dialogue_act not in {"ask", "challenge", "reassure", "promise"}:
+                return "dialogue_act_unavailable"
+            condition = self._promise_condition(params)
+            has_condition = condition is not None and str(condition) != ""
+            if action_id == "talk_ye_cheng" and dialogue_act == "promise":
+                return "dialogue_act_unavailable"
+            if dialogue_act == "promise":
+                if condition not in PROMISE_CONDITIONS:
+                    return "invalid_promise_condition"
+                promise_id = f"player_to_gu_heng:{condition}"
+                if any(
+                    promise.get("id") == promise_id
+                    for promise in self.state["promises"]
+                ):
+                    return "duplicate_promise"
+            elif has_condition:
+                return "invalid_promise_condition"
 
         if action_id == "heat_repair_room":
             if flags["repair_room_heated"]:
@@ -223,7 +275,10 @@ class WhiteoutSimulator:
                 return "needs_generator"
             if tasks["antenna_calibration"] >= self.rules["gameplay"]["antenna_required"]:
                 return "antenna_already_calibrated"
-            if self.state["characters"]["player"]["temperature"] < 40:
+            if (
+                self.state["characters"]["player"]["temperature"]
+                < self.rules["balance"]["thresholds"]["safe_antenna_temperature"]
+            ):
                 return "player_too_cold"
         elif action_id == "send_signal":
             if tasks["generator_progress"] < self.rules["gameplay"]["generator_required"]:
@@ -354,6 +409,7 @@ class WhiteoutSimulator:
                 flags["heat_pack_revealed"] = True
                 self._add_evidence("EVIDENCE_HEAT_PACK")
                 self._discover_fact("FACT_HEAT_PACK", "confirmed")
+            self._apply_dialogue_modifier(action_id, params)
         elif action_id == "talk_gu_heng":
             if flags["gu_heng_treated"]:
                 delta = balance["talk_gu_heng_treated"]
@@ -378,7 +434,8 @@ class WhiteoutSimulator:
                 self._change_character(
                     "gu_heng", trust=delta["gu_trust"], pressure=delta["gu_pressure"]
                 )
-            if params.get("dialogue_act") == "promise":
+            self._apply_dialogue_modifier(action_id, params)
+            if str(params.get("dialogue_act", "ask")).strip().lower() == "promise":
                 self._recognize_promise(params)
         elif action_id == "heat_repair_room":
             resources["fuel"] -= 1
@@ -531,9 +588,28 @@ class WhiteoutSimulator:
             self.state["flags"]["heat_pack_revealed"] = True
             self._discover_fact("FACT_HEAT_PACK", "confirmed")
 
+    def _apply_dialogue_modifier(
+        self, action_id: str, params: dict[str, Any]
+    ) -> None:
+        dialogue_act = str(params.get("dialogue_act", "ask")).strip().lower()
+        character_id = "gu_heng" if action_id == "talk_gu_heng" else "ye_cheng"
+        if dialogue_act == "challenge":
+            if (
+                action_id == "talk_gu_heng"
+                and self._knows("FACT_FORCED_RESTART_SUSPICION")
+                and self._knows("FACT_BURNT_RELAY")
+            ):
+                self._change_character(character_id, pressure=2, trust=2)
+            else:
+                self._change_character(character_id, pressure=3, trust=-3)
+        elif dialogue_act == "reassure":
+            self._change_character(character_id, pressure=-4, trust=3)
+        elif dialogue_act == "promise" and action_id == "talk_gu_heng":
+            self._change_character(character_id, pressure=-2, trust=2)
+
     def _recognize_promise(self, params: dict[str, Any]) -> None:
-        condition = params.get("condition")
-        if condition not in {"reserve_medicine", "keep_records", "heat_repair_room"}:
+        condition = self._promise_condition(params)
+        if condition not in PROMISE_CONDITIONS:
             return
         promise_id = f"player_to_gu_heng:{condition}"
         if any(promise["id"] == promise_id for promise in self.state["promises"]):
@@ -656,11 +732,7 @@ class WhiteoutSimulator:
             ),
         }
         total = round(sum(breakdown.values()), 2)
-        rating = next(
-            key
-            for key, (low, high) in self.rules["score"]["ratings"].items()
-            if low <= total <= high
-        )
+        rating = classify_rating(total, self.rules["score"]["ratings"])
         return {"total": total, "rating": rating, "breakdown": breakdown}
 
     def causal_timeline(self, limit: int = 5) -> list[dict[str, Any]]:
@@ -748,14 +820,20 @@ def run_route(simulator: WhiteoutSimulator, route_id: str) -> dict[str, Any]:
     route = simulator.rules["routes"][route_id]
     steps: list[dict[str, Any]] = []
     for index, step in enumerate(route["steps"], start=1):
+        params = copy.deepcopy(step.get("params", {}))
+        if not params:
+            params = copy.deepcopy(
+                ROUTE_DIALOGUE_DEFAULTS.get((route_id, step["action"]), {})
+            )
         result = simulator.apply_action(
             step["action"],
-            step.get("params", {}),
+            params,
             transaction_id=f"{route_id}:{index}:{step['action']}",
         )
         steps.append(
             {
                 "action": step["action"],
+                "params": params,
                 "committed": result.committed,
                 "reason": result.reason_code,
                 "ap": result.ap_after,

@@ -13,6 +13,7 @@ class WHITEOUTSTATION_API UWSNPCDecisionService : public UObject
 public:
 	static bool RequiresExpression(FName ActionId);
 	static FWSAgentReply BuildDeterministicReply(FName ActionId, const FWSGameState& State);
+	static FWSAgentReply BuildDeterministicReply(const FWSActionRequest& Request, const FWSGameState& State);
 	static TArray<FName> BuildAllowedFacts(FName ActionId, EWSCharacterId Speaker, const FWSGameState& State);
 	static FString SpeakerLabel(EWSCharacterId Speaker);
 

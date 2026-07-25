@@ -20,7 +20,10 @@ public:
 	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, bool bDialogue = false);
 	void ClearInteractionFocus();
 	void SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview, bool bPromiseCreated = false);
-	void ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview);
+	void ShowActionPreview(
+		const FText& ActionName,
+		const FWSActionPreview& Preview,
+		const FWSActionRequest& Request = FWSActionRequest());
 	void HideActionPreview();
 	void ToggleEvidence();
 	void ShowDialogueMenu(FName NPCActionId, bool bVisible);

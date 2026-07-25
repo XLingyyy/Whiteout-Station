@@ -113,6 +113,9 @@ FText FWSPresentationText::ReasonCause(const EWSReasonCode Reason)
 	case EWSReasonCode::AntennaAlreadyCalibrated: return TableText(TEXT("reason_antenna_done_cause"), TEXT("天线已经校准。"));
 	case EWSReasonCode::PlayerTooCold: return TableText(TEXT("reason_player_cold_cause"), TEXT("你已经严重失温，无法继续室外作业。"));
 	case EWSReasonCode::NeedsAntenna: return TableText(TEXT("reason_needs_antenna_cause"), TEXT("天线尚未校准。"));
+	case EWSReasonCode::DialogueActUnavailable: return TableText(TEXT("reason_dialogue_act_unavailable_cause"), TEXT("当前交谈对象不接受这种交涉方式。"));
+	case EWSReasonCode::InvalidPromiseCondition: return TableText(TEXT("reason_invalid_promise_cause"), TEXT("这项承诺没有可核验的条件。"));
+	case EWSReasonCode::DuplicatePromise: return TableText(TEXT("reason_duplicate_promise_cause"), TEXT("同一项承诺已经记录。"));
 	default: return TableText(TEXT("reason_default_cause"), TEXT("当前条件不满足。"));
 	}
 }
@@ -136,6 +139,9 @@ FText FWSPresentationText::ReasonNextStep(const EWSReasonCode Reason)
 	case EWSReasonCode::PlayerTooCold: return TableText(TEXT("reason_player_cold_next"), TEXT("留在室内恢复状态，避免继续消耗体温。"));
 	case EWSReasonCode::NeedsAntenna: return TableText(TEXT("reason_needs_antenna_next"), TEXT("前往室外天线区完成校准。"));
 	case EWSReasonCode::PhaseLocked: return TableText(TEXT("reason_phase_locked_next"), TEXT("关闭当前界面或进入下一阶段后再试。"));
+	case EWSReasonCode::DialogueActUnavailable: return TableText(TEXT("reason_dialogue_act_unavailable_next"), TEXT("改用询问、质疑或安抚；承诺只向顾衡提出。"));
+	case EWSReasonCode::InvalidPromiseCondition: return TableText(TEXT("reason_invalid_promise_next"), TEXT("从三个可追踪条件中重新选择。"));
+	case EWSReasonCode::DuplicatePromise: return TableText(TEXT("reason_duplicate_promise_next"), TEXT("继续执行这项承诺，或选择另一种交涉方式。"));
 	default: return TableText(TEXT("reason_default_next"), TEXT("检查目标、资源、证据和队员状态后选择下一步。"));
 	}
 }

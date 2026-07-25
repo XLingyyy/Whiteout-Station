@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "rules_version": "0.1.0",
+  "schema_version": 2,
+  "rules_version": "0.5.0",
   "display_name": "风雪站：断电前夜",
   "design_date": "2026-07-20",
   "gameplay": {
@@ -91,6 +91,22 @@
       "talk_gu_heng_unprepared": {
         "gu_trust": -3,
         "gu_pressure": 4
+      },
+      "dialogue_challenge": {
+        "trust": -3,
+        "pressure": 3
+      },
+      "dialogue_challenge_with_gu_evidence": {
+        "trust": 2,
+        "pressure": 2
+      },
+      "dialogue_reassure": {
+        "trust": 3,
+        "pressure": -4
+      },
+      "dialogue_promise": {
+        "trust": 2,
+        "pressure": -2
       },
       "heat_repair_room": {
         "fuel": -1,
@@ -248,7 +264,7 @@
       "executor": "player",
       "ap_cost": 1,
       "repeatable": false,
-      "requires_ai_expression": true,
+      "requires_ai_expression": false,
       "preview": "检查烧毁继电器、电弧痕迹与伤手线索。",
       "risk": "顾衡可能干预解释。",
       "unlocks": ["talk_gu_heng:evidence", "dismantle_kitchen_heater"]
@@ -310,7 +326,7 @@
       "executor": "player",
       "ap_cost": 1,
       "repeatable": false,
-      "requires_ai_expression": true,
+      "requires_ai_expression": false,
       "preview": "一次性分配最多2份食物。",
       "risk": "分配公平性会改变信任。",
       "parameters": ["player", "gu_heng", "ye_cheng"],
@@ -323,7 +339,7 @@
       "executor": "ye_cheng+gu_heng",
       "ap_cost": 1,
       "repeatable": false,
-      "requires_ai_expression": true,
+      "requires_ai_expression": false,
       "preview": "消耗药品或已披露的保温包，改善伤手。",
       "risk": "医务室未供暖时无法完成有效治疗。",
       "parameters": ["resource"],
@@ -336,7 +352,7 @@
       "executor": "player|gu_heng",
       "ap_cost": 1,
       "repeatable": false,
-      "requires_ai_expression": true,
+      "requires_ai_expression": false,
       "preview": "取得替代继电器。",
       "risk": "破坏夜间供暖能力；独自拆解会受轻伤。",
       "unlocks": ["repair_generator:relay"]
@@ -349,7 +365,7 @@
       "ap_cost": 1,
       "repeatable": true,
       "max_uses": 2,
-      "requires_ai_expression": true,
+      "requires_ai_expression": false,
       "preview": "根据治疗、供暖与继电器状态产生1—2点进度。",
       "risk": "顾衡带伤维修会继续恶化。",
       "unlocks": ["calibrate_antenna"]
@@ -361,7 +377,7 @@
       "executor": "player",
       "ap_cost": 2,
       "repeatable": false,
-      "requires_ai_expression": true,
+      "requires_ai_expression": false,
       "preview": "不依赖顾衡，2AP只获得1点进度。",
       "risk": "玩家受伤并大幅疲劳；只能使用一次。",
       "unlocks": ["repair_generator:partial"]
@@ -373,7 +389,7 @@
       "executor": "player",
       "ap_cost": 2,
       "repeatable": false,
-      "requires_ai_expression": true,
+      "requires_ai_expression": false,
       "preview": "发电机恢复后完成天线校准。",
       "risk": "结算两次室外暴露，明显降低体温与疲劳。",
       "unlocks": ["send_signal"]
@@ -385,7 +401,7 @@
       "executor": "player",
       "ap_cost": 0,
       "repeatable": false,
-      "requires_ai_expression": true,
+      "requires_ai_expression": false,
       "preview": "发电机2/2且天线1/1时立即发信。",
       "risk": "无。",
       "unlocks": ["ending_choice"]
@@ -397,10 +413,10 @@
       "expected_ap_spent": 8,
       "expected_score_range": [70, 89],
       "steps": [
-        {"action": "talk_ye_cheng"},
+        {"action": "talk_ye_cheng", "params": {"dialogue_act": "ask"}},
         {"action": "heat_medical_room"},
         {"action": "treat_gu_heng", "params": {"resource": "medicine"}},
-        {"action": "talk_gu_heng"},
+        {"action": "talk_gu_heng", "params": {"dialogue_act": "promise", "promise_condition": "heat_repair_room"}},
         {"action": "heat_repair_room"},
         {"action": "repair_generator"},
         {"action": "calibrate_antenna"},
@@ -414,7 +430,7 @@
       "steps": [
         {"action": "investigate_generator_log"},
         {"action": "inspect_control_cabinet"},
-        {"action": "talk_gu_heng"},
+        {"action": "talk_gu_heng", "params": {"dialogue_act": "challenge"}},
         {"action": "dismantle_kitchen_heater"},
         {"action": "heat_repair_room"},
         {"action": "repair_generator"},

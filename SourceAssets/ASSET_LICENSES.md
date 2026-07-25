@@ -1,6 +1,6 @@
 # Third-party asset record
 
-All files listed here are source inputs for the Whiteout Station v0.1/v0.2/v0.3 demo. Imported Unreal assets remain subject to the same license.
+All files listed here are source inputs for the Whiteout Station v0.1–v0.5 demo. Imported Unreal assets remain subject to the same license.
 
 ## Whiteout Station v0.3 AI-generated UI — original project output
 

@@ -98,7 +98,10 @@ enum class EWSReasonCode : uint8
 	NeedsGenerator,
 	AntennaAlreadyCalibrated,
 	PlayerTooCold,
-	NeedsAntenna
+	NeedsAntenna,
+	DialogueActUnavailable,
+	InvalidPromiseCondition,
+	DuplicatePromise
 };
 
 UENUM(BlueprintType)
@@ -257,6 +260,15 @@ struct FWSEventRecord
 	EWSReasonCode ReasonCode = EWSReasonCode::Committed;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSDialogueAct DialogueAct = EWSDialogueAct::Ask;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FName PromiseCondition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bPromiseRecorded = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	TArray<FString> Changes;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
@@ -375,6 +387,12 @@ struct FWSActionRequest
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName PromiseCondition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString PlayerSaid;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FGuid DialogueSessionId;
 };
 
 USTRUCT(BlueprintType)
@@ -425,6 +443,15 @@ struct FWSActionResult
 	FGuid TransactionId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSDialogueAct DialogueAct = EWSDialogueAct::Ask;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName PromiseCondition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bPromiseRecorded = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FString> Changes;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -441,6 +468,12 @@ struct FWSAgentReply
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName ActionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FGuid TransactionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FGuid DialogueSessionId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	EWSResponseType ResponseType = EWSResponseType::Deflect;

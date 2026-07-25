@@ -10,6 +10,7 @@ struct FWhiteoutRuleConfig
 	int32 GeneratorRequired = 2;
 	int32 AntennaRequired = 1;
 	int32 ModelCallHardLimit = 10;
+	float SafeAntennaTemperature = 55.0f;
 	FWSGameState InitialState;
 };
 

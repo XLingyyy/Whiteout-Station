@@ -482,15 +482,19 @@ FText AWSInteractableActor::GetInteractionPrompt() const
 	return FText::Format(FText::FromString(TEXT("[F] 查看行动：{0}")), DisplayName);
 }
 
-FWSActionRequest AWSInteractableActor::BuildRequest(
+FWSActionRequest AWSInteractableActor::BuildActionRequest(
 	const EWSDialogueAct DialogueAct,
-	const FName PromiseCondition) const
+	const FName PromiseCondition,
+	const FString& PlayerSaid,
+	const FGuid DialogueSessionId) const
 {
 	FWSActionRequest Request;
 	Request.ActionId = ActionId;
 	Request.TransactionId = FGuid::NewGuid();
 	Request.DialogueAct = DialogueAct;
 	Request.PromiseCondition = PromiseCondition;
+	Request.PlayerSaid = PlayerSaid.TrimStartAndEnd().Left(280);
+	Request.DialogueSessionId = DialogueSessionId;
 	if (ActionId == TEXT("distribute_food"))
 	{
 		Request.FoodForPlayer = 1;
@@ -503,15 +507,15 @@ FWSActionRequest AWSInteractableActor::BuildRequest(
 	return Request;
 }
 
-FWSActionPreview AWSInteractableActor::PreviewInteraction(
-	const EWSDialogueAct DialogueAct,
-	const FName PromiseCondition) const
+FWSActionPreview AWSInteractableActor::PreviewRequest(const FWSActionRequest& Request) const
 {
 	if (const UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (const UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
 		{
-			return StateSubsystem->PreviewAction(BuildRequest(DialogueAct, PromiseCondition));
+			FWSActionRequest SanitizedRequest = Request;
+			SanitizedRequest.ActionId = ActionId;
+			return StateSubsystem->PreviewAction(SanitizedRequest);
 		}
 	}
 	FWSActionPreview Preview;
@@ -519,10 +523,22 @@ FWSActionPreview AWSInteractableActor::PreviewInteraction(
 	return Preview;
 }
 
+FWSActionPreview AWSInteractableActor::PreviewInteraction(
+	const EWSDialogueAct DialogueAct,
+	const FName PromiseCondition) const
+{
+	return PreviewRequest(BuildActionRequest(DialogueAct, PromiseCondition));
+}
+
 FWSActionResult AWSInteractableActor::Interact(
 	APawn* InstigatorPawn,
 	const EWSDialogueAct DialogueAct,
 	const FName PromiseCondition)
+{
+	return InteractRequest(InstigatorPawn, BuildActionRequest(DialogueAct, PromiseCondition));
+}
+
+FWSActionResult AWSInteractableActor::InteractRequest(APawn* InstigatorPawn, FWSActionRequest Request)
 {
 	FWSActionResult Empty;
 	if (!InstigatorPawn || !GetGameInstance())
@@ -535,7 +551,11 @@ FWSActionResult AWSInteractableActor::Interact(
 		return Empty;
 	}
 
-	const FWSActionRequest Request = BuildRequest(DialogueAct, PromiseCondition);
+	Request.ActionId = ActionId;
+	if (!Request.TransactionId.IsValid())
+	{
+		Request.TransactionId = FGuid::NewGuid();
+	}
 
 	const FWSActionPreview Preview = StateSubsystem->PreviewAction(Request);
 	FWSActionResult Result;
@@ -546,6 +566,9 @@ FWSActionResult AWSInteractableActor::Interact(
 	else
 	{
 		Result.ActionId = ActionId;
+		Result.TransactionId = Request.TransactionId;
+		Result.DialogueAct = Request.DialogueAct;
+		Result.PromiseCondition = Request.PromiseCondition;
 		Result.ReasonCode = Preview.ReasonCode;
 		Result.APBefore = StateSubsystem->GetStateSnapshot().ActionPoints;
 		Result.APAfter = Result.APBefore;
@@ -559,7 +582,7 @@ FWSActionResult AWSInteractableActor::Interact(
 				DisplayName,
 				Result,
 				Preview,
-				DialogueAct == EWSDialogueAct::Promise && Result.bCommitted);
+				Result.bPromiseRecorded);
 		}
 	}
 	return Result;

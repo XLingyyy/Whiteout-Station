@@ -1,9 +1,0 @@
-{
-  "schema_version": 1,
-  "provider_name": "deepseek",
-  "model": "deepseek-v4-flash",
-  "endpoint": "https://api.deepseek.com/chat/completions",
-  "timeout_seconds": 8,
-  "llm_enabled": false,
-  "notes": "Online dialogue is opt-in. Credentials are read only from WHITEOUT_LLM_API_KEY or ignored LocalConfig/WhiteoutLLM.ini; AutoRoute remains offline."
-}

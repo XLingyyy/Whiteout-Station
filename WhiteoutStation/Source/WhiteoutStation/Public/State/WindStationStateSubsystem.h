@@ -79,6 +79,6 @@ private:
 	FWSAgentReply LatestDialogue;
 
 	void BroadcastState();
-	void RequestActionExpression(FName ActionId);
+	void RequestActionExpression(const FWSActionRequest& ActionRequest);
 	void HandleAgentReply(const FWSAgentReply& Reply);
 };

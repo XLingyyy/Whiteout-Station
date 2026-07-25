@@ -10,6 +10,7 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "Kismet/GameplayStatics.h"
+#include "Presentation/WSPresentationText.h"
 #include "State/WindStationStateSubsystem.h"
 #include "Sound/SoundBase.h"
 #include "Settings/WhiteoutSettingsSubsystem.h"
@@ -42,6 +43,7 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 	RestartAction = CreateDefaultSubobject<UInputAction>(TEXT("RestartAction"));
 	SettleAction = CreateDefaultSubobject<UInputAction>(TEXT("SettleAction"));
 	ContinueAction = CreateDefaultSubobject<UInputAction>(TEXT("ContinueAction"));
+	CycleOptionAction = CreateDefaultSubobject<UInputAction>(TEXT("CycleOptionAction"));
 
 	MoveForwardAction->ValueType = EInputActionValueType::Boolean;
 	MoveBackwardAction->ValueType = EInputActionValueType::Boolean;
@@ -53,6 +55,7 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 	RestartAction->ValueType = EInputActionValueType::Boolean;
 	SettleAction->ValueType = EInputActionValueType::Boolean;
 	ContinueAction->ValueType = EInputActionValueType::Boolean;
+	CycleOptionAction->ValueType = EInputActionValueType::Boolean;
 
 	RuntimeInputContext->MapKey(MoveForwardAction, EKeys::W);
 	RuntimeInputContext->MapKey(MoveBackwardAction, EKeys::S);
@@ -64,6 +67,7 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 	RuntimeInputContext->MapKey(RestartAction, EKeys::R);
 	RuntimeInputContext->MapKey(SettleAction, EKeys::Enter);
 	RuntimeInputContext->MapKey(ContinueAction, EKeys::C);
+	RuntimeInputContext->MapKey(CycleOptionAction, EKeys::Q);
 }
 
 void AWhiteoutCharacter::BeginPlay()
@@ -129,6 +133,7 @@ void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 			{
 				PreviewedInteractable = nullptr;
 				bPreviewCanExecute = false;
+				PreviewActionRequest = FWSActionRequest();
 				HUD->HideActionPreview();
 			}
 			if (Interactable)
@@ -162,6 +167,7 @@ void AWhiteoutCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		EnhancedInput->BindAction(RestartAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::RestartRun);
 		EnhancedInput->BindAction(SettleAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::Settle);
 		EnhancedInput->BindAction(ContinueAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::ContinueRun);
+		EnhancedInput->BindAction(CycleOptionAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::CycleActionOption);
 	}
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AWhiteoutCharacter::DismissOpening);
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &ACharacter::Jump);
@@ -214,7 +220,7 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 				{
 					if (bPreviewCanExecute)
 					{
-						Interactable->Interact(this);
+						Interactable->InteractRequest(this, PreviewActionRequest);
 					}
 					else
 					{
@@ -222,14 +228,78 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 					}
 					PreviewedInteractable = nullptr;
 					bPreviewCanExecute = false;
+					PreviewActionRequest = FWSActionRequest();
 					return;
 				}
 
-				const FWSActionPreview Preview = Interactable->PreviewInteraction();
-				HUD->ShowActionPreview(Interactable->DisplayName, Preview);
+				PreviewActionRequest = Interactable->BuildActionRequest();
+				const FWSActionPreview Preview = Interactable->PreviewRequest(PreviewActionRequest);
+				HUD->ShowActionPreview(Interactable->DisplayName, Preview, PreviewActionRequest);
 				PreviewedInteractable = Interactable;
 				bPreviewCanExecute = Preview.bCanExecute;
 			}
+		}
+	}
+}
+
+void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
+{
+	if (!PreviewedInteractable || ActiveDialogueTarget)
+	{
+		return;
+	}
+	if (PreviewActionRequest.ActionId == TEXT("distribute_food"))
+	{
+		static const int32 FoodOptions[][3] = {
+			{1, 0, 0},
+			{0, 1, 0},
+			{0, 0, 1},
+			{1, 1, 0},
+			{1, 0, 1},
+			{0, 1, 1}};
+		int32 CurrentIndex = 0;
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(FoodOptions); ++Index)
+		{
+			if (PreviewActionRequest.FoodForPlayer == FoodOptions[Index][0]
+				&& PreviewActionRequest.FoodForGuHeng == FoodOptions[Index][1]
+				&& PreviewActionRequest.FoodForYeCheng == FoodOptions[Index][2])
+			{
+				CurrentIndex = Index;
+				break;
+			}
+		}
+		const int32 NextIndex = (CurrentIndex + 1) % UE_ARRAY_COUNT(FoodOptions);
+		PreviewActionRequest.FoodForPlayer = FoodOptions[NextIndex][0];
+		PreviewActionRequest.FoodForGuHeng = FoodOptions[NextIndex][1];
+		PreviewActionRequest.FoodForYeCheng = FoodOptions[NextIndex][2];
+	}
+	else if (PreviewActionRequest.ActionId == TEXT("treat_gu_heng"))
+	{
+		PreviewActionRequest.TreatmentResource =
+			PreviewActionRequest.TreatmentResource == EWSResourceType::Medicine
+			? EWSResourceType::HeatPack
+			: EWSResourceType::Medicine;
+	}
+	else
+	{
+		return;
+	}
+	RefreshActionPreview();
+}
+
+void AWhiteoutCharacter::RefreshActionPreview()
+{
+	if (!PreviewedInteractable)
+	{
+		return;
+	}
+	const FWSActionPreview Preview = PreviewedInteractable->PreviewRequest(PreviewActionRequest);
+	bPreviewCanExecute = Preview.bCanExecute;
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->ShowActionPreview(PreviewedInteractable->DisplayName, Preview, PreviewActionRequest);
 		}
 	}
 }
@@ -244,8 +314,11 @@ void AWhiteoutCharacter::BeginDialogue(AWSInteractableActor* Interactable)
 	bDialogueChoiceCommitted = false;
 	bDialogueIntentPending = false;
 	PendingPlayerSaid.Reset();
+	ActiveDialogueSessionId = FGuid::NewGuid();
+	ActiveDialogueTransactionId.Invalidate();
 	PreviewedInteractable = nullptr;
 	bPreviewCanExecute = false;
+	PreviewActionRequest = FWSActionRequest();
 	Interactable->SetDialogueLookAtActive(true);
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
@@ -310,9 +383,24 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 	{
 		return;
 	}
-	const FWSActionPreview Preview = ActiveDialogueTarget->PreviewInteraction(DialogueAct, PromiseCondition);
+	const FWSActionRequest Request = ActiveDialogueTarget->BuildActionRequest(
+		DialogueAct,
+		PromiseCondition,
+		PendingPlayerSaid,
+		ActiveDialogueSessionId);
+	const FWSActionPreview Preview = ActiveDialogueTarget->PreviewRequest(Request);
 	if (!Preview.bCanExecute)
 	{
+		if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+		{
+			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+			{
+				HUD->SetDialogueIntentStatus(FString::Printf(
+					TEXT("%s %s"),
+					*FWSPresentationText::ReasonCause(Preview.ReasonCode).ToString(),
+					*FWSPresentationText::ReasonNextStep(Preview.ReasonCode).ToString()), false);
+			}
+		}
 		return;
 	}
 	bDialogueChoiceCommitted = true;
@@ -323,8 +411,8 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 			HUD->SetDialogueIntentStatus(TEXT("交涉已提交，正在组织回应……"), true);
 		}
 	}
-	UWSAgentGateway::QueuePlayerSaid(ActiveDialogueTarget->ActionId, PendingPlayerSaid);
-	ActiveDialogueTarget->Interact(this, DialogueAct, PromiseCondition);
+	ActiveDialogueTransactionId = Request.TransactionId;
+	ActiveDialogueTarget->InteractRequest(this, Request);
 	PendingPlayerSaid.Reset();
 }
 
@@ -360,6 +448,7 @@ void AWhiteoutCharacter::ContinueDialogue()
 	bDialogueChoiceCommitted = false;
 	bDialogueIntentPending = false;
 	PendingPlayerSaid.Reset();
+	ActiveDialogueTransactionId.Invalidate();
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
@@ -376,6 +465,8 @@ void AWhiteoutCharacter::CancelDialogue()
 		ActiveDialogueTarget->SetDialogueLookAtActive(false);
 	}
 	ActiveDialogueTarget = nullptr;
+	ActiveDialogueSessionId.Invalidate();
+	ActiveDialogueTransactionId.Invalidate();
 	bDialogueChoiceCommitted = false;
 	bDialogueIntentPending = false;
 	PendingPlayerSaid.Reset();
@@ -422,6 +513,7 @@ void AWhiteoutCharacter::ContinueRun(const FInputActionValue& Value)
 		return;
 	}
 	const bool bLoaded = StateSubsystem->LoadSnapshot();
+	bEarlySettleConfirmationPending = false;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
@@ -461,14 +553,31 @@ void AWhiteoutCharacter::Settle(const FInputActionValue& Value)
 	const FWSGameState Before = StateSubsystem->GetStateSnapshot();
 	if (!Before.Tasks.bSignalSent && Before.ActionPoints > 0 && Before.Phase != EWSGamePhase::Ending)
 	{
-		if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+		const bool bSameStateWasConfirmed = bEarlySettleConfirmationPending
+			&& EarlySettleConfirmationAP == Before.ActionPoints
+			&& EarlySettleConfirmationTransactionCount == Before.CommittedTransactions.Num();
+		if (bSameStateWasConfirmed)
 		{
-			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
-			{
-				HUD->SetSystemMessage(TEXT("现在还不能结算：先发出信号、用完行动力，或接受失败结局。"));
-			}
+			bEarlySettleConfirmationPending = false;
 		}
-		return;
+		else
+		{
+			bEarlySettleConfirmationPending = true;
+			EarlySettleConfirmationAP = Before.ActionPoints;
+			EarlySettleConfirmationTransactionCount = Before.CommittedTransactions.Num();
+			if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+			{
+				if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+				{
+					HUD->SetSystemMessage(TEXT("尚未发出求救信号。再次按 Enter 将接受失败结局并结束本轮。"));
+				}
+			}
+			return;
+		}
+	}
+	else
+	{
+		bEarlySettleConfirmationPending = false;
 	}
 	const FWSGameState Results = StateSubsystem->EndGame();
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))

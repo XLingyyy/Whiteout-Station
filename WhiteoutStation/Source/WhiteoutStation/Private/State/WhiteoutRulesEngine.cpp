@@ -105,12 +105,15 @@ bool FWhiteoutRulesEngine::LoadConfig(const FString& ConfigPath, FString& OutErr
 	const TSharedPtr<FJsonObject> Resources = Initial->GetObjectField(TEXT("resources"));
 	const TSharedPtr<FJsonObject> Flags = Initial->GetObjectField(TEXT("flags"));
 	const TSharedPtr<FJsonObject> Tasks = Initial->GetObjectField(TEXT("tasks"));
+	const TSharedPtr<FJsonObject> Balance = Root->GetObjectField(TEXT("balance"));
+	const TSharedPtr<FJsonObject> Thresholds = Balance->GetObjectField(TEXT("thresholds"));
 
 	Config.StartingActionPoints = Gameplay->GetIntegerField(TEXT("starting_action_points"));
 	Config.MidCrisisThreshold = Gameplay->GetIntegerField(TEXT("mid_crisis_threshold"));
 	Config.GeneratorRequired = Gameplay->GetIntegerField(TEXT("generator_required"));
 	Config.AntennaRequired = Gameplay->GetIntegerField(TEXT("antenna_required"));
 	Config.ModelCallHardLimit = Gameplay->GetIntegerField(TEXT("model_call_hard_limit"));
+	Config.SafeAntennaTemperature = Thresholds->GetNumberField(TEXT("safe_antenna_temperature"));
 
 	FWSGameState Parsed;
 	Parsed.ActionPoints = Config.StartingActionPoints;
@@ -143,7 +146,7 @@ bool FWhiteoutRulesEngine::LoadConfig(const FString& ConfigPath, FString& OutErr
 
 	if (Config.StartingActionPoints != 8 || Config.MidCrisisThreshold != 4)
 	{
-		OutError = TEXT("v0.1 requires 8 starting AP and a 4 AP crisis threshold");
+		OutError = TEXT("v0.5 requires 8 starting AP and a 4 AP crisis threshold");
 		return false;
 	}
 
@@ -191,6 +194,8 @@ FWSActionResult FWhiteoutRulesEngine::Commit(FWSActionRequest Request)
 {
 	FWSActionResult Result;
 	Result.ActionId = Request.ActionId;
+	Result.DialogueAct = Request.DialogueAct;
+	Result.PromiseCondition = Request.PromiseCondition;
 	Result.APBefore = State.ActionPoints;
 	Result.APAfter = State.ActionPoints;
 	if (!Request.TransactionId.IsValid())
@@ -212,7 +217,9 @@ FWSActionResult FWhiteoutRulesEngine::Commit(FWSActionRequest Request)
 	}
 
 	State.Phase = EWSGamePhase::ResolvingAction;
+	const int32 PromiseCountBefore = State.Promises.Num();
 	ApplyEffect(Request, Result.Changes);
+	Result.bPromiseRecorded = State.Promises.Num() > PromiseCountBefore;
 	const int32 Cost = GetActionCost(Request.ActionId);
 	ApplyEnvironment(Cost, Request.ActionId == WhiteoutRules::CalibrateAntenna, Result.Changes);
 	State.ActionPoints = FMath::Max(0, Result.APBefore - Cost);
@@ -251,6 +258,9 @@ FWSActionResult FWhiteoutRulesEngine::Commit(FWSActionRequest Request)
 	Event.APBefore = Result.APBefore;
 	Event.APAfter = State.ActionPoints;
 	Event.ReasonCode = EWSReasonCode::Committed;
+	Event.DialogueAct = Request.DialogueAct;
+	Event.PromiseCondition = Request.PromiseCondition;
+	Event.bPromiseRecorded = Result.bPromiseRecorded;
 	Event.Changes = Result.Changes;
 	Event.bCrisisTriggered = Result.bCrisisTriggered;
 	State.EventLog.Add(MoveTemp(Event));
@@ -286,6 +296,46 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecute(const FWSActionRequest& Request) 
 		return EWSReasonCode::UseLimitReached;
 	}
 
+	if (Request.ActionId == TalkGuHeng || Request.ActionId == TalkYeCheng)
+	{
+		const bool bAllowedAct = Request.DialogueAct == EWSDialogueAct::Ask
+			|| Request.DialogueAct == EWSDialogueAct::Challenge
+			|| Request.DialogueAct == EWSDialogueAct::Reassure
+			|| Request.DialogueAct == EWSDialogueAct::Promise;
+		if (!bAllowedAct)
+		{
+			return EWSReasonCode::DialogueActUnavailable;
+		}
+		if (Request.ActionId == TalkYeCheng && Request.DialogueAct == EWSDialogueAct::Promise)
+		{
+			return EWSReasonCode::DialogueActUnavailable;
+		}
+		if (Request.DialogueAct == EWSDialogueAct::Promise)
+		{
+			static const TSet<FName> AllowedConditions = {
+				TEXT("reserve_medicine"), TEXT("keep_records"), TEXT("heat_repair_room")};
+			if (!AllowedConditions.Contains(Request.PromiseCondition))
+			{
+				return EWSReasonCode::InvalidPromiseCondition;
+			}
+			const FName PromiseId(*FString::Printf(
+				TEXT("player_to_gu_heng:%s"),
+				*Request.PromiseCondition.ToString()));
+			if (State.Promises.ContainsByPredicate(
+					[PromiseId](const FWSPromiseRecord& Promise)
+					{
+						return Promise.PromiseId == PromiseId;
+					}))
+			{
+				return EWSReasonCode::DuplicatePromise;
+			}
+		}
+		else if (!Request.PromiseCondition.IsNone())
+		{
+			return EWSReasonCode::InvalidPromiseCondition;
+		}
+	}
+
 	if (Request.ActionId == HeatRepairRoom)
 	{
 		if (State.Flags.bRepairRoomHeated) return EWSReasonCode::AlreadyHeated;
@@ -312,6 +362,11 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecute(const FWSActionRequest& Request) 
 	{
 		if (!State.Flags.bMedicalRoomHeated) return EWSReasonCode::NeedsMedicalHeat;
 		if (!State.Flags.bGuHengDiagnosed) return EWSReasonCode::NeedsDiagnosis;
+		if (Request.TreatmentResource != EWSResourceType::Medicine
+			&& Request.TreatmentResource != EWSResourceType::HeatPack)
+		{
+			return EWSReasonCode::InvalidTreatmentResource;
+		}
 		if (Request.TreatmentResource == EWSResourceType::HeatPack)
 		{
 			if (!State.Flags.bHeatPackRevealed) return EWSReasonCode::HeatPackHidden;
@@ -351,7 +406,8 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecute(const FWSActionRequest& Request) 
 		if (State.Tasks.GeneratorProgress < Config.GeneratorRequired) return EWSReasonCode::NeedsGenerator;
 		if (State.Tasks.AntennaCalibration >= Config.AntennaRequired)
 			return EWSReasonCode::AntennaAlreadyCalibrated;
-		if (Character(EWSCharacterId::Player).Temperature < 40.0f) return EWSReasonCode::PlayerTooCold;
+		if (Character(EWSCharacterId::Player).Temperature < Config.SafeAntennaTemperature)
+			return EWSReasonCode::PlayerTooCold;
 	}
 	else if (Request.ActionId == SendSignal)
 	{
@@ -394,16 +450,27 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 			DiscoverFact(FactHeatPack, EWSKnowledgeLevel::Confirmed, &OutChanges);
 		}
 		OutChanges.Add(TEXT("Ye Cheng trust +4, pressure -4"));
+		if (Request.DialogueAct == EWSDialogueAct::Challenge)
+		{
+			ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, 3, -3);
+			OutChanges.Add(TEXT("Challenge modifier: Ye Cheng trust -3, pressure +3"));
+		}
+		else if (Request.DialogueAct == EWSDialogueAct::Reassure)
+		{
+			ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, -4, 3);
+			OutChanges.Add(TEXT("Reassure modifier: Ye Cheng trust +3, pressure -4"));
+		}
 	}
 	else if (Request.ActionId == TalkGuHeng)
 	{
+		const bool bStrongEvidence = Knows(FactForcedRestartSuspicion) && Knows(FactBurntRelay);
 		if (State.Flags.bGuHengTreated)
 		{
 			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, -8, 12);
 			State.Flags.bGuHengCooperative = true;
 			OutChanges.Add(TEXT("Gu Heng accepts cooperation after treatment"));
 		}
-		else if (Knows(FactForcedRestartSuspicion) && Knows(FactBurntRelay))
+		else if (bStrongEvidence)
 		{
 			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 3, 8);
 			State.Flags.bGuHengCooperative = true;
@@ -417,6 +484,29 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 		{
 			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 4, -3);
 			OutChanges.Add(TEXT("Gu Heng refuses an unsupported request"));
+		}
+		if (Request.DialogueAct == EWSDialogueAct::Challenge)
+		{
+			if (bStrongEvidence)
+			{
+				ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 2, 2);
+				OutChanges.Add(TEXT("Evidence challenge modifier: Gu Heng trust +2, pressure +2"));
+			}
+			else
+			{
+				ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 3, -3);
+				OutChanges.Add(TEXT("Challenge modifier: Gu Heng trust -3, pressure +3"));
+			}
+		}
+		else if (Request.DialogueAct == EWSDialogueAct::Reassure)
+		{
+			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, -4, 3);
+			OutChanges.Add(TEXT("Reassure modifier: Gu Heng trust +3, pressure -4"));
+		}
+		else if (Request.DialogueAct == EWSDialogueAct::Promise)
+		{
+			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, -2, 2);
+			OutChanges.Add(TEXT("Promise modifier: Gu Heng trust +2, pressure -2"));
 		}
 		if (Request.DialogueAct == EWSDialogueAct::Promise)
 		{

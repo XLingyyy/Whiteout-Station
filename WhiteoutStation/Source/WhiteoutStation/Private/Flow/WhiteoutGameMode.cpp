@@ -154,7 +154,7 @@ AWhiteoutGameMode::AWhiteoutGameMode()
 void AWhiteoutGameMode::BeginPlay()
 {
 	Super::BeginPlay();
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.2 presentation flow"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.5 flow"));
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		const bool bContinueRequested = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutContinue"));
@@ -162,7 +162,6 @@ void AWhiteoutGameMode::BeginPlay()
 		{
 			StateSubsystem->NewGame();
 		}
-		UWSAgentGateway::ResetSessionModelBudget(StateSubsystem->GetStateSnapshot().ModelCalls);
 	}
 
 	bool bHasBuilder = false;
@@ -236,13 +235,12 @@ void AWhiteoutGameMode::BeginPlay()
 					UE_LOG(
 						LogTemp,
 						Display,
-						TEXT("WhiteoutStation IntentProbe: mapped=%s act=%s condition=%s source=%s reason=%s calls=%d"),
+						TEXT("WhiteoutStation IntentProbe: mapped=%s act=%s condition=%s source=%s reason=%s"),
 						Intent.bMapped ? TEXT("true") : TEXT("false"),
 						*StaticEnum<EWSDialogueAct>()->GetNameStringByValue(static_cast<int64>(Intent.DialogueAct)),
 						*Intent.PromiseCondition.ToString(),
 						*Intent.Source,
-						*Intent.Reason,
-						UWSAgentGateway::GetSessionModelCalls());
+						*Intent.Reason);
 					if (WeakThis.IsValid())
 					{
 						FTimerHandle ExitTimer;
@@ -262,6 +260,16 @@ void AWhiteoutGameMode::BeginPlay()
 		ExpressionProbeText);
 	if (bExpressionProbeRequested)
 	{
+		FString ExpressionProbeActionText = TEXT("talk_gu_heng");
+		FParse::Value(
+			FCommandLine::Get(),
+			TEXT("WhiteoutExpressionAction="),
+			ExpressionProbeActionText);
+		const FName ExpressionProbeAction = ExpressionProbeActionText.Equals(
+			TEXT("talk_ye_cheng"),
+			ESearchCase::IgnoreCase)
+			? FName(TEXT("talk_ye_cheng"))
+			: FName(TEXT("talk_gu_heng"));
 		IntentProbeGateway = NewObject<UWSAgentGateway>(this);
 		IntentProbeGateway->Initialize();
 		const UWindStationStateSubsystem* ProbeSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
@@ -270,7 +278,7 @@ void AWhiteoutGameMode::BeginPlay()
 			: FWSGameState();
 		TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
 		IntentProbeGateway->RequestExpression(
-			TEXT("talk_gu_heng"),
+			ExpressionProbeAction,
 			ProbeState,
 			true,
 			FWSAgentReplyCallback::CreateLambda(
@@ -279,12 +287,11 @@ void AWhiteoutGameMode::BeginPlay()
 					UE_LOG(
 						LogTemp,
 						Display,
-						TEXT("WhiteoutStation ExpressionProbe: provider=%s fallback=%s validation=%s utterance=%s calls=%d"),
+						TEXT("WhiteoutStation ExpressionProbe: provider=%s fallback=%s validation=%s line_chars=%d"),
 						*Reply.Provider,
 						Reply.bFallback ? TEXT("true") : TEXT("false"),
 						*Reply.ValidationReason,
-						*Reply.Utterance,
-						UWSAgentGateway::GetSessionModelCalls());
+						Reply.Utterance.Len());
 					if (WeakThis.IsValid())
 					{
 						FTimerHandle ExitTimer;
@@ -1558,7 +1565,10 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 	{
 		bSucceeded &= Commit(TEXT("investigate_generator_log"));
 		bSucceeded &= Commit(TEXT("inspect_control_cabinet"));
-		bSucceeded &= Commit(TEXT("talk_gu_heng"));
+		bSucceeded &= Commit(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
+		{
+			Request.DialogueAct = EWSDialogueAct::Challenge;
+		});
 		bSucceeded &= Commit(TEXT("dismantle_kitchen_heater"));
 		bSucceeded &= Commit(TEXT("heat_repair_room"));
 		bSucceeded &= Commit(TEXT("repair_generator"));

@@ -69,6 +69,14 @@ public:
 		EWSDialogueAct DialogueAct = EWSDialogueAct::Ask,
 		FName PromiseCondition = NAME_None) const;
 
+	FWSActionRequest BuildActionRequest(
+		EWSDialogueAct DialogueAct = EWSDialogueAct::Ask,
+		FName PromiseCondition = NAME_None,
+		const FString& PlayerSaid = FString(),
+		FGuid DialogueSessionId = FGuid()) const;
+	FWSActionPreview PreviewRequest(const FWSActionRequest& Request) const;
+	FWSActionResult InteractRequest(APawn* InstigatorPawn, FWSActionRequest Request);
+
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	FWSActionResult Interact(
 		APawn* InstigatorPawn,
@@ -108,5 +116,4 @@ private:
 	UFUNCTION()
 	void HandleCharacterActionCommitted(const FWSActionResult& Result);
 
-	FWSActionRequest BuildRequest(EWSDialogueAct DialogueAct, FName PromiseCondition) const;
 };

@@ -34,6 +34,8 @@ public:
 	void ContinueDialogue();
 	void CancelDialogue();
 	bool IsDialogueActive() const { return ActiveDialogueTarget != nullptr; }
+	FGuid GetActiveDialogueSessionId() const { return ActiveDialogueSessionId; }
+	FGuid GetActiveDialogueTransactionId() const { return ActiveDialogueTransactionId; }
 	FWSActionPreview PreviewActiveDialogue(
 		EWSDialogueAct DialogueAct = EWSDialogueAct::Ask,
 		FName PromiseCondition = NAME_None) const;
@@ -72,10 +74,19 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ContinueAction;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> CycleOptionAction;
+
 	bool bPreviewCanExecute = false;
 	bool bDialogueChoiceCommitted = false;
 	bool bDialogueIntentPending = false;
+	bool bEarlySettleConfirmationPending = false;
+	int32 EarlySettleConfirmationAP = INDEX_NONE;
+	int32 EarlySettleConfirmationTransactionCount = INDEX_NONE;
 	FString PendingPlayerSaid;
+	FWSActionRequest PreviewActionRequest;
+	FGuid ActiveDialogueSessionId;
+	FGuid ActiveDialogueTransactionId;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AWSInteractableActor> PreviewedInteractable;
@@ -108,10 +119,12 @@ private:
 	void RestartRun(const FInputActionValue& Value);
 	void Settle(const FInputActionValue& Value);
 	void ContinueRun(const FInputActionValue& Value);
+	void CycleActionOption(const FInputActionValue& Value);
 	void DismissOpening();
 	void TogglePauseMenu();
 	void BeginDialogue(AWSInteractableActor* Interactable);
 	void CommitDialogueChoice(EWSDialogueAct DialogueAct, FName PromiseCondition);
+	void RefreshActionPreview();
 	AWSInteractableActor* FindLookedAtInteractable() const;
 	void UpdateFootsteps();
 };

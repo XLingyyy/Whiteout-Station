@@ -6,6 +6,10 @@
 #include "WSAgentGateway.generated.h"
 
 class IHttpRequest;
+namespace FHttpRetrySystem
+{
+	class FManager;
+}
 
 DECLARE_DELEGATE_OneParam(FWSAgentReplyCallback, const FWSAgentReply&);
 
@@ -42,7 +46,14 @@ class WHITEOUTSTATION_API UWSAgentGateway : public UObject
 
 public:
 	void Initialize();
+	void ResetSession();
+	virtual void BeginDestroy() override;
 	bool HasLiveProvider() const;
+	void RequestExpression(
+		const FWSActionRequest& ActionRequest,
+		const FWSGameState& State,
+		bool bAllowLiveProvider,
+		FWSAgentReplyCallback Completion);
 	void RequestExpression(
 		FName ActionId,
 		const FWSGameState& State,
@@ -55,16 +66,22 @@ public:
 		FWSDialogueIntentCallback Completion);
 
 	static FWSDialogueIntentResult ClassifyLocalIntent(const FString& UserText);
-	static void QueuePlayerSaid(FName ActionId, const FString& PlayerSaid);
 	static bool ContainsAdversarialInstruction(const FString& UserText);
+	static bool IsOfficialDeepSeekEndpoint(const FString& CandidateEndpoint);
+	static bool IsLoopbackEndpoint(const FString& CandidateEndpoint);
+	static bool IsAllowedEndpoint(const FString& CandidateEndpoint);
+	static bool ShouldAttachApiKeyToEndpoint(const FString& CandidateEndpoint);
 	static bool ValidateIntentPayload(
 		const FString& Payload,
 		const FString& UserText,
 		FWSDialogueIntentResult& OutIntent,
 		FString& OutReason);
 	static bool ExtractProviderContent(const FString& ProviderPayload, FString& OutContent, FString& OutReason);
-	static void ResetSessionModelBudget(int32 AlreadyUsed = 0);
-	static int32 GetSessionModelCalls();
+	static bool ExtractProviderContent(
+		const FString& ProviderPayload,
+		FString& OutContent,
+		FString& OutFinishReason,
+		FString& OutReason);
 
 	static bool ValidateModelPayload(
 		const FString& Payload,
@@ -86,21 +103,34 @@ private:
 	float TimeoutSeconds = 4.0f;
 	bool bLLMEnabled = false;
 	bool bRequiresApiKey = false;
+	uint64 SessionGeneration = 1;
+
+	TSharedPtr<FHttpRetrySystem::FManager, ESPMode::ThreadSafe> RetryManager;
+	TArray<TSharedPtr<IHttpRequest, ESPMode::ThreadSafe>> ActiveRequests;
+	FCriticalSection AuditMutex;
 
 	void LoadConfig();
 	FString BuildRequestJson(
 		const FWSAgentReply& Decision,
 		const TArray<FName>& AllowedFactIds,
 		const FWSGameState& State,
-		const FString& PlayerSaid) const;
+		const FWSActionRequest& ActionRequest) const;
 	FString BuildIntentRequestJson(const FString& UserText) const;
-	static bool TryConsumeSessionModelCall();
 	static bool HasPromiseKeyword(const FString& UserText, FName PromiseCondition);
 	static FString IntentResultJson(const FWSDialogueIntentResult& Intent);
-	static void AppendAuditRecord(
+	void UntrackRequest(const TSharedPtr<IHttpRequest, ESPMode::ThreadSafe>& Request);
+	void AppendAuditRecord(
 		const FString& Kind,
 		const FString& Provider,
-		const FString& RequestPayload,
-		const FString& ResponsePayload,
-		const FString& Outcome);
+		const FGuid& RequestId,
+		FName ActionId,
+		EWSDialogueAct DialogueAct,
+		int32 HttpStatus,
+		const FString& FinishReason,
+		int64 RequestBytes,
+		int64 ResponseBytes,
+		double ElapsedMilliseconds,
+		const FString& Outcome,
+		int32 PromptTokens = -1,
+		int32 CompletionTokens = -1);
 };

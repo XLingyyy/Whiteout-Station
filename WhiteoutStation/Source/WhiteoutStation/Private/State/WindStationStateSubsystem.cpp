@@ -11,13 +11,13 @@
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 
-const FString UWindStationStateSubsystem::SaveSlot(TEXT("WhiteoutStation_Autosave_v0_1"));
+const FString UWindStationStateSubsystem::SaveSlot(TEXT("WhiteoutStation_Autosave_v0_5"));
 
 void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	FString Error;
-	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.1.json");
+	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.5.json");
 	if (!RulesEngine.LoadConfig(ConfigPath, Error))
 	{
 		UE_LOG(LogTemp, Error, TEXT("Whiteout rules config fallback: %s"), *Error);
@@ -30,6 +30,10 @@ void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection
 
 void UWindStationStateSubsystem::Deinitialize()
 {
+	if (AgentGateway)
+	{
+		AgentGateway->ResetSession();
+	}
 	ActionResolver = nullptr;
 	AgentGateway = nullptr;
 	Super::Deinitialize();
@@ -37,6 +41,10 @@ void UWindStationStateSubsystem::Deinitialize()
 
 void UWindStationStateSubsystem::NewGame()
 {
+	if (AgentGateway)
+	{
+		AgentGateway->ResetSession();
+	}
 	RulesEngine.Reset();
 	LatestDialogue = FWSAgentReply();
 	BroadcastState();
@@ -60,7 +68,9 @@ FWSActionResult UWindStationStateSubsystem::CommitAction(const FWSActionRequest&
 		SaveSnapshot();
 		OnActionCommitted.Broadcast(Result);
 		BroadcastState();
-		RequestActionExpression(Result.ActionId);
+		FWSActionRequest CommittedRequest = Request;
+		CommittedRequest.TransactionId = Result.TransactionId;
+		RequestActionExpression(CommittedRequest);
 	}
 	return Result;
 }
@@ -88,11 +98,16 @@ bool UWindStationStateSubsystem::SaveSnapshot()
 bool UWindStationStateSubsystem::LoadSnapshot()
 {
 	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlot, 0));
-	if (!Save || Save->SaveVersion != TEXT("0.1.0"))
+	if (!Save || Save->SaveVersion != TEXT("0.5.0"))
 	{
 		return false;
 	}
+	if (AgentGateway)
+	{
+		AgentGateway->ResetSession();
+	}
 	RulesEngine.SetState(Save->State);
+	LatestDialogue = FWSAgentReply();
 	BroadcastState();
 	return true;
 }
@@ -114,6 +129,13 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 		Object->SetNumberField(TEXT("ap_before"), Event.APBefore);
 		Object->SetNumberField(TEXT("ap_after"), Event.APAfter);
 		Object->SetStringField(TEXT("reason_code"), StaticEnum<EWSReasonCode>()->GetNameStringByValue(static_cast<int64>(Event.ReasonCode)));
+		Object->SetStringField(
+			TEXT("dialogue_act"),
+			StaticEnum<EWSDialogueAct>()->GetNameStringByValue(static_cast<int64>(Event.DialogueAct)));
+		Object->SetStringField(
+			TEXT("promise_condition"),
+			Event.PromiseCondition.IsNone() ? TEXT("none") : Event.PromiseCondition.ToString());
+		Object->SetBoolField(TEXT("promise_recorded"), Event.bPromiseRecorded);
 		Object->SetBoolField(TEXT("crisis_triggered"), Event.bCrisisTriggered);
 		TArray<TSharedPtr<FJsonValue>> Changes;
 		for (const FString& Change : Event.Changes)
@@ -125,7 +147,7 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 	}
 
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetStringField(TEXT("rules_version"), TEXT("0.1.0"));
+	Root->SetStringField(TEXT("rules_version"), TEXT("0.5.0"));
 	Root->SetArrayField(TEXT("events"), Events);
 	const FWSGameState& Snapshot = RulesEngine.GetState();
 	Root->SetNumberField(TEXT("remaining_ap"), Snapshot.ActionPoints);
@@ -161,9 +183,9 @@ void UWindStationStateSubsystem::BroadcastState()
 	OnStateChanged.Broadcast(RulesEngine.GetState());
 }
 
-void UWindStationStateSubsystem::RequestActionExpression(const FName ActionId)
+void UWindStationStateSubsystem::RequestActionExpression(const FWSActionRequest& ActionRequest)
 {
-	if (!AgentGateway || !UWSNPCDecisionService::RequiresExpression(ActionId))
+	if (!AgentGateway || !UWSNPCDecisionService::RequiresExpression(ActionRequest.ActionId))
 	{
 		return;
 	}
@@ -176,7 +198,7 @@ void UWindStationStateSubsystem::RequestActionExpression(const FName ActionId)
 	}
 	TWeakObjectPtr<UWindStationStateSubsystem> WeakThis(this);
 	AgentGateway->RequestExpression(
-		ActionId,
+		ActionRequest,
 		RulesEngine.GetState(),
 		bUseLiveProvider,
 		FWSAgentReplyCallback::CreateLambda(

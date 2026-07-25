@@ -313,7 +313,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		CardInfo->AddChildToVerticalBox(CardText)->SetPadding(FMargin(0, 0, 0, 4));
 		CrewCardTexts.Add(CardText);
 		UTextBlock* StatusLegend = MakeText(FName(*FString::Printf(TEXT("CrewLegend%d"), CharacterIndex)), 10, WSUITokens::Color::TextSecondary, false);
-		StatusLegend->SetText(FText::FromString(TEXT("健　温　精　饥　压")));
+		StatusLegend->SetText(FText::FromString(TEXT("健　温　精　饱　稳")));
 		CardInfo->AddChildToVerticalBox(StatusLegend)->SetPadding(FMargin(0, 0, 0, 2));
 		UHorizontalBox* StatusRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*FString::Printf(TEXT("CrewBars%d"), CharacterIndex)));
 		for (int32 StatusIndex = 0; StatusIndex < 5; ++StatusIndex)
@@ -520,13 +520,17 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	DialogueLineText = MakeText(TEXT("DialogueLineText"), 16, Body);
 	DialogueLineText->SetLineHeightPercentage(1.2f);
 	DialogueText = DialogueLineText;
-	DialogueStatusText = DialogueLineText;
+	DialogueStatusText = MakeText(TEXT("DialogueStatusText"), 12, Secondary);
+	DialogueStatusText->SetText(FText::FromString(TEXT("本地预设")));
 	UVerticalBoxSlot* DialogueNameSlot = DialogueBarBox->AddChildToVerticalBox(DialogueNameText);
 	DialogueNameSlot->SetPadding(FMargin(0, 0, 0, 3));
 	DialogueNameSlot->SetHorizontalAlignment(HAlign_Fill);
 	UVerticalBoxSlot* DialogueLineSlot = DialogueBarBox->AddChildToVerticalBox(DialogueLineText);
 	DialogueLineSlot->SetPadding(FMargin(0, 0, 0, 7));
 	DialogueLineSlot->SetHorizontalAlignment(HAlign_Fill);
+	UVerticalBoxSlot* DialogueStatusSlot = DialogueBarBox->AddChildToVerticalBox(DialogueStatusText);
+	DialogueStatusSlot->SetPadding(FMargin(0, 0, 0, 6));
+	DialogueStatusSlot->SetHorizontalAlignment(HAlign_Fill);
 
 	DialogueWheelPanel = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("DialogueWheel"));
 	USizeBox* IntentSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("DialogueIntentSize"));
@@ -1312,8 +1316,8 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 			const TArray<float> Ratios = {
 				Character->Health / 100.0f,
 				Character->Temperature / 100.0f,
-				1.0f - Character->Fatigue / 100.0f,
-				1.0f - Character->Hunger / 100.0f,
+				Character->Fatigue / 100.0f,
+				Character->Hunger / 100.0f,
 				1.0f - Character->Pressure / 100.0f};
 			for (int32 StatusIndex = 0; StatusIndex < Ratios.Num(); ++StatusIndex)
 			{
@@ -1755,11 +1759,30 @@ void UWhiteoutHUDWidget::ClearInteractionFocus()
 	}
 }
 
-void UWhiteoutHUDWidget::ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview)
+void UWhiteoutHUDWidget::ShowActionPreview(
+	const FText& ActionName,
+	const FWSActionPreview& Preview,
+	const FWSActionRequest& Request)
 {
 	SetLayer(EWSUILayer::Preview);
 	ShowPanelAnimated(PreviewBorder, true, WSUITokens::Anim::Fast, false);
 	PreviewTitleText->SetText(ActionName);
+	FString Selection;
+	if (Request.ActionId == TEXT("distribute_food"))
+	{
+		Selection = FString::Printf(
+			TEXT("当前方案：玩家 ×%d　顾衡 ×%d　叶澄 ×%d"),
+			Request.FoodForPlayer,
+			Request.FoodForGuHeng,
+			Request.FoodForYeCheng);
+	}
+	else if (Request.ActionId == TEXT("treat_gu_heng"))
+	{
+		Selection = Request.TreatmentResource == EWSResourceType::HeatPack
+			? TEXT("当前方案：保温包 ×1")
+			: TEXT("当前方案：药品 ×1");
+	}
+	const bool bHasSelectableOption = !Selection.IsEmpty();
 	if (Preview.bCanExecute)
 	{
 		PreviewTitleText->SetColorAndOpacity(FSlateColor(Cyan));
@@ -1772,6 +1795,11 @@ void UWhiteoutHUDWidget::ShowActionPreview(const FText& ActionName, const FWSAct
 			Expected += TEXT("\n");
 		}
 		Expected += FWSPresentationText::ActionImpact(Preview.ActionId).ToString();
+		FString ResourceCost = FWSPresentationText::ActionResourceCost(Preview.ActionId).ToString();
+		if (bHasSelectableOption)
+		{
+			ResourceCost = Selection;
+		}
 		const FString BodyFormat = FWSPresentationText::UI(
 			TEXT("ui_preview_body_format"),
 			TEXT("行动成本\n行动力 ×{0}\n\n执行者\n{1}\n\n资源成本\n{2}\n\n可预见风险\n{3}\n\n预期结果\n{4}\n\n当前前置条件满足；确认后立即结算。")).ToString();
@@ -1779,20 +1807,31 @@ void UWhiteoutHUDWidget::ShowActionPreview(const FText& ActionName, const FWSAct
 			*BodyFormat,
 			{Preview.APCost,
 			 FWSPresentationText::ActionExecutor(Preview.ActionId).ToString(),
-			 FWSPresentationText::ActionResourceCost(Preview.ActionId).ToString(),
+			 ResourceCost,
 			 Risk,
 			 Expected})));
-		PreviewFooterText->SetText(FWSPresentationText::UI(TEXT("ui_preview_footer"), TEXT("再次按 F 确认执行　｜　移开视线取消")));
+		PreviewFooterText->SetText(FText::FromString(
+			bHasSelectableOption
+				? TEXT("[Q] 切换方案　｜　再次按 F 确认执行　｜　移开视线取消")
+				: FWSPresentationText::UI(TEXT("ui_preview_footer"), TEXT("再次按 F 确认执行　｜　移开视线取消")).ToString()));
 	}
 	else
 	{
 		PlayUISound(UIRejectSound, 0.72f);
 		PreviewTitleText->SetColorAndOpacity(FSlateColor(Danger));
 		const FString RejectionFormat = FWSPresentationText::UI(TEXT("ui_rejection_format"), TEXT("现在不能执行\n{0}\n\n怎样改变条件\n{1}")).ToString();
-		PreviewBodyText->SetText(FText::FromString(FString::Format(
+		FString Rejection = FString::Format(
 			*RejectionFormat,
-			{FWSPresentationText::ReasonCause(Preview.ReasonCode).ToString(), FWSPresentationText::ReasonNextStep(Preview.ReasonCode).ToString()})));
-		PreviewFooterText->SetText(FWSPresentationText::UI(TEXT("ui_rejection_footer"), TEXT("移开视线或按 F 关闭提示")));
+			{FWSPresentationText::ReasonCause(Preview.ReasonCode).ToString(), FWSPresentationText::ReasonNextStep(Preview.ReasonCode).ToString()});
+		if (bHasSelectableOption)
+		{
+			Rejection = Selection + TEXT("\n\n") + Rejection;
+		}
+		PreviewBodyText->SetText(FText::FromString(Rejection));
+		PreviewFooterText->SetText(FText::FromString(
+			bHasSelectableOption
+				? TEXT("[Q] 切换方案　｜　按 F 关闭提示")
+				: FWSPresentationText::UI(TEXT("ui_rejection_footer"), TEXT("移开视线或按 F 关闭提示")).ToString()));
 	}
 }
 
@@ -2181,10 +2220,28 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 	{
 		return;
 	}
+	if (const AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
+	{
+		if (Reply.DialogueSessionId != Character->GetActiveDialogueSessionId()
+			|| Reply.TransactionId != Character->GetActiveDialogueTransactionId())
+		{
+			return;
+		}
+	}
 	const FString Speaker = Reply.Speaker == EWSCharacterId::GuHeng ? TEXT("顾衡") : TEXT("叶澄");
 	if (DialogueNameText) DialogueNameText->SetText(FText::FromString(Speaker));
 	DialogueLineText->SetText(FText::FromString(Reply.Utterance));
 	DialogueLineText->SetColorAndOpacity(FSlateColor(Body));
+	if (DialogueStatusText)
+	{
+		const FString Status = !Reply.bFallback
+			? TEXT("DeepSeek 在线表达")
+			: Reply.Provider == TEXT("preset")
+				? TEXT("本地预设")
+				: TEXT("在线失败后本地降级");
+		DialogueStatusText->SetText(FText::FromString(Status));
+		DialogueStatusText->SetColorAndOpacity(FSlateColor(!Reply.bFallback ? Cyan : Secondary));
+	}
 	ShowDialogueReplyActions();
 }
 

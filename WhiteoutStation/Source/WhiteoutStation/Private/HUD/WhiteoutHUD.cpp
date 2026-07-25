@@ -45,9 +45,12 @@ void AWhiteoutHUD::SetActionFeedback(
 	if (HUDWidget) HUDWidget->SetActionFeedback(ActionName, Result, Preview, bPromiseCreated);
 }
 
-void AWhiteoutHUD::ShowActionPreview(const FText& ActionName, const FWSActionPreview& Preview)
+void AWhiteoutHUD::ShowActionPreview(
+	const FText& ActionName,
+	const FWSActionPreview& Preview,
+	const FWSActionRequest& Request)
 {
-	if (HUDWidget) HUDWidget->ShowActionPreview(ActionName, Preview);
+	if (HUDWidget) HUDWidget->ShowActionPreview(ActionName, Preview, Request);
 }
 
 void AWhiteoutHUD::HideActionPreview()

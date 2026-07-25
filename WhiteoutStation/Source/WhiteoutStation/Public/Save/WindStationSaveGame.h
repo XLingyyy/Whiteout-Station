@@ -12,7 +12,7 @@ class WHITEOUTSTATION_API UWindStationSaveGame : public USaveGame
 
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame)
-	FString SaveVersion = TEXT("0.1.0");
+	FString SaveVersion = TEXT("0.5.0");
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame)
 	int32 DeterministicSeed = 17012026;
