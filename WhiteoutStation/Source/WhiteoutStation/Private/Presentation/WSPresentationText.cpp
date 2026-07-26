@@ -198,7 +198,7 @@ FText FWSPresentationText::EndingTitle(const EWSEndingType Ending)
 {
 	if (Ending == EWSEndingType::TaskSuccess) return TableText(TEXT("ending_task_success"), TEXT("信号穿过风雪"));
 	if (Ending == EWSEndingType::SurvivalWait) return TableText(TEXT("ending_survival_wait"), TEXT("等待天明"));
-	if (Ending == EWSEndingType::CostUncontrolled) return TableText(TEXT("ending_cost_uncontrolled"), TEXT("求救成功，代价失控"));
+	if (Ending == EWSEndingType::CostUncontrolled) return TableText(TEXT("ending_cost_uncontrolled_v06"), TEXT("代价越过边界"));
 	return TableText(TEXT("ending_total_collapse"), TEXT("气象站失守"));
 }
 
@@ -206,7 +206,7 @@ FText FWSPresentationText::EndingSummary(const EWSEndingType Ending)
 {
 	if (Ending == EWSEndingType::TaskSuccess) return TableText(TEXT("summary_task_success"), TEXT("求救信号已经发出，人员与储备仍在可控范围内。"));
 	if (Ending == EWSEndingType::SurvivalWait) return TableText(TEXT("summary_survival_wait"), TEXT("信号未能发出，你们只能依靠现有储备等待风暴减弱。"));
-	if (Ending == EWSEndingType::CostUncontrolled) return TableText(TEXT("summary_cost_uncontrolled"), TEXT("外界收到了信号，但人员、物资或关系付出了沉重代价。"));
+	if (Ending == EWSEndingType::CostUncontrolled) return TableText(TEXT("summary_cost_uncontrolled_v06"), TEXT("任务仍在推进，但人员、物资或关系已经越过安全边界。"));
 	return TableText(TEXT("summary_total_collapse"), TEXT("电力、任务与人员状态同时越过了安全边界。"));
 }
 
@@ -214,7 +214,7 @@ FText FWSPresentationText::EndingAdvice(const EWSEndingType Ending)
 {
 	if (Ending == EWSEndingType::TaskSuccess) return UI(TEXT("advice_task_success"), TEXT("尝试用更少行动力完成同样目标，并保留更多燃料与医疗物资。"));
 	if (Ending == EWSEndingType::SurvivalWait) return UI(TEXT("advice_survival_wait"), TEXT("优先确认故障证据，再把发电机和天线串成一条可执行路线。"));
-	if (Ending == EWSEndingType::CostUncontrolled) return UI(TEXT("advice_cost_uncontrolled"), TEXT("发信前先处理失温、伤势与承诺；任务完成不等于代价可控。"));
+	if (Ending == EWSEndingType::CostUncontrolled) return UI(TEXT("advice_cost_uncontrolled_v06"), TEXT("推进关键任务前先处理失温、伤势与承诺，并给生存留出余量。"));
 	return UI(TEXT("advice_total_collapse"), TEXT("先恢复一处关键供暖并取得维修记录，避免在条件不足时连续冒险。"));
 }
 

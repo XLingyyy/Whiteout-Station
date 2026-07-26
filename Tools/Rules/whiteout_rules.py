@@ -703,7 +703,14 @@ class WhiteoutSimulator:
 
     def classify_ending(self) -> str:
         characters = self.state["characters"].values()
-        critical = any(c["health"] <= 30 or c["temperature"] <= 30 for c in characters)
+        thresholds = self.rules["balance"]["thresholds"]
+        critical = any(
+            c["health"] <= thresholds["critical_health"]
+            or c["temperature"] <= thresholds["critical_temperature"]
+            or c["fatigue"] <= thresholds["critical_fatigue"]
+            or c["pressure"] >= thresholds["critical_pressure"]
+            for c in characters
+        )
         tasks = self.state["tasks"]
         if tasks["signal_sent"] and not critical:
             return "task_success"
@@ -746,7 +753,13 @@ class WhiteoutSimulator:
             heater_raw = 5.0 if resources["fuel"] >= 2 else 1.25
         reserves_raw = fuel_raw + food_raw + medical_raw + heater_raw
         gu = self.state["characters"]["gu_heng"]
-        if (gu["health"] <= 30 or gu["temperature"] <= 30) and resources["medicine"] > 0:
+        thresholds = self.rules["balance"]["thresholds"]
+        if (
+            gu["health"] <= thresholds["critical_health"]
+            or gu["temperature"] <= thresholds["critical_temperature"]
+            or gu["fatigue"] <= thresholds["critical_fatigue"]
+            or gu["pressure"] >= thresholds["critical_pressure"]
+        ) and resources["medicine"] > 0:
             medical_raw = min(medical_raw, 1.25)
             reserves_raw = fuel_raw + food_raw + medical_raw + heater_raw
 

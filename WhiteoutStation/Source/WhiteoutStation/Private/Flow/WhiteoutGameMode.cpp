@@ -49,6 +49,7 @@ namespace
 		Event.APAfter = APAfter;
 		Event.ReasonCode = EWSReasonCode::Committed;
 		Event.bCrisisTriggered = bCrisis;
+		State.ActionCounts.FindOrAdd(Event.ActionId) += 1;
 	}
 
 	FWSGameState MakePresentationResultsState(const FWSGameState& BaseState, const EWSEndingType Ending)
@@ -57,6 +58,7 @@ namespace
 		State.Phase = EWSGamePhase::Results;
 		State.Ending = Ending;
 		State.EventLog.Reset();
+		State.ActionCounts.Reset();
 		State.bMidCrisisTriggered = true;
 		State.Score.Rating = TEXT("C");
 		State.Tasks = FWSTaskState();
@@ -64,6 +66,8 @@ namespace
 
 		if (Ending == EWSEndingType::TaskSuccess)
 		{
+			State.Flags.bRelayInstalled = true;
+			State.Flags.bKitchenHeaterIntact = false;
 			State.Tasks.GeneratorProgress = 2;
 			State.Tasks.AntennaCalibration = 1;
 			State.Tasks.bSignalSent = true;
@@ -85,6 +89,7 @@ namespace
 		}
 		else if (Ending == EWSEndingType::SurvivalWait)
 		{
+			State.Flags.bMedicalRoomHeated = true;
 			State.Tasks.GeneratorProgress = 1;
 			State.Score.TaskQuality = 10.0f;
 			State.Score.People = 24.5f;
@@ -100,6 +105,7 @@ namespace
 		}
 		else if (Ending == EWSEndingType::CostUncontrolled)
 		{
+			State.Flags.bSelfRepairUsed = true;
 			State.Tasks.GeneratorProgress = 2;
 			State.Tasks.AntennaCalibration = 1;
 			State.Tasks.bSignalSent = true;
@@ -305,6 +311,34 @@ void AWhiteoutGameMode::BeginPlay()
 			ExpressionProbeText);
 	}
 
+	const bool bDialogueHistoryProbeRequested = FParse::Param(
+		FCommandLine::Get(),
+		TEXT("WhiteoutDialogueHistoryProbe"));
+	if (bDialogueHistoryProbeRequested)
+	{
+		IntentProbeGateway = NewObject<UWSAgentGateway>(this);
+		IntentProbeGateway->Initialize();
+		DialogueHistoryProbeSessionId = FGuid::NewGuid();
+		RunDialogueHistoryProbeStep(0);
+	}
+
+	FString InputSmokeTarget;
+	if (FParse::Value(
+		FCommandLine::Get(),
+		TEXT("WhiteoutInputSmokeTarget="),
+		InputSmokeTarget))
+	{
+		FTimerHandle InputSmokeSetupTimer;
+		GetWorldTimerManager().SetTimer(
+			InputSmokeSetupTimer,
+			[this, InputSmokeTarget]()
+			{
+				SetupInputSmokeTarget(InputSmokeTarget);
+			},
+			0.75f,
+			false);
+	}
+
 	if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoCapture")))
 	{
 		FTimerHandle CaptureTimer;
@@ -358,6 +392,7 @@ void AWhiteoutGameMode::BeginPlay()
 	if (AutoRoute.IsEmpty()
 		&& !bIntentProbeRequested
 		&& !bExpressionProbeRequested
+		&& !bDialogueHistoryProbeRequested
 		&& !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutBaselineCapture"))
 		&& SettingsAuditMode.IsEmpty()
 		&& !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutJumpAudit"))
@@ -366,6 +401,113 @@ void AWhiteoutGameMode::BeginPlay()
 		FTimerHandle OpeningStartTimer;
 		GetWorldTimerManager().SetTimer(OpeningStartTimer, this, &AWhiteoutGameMode::BeginOpeningPresentation, 0.25f, false);
 	}
+}
+
+void AWhiteoutGameMode::RunDialogueHistoryProbeStep(const int32 Step)
+{
+	if (!IntentProbeGateway || !DialogueHistoryProbeSessionId.IsValid())
+	{
+		FPlatformMisc::RequestExit(false);
+		return;
+	}
+	const UWindStationStateSubsystem* StateSubsystem =
+		GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	const FWSGameState State = StateSubsystem
+		? StateSubsystem->GetStateSnapshot()
+		: FWSGameState();
+	FWSActionRequest Request;
+	Request.ActionId = TEXT("talk_gu_heng");
+	Request.DialogueAct = Step == 0
+		? EWSDialogueAct::Ask
+		: EWSDialogueAct::Reassure;
+	Request.PlayerSaid = Step == 0
+		? TEXT("继电器现在是什么状态？")
+		: TEXT("先稳住，我们会按顺序处理。");
+	Request.TransactionId = FGuid::NewGuid();
+	Request.DialogueSessionId = DialogueHistoryProbeSessionId;
+	TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
+	IntentProbeGateway->RequestExpression(
+		Request,
+		State,
+		true,
+		FWSAgentReplyCallback::CreateLambda(
+			[WeakThis, Step](const FWSAgentReply& Reply)
+			{
+				UE_LOG(
+					LogTemp,
+					Display,
+					TEXT("WhiteoutStation DialogueHistoryProbe: step=%d provider=%s fallback=%s validation=%s line_chars=%d"),
+					Step + 1,
+					*Reply.Provider,
+					Reply.bFallback ? TEXT("true") : TEXT("false"),
+					*Reply.ValidationReason,
+					Reply.Utterance.Len());
+				if (!WeakThis.IsValid())
+				{
+					return;
+				}
+				if (Step == 0)
+				{
+					WeakThis->RunDialogueHistoryProbeStep(1);
+					return;
+				}
+				FTimerHandle ExitTimer;
+				WeakThis->GetWorldTimerManager().SetTimer(
+					ExitTimer,
+					[]() { FPlatformMisc::RequestExit(false); },
+					0.4f,
+					false);
+			}));
+}
+
+void AWhiteoutGameMode::SetupInputSmokeTarget(const FString& ActionId)
+{
+	APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	APlayerController* PlayerController =
+		UGameplayStatics::GetPlayerController(this, 0);
+	if (!Pawn || !PlayerController)
+	{
+		UE_LOG(
+			LogTemp,
+			Error,
+			TEXT("WhiteoutStation InputSmokeSetup: missing pawn/controller"));
+		return;
+	}
+	for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+	{
+		if (!It->ActionId.ToString().Equals(ActionId, ESearchCase::IgnoreCase))
+		{
+			continue;
+		}
+		FVector BoundsOrigin = It->GetActorLocation();
+		FVector BoundsExtent = FVector::ZeroVector;
+		It->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+		FVector PawnLocation =
+			It->GetActorLocation() + FVector(360.0f, 0.0f, 96.0f);
+		PawnLocation.Z = 96.0f;
+		Pawn->SetActorLocation(
+			PawnLocation,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+		const FVector CameraLocation =
+			PawnLocation + FVector(0.0f, 0.0f, 64.0f);
+		PlayerController->SetControlRotation(
+			(BoundsOrigin - CameraLocation).Rotation());
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("WhiteoutStation InputSmokeSetup: target=%s pawn=%s focus=%s"),
+			*It->ActionId.ToString(),
+			*PawnLocation.ToCompactString(),
+			*BoundsOrigin.ToCompactString());
+		return;
+	}
+	UE_LOG(
+		LogTemp,
+		Error,
+		TEXT("WhiteoutStation InputSmokeSetup: target not found (%s)"),
+		*ActionId);
 }
 
 void AWhiteoutGameMode::Tick(const float DeltaSeconds)
@@ -614,6 +756,13 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 			TEXT("opening_story_01"), TEXT("opening_story_04"), TEXT("opening_story_07"),
 			TEXT("guide"),
 			TEXT("dialogue_gu_initial"), TEXT("dialogue_ye_initial"), TEXT("dialogue_gu_unlocked")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v06product"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("pause"), TEXT("settings_default"),
+			TEXT("results_task"), TEXT("results_survival"),
+			TEXT("results_cost"), TEXT("results_collapse")};
 	}
 	else
 	{
@@ -1577,6 +1726,8 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 	};
 
 	bool bSucceeded = true;
+	EWSEndingType ExpectedEnding = EWSEndingType::TaskSuccess;
+	bool bExpectSignal = true;
 	if (RouteName.Equals(TEXT("medical"), ESearchCase::IgnoreCase))
 	{
 		bSucceeded &= Commit(TEXT("talk_ye_cheng"));
@@ -1608,6 +1759,7 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 	}
 	else if (RouteName.Equals(TEXT("quick"), ESearchCase::IgnoreCase))
 	{
+		ExpectedEnding = EWSEndingType::CostUncontrolled;
 		bSucceeded &= Commit(TEXT("heat_repair_room"));
 		bSucceeded &= Commit(TEXT("distribute_food"), [](FWSActionRequest& Request)
 		{
@@ -1619,6 +1771,46 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 		bSucceeded &= Commit(TEXT("calibrate_antenna"));
 		bSucceeded &= Commit(TEXT("send_signal"));
 	}
+	else if (RouteName.Equals(TEXT("wait"), ESearchCase::IgnoreCase))
+	{
+		ExpectedEnding = EWSEndingType::SurvivalWait;
+		bExpectSignal = false;
+	}
+	else if (RouteName.Equals(TEXT("cost"), ESearchCase::IgnoreCase))
+	{
+		ExpectedEnding = EWSEndingType::CostUncontrolled;
+		bExpectSignal = false;
+		bSucceeded &= Commit(TEXT("investigate_generator_log"));
+		bSucceeded &= Commit(TEXT("forced_self_repair"));
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			bSucceeded &= Commit(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
+			{
+				Request.DialogueAct = EWSDialogueAct::Challenge;
+			});
+		}
+	}
+	else if (RouteName.Equals(TEXT("collapse"), ESearchCase::IgnoreCase))
+	{
+		ExpectedEnding = EWSEndingType::TotalCollapse;
+		bExpectSignal = false;
+		bSucceeded &= Commit(TEXT("investigate_generator_log"));
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			bSucceeded &= Commit(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
+			{
+				Request.DialogueAct = EWSDialogueAct::Challenge;
+			});
+		}
+		bSucceeded &= Commit(TEXT("heat_medical_room"));
+		bSucceeded &= Commit(TEXT("heat_repair_room"));
+		bSucceeded &= Commit(TEXT("talk_ye_cheng"));
+		bSucceeded &= Commit(TEXT("distribute_food"), [](FWSActionRequest& Request)
+		{
+			Request.FoodForPlayer = 1;
+		});
+		bSucceeded &= Commit(TEXT("inspect_control_cabinet"));
+	}
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: unknown route '%s'"), *RouteName);
@@ -1628,14 +1820,19 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 	const FWSGameState Results = StateSubsystem->EndGame();
 	FString EventLogPath;
 	StateSubsystem->ExportEventLog(EventLogPath);
+	const bool bOutcomeMatches = bSucceeded
+		&& Results.Ending == ExpectedEnding
+		&& Results.Tasks.bSignalSent == bExpectSignal;
 	const FString Summary = FString::Printf(
-		TEXT("route=%s success=%d ending=%s score=%.2f log=%s"),
+		TEXT("route=%s success=%d ending=%s expected=%s signal=%d score=%.2f log=%s"),
 		*RouteName,
-		bSucceeded && Results.Tasks.bSignalSent,
+		bOutcomeMatches,
 		*StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(Results.Ending)),
+		*StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(ExpectedEnding)),
+		Results.Tasks.bSignalSent ? 1 : 0,
 		Results.Score.Total,
 		*EventLogPath);
-	if (bSucceeded && Results.Tasks.bSignalSent)
+	if (bOutcomeMatches)
 	{
 		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation AutoRoute: %s"), *Summary);
 	}

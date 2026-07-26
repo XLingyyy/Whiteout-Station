@@ -172,6 +172,8 @@
     "thresholds": {
       "critical_health": 30,
       "critical_temperature": 30,
+      "critical_fatigue": 30,
+      "critical_pressure": 85,
       "safe_antenna_temperature": 55,
       "heated_repair_temperature": 45,
       "gu_food_cooperation_trust": -8,

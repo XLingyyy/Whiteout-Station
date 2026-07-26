@@ -156,6 +156,42 @@ def test_official_endpoint_requires_key_and_sets_authorization() -> None:
     assert request.get_header("Authorization") == "Bearer dummy-secret"
 
 
+@pytest.mark.parametrize(
+    "malformed_key",
+    [
+        "标签：sk-test",
+        "sk-test\nInjected: value",
+        "密钥",
+        "x" * 513,
+    ],
+)
+def test_official_endpoint_rejects_non_header_safe_keys(
+    malformed_key: str,
+) -> None:
+    with pytest.raises(ContractError) as exc_info:
+        build_http_request(
+            "https://api.deepseek.com/chat/completions",
+            malformed_key,
+        )
+    assert exc_info.value.code == "invalid_api_key_format"
+
+    opener = FakeOpener([FakeResponse(200, encoded_envelope())])
+    result = run_probe(
+        endpoint="https://api.deepseek.com/chat/completions",
+        api_key=malformed_key,
+        credential_source="environment",
+        timeout=1,
+        retry_delay=0,
+        opener=opener,
+        sleep=lambda _: None,
+    )
+    assert not result.success
+    assert result.result == "REJECTED"
+    assert result.attempts == 0
+    assert result.error_code == "invalid_api_key_format"
+    assert not opener.requests
+
+
 def test_loopback_never_receives_deepseek_key() -> None:
     request, kind = build_http_request(
         "http://127.0.0.1:8765/chat/completions",
@@ -422,6 +458,9 @@ def test_mock_is_openai_compatible_and_drops_authorization(
     assert audit["thinking_disabled"] is True
     assert audit["stream_disabled"] is True
     assert audit["response_format_json_object"] is True
+    assert audit["message_count"] == 2
+    assert audit["role_sequence"] == ["system", "user"]
+    assert audit["history_turns"] == 0
 
 
 def test_mock_supports_empty_content_and_status_codes() -> None:

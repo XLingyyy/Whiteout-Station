@@ -356,6 +356,9 @@ private:
 	TObjectPtr<UButton> PauseDefaultButton;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UButton> LoadGameButton;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBorder> SettingsBorder;
 
 	UPROPERTY(Transient)
@@ -374,6 +377,12 @@ private:
 	TObjectPtr<USlider> FeedbackVolumeSlider;
 
 	UPROPERTY(Transient)
+	TObjectPtr<USlider> TextScaleSlider;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> ReducedMotionButton;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> FOVValueText;
 
 	UPROPERTY(Transient)
@@ -387,6 +396,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> FeedbackVolumeValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TextScaleValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ReducedMotionValueText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> ComponentGalleryBorder;
@@ -507,6 +522,12 @@ private:
 	void ResumeGame();
 
 	UFUNCTION()
+	void SaveGame();
+
+	UFUNCTION()
+	void LoadGame();
+
+	UFUNCTION()
 	void RestartGame();
 
 	UFUNCTION()
@@ -533,7 +554,14 @@ private:
 	UFUNCTION()
 	void HandleFeedbackVolumeChanged(float Value);
 
+	UFUNCTION()
+	void HandleTextScaleChanged(float Value);
+
+	UFUNCTION()
+	void ToggleReducedMotion();
+
 	void RefreshSettingsUI();
+	bool IsReducedMotionEnabled() const;
 
 	UFUNCTION()
 	void QuitGame();

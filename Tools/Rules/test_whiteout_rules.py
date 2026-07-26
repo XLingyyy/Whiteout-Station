@@ -489,14 +489,18 @@ class RouteAndScoreTests(unittest.TestCase):
             },
             "forced_quick_repair": {
                 "ap": 2,
-                "score": 72.06,
+                "score": 68.31,
+                "ending": "cost_uncontrolled",
                 "dialogue": None,
             },
         }
         for route_id, route in rules["routes"].items():
             with self.subTest(route=route_id):
                 output = run_route(WhiteoutSimulator(rules), route_id)
-                self.assertEqual("task_success", output["ending"])
+                self.assertEqual(
+                    expected[route_id].get("ending", "task_success"),
+                    output["ending"],
+                )
                 self.assertEqual(expected[route_id]["ap"], output["steps"][-1]["ap"])
                 self.assertAlmostEqual(
                     expected[route_id]["score"],
@@ -518,6 +522,44 @@ class RouteAndScoreTests(unittest.TestCase):
                         expected[route_id]["dialogue"],
                         dialogue_steps[0]["params"],
                     )
+
+    def test_all_four_endings_are_reachable_through_committed_actions(self) -> None:
+        wait = WhiteoutSimulator()
+        self.assertEqual("survival_wait", wait.end_game()["ending"])
+
+        cost = WhiteoutSimulator()
+        cost.apply_action("investigate_generator_log")
+        self.assertTrue(cost.apply_action("forced_self_repair").committed)
+        for index in range(2):
+            result = cost.apply_action(
+                "talk_gu_heng",
+                {"dialogue_act": "challenge"},
+                f"cost-challenge-{index}",
+            )
+            self.assertTrue(result.committed)
+        self.assertEqual("cost_uncontrolled", cost.end_game()["ending"])
+
+        collapse = WhiteoutSimulator()
+        collapse.apply_action("investigate_generator_log")
+        for index in range(2):
+            collapse.apply_action(
+                "talk_gu_heng",
+                {"dialogue_act": "challenge"},
+                f"collapse-challenge-{index}",
+            )
+        collapse.apply_action("heat_medical_room")
+        collapse.apply_action("heat_repair_room")
+        collapse.apply_action("talk_ye_cheng", {"dialogue_act": "ask"})
+        collapse.apply_action(
+            "distribute_food",
+            {"player": 1, "gu_heng": 0, "ye_cheng": 0},
+        )
+        self.assertTrue(collapse.apply_action("inspect_control_cabinet").committed)
+        self.assertEqual(0, collapse.state["ap"])
+        self.assertEqual("total_collapse", collapse.end_game()["ending"])
+
+        success = run_route(WhiteoutSimulator(), "medical_cooperation")
+        self.assertEqual("task_success", success["ending"])
 
     def test_legacy_routes_receive_deterministic_dialogue_defaults(self) -> None:
         rules = load_rules()

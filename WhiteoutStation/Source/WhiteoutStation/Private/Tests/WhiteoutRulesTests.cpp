@@ -360,10 +360,51 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna")))) return false;
 		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("send_signal")))) return false;
 		Engine.EndGame();
-		TestTrue(TEXT("Quick route succeeds"), Engine.GetState().Ending == EWSEndingType::TaskSuccess);
+		TestTrue(TEXT("Quick route exposes uncontrolled cost"), Engine.GetState().Ending == EWSEndingType::CostUncontrolled);
 		TestTrue(TEXT("Quick score is in range"), Engine.GetState().Score.Total >= 55.0f && Engine.GetState().Score.Total <= 79.0f);
-		TestTrue(TEXT("Quick route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 72.06f, 0.02f));
+		TestTrue(TEXT("Quick route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 68.31f, 0.02f));
 		TestEqual(TEXT("Quick route retains two AP"), Engine.GetState().ActionPoints, 2);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+		Engine.EndGame();
+		TestTrue(TEXT("Waiting ending is reachable without state injection"), Engine.GetState().Ending == EWSEndingType::SurvivalWait);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log")))) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("forced_self_repair")))) return false;
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			FWSActionRequest Challenge = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+			Challenge.DialogueAct = EWSDialogueAct::Challenge;
+			if (!WhiteoutRuleTests::Commit(*this, Engine, Challenge)) return false;
+		}
+		Engine.EndGame();
+		TestTrue(TEXT("Partial task with an unstable crew reaches cost ending"), Engine.GetState().Ending == EWSEndingType::CostUncontrolled);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log")))) return false;
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			FWSActionRequest Challenge = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+			Challenge.DialogueAct = EWSDialogueAct::Challenge;
+			if (!WhiteoutRuleTests::Commit(*this, Engine, Challenge)) return false;
+		}
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("heat_medical_room")))) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("heat_repair_room")))) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")))) return false;
+		FWSActionRequest Food = WhiteoutRuleTests::MakeRequest(TEXT("distribute_food"));
+		Food.FoodForPlayer = 1;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, Food)) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet")))) return false;
+		TestEqual(TEXT("Collapse route spends all AP through legal actions"), Engine.GetState().ActionPoints, 0);
+		Engine.EndGame();
+		TestTrue(TEXT("Crew collapse is reachable without state injection"), Engine.GetState().Ending == EWSEndingType::TotalCollapse);
 	}
 	return true;
 }

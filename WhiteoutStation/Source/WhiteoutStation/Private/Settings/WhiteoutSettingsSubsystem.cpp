@@ -3,6 +3,7 @@
 #include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/WhiteoutCharacter.h"
 #include "Sound/SoundClass.h"
@@ -20,6 +21,16 @@ namespace
 			GConfig->GetFloat(SettingsSection, Key, Value, GGameUserSettingsIni);
 		}
 		return FMath::Clamp(Value, Minimum, Maximum);
+	}
+
+	bool LoadBoolSetting(const TCHAR* Key, const bool bDefaultValue)
+	{
+		bool bValue = bDefaultValue;
+		if (GConfig)
+		{
+			GConfig->GetBool(SettingsSection, Key, bValue, GGameUserSettingsIni);
+		}
+		return bValue;
 	}
 
 	USoundClass* LoadSoundClass(const TCHAR* Path)
@@ -47,6 +58,8 @@ void UWhiteoutSettingsSubsystem::Load()
 	AmbienceVolume = LoadClampedSetting(TEXT("AmbienceVolume"), 1.0f, 0.0f, 1.0f);
 	EffectsVolume = LoadClampedSetting(TEXT("EffectsVolume"), 1.0f, 0.0f, 1.0f);
 	FeedbackVolume = LoadClampedSetting(TEXT("FeedbackVolume"), 1.0f, 0.0f, 1.0f);
+	TextScale = LoadClampedSetting(TEXT("TextScale"), 1.0f, 0.9f, 1.2f);
+	bReducedMotion = LoadBoolSetting(TEXT("ReducedMotion"), false);
 }
 
 void UWhiteoutSettingsSubsystem::Save() const
@@ -60,6 +73,8 @@ void UWhiteoutSettingsSubsystem::Save() const
 	GConfig->SetFloat(SettingsSection, TEXT("AmbienceVolume"), AmbienceVolume, GGameUserSettingsIni);
 	GConfig->SetFloat(SettingsSection, TEXT("EffectsVolume"), EffectsVolume, GGameUserSettingsIni);
 	GConfig->SetFloat(SettingsSection, TEXT("FeedbackVolume"), FeedbackVolume, GGameUserSettingsIni);
+	GConfig->SetFloat(SettingsSection, TEXT("TextScale"), TextScale, GGameUserSettingsIni);
+	GConfig->SetBool(SettingsSection, TEXT("ReducedMotion"), bReducedMotion, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);
 }
 
@@ -84,6 +99,10 @@ void UWhiteoutSettingsSubsystem::Apply(UObject* WorldContextObject)
 	if (!World)
 	{
 		return;
+	}
+	if (FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().SetApplicationScale(TextScale);
 	}
 	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(UGameplayStatics::GetPlayerCharacter(WorldContextObject, 0)))
 	{
@@ -154,4 +173,17 @@ void UWhiteoutSettingsSubsystem::SetFeedbackVolume(const float Value, UObject* W
 	FeedbackVolume = FMath::Clamp(Value, 0.0f, 1.0f);
 	Save();
 	Apply(WorldContextObject);
+}
+
+void UWhiteoutSettingsSubsystem::SetTextScale(const float Value, UObject* WorldContextObject)
+{
+	TextScale = FMath::Clamp(Value, 0.9f, 1.2f);
+	Save();
+	Apply(WorldContextObject);
+}
+
+void UWhiteoutSettingsSubsystem::SetReducedMotionEnabled(const bool bEnabled)
+{
+	bReducedMotion = bEnabled;
+	Save();
 }

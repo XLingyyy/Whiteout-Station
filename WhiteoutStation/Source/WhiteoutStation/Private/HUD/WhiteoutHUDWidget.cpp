@@ -155,12 +155,13 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	TickPanelAnimations(InDeltaTime);
 	TickOpening(InDeltaTime);
+	const bool bReducedMotion = IsReducedMotionEnabled();
 	if (ToastRemaining > 0.0f && ToastBorder)
 	{
 		ToastRemaining = FMath::Max(0.0f, ToastRemaining - InDeltaTime);
 		const float Opacity = FMath::Clamp(ToastRemaining * 1.8f, 0.0f, 1.0f);
 		ToastBorder->SetRenderOpacity(Opacity);
-		if (TopText)
+		if (TopText && !bReducedMotion)
 		{
 			const float Pulse = 1.0f + 0.035f * FMath::Sin(ToastRemaining * 12.0f) * Opacity;
 			TopText->SetRenderScale(FVector2D(Pulse));
@@ -174,14 +175,16 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 	if (CrisisElapsed >= 0.0f && CrisisBorder)
 	{
 		CrisisElapsed += InDeltaTime;
-		const int32 Stage = CrisisElapsed < 0.55f ? 0 : CrisisElapsed < 1.45f ? 1 : 2;
+		const int32 Stage = bReducedMotion ? 2 : CrisisElapsed < 0.55f ? 0 : CrisisElapsed < 1.45f ? 1 : 2;
 		if (Stage != ActiveCrisisStage)
 		{
 			ApplyCrisisStage(Stage);
 		}
-		CrisisBorder->SetRenderOpacity(CrisisElapsed < 0.25f
-			? CrisisElapsed / 0.25f
-			: FMath::Clamp((3.8f - CrisisElapsed) / 0.55f, 0.0f, 1.0f));
+		CrisisBorder->SetRenderOpacity(bReducedMotion
+			? 1.0f
+			: CrisisElapsed < 0.25f
+				? CrisisElapsed / 0.25f
+				: FMath::Clamp((3.8f - CrisisElapsed) / 0.55f, 0.0f, 1.0f));
 		if (CrisisElapsed >= 3.8f)
 		{
 			CrisisElapsed = -1.0f;
@@ -191,10 +194,13 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 	if (EndingElapsed >= 0.0f && EndingCinematicBorder)
 	{
 		EndingElapsed += InDeltaTime;
-		EndingCinematicBorder->SetRenderOpacity(EndingElapsed < 0.5f
-			? EndingElapsed / 0.5f
-			: FMath::Clamp((4.4f - EndingElapsed) / 0.8f, 0.0f, 1.0f));
-		if (EndingElapsed >= 4.4f)
+		const float EndingDuration = bReducedMotion ? 2.2f : 4.4f;
+		EndingCinematicBorder->SetRenderOpacity(bReducedMotion
+			? 1.0f
+			: EndingElapsed < 0.5f
+				? EndingElapsed / 0.5f
+				: FMath::Clamp((EndingDuration - EndingElapsed) / 0.8f, 0.0f, 1.0f));
+		if (EndingElapsed >= EndingDuration)
 		{
 			EndingElapsed = -1.0f;
 			bEndingResultsRevealed = true;
@@ -885,20 +891,15 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PauseBox->AddChildToVerticalBox(PauseStatusText)->SetPadding(FMargin(0, 0, 0, 13));
 	UButton* ResumeButton = MakeButton(PauseBox, FWSPresentationText::UI(TEXT("ui_resume"), TEXT("继续游戏")), TEXT("ResumeButton"));
 	PauseDefaultButton = ResumeButton;
-	UButton* SaveButton = MakeButton(PauseBox, FText::FromString(TEXT("保存游戏　｜　当前版本不可用")), TEXT("SaveButton"));
-	UButton* LoadButton = MakeButton(PauseBox, FText::FromString(TEXT("读取游戏　｜　当前版本不可用")), TEXT("LoadButton"));
-	UButton* SettingsButton = MakeButton(PauseBox, FText::FromString(TEXT("设置　　　｜　视野与音量")), TEXT("SettingsButton"));
-	UButton* HelpButton = MakeButton(PauseBox, FText::FromString(TEXT("操作说明")), TEXT("HelpButton"));
+	UButton* SaveButton = MakeButton(PauseBox, FText::FromString(TEXT("保存本轮　｜　记录当前状态")), TEXT("SaveButton"));
+	LoadGameButton = MakeButton(PauseBox, FText::FromString(TEXT("读取存档　｜　恢复最近记录")), TEXT("LoadButton"));
+	UButton* SettingsButton = MakeButton(PauseBox, FText::FromString(TEXT("设置　　　｜　画面、声音与辅助")), TEXT("SettingsButton"));
+	UButton* HelpButton = MakeButton(PauseBox, FText::FromString(TEXT("生存手册　｜　目标、状态与操作")), TEXT("HelpButton"));
 	UButton* RestartButton = MakeButton(PauseBox, FWSPresentationText::UI(TEXT("ui_restart"), TEXT("重新开始")), TEXT("RestartButton"));
-	UButton* MainMenuButton = MakeButton(PauseBox, FText::FromString(TEXT("返回主菜单｜　当前版本不可用")), TEXT("MainMenuButton"));
 	UButton* QuitButton = MakeButton(PauseBox, FWSPresentationText::UI(TEXT("ui_quit"), TEXT("退出到桌面")), TEXT("QuitButton"));
-	SaveButton->SetIsEnabled(false);
-	LoadButton->SetIsEnabled(false);
-	MainMenuButton->SetIsEnabled(false);
-	SaveButton->SetColorAndOpacity(WSUITokens::Color::TextMuted);
-	LoadButton->SetColorAndOpacity(WSUITokens::Color::TextMuted);
-	MainMenuButton->SetColorAndOpacity(WSUITokens::Color::TextMuted);
 	ResumeButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ResumeGame);
+	SaveButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::SaveGame);
+	LoadGameButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::LoadGame);
 	SettingsButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::OpenSettings);
 	HelpButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ToggleControls);
 	RestartButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::RestartGame);
@@ -937,7 +938,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PauseBox->AddChildToVerticalBox(PauseHelpText)->SetPadding(FMargin(8, 12, 8, 0));
 	PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	SettingsBorder = MakeGlassPanel(Canvas, TEXT("SettingsPanel"), FAnchors(0.5f, 0.5f), FMargin(-330, -300, 660, 600), 16.0f, WSUITokens::Color::SurfaceDeep);
+	SettingsBorder = MakeGlassPanel(Canvas, TEXT("SettingsPanel"), FAnchors(0.5f, 0.5f), FMargin(-330, -340, 660, 680), 16.0f, WSUITokens::Color::SurfaceDeep);
 	SetGlassPanelPadding(SettingsBorder, FMargin(18));
 	UVerticalBox* SettingsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SettingsBox"));
 	SetGlassPanelContent(SettingsBorder, SettingsBox);
@@ -992,17 +993,28 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UTextBlock* FeedbackValue = nullptr;
 	FeedbackVolumeSlider = AddSettingsRow(TEXT("FeedbackVolumeSlider"), TEXT("反馈音量"), FeedbackValue);
 	FeedbackVolumeValueText = FeedbackValue;
+	UTextBlock* TextScaleValue = nullptr;
+	TextScaleSlider = AddSettingsRow(TEXT("TextScaleSlider"), TEXT("界面字号"), TextScaleValue);
+	TextScaleValueText = TextScaleValue;
 	FOVSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleFOVChanged);
 	MasterVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleMasterVolumeChanged);
 	AmbienceVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleAmbienceVolumeChanged);
 	EffectsVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleEffectsVolumeChanged);
 	FeedbackVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleFeedbackVolumeChanged);
+	TextScaleSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleTextScaleChanged);
+	ReducedMotionButton = MakeButton(
+		SettingsBox,
+		FText::FromString(TEXT("减少动态效果　｜　关闭")),
+		TEXT("ReducedMotionButton"));
+	ReducedMotionButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ToggleReducedMotion);
+	ReducedMotionValueText = Cast<UTextBlock>(
+		WidgetTree->FindWidget(TEXT("ReducedMotionButtonLabel")));
 	UButton* SettingsBackButton = MakeButton(SettingsBox, FText::FromString(TEXT("返回暂停菜单")), TEXT("SettingsBackButton"));
 	SettingsBackButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CloseSettings);
 	SettingsBox->AddChildToVerticalBox(MakeText(TEXT("SettingsScope"), 12, Secondary))->SetPadding(FMargin(8, 10, 8, 0));
 	if (UTextBlock* ScopeText = Cast<UTextBlock>(SettingsBox->GetChildAt(SettingsBox->GetChildrenCount() - 1)))
 	{
-		ScopeText->SetText(FText::FromString(TEXT("效果：脚步 / 事件 / 结局音乐　反馈：界面提示")));
+		ScopeText->SetText(FText::FromString(TEXT("字号 90%–120%｜减少动态效果会保留逐句推进并缩短淡入淡出")));
 		ScopeText->SetJustification(ETextJustify::Center);
 	}
 	SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
@@ -1767,9 +1779,56 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 		ResultsBorder->SetVisibility(bEndingResultsRevealed ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 	bWasShowingResults = true;
+	FString RouteName = TEXT("未成型路线");
+	FString RouteCost = TEXT("行动没有形成稳定的任务链，关键资源与人员风险缺少统一取舍。");
+	FString RouteAdvice = TEXT("先锁定一条完整路径，再用剩余行动处理人员或储备。");
+	if (State.Flags.bSelfRepairUsed)
+	{
+		RouteName = TEXT("强行自修线");
+		RouteCost = TEXT("绕开协作直接抢修，节省交涉步骤，同时让玩家承担更高健康与失温风险。");
+		RouteAdvice = TEXT("先取得事故记录或顾衡协作，避免把人员状态当作隐性维修材料。");
+	}
+	else if (State.Flags.bRelayInstalled
+		|| State.ActionCounts.FindRef(TEXT("dismantle_kitchen_heater")) > 0)
+	{
+		RouteName = TEXT("证据替代线");
+		RouteCost = TEXT("利用事故证据和替代继电器推进任务，代价是拆解厨房供暖并削弱长期保温能力。");
+		RouteAdvice = TEXT("比较保留厨房供暖与消耗医疗资源的分数差异，验证信息路线的真实代价。");
+	}
+	else if (State.Flags.bGuHengTreated || State.Flags.bMedicalRoomHeated)
+	{
+		RouteName = TEXT("医疗协作线");
+		RouteCost = TEXT("投入供暖与医疗物资稳定伤员，换取较安全的维修过程与更好的人员状态。");
+		RouteAdvice = TEXT("尝试减少一次供暖或治疗开销，同时保持顾衡能够安全参与维修。");
+	}
+	else if (State.ActionCounts.FindRef(TEXT("repair_generator")) >= 2)
+	{
+		RouteName = TEXT("直接抢修线");
+		RouteCost = TEXT("跳过部分调查与交涉，用两次维修换取速度；信息责任、信任和伤情更难兼顾。");
+		RouteAdvice = TEXT("补一次关键调查或有效交涉，观察任务速度与信息、关系评分的交换。");
+	}
+
+	FString PromiseSummary = TEXT("本轮未作承诺");
+	if (!State.Promises.IsEmpty())
+	{
+		TArray<FString> PromiseLines;
+		for (const FWSPromiseRecord& Promise : State.Promises)
+		{
+			const FString PromiseLabel = Promise.ConditionId == TEXT("keep_records")
+				? TEXT("保留事故记录")
+				: Promise.ConditionId == TEXT("reserve_medicine")
+					? TEXT("保留医疗物资")
+					: TEXT("先为维修间供暖");
+			const FString PromiseState = !Promise.bSettled
+				? TEXT("待结算")
+				: Promise.bFulfilled ? TEXT("已兑现") : TEXT("已违背");
+			PromiseLines.Add(FString::Printf(TEXT("%s：%s"), *PromiseLabel, *PromiseState));
+		}
+		PromiseSummary = FString::Join(PromiseLines, TEXT("｜"));
+	}
 	const FString HeaderFormat = FWSPresentationText::UI(
-		TEXT("ui_results_header_format"),
-		TEXT("行动复盘\n{0}\n{1}\n\n总分 {2} / 100　｜　评级 {3}\n\n最终状态\n发电机 {4} / 2　天线 {5} / 1　信号 {6}　剩余行动力 {7}")).ToString();
+		TEXT("ui_results_header_format_v06"),
+		TEXT("行动复盘\n{0}\n{1}\n\n本轮路线　{8}\n关键代价　{9}\n承诺结算　{10}\n\n总分 {2} / 100　｜　评级 {3}\n\n最终状态\n发电机 {4} / 2　天线 {5} / 1　信号 {6}　剩余行动力 {7}")).ToString();
 	const FString TotalScore = FString::Printf(TEXT("%.1f"), State.Score.Total);
 	ResultsText->SetText(FText::FromString(FString::Format(
 		*HeaderFormat,
@@ -1780,7 +1839,10 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 		 State.Tasks.GeneratorProgress,
 		 State.Tasks.AntennaCalibration,
 		 FWSPresentationText::UI(State.Tasks.bSignalSent ? TEXT("ui_sent") : TEXT("ui_failed"), State.Tasks.bSignalSent ? TEXT("已发送") : TEXT("失败")).ToString(),
-		 State.ActionPoints})));
+		 State.ActionPoints,
+		 RouteName,
+		 RouteCost,
+		 PromiseSummary})));
 
 	const TArray<float> Values = {State.Score.TaskQuality, State.Score.People, State.Score.EffectiveReserves, State.Score.SocialStability, State.Score.InformationResponsibility};
 	const TArray<float> Maximums = {30.0f, 30.0f, 20.0f, 12.0f, 8.0f};
@@ -1843,9 +1905,10 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 		Timeline += FWSPresentationText::UI(TEXT("ui_timeline_empty"), TEXT("　没有已提交的行动。\n")).ToString();
 	}
 	ResultsTimelineText->SetText(FText::FromString(Timeline));
-	ResultsAdviceText->SetText(FText::Format(
-		FWSPresentationText::UI(TEXT("ui_results_advice_format"), TEXT("下一轮建议\n{0}\n\n按 R 开始新一轮　｜　Esc 打开退出菜单")),
-		FWSPresentationText::EndingAdvice(State.Ending)));
+	ResultsAdviceText->SetText(FText::FromString(FString::Printf(
+		TEXT("下一轮建议\n%s\n路线复盘：%s\n\n按 R 开始新一轮　｜　Esc 打开退出菜单"),
+		*FWSPresentationText::EndingAdvice(State.Ending).ToString(),
+		*RouteAdvice)));
 }
 
 void UWhiteoutHUDWidget::SetInteractionPrompt(const FText& Prompt)
@@ -2664,9 +2727,10 @@ void UWhiteoutHUDWidget::TickOpening(const float DeltaTime)
 	{
 		return;
 	}
-	constexpr float LineFadeInSeconds = 0.70f;
-	constexpr float LineFadeOutSeconds = 0.36f;
-	constexpr float BlackRevealSeconds = 1.65f;
+	const bool bReducedMotion = IsReducedMotionEnabled();
+	const float LineFadeInSeconds = bReducedMotion ? 0.05f : 0.70f;
+	const float LineFadeOutSeconds = bReducedMotion ? 0.05f : 0.36f;
+	const float BlackRevealSeconds = bReducedMotion ? 0.18f : 1.65f;
 	OpeningElapsed += DeltaTime;
 
 	auto SetLineOpacity = [this](const float Opacity)
@@ -2692,7 +2756,8 @@ void UWhiteoutHUDWidget::TickOpening(const float DeltaTime)
 	case EWSOpeningPhase::AwaitingAdvance:
 		if (OpeningFooterText)
 		{
-			OpeningFooterText->SetRenderOpacity(0.62f + 0.18f * FMath::Sin(OpeningElapsed * 2.6f));
+			OpeningFooterText->SetRenderOpacity(
+				bReducedMotion ? 0.8f : 0.62f + 0.18f * FMath::Sin(OpeningElapsed * 2.6f));
 		}
 		break;
 	case EWSOpeningPhase::FadingOutLine:
@@ -2875,8 +2940,8 @@ void UWhiteoutHUDWidget::ApplyEndingCinematic(const EWSEndingType Ending)
 	}
 	else if (Ending == EWSEndingType::CostUncontrolled)
 	{
-		Key = TEXT("ui_ending_cost_cinematic");
-		Fallback = TEXT("信号已经发出\n但代价越过了安全边界");
+		Key = TEXT("ui_ending_cost_cinematic_v06");
+		Fallback = TEXT("代价越过边界\n求救与生存无法同时守住");
 		Panel = FLinearColor(0.13f, 0.018f, 0.006f, 0.95f);
 		TextColor = FLinearColor(1.0f, 0.68f, 0.42f, 1.0f);
 	}
@@ -2920,6 +2985,11 @@ void UWhiteoutHUDWidget::ShowPanelAnimated(UBorder* Panel, const bool bShow, con
 {
 	if (!Panel)
 	{
+		return;
+	}
+	if (IsReducedMotionEnabled())
+	{
+		ShowPanelInstant(Panel, bShow);
 		return;
 	}
 	CancelPanelAnimation(Panel);
@@ -3152,6 +3222,14 @@ void UWhiteoutHUDWidget::TogglePauseMenu()
 	{
 		ShowPanelAnimated(SettingsBorder, false, WSUITokens::Anim::Fast);
 	}
+	if (LoadGameButton && GetGameInstance())
+	{
+		if (const UWindStationStateSubsystem* StateSubsystem =
+			GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			LoadGameButton->SetIsEnabled(StateSubsystem->HasSnapshot());
+		}
+	}
 	ShowPanelAnimated(PauseBorder, true, WSUITokens::Anim::Normal);
 	SetLayer(EWSUILayer::Pause);
 	if (APlayerController* PlayerController = GetOwningPlayer())
@@ -3182,6 +3260,48 @@ void UWhiteoutHUDWidget::ResumeGame()
 		PlayerController->SetPause(false);
 		PlayerController->bShowMouseCursor = false;
 		PlayerController->SetInputMode(FInputModeGameOnly());
+	}
+}
+
+void UWhiteoutHUDWidget::SaveGame()
+{
+	if (!GetGameInstance())
+	{
+		return;
+	}
+	if (UWindStationStateSubsystem* StateSubsystem =
+		GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	{
+		const bool bSaved = StateSubsystem->SaveSnapshot();
+		SystemMessage = bSaved
+			? TEXT("本轮状态已保存。")
+			: TEXT("保存失败，请检查存储权限。");
+		PlayUISound(bSaved ? UIConfirmSound : UIRejectSound, 0.68f);
+		if (bSaved)
+		{
+			ResumeGame();
+		}
+	}
+}
+
+void UWhiteoutHUDWidget::LoadGame()
+{
+	if (!GetGameInstance())
+	{
+		return;
+	}
+	if (UWindStationStateSubsystem* StateSubsystem =
+		GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	{
+		const bool bLoaded = StateSubsystem->LoadSnapshot();
+		SystemMessage = bLoaded
+			? TEXT("已恢复最近保存的本轮状态。")
+			: TEXT("没有可读取的 v0.6 存档。");
+		PlayUISound(bLoaded ? UIConfirmSound : UIRejectSound, 0.68f);
+		if (bLoaded)
+		{
+			ResumeGame();
+		}
 	}
 }
 
@@ -3245,11 +3365,19 @@ void UWhiteoutHUDWidget::RefreshSettingsUI()
 	if (AmbienceVolumeSlider) AmbienceVolumeSlider->SetValue(Settings->GetAmbienceVolume());
 	if (EffectsVolumeSlider) EffectsVolumeSlider->SetValue(Settings->GetEffectsVolume());
 	if (FeedbackVolumeSlider) FeedbackVolumeSlider->SetValue(Settings->GetFeedbackVolume());
+	if (TextScaleSlider) TextScaleSlider->SetValue((Settings->GetTextScale() - 0.9f) / 0.3f);
 	if (FOVValueText) FOVValueText->SetText(FText::FromString(FString::Printf(TEXT("%d°"), FMath::RoundToInt(Settings->GetFieldOfView()))));
 	if (MasterVolumeValueText) MasterVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetMasterVolume() * 100.0f))));
 	if (AmbienceVolumeValueText) AmbienceVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetAmbienceVolume() * 100.0f))));
 	if (EffectsVolumeValueText) EffectsVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetEffectsVolume() * 100.0f))));
 	if (FeedbackVolumeValueText) FeedbackVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetFeedbackVolume() * 100.0f))));
+	if (TextScaleValueText) TextScaleValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetTextScale() * 100.0f))));
+	if (ReducedMotionValueText)
+	{
+		ReducedMotionValueText->SetText(FText::FromString(FString::Printf(
+			TEXT("减少动态效果　｜　%s"),
+			Settings->IsReducedMotionEnabled() ? TEXT("开启") : TEXT("关闭"))));
+	}
 	bUpdatingSettings = false;
 }
 
@@ -3303,15 +3431,55 @@ void UWhiteoutHUDWidget::HandleFeedbackVolumeChanged(const float Value)
 	}
 }
 
-void UWhiteoutHUDWidget::ToggleControls()
+void UWhiteoutHUDWidget::HandleTextScaleChanged(const float Value)
 {
-	if (!PauseHelpText)
+	if (bUpdatingSettings || !GetGameInstance()) return;
+	if (UWhiteoutSettingsSubsystem* Settings =
+		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->SetTextScale(0.9f + FMath::Clamp(Value, 0.0f, 1.0f) * 0.3f, this);
+		if (TextScaleValueText)
+		{
+			TextScaleValueText->SetText(FText::FromString(FString::Printf(
+				TEXT("%d%%"),
+				FMath::RoundToInt(Settings->GetTextScale() * 100.0f))));
+		}
+	}
+}
+
+void UWhiteoutHUDWidget::ToggleReducedMotion()
+{
+	if (!GetGameInstance())
 	{
 		return;
 	}
-	const bool bShow = PauseHelpText->GetVisibility() != ESlateVisibility::Visible;
-	PauseHelpText->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	PlayUISound(bShow ? UIConfirmSound : UIHoverSound, 0.55f);
+	if (UWhiteoutSettingsSubsystem* Settings =
+		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->SetReducedMotionEnabled(!Settings->IsReducedMotionEnabled());
+		RefreshSettingsUI();
+		PlayUISound(UIConfirmSound, 0.55f);
+	}
+}
+
+bool UWhiteoutHUDWidget::IsReducedMotionEnabled() const
+{
+	if (!GetGameInstance())
+	{
+		return false;
+	}
+	if (const UWhiteoutSettingsSubsystem* Settings =
+		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		return Settings->IsReducedMotionEnabled();
+	}
+	return false;
+}
+
+void UWhiteoutHUDWidget::ToggleControls()
+{
+	ResumeGame();
+	ToggleGuide();
 }
 
 void UWhiteoutHUDWidget::RestartGame()

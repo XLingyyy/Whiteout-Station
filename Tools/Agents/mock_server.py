@@ -156,6 +156,17 @@ class Handler(BaseHTTPRequestHandler):
         messages = request.get("messages")
         user_text = _message_text(messages[-1]) if isinstance(messages, list) and messages else ""
         context = _request_context(user_text)
+        safe_messages = messages if isinstance(messages, list) else []
+        role_sequence = [
+            message.get("role", "")
+            for message in safe_messages
+            if isinstance(message, dict)
+        ]
+        history_turns = (
+            max(0, (len(safe_messages) - 2) // 2)
+            if kind == "npc_line"
+            else 0
+        )
         thinking = request.get("thinking")
         response_format = request.get("response_format")
         record = {
@@ -168,6 +179,9 @@ class Handler(BaseHTTPRequestHandler):
             "action_id": context.get("action_id", ""),
             "dialogue_act": context.get("dialogue_act", ""),
             "has_player_text": bool(context.get("player_said")),
+            "message_count": len(safe_messages),
+            "role_sequence": role_sequence,
+            "history_turns": history_turns,
             "request_bytes": request_bytes,
             "status_code": status_code,
             "finish_reason": server.config.finish_reason,

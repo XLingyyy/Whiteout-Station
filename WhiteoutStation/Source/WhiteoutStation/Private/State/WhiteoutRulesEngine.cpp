@@ -114,6 +114,10 @@ bool FWhiteoutRulesEngine::LoadConfig(const FString& ConfigPath, FString& OutErr
 	Config.AntennaRequired = Gameplay->GetIntegerField(TEXT("antenna_required"));
 	Config.ModelCallHardLimit = Gameplay->GetIntegerField(TEXT("model_call_hard_limit"));
 	Config.SafeAntennaTemperature = Thresholds->GetNumberField(TEXT("safe_antenna_temperature"));
+	Config.CriticalHealth = Thresholds->GetNumberField(TEXT("critical_health"));
+	Config.CriticalTemperature = Thresholds->GetNumberField(TEXT("critical_temperature"));
+	Config.CriticalFatigue = Thresholds->GetNumberField(TEXT("critical_fatigue"));
+	Config.CriticalPressure = Thresholds->GetNumberField(TEXT("critical_pressure"));
 
 	FWSGameState Parsed;
 	Parsed.ActionPoints = Config.StartingActionPoints;
@@ -764,8 +768,7 @@ EWSEndingType FWhiteoutRulesEngine::ClassifyEnding() const
 	bool bCritical = false;
 	for (const EWSCharacterId CharacterId : {EWSCharacterId::Player, EWSCharacterId::GuHeng, EWSCharacterId::YeCheng})
 	{
-		const FWSCharacterState& Current = Character(CharacterId);
-		bCritical |= Current.Health <= 30.0f || Current.Temperature <= 30.0f;
+		bCritical |= IsCritical(Character(CharacterId));
 	}
 	if (State.Tasks.bSignalSent)
 	{
@@ -806,7 +809,7 @@ FWSScoreBreakdown FWhiteoutRulesEngine::CalculateScore() const
 	const float FoodScore = 4.0f * FMath::Min(1.0f, State.Resources.Food / 2.0f);
 	float MedicalScore = State.Resources.Medicine + State.Resources.HeatPack > 0 ? 5.0f : 0.0f;
 	const FWSCharacterState& Gu = Character(EWSCharacterId::GuHeng);
-	if ((Gu.Health <= 30.0f || Gu.Temperature <= 30.0f) && State.Resources.Medicine > 0)
+	if (IsCritical(Gu) && State.Resources.Medicine > 0)
 	{
 		MedicalScore = FMath::Min(MedicalScore, 1.25f);
 	}
@@ -847,6 +850,14 @@ FWSScoreBreakdown FWhiteoutRulesEngine::CalculateScore() const
 	Score.Total = Score.TaskQuality + Score.People + Score.EffectiveReserves + Score.SocialStability + Score.InformationResponsibility;
 	Score.Rating = Score.Total >= 90.0f ? TEXT("S") : Score.Total >= 80.0f ? TEXT("A") : Score.Total >= 70.0f ? TEXT("B") : Score.Total >= 60.0f ? TEXT("C") : TEXT("D");
 	return Score;
+}
+
+bool FWhiteoutRulesEngine::IsCritical(const FWSCharacterState& CharacterState) const
+{
+	return CharacterState.Health <= Config.CriticalHealth
+		|| CharacterState.Temperature <= Config.CriticalTemperature
+		|| CharacterState.Fatigue <= Config.CriticalFatigue
+		|| CharacterState.Pressure >= Config.CriticalPressure;
 }
 
 TArray<FName> FWhiteoutRulesEngine::BuildAllowedFactIds(const EWSCharacterId CharacterId) const
