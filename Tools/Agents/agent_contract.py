@@ -144,7 +144,7 @@ def make_completion_envelope(
         else json.dumps(content, ensure_ascii=False, separators=(",", ":"))
     )
     return {
-        "id": "whiteout-mock-v05",
+        "id": "whiteout-mock-v06",
         "object": "chat.completion",
         "created": 0,
         "model": model,

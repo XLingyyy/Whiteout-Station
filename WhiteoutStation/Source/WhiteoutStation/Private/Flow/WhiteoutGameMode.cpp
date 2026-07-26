@@ -154,7 +154,7 @@ AWhiteoutGameMode::AWhiteoutGameMode()
 void AWhiteoutGameMode::BeginPlay()
 {
 	Super::BeginPlay();
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.5 flow"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.6 flow"));
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		const bool bContinueRequested = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutContinue"));
@@ -478,8 +478,18 @@ void AWhiteoutGameMode::BeginOpeningPresentation()
 	PlayerController->SetIgnoreMoveInput(true);
 	PlayerController->SetIgnoreLookInput(true);
 	PlayerController->SetViewTargetWithBlend(OpeningCamera, 0.75f, EViewTargetBlendFunction::VTBlend_Cubic);
-	GetWorldTimerManager().SetTimer(OpeningFinishTimer, this, &AWhiteoutGameMode::FinishOpeningPresentation, 14.0f, false);
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: opening establishing camera started"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.6: manual opening presentation started"));
+}
+
+void AWhiteoutGameMode::PrepareOpeningReveal()
+{
+	if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
+	{
+		if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
+		{
+			PlayerController->SetViewTarget(PlayerPawn);
+		}
+	}
 }
 
 void AWhiteoutGameMode::FinishOpeningPresentation()
@@ -490,12 +500,9 @@ void AWhiteoutGameMode::FinishOpeningPresentation()
 	}
 	bOpeningFinished = true;
 	GetWorldTimerManager().ClearTimer(OpeningFinishTimer);
+	PrepareOpeningReveal();
 	if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
 	{
-		if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
-		{
-			PlayerController->SetViewTargetWithBlend(PlayerPawn, 0.85f, EViewTargetBlendFunction::VTBlend_Cubic);
-		}
 		PlayerController->SetIgnoreMoveInput(false);
 		PlayerController->SetIgnoreLookInput(false);
 	}
@@ -504,7 +511,7 @@ void AWhiteoutGameMode::FinishOpeningPresentation()
 		OpeningCamera->SetLifeSpan(1.1f);
 		OpeningCamera = nullptr;
 	}
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: opening handed control to player"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.6: opening handed control to player"));
 }
 
 void AWhiteoutGameMode::BeginPresentationCapture()
@@ -601,6 +608,13 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 		PresentationCaptureNames = {
 			TEXT("lighting_control_ceiling"), TEXT("lighting_antenna_front"), TEXT("lighting_antenna_side")};
 	}
+	else if (PresentationCaptureMode.Equals(TEXT("v06ux"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("opening_story_01"), TEXT("opening_story_04"), TEXT("opening_story_07"),
+			TEXT("guide"),
+			TEXT("dialogue_gu_initial"), TEXT("dialogue_ye_initial"), TEXT("dialogue_gu_unlocked")};
+	}
 	else
 	{
 		PresentationCaptureNames.Add(PresentationCaptureMode);
@@ -649,10 +663,12 @@ void AWhiteoutGameMode::StagePresentationCapture()
 
 	if (CaptureName.StartsWith(TEXT("opening_")))
 	{
-		const int32 Stage = CaptureName.Equals(TEXT("opening_title")) ? 0
-			: CaptureName.Equals(TEXT("opening_establishing")) ? 1
-			: CaptureName.Equals(TEXT("opening_objective")) ? 2
-			: 3;
+		const int32 Stage = CaptureName.StartsWith(TEXT("opening_story_"))
+			? FMath::Clamp(FCString::Atoi(*CaptureName.Right(2)) - 1, 0, 6)
+			: CaptureName.Equals(TEXT("opening_title")) ? 0
+				: CaptureName.Equals(TEXT("opening_establishing")) ? 1
+				: CaptureName.Equals(TEXT("opening_objective")) ? 2
+				: 3;
 		HUD->SetOpeningCaptureStage(Stage);
 	}
 	else if (CaptureName.StartsWith(TEXT("focus_")))
@@ -788,6 +804,11 @@ void AWhiteoutGameMode::StagePresentationCapture()
 			PlayerController->SetPause(false);
 		}
 	}
+	else if (CaptureName.Equals(TEXT("guide")))
+	{
+		HUD->SetPresentationCaptureState(StateSubsystem->GetStateSnapshot());
+		HUD->ToggleGuide();
+	}
 	else if (CaptureName.StartsWith(TEXT("settings_")))
 	{
 		if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
@@ -895,6 +916,13 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		else if (CaptureName.Equals(TEXT("dialogue_gu_cooperative"))) DialogueState.Flags.bGuHengCooperative = true;
 		else if (CaptureName.Equals(TEXT("dialogue_ye_heated"))) DialogueState.Flags.bMedicalRoomHeated = true;
 		else if (CaptureName.Equals(TEXT("dialogue_ye_treated"))) DialogueState.Flags.bGuHengTreated = true;
+		else if (CaptureName.Equals(TEXT("dialogue_gu_unlocked")))
+		{
+			DialogueState.Flags.bGuHengDiagnosed = true;
+			DialogueState.PlayerKnowledge.Add(
+				TEXT("FACT_FORCED_RESTART_SUSPICION"),
+				EWSKnowledgeLevel::Suspected);
+		}
 		HUD->SetPresentationCaptureState(DialogueState);
 		const FName NPCAction = CaptureName.StartsWith(TEXT("dialogue_ye_"))
 			? FName(TEXT("talk_ye_cheng")) : FName(TEXT("talk_gu_heng"));
@@ -1271,8 +1299,11 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 		|| PresentationCaptureMode.Equals(TEXT("hud"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("pause"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("evidence"), ESearchCase::IgnoreCase);
+	const bool bV06Capture = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV06Capture"));
 	const bool bV04Capture = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV04Capture"));
-	const TCHAR* CaptureFolder = bV04Capture
+	const TCHAR* CaptureFolder = bV06Capture
+		? TEXT("../docs/baseline_v0.6")
+		: bV04Capture
 		? TEXT("../docs/baseline_v0.4")
 		: bV03Capture ? TEXT("../docs/baseline_v0.3") : TEXT("../docs/baseline_v0.2");
 	const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / CaptureFolder);

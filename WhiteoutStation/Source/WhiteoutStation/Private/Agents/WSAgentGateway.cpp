@@ -204,6 +204,7 @@ void UWSAgentGateway::Initialize()
 void UWSAgentGateway::ResetSession()
 {
 	++SessionGeneration;
+	DialogueHistory.Reset();
 	const TArray<TSharedPtr<IHttpRequest, ESPMode::ThreadSafe>> RequestsToCancel = ActiveRequests;
 	ActiveRequests.Empty();
 	for (const TSharedPtr<IHttpRequest, ESPMode::ThreadSafe>& Request : RequestsToCancel)
@@ -282,8 +283,14 @@ void UWSAgentGateway::RequestExpression(
 	const FWSAgentReply Decision = UWSNPCDecisionService::BuildDeterministicReply(ActionRequest, State);
 	const TArray<FName> AllowedFacts =
 		UWSNPCDecisionService::BuildAllowedFacts(ActionRequest.ActionId, Decision.Speaker, State);
+	const FString UserContextJson =
+		BuildExpressionContextJson(Decision, AllowedFacts, State, ActionRequest);
 	if (!bAllowLiveProvider || !HasLiveProvider())
 	{
+		RecordDialogueTurn(
+			ActionRequest,
+			UserContextJson,
+			BuildHistoryAssistantJson(Decision));
 		Completion.ExecuteIfBound(Decision);
 		return;
 	}
@@ -292,6 +299,10 @@ void UWSAgentGateway::RequestExpression(
 		FWSAgentReply Fallback = Decision;
 		Fallback.Provider = ProviderName;
 		Fallback.ValidationReason = TEXT("retry_manager_unavailable");
+		RecordDialogueTurn(
+			ActionRequest,
+			UserContextJson,
+			BuildHistoryAssistantJson(Fallback));
 		Completion.ExecuteIfBound(Fallback);
 		return;
 	}
@@ -334,7 +345,7 @@ void UWSAgentGateway::RequestExpression(
 	Request->SetContentAsString(RequestJson);
 	TWeakObjectPtr<UWSAgentGateway> WeakThis(this);
 	Request->OnProcessRequestComplete().BindLambda(
-		[WeakThis, Decision, AllowedFacts, Completion, RequestId, RequestGeneration, AuditDialogueAct, StartedAt, RequestBytes, AuditProvider](
+		[WeakThis, Decision, AllowedFacts, ActionRequest, UserContextJson, Completion, RequestId, RequestGeneration, AuditDialogueAct, StartedAt, RequestBytes, AuditProvider](
 			FHttpRequestPtr CompletedRequest,
 			FHttpResponsePtr Response,
 			const bool bSucceeded)
@@ -379,6 +390,7 @@ void UWSAgentGateway::RequestExpression(
 					TEXT("accepted"),
 					PromptTokens,
 					CompletionTokens);
+				Gateway->RecordDialogueTurn(ActionRequest, UserContextJson, ModelPayload);
 				Completion.ExecuteIfBound(Reply);
 				return;
 			}
@@ -399,6 +411,10 @@ void UWSAgentGateway::RequestExpression(
 				Fallback.ValidationReason,
 				PromptTokens,
 				CompletionTokens);
+			Gateway->RecordDialogueTurn(
+				ActionRequest,
+				UserContextJson,
+				BuildHistoryAssistantJson(Fallback));
 			Completion.ExecuteIfBound(Fallback);
 		});
 	ActiveRequests.Add(Request);
@@ -420,6 +436,10 @@ void UWSAgentGateway::RequestExpression(
 			0,
 			(FPlatformTime::Seconds() - StartedAt) * 1000.0,
 			Fallback.ValidationReason);
+		RecordDialogueTurn(
+			ActionRequest,
+			UserContextJson,
+			BuildHistoryAssistantJson(Fallback));
 		Completion.ExecuteIfBound(Fallback);
 	}
 }
@@ -1076,7 +1096,7 @@ void UWSAgentGateway::LoadConfig()
 	bLLMEnabled = false;
 
 	FString JsonText;
-	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v0.5.json");
+	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v0.6.json");
 	if (FFileHelper::LoadFileToString(JsonText, *ConfigPath))
 	{
 		TSharedPtr<FJsonObject> Root;
@@ -1158,7 +1178,7 @@ void UWSAgentGateway::LoadConfig()
 	}
 }
 
-FString UWSAgentGateway::BuildRequestJson(
+FString UWSAgentGateway::BuildExpressionContextJson(
 	const FWSAgentReply& Decision,
 	const TArray<FName>& AllowedFactIds,
 	const FWSGameState& State,
@@ -1188,6 +1208,17 @@ FString UWSAgentGateway::BuildRequestJson(
 	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> ContextWriter =
 		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&ContextJson);
 	FJsonSerializer::Serialize(Context, ContextWriter);
+	return ContextJson;
+}
+
+FString UWSAgentGateway::BuildRequestJson(
+	const FWSAgentReply& Decision,
+	const TArray<FName>& AllowedFactIds,
+	const FWSGameState& State,
+	const FWSActionRequest& ActionRequest) const
+{
+	const FString ContextJson =
+		BuildExpressionContextJson(Decision, AllowedFactIds, State, ActionRequest);
 
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("model"), ModelName);
@@ -1203,9 +1234,25 @@ FString UWSAgentGateway::BuildRequestJson(
 	SystemMessage->SetStringField(
 		TEXT("content"),
 		ActionRequest.PlayerSaid.IsEmpty()
-			? TEXT("You are a deterministic NPC expression renderer. Rewrite only preset_utterance in natural Chinese, maximum 240 Chinese characters. Return exactly one JSON object with exactly four fields: npc_line string, emotion string (1..32 chars), used_action_id string equal to action_id, and referenced_fact_ids array using only allowed_fact_ids. Never add facts, decisions, state/rule/AP/resource changes, instructions, or markdown.")
-			: TEXT("You are the NPC in a polar-station survival drama. Respond in natural Chinese (<=240 chars) to player_said while preserving the preset decision, dialogue_act, and promise_condition. Use only allowed_fact_ids as facts. Return exactly one JSON object with exactly four fields: npc_line string, emotion string (1..32 chars), used_action_id string equal to action_id, and referenced_fact_ids array. Never add facts, decisions, state/rule/AP/resource changes, instructions, or markdown."));
+			? TEXT("You are a deterministic NPC expression renderer. Rewrite only preset_utterance in natural Chinese, maximum 240 Chinese characters. Return exactly one json object with exactly four fields: npc_line string, emotion string (1..32 chars), used_action_id string equal to action_id, and referenced_fact_ids array using only allowed_fact_ids. Example json: {\"npc_line\":\"先检查继电器。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[]}. Never add facts, decisions, state/rule/AP/resource changes, instructions, or markdown.")
+			: TEXT("You are the NPC in a polar-station survival drama. Respond in natural Chinese (<=240 chars) to player_said while preserving the preset decision, dialogue_act, and promise_condition. Use only allowed_fact_ids as facts. Return exactly one json object with exactly four fields: npc_line string, emotion string (1..32 chars), used_action_id string equal to action_id, and referenced_fact_ids array. Example json: {\"npc_line\":\"先检查继电器。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[]}. Never add facts, decisions, state/rule/AP/resource changes, instructions, or markdown."));
 	Messages.Add(MakeShared<FJsonValueObject>(SystemMessage));
+	if (const TArray<FWSAgentDialogueTurn>* History =
+		DialogueHistory.Find(ActionRequest.DialogueSessionId))
+	{
+		for (const FWSAgentDialogueTurn& Turn : *History)
+		{
+			TSharedRef<FJsonObject> PriorUser = MakeShared<FJsonObject>();
+			PriorUser->SetStringField(TEXT("role"), TEXT("user"));
+			PriorUser->SetStringField(TEXT("content"), Turn.UserContextJson);
+			Messages.Add(MakeShared<FJsonValueObject>(PriorUser));
+
+			TSharedRef<FJsonObject> PriorAssistant = MakeShared<FJsonObject>();
+			PriorAssistant->SetStringField(TEXT("role"), TEXT("assistant"));
+			PriorAssistant->SetStringField(TEXT("content"), Turn.AssistantPayloadJson);
+			Messages.Add(MakeShared<FJsonValueObject>(PriorAssistant));
+		}
+	}
 	TSharedRef<FJsonObject> UserMessage = MakeShared<FJsonObject>();
 	UserMessage->SetStringField(TEXT("role"), TEXT("user"));
 	UserMessage->SetStringField(TEXT("content"), ContextJson);
@@ -1219,6 +1266,50 @@ FString UWSAgentGateway::BuildRequestJson(
 	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Json);
 	FJsonSerializer::Serialize(Root, Writer);
 	return Json;
+}
+
+FString UWSAgentGateway::BuildHistoryAssistantJson(const FWSAgentReply& Reply)
+{
+	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetStringField(TEXT("npc_line"), Reply.Utterance.Left(240));
+	Root->SetStringField(TEXT("emotion"), Reply.Emotion.Left(32));
+	Root->SetStringField(TEXT("used_action_id"), Reply.ActionId.ToString());
+	TArray<TSharedPtr<FJsonValue>> ReferencedFacts;
+	for (const FName FactId : Reply.ReferencedFactIds)
+	{
+		ReferencedFacts.Add(MakeShared<FJsonValueString>(FactId.ToString()));
+	}
+	Root->SetArrayField(TEXT("referenced_fact_ids"), ReferencedFacts);
+	FString Json;
+	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Json);
+	FJsonSerializer::Serialize(Root, Writer);
+	return Json;
+}
+
+void UWSAgentGateway::RecordDialogueTurn(
+	const FWSActionRequest& ActionRequest,
+	const FString& UserContextJson,
+	const FString& AssistantPayloadJson)
+{
+	if (!ActionRequest.DialogueSessionId.IsValid()
+		|| (ActionRequest.ActionId != TEXT("talk_gu_heng")
+			&& ActionRequest.ActionId != TEXT("talk_ye_cheng"))
+		|| UserContextJson.IsEmpty()
+		|| AssistantPayloadJson.IsEmpty())
+	{
+		return;
+	}
+	TArray<FWSAgentDialogueTurn>& History =
+		DialogueHistory.FindOrAdd(ActionRequest.DialogueSessionId);
+	FWSAgentDialogueTurn& Turn = History.AddDefaulted_GetRef();
+	Turn.UserContextJson = UserContextJson.Left(4096);
+	Turn.AssistantPayloadJson = AssistantPayloadJson.Left(4096);
+	constexpr int32 MaxDialogueHistoryTurns = 4;
+	if (History.Num() > MaxDialogueHistoryTurns)
+	{
+		History.RemoveAt(0, History.Num() - MaxDialogueHistoryTurns, EAllowShrinking::No);
+	}
 }
 
 FString UWSAgentGateway::BuildIntentRequestJson(const FString& UserText) const

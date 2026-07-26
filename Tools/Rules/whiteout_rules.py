@@ -10,7 +10,7 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 RULES_DIRECTORY = ROOT / "WhiteoutStation" / "Content" / "Rules"
-DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.5.json"
+DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.6.json"
 LEGACY_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.1.json"
 
 PROMISE_CONDITIONS = frozenset(
@@ -203,19 +203,63 @@ class WhiteoutSimulator:
                 return "dialogue_act_unavailable"
             condition = self._promise_condition(params)
             has_condition = condition is not None and str(condition) != ""
-            if action_id == "talk_ye_cheng" and dialogue_act == "promise":
-                return "dialogue_act_unavailable"
+            if dialogue_act != "promise" and has_condition:
+                return "invalid_promise_condition"
+            if dialogue_act == "challenge":
+                challenge_available = (
+                    self._knows("FACT_FORCED_RESTART_SUSPICION")
+                    or self._knows("FACT_BURNT_RELAY")
+                    if action_id == "talk_gu_heng"
+                    else flags["heat_pack_revealed"]
+                )
+                if not challenge_available:
+                    return "dialogue_act_unavailable"
+            elif dialogue_act == "reassure":
+                character_id = (
+                    "gu_heng" if action_id == "talk_gu_heng" else "ye_cheng"
+                )
+                threshold = 65 if character_id == "gu_heng" else 60
+                reassure_available = (
+                    self.state["mid_crisis_triggered"]
+                    or self.state["characters"][character_id]["pressure"] >= threshold
+                    or (
+                        character_id == "gu_heng"
+                        and flags["gu_heng_diagnosed"]
+                    )
+                )
+                if not reassure_available:
+                    return "dialogue_act_unavailable"
             if dialogue_act == "promise":
                 if condition not in PROMISE_CONDITIONS:
                     return "invalid_promise_condition"
+                if action_id != "talk_gu_heng":
+                    return "dialogue_act_unavailable"
+                context_available = (
+                    condition == "reserve_medicine"
+                    and flags["gu_heng_diagnosed"]
+                    and resources["medicine"] > 0
+                ) or (
+                    condition == "keep_records"
+                    and (
+                        self._knows("FACT_FORCED_RESTART_SUSPICION")
+                        or self._knows("FACT_FORCED_RESTART_CONFIRMED")
+                    )
+                ) or (
+                    condition == "heat_repair_room"
+                    and (
+                        flags["gu_heng_diagnosed"]
+                        or self._knows("FACT_HAND_INJURY")
+                    )
+                    and not flags["repair_room_heated"]
+                )
+                if not context_available:
+                    return "dialogue_act_unavailable"
                 promise_id = f"player_to_gu_heng:{condition}"
                 if any(
                     promise.get("id") == promise_id
                     for promise in self.state["promises"]
                 ):
                     return "duplicate_promise"
-            elif has_condition:
-                return "invalid_promise_condition"
 
         if action_id == "heat_repair_room":
             if flags["repair_room_heated"]:

@@ -169,9 +169,10 @@ void AWhiteoutCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		EnhancedInput->BindAction(ContinueAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::ContinueRun);
 		EnhancedInput->BindAction(CycleOptionAction, ETriggerEvent::Started, this, &AWhiteoutCharacter::CycleActionOption);
 	}
-	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AWhiteoutCharacter::DismissOpening);
-	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &ACharacter::Jump);
+	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AWhiteoutCharacter::HandleJumpPressed);
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Released, this, &ACharacter::StopJumping);
+	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AWhiteoutCharacter::AdvanceOpening);
+	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AWhiteoutCharacter::ToggleGuide);
 	FInputKeyBinding& PauseBinding = PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AWhiteoutCharacter::TogglePauseMenu);
 	PauseBinding.bExecuteWhenPaused = true;
 }
@@ -408,7 +409,7 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->SetDialogueIntentStatus(TEXT("交涉已提交，正在组织回应……"), true);
+			HUD->SetDialogueIntentStatus(TEXT("交涉已提交，正在组织回应……按 Esc 或“离开”取消等待。"), true);
 		}
 	}
 	ActiveDialogueTransactionId = Request.TransactionId;
@@ -460,6 +461,14 @@ void AWhiteoutCharacter::ContinueDialogue()
 
 void AWhiteoutCharacter::CancelDialogue()
 {
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UWindStationStateSubsystem* StateSubsystem =
+			GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			StateSubsystem->CancelPendingDialogue();
+		}
+	}
 	if (ActiveDialogueTarget)
 	{
 		ActiveDialogueTarget->SetDialogueLookAtActive(false);
@@ -483,13 +492,40 @@ void AWhiteoutCharacter::CancelDialogue()
 	}
 }
 
-void AWhiteoutCharacter::DismissOpening()
+void AWhiteoutCharacter::HandleJumpPressed()
 {
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->DismissOpening();
+			if (HUD->IsOpeningVisible())
+			{
+				HUD->AdvanceOpening();
+				return;
+			}
+		}
+	}
+	Jump();
+}
+
+void AWhiteoutCharacter::AdvanceOpening()
+{
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->AdvanceOpening();
+		}
+	}
+}
+
+void AWhiteoutCharacter::ToggleGuide()
+{
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->ToggleGuide();
 		}
 	}
 }

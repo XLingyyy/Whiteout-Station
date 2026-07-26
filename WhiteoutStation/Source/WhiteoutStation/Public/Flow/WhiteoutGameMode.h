@@ -19,6 +19,7 @@ public:
 	AWhiteoutGameMode();
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
+	void PrepareOpeningReveal();
 	void FinishOpeningPresentation();
 
 private:

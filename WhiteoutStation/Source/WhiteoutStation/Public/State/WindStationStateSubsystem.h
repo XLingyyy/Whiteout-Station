@@ -63,6 +63,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Dialogue")
 	FWSAgentReply GetLatestDialogue() const { return LatestDialogue; }
 
+	void CancelPendingDialogue();
+
 	const FWhiteoutRulesEngine& GetRulesEngine() const { return RulesEngine; }
 
 private:

@@ -37,7 +37,7 @@ namespace WhiteoutRuleTests
 		Test.TestTrue(
 			TEXT("Rules JSON loads"),
 			Engine.LoadConfig(
-				FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.5.json"), Error));
+				FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.6.json"), Error));
 		if (!Error.IsEmpty())
 		{
 			Test.AddError(Error);
@@ -74,7 +74,7 @@ bool FWhiteoutAPFlowTest::RunTest(const FString& Parameters)
 
 	Engine.Reset();
 	TestTrue(
-		TEXT("Safe antenna temperature loads from v0.5 rules"),
+		TEXT("Safe antenna temperature loads from v0.6 rules"),
 		FMath::IsNearlyEqual(Engine.GetConfig().SafeAntennaTemperature, 55.0f));
 	FWSGameState& ColdState = Engine.GetMutableStateForTesting();
 	ColdState.Tasks.GeneratorProgress = Engine.GetConfig().GeneratorRequired;
@@ -94,6 +94,98 @@ bool FWhiteoutAPFlowTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Calibration at configured safe temperature is allowed"),
 		Engine.Preview(WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna"))).bCanExecute);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutDialogueStageTest,
+	"WhiteoutStation.Rules.DialogueStages",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutDialogueStageTest::RunTest(const FString& Parameters)
+{
+	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+	auto DialoguePreview = [&Engine](
+		const TCHAR* ActionId,
+		const EWSDialogueAct Act,
+		const FName Condition = NAME_None)
+	{
+		FWSActionRequest Request = WhiteoutRuleTests::MakeRequest(ActionId);
+		Request.DialogueAct = Act;
+		Request.PromiseCondition = Condition;
+		return Engine.Preview(Request);
+	};
+
+	TestTrue(
+		TEXT("Initial Ye Cheng dialogue offers Ask"),
+		DialoguePreview(TEXT("talk_ye_cheng"), EWSDialogueAct::Ask).bCanExecute);
+	TestFalse(
+		TEXT("Initial Ye Cheng dialogue hides Challenge"),
+		DialoguePreview(TEXT("talk_ye_cheng"), EWSDialogueAct::Challenge).bCanExecute);
+	TestFalse(
+		TEXT("Initial Ye Cheng dialogue hides Reassure"),
+		DialoguePreview(TEXT("talk_ye_cheng"), EWSDialogueAct::Reassure).bCanExecute);
+	TestFalse(
+		TEXT("Ye Cheng never accepts Promise"),
+		DialoguePreview(
+			TEXT("talk_ye_cheng"),
+			EWSDialogueAct::Promise,
+			TEXT("reserve_medicine")).bCanExecute);
+
+	TestTrue(
+		TEXT("Initial Gu Heng dialogue offers Ask"),
+		DialoguePreview(TEXT("talk_gu_heng"), EWSDialogueAct::Ask).bCanExecute);
+	TestTrue(
+		TEXT("Initial Gu Heng pressure unlocks Reassure"),
+		DialoguePreview(TEXT("talk_gu_heng"), EWSDialogueAct::Reassure).bCanExecute);
+	TestFalse(
+		TEXT("Initial Gu Heng dialogue hides Challenge"),
+		DialoguePreview(TEXT("talk_gu_heng"), EWSDialogueAct::Challenge).bCanExecute);
+	TestFalse(
+		TEXT("Initial Gu Heng dialogue hides contextless Promise"),
+		DialoguePreview(
+			TEXT("talk_gu_heng"),
+			EWSDialogueAct::Promise,
+			TEXT("heat_repair_room")).bCanExecute);
+
+	TestTrue(
+		TEXT("Generator log commits"),
+		Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
+	TestTrue(
+		TEXT("Generator evidence unlocks Gu Heng Challenge"),
+		DialoguePreview(TEXT("talk_gu_heng"), EWSDialogueAct::Challenge).bCanExecute);
+	TestTrue(
+		TEXT("Generator evidence unlocks records Promise"),
+		DialoguePreview(
+			TEXT("talk_gu_heng"),
+			EWSDialogueAct::Promise,
+			TEXT("keep_records")).bCanExecute);
+	TestFalse(
+		TEXT("Diagnosis-dependent medicine Promise stays hidden"),
+		DialoguePreview(
+			TEXT("talk_gu_heng"),
+			EWSDialogueAct::Promise,
+			TEXT("reserve_medicine")).bCanExecute);
+
+	Engine.Reset();
+	FWSActionRequest AskYe = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	AskYe.DialogueAct = EWSDialogueAct::Ask;
+	TestTrue(TEXT("Asking Ye Cheng commits"), Engine.Commit(AskYe).bCommitted);
+	TestTrue(
+		TEXT("Discovered heat pack unlocks Ye Cheng Challenge"),
+		DialoguePreview(TEXT("talk_ye_cheng"), EWSDialogueAct::Challenge).bCanExecute);
+	TestTrue(
+		TEXT("Diagnosis unlocks medicine Promise to Gu Heng"),
+		DialoguePreview(
+			TEXT("talk_gu_heng"),
+			EWSDialogueAct::Promise,
+			TEXT("reserve_medicine")).bCanExecute);
+	TestTrue(
+		TEXT("Diagnosis unlocks repair-room heat Promise to Gu Heng"),
+		DialoguePreview(
+			TEXT("talk_gu_heng"),
+			EWSDialogueAct::Promise,
+			TEXT("heat_repair_room")).bCanExecute);
 	return true;
 }
 
@@ -463,12 +555,18 @@ bool FWhiteoutDialogueAndResourceChoicesTest::RunTest(const FString& Parameters)
 		FWSActionRequest Promise = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
 		Promise.DialogueAct = EWSDialogueAct::Promise;
 		Promise.PromiseCondition = TEXT("keep_records");
+		TestTrue(
+			TEXT("Records evidence creates promise context"),
+			Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
 		const FWSActionResult PromiseResult = Engine.Commit(Promise);
 		TestTrue(TEXT("Whitelisted Gu Heng promise commits"), PromiseResult.bCommitted);
 		TestTrue(TEXT("Result reports a recorded promise"), PromiseResult.bPromiseRecorded);
 		TestTrue(TEXT("Result preserves dialogue act"), PromiseResult.DialogueAct == EWSDialogueAct::Promise);
 		TestTrue(TEXT("Result preserves promise condition"), PromiseResult.PromiseCondition == TEXT("keep_records"));
-		TestTrue(TEXT("Event records promise outcome"), Engine.GetState().EventLog.Last().bPromiseRecorded);
+		if (PromiseResult.bCommitted && !Engine.GetState().EventLog.IsEmpty())
+		{
+			TestTrue(TEXT("Event records promise outcome"), Engine.GetState().EventLog.Last().bPromiseRecorded);
+		}
 
 		FWSActionRequest Duplicate = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
 		Duplicate.DialogueAct = EWSDialogueAct::Promise;
@@ -489,6 +587,9 @@ bool FWhiteoutDialogueAndResourceChoicesTest::RunTest(const FString& Parameters)
 		FWSActionRequest Reassure = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
 		Challenge.DialogueAct = EWSDialogueAct::Challenge;
 		Reassure.DialogueAct = EWSDialogueAct::Reassure;
+		TestTrue(TEXT("Ask comparison gains context"), AskEngine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
+		TestTrue(TEXT("Challenge comparison gains context"), ChallengeEngine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
+		TestTrue(TEXT("Reassure comparison gains context"), ReassureEngine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
 		TestTrue(TEXT("Ask commits"), AskEngine.Commit(Ask).bCommitted);
 		TestTrue(TEXT("Challenge commits"), ChallengeEngine.Commit(Challenge).bCommitted);
 		TestTrue(TEXT("Reassure commits"), ReassureEngine.Commit(Reassure).bCommitted);

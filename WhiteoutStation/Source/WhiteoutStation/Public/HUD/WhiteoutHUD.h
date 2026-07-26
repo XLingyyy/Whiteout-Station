@@ -33,7 +33,10 @@ public:
 	void ShowDialogueReplyForCapture(const FString& Speaker, const FString& Line);
 	void SetDialogueIntentStatus(const FString& Message, bool bProcessing);
 	void SetSystemMessage(const FString& Message);
+	bool AdvanceOpening();
+	bool IsOpeningVisible() const;
 	void DismissOpening();
+	void ToggleGuide();
 	void TogglePauseMenu();
 	void HandleBackRequested();
 	void ResetPresentationCapture();

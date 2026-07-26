@@ -146,7 +146,7 @@ bool FWhiteoutRulesEngine::LoadConfig(const FString& ConfigPath, FString& OutErr
 
 	if (Config.StartingActionPoints != 8 || Config.MidCrisisThreshold != 4)
 	{
-		OutError = TEXT("v0.5 requires 8 starting AP and a 4 AP crisis threshold");
+		OutError = TEXT("v0.6 requires 8 starting AP and a 4 AP crisis threshold");
 		return false;
 	}
 
@@ -306,10 +306,36 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecute(const FWSActionRequest& Request) 
 		{
 			return EWSReasonCode::DialogueActUnavailable;
 		}
-		if (Request.ActionId == TalkYeCheng && Request.DialogueAct == EWSDialogueAct::Promise)
+		if (!Request.PromiseCondition.IsNone() && Request.DialogueAct != EWSDialogueAct::Promise)
 		{
-			return EWSReasonCode::DialogueActUnavailable;
+			return EWSReasonCode::InvalidPromiseCondition;
 		}
+
+		if (Request.DialogueAct == EWSDialogueAct::Challenge)
+		{
+			const bool bChallengeAvailable = Request.ActionId == TalkGuHeng
+				? Knows(FactForcedRestartSuspicion) || Knows(FactBurntRelay)
+				: State.Flags.bHeatPackRevealed;
+			if (!bChallengeAvailable)
+			{
+				return EWSReasonCode::DialogueActUnavailable;
+			}
+		}
+		else if (Request.DialogueAct == EWSDialogueAct::Reassure)
+		{
+			const EWSCharacterId CharacterId = Request.ActionId == TalkGuHeng
+				? EWSCharacterId::GuHeng
+				: EWSCharacterId::YeCheng;
+			const float Pressure = Character(CharacterId).Pressure;
+			const bool bReassureAvailable = State.bMidCrisisTriggered
+				|| Pressure >= (CharacterId == EWSCharacterId::GuHeng ? 65.0f : 60.0f)
+				|| (CharacterId == EWSCharacterId::GuHeng && State.Flags.bGuHengDiagnosed);
+			if (!bReassureAvailable)
+			{
+				return EWSReasonCode::DialogueActUnavailable;
+			}
+		}
+
 		if (Request.DialogueAct == EWSDialogueAct::Promise)
 		{
 			static const TSet<FName> AllowedConditions = {
@@ -317,6 +343,24 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecute(const FWSActionRequest& Request) 
 			if (!AllowedConditions.Contains(Request.PromiseCondition))
 			{
 				return EWSReasonCode::InvalidPromiseCondition;
+			}
+			if (Request.ActionId != TalkGuHeng)
+			{
+				return EWSReasonCode::DialogueActUnavailable;
+			}
+			const bool bContextAvailable =
+				(Request.PromiseCondition == TEXT("reserve_medicine")
+					&& State.Flags.bGuHengDiagnosed
+					&& State.Resources.Medicine > 0)
+				|| (Request.PromiseCondition == TEXT("keep_records")
+					&& (Knows(FactForcedRestartSuspicion)
+						|| Knows(FactForcedRestartConfirmed)))
+				|| (Request.PromiseCondition == TEXT("heat_repair_room")
+					&& (State.Flags.bGuHengDiagnosed || Knows(FactHandInjury))
+					&& !State.Flags.bRepairRoomHeated);
+			if (!bContextAvailable)
+			{
+				return EWSReasonCode::DialogueActUnavailable;
 			}
 			const FName PromiseId(*FString::Printf(
 				TEXT("player_to_gu_heng:%s"),
@@ -329,10 +373,6 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecute(const FWSActionRequest& Request) 
 			{
 				return EWSReasonCode::DuplicatePromise;
 			}
-		}
-		else if (!Request.PromiseCondition.IsNone())
-		{
-			return EWSReasonCode::InvalidPromiseCondition;
 		}
 	}
 

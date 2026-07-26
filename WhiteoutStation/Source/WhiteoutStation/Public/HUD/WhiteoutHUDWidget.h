@@ -27,6 +27,7 @@ enum class EWSUILayer : uint8
 	Preview,
 	Evidence,
 	Dialogue,
+	Guide,
 	Pause,
 	Settings,
 	Results
@@ -38,6 +39,15 @@ enum class EWSDialogueStage : uint8
 	IntentPick,
 	TextEntry,
 	Reply
+};
+
+enum class EWSOpeningPhase : uint8
+{
+	FadingInLine,
+	AwaitingAdvance,
+	FadingOutLine,
+	RevealingStation,
+	Complete
 };
 
 // 轻量 tick 驱动的面板过渡动效
@@ -84,7 +94,10 @@ public:
 	void ShowDialogueReplyForCapture(const FString& Speaker, const FString& Line);
 	void SetDialogueIntentStatus(const FString& Message, bool bProcessing);
 	void SetSystemMessage(const FString& Message);
+	bool AdvanceOpening();
+	bool IsOpeningVisible() const;
 	void DismissOpening();
+	void ToggleGuide();
 	void TogglePauseMenu();
 	void HandleBackRequested();
 	bool IsPauseMenuVisible() const;
@@ -122,6 +135,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ObjectiveText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TutorialTitleText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TutorialText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> CrewText;
@@ -241,6 +260,9 @@ private:
 	TArray<TObjectPtr<UButton>> DialogueIntentButtons;
 
 	UPROPERTY(Transient)
+	TArray<TObjectPtr<UButton>> DialoguePromiseButtons;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UEditableTextBox> DialogueFreeTextInput;
 
 	UPROPERTY(Transient)
@@ -266,6 +288,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> OpeningFooterText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> GuideBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> GuideContextText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> CrisisBorder;
@@ -404,6 +432,8 @@ private:
 	float CrisisElapsed = -1.0f;
 	float EndingElapsed = -1.0f;
 	int32 ActiveOpeningStage = INDEX_NONE;
+	EWSOpeningPhase OpeningPhase = EWSOpeningPhase::FadingInLine;
+	TArray<FText> OpeningLines;
 	int32 ActiveCrisisStage = INDEX_NONE;
 	bool bWasShowingResults = false;
 	bool bEndingResultsRevealed = false;
@@ -437,10 +467,14 @@ private:
 	void ShowEvidenceDetail(const FString& DetailCopy);
 	void OpenDialogueTextEntry(EWSDialogueAct DialogueAct, FName PromiseCondition = NAME_None);
 	void RefreshDialogueAvailability();
+	void ReflowDialogueIntentButtons(const TArray<UButton*>& AvailableButtons);
 	void ShowDialogueReplyActions();
 	void UpdateDialogueCard(const FWSGameState& State);
 	void UpdateResults(const FWSGameState& State);
+	void TickOpening(float DeltaTime);
 	void ApplyOpeningStage(int32 Stage);
+	FString BuildTutorialHint(const FWSGameState& State) const;
+	void UpdateGuideContext(const FWSGameState& State);
 	void ApplyCrisisStage(int32 Stage);
 	void BeginEndingCinematic(EWSEndingType Ending);
 	void ApplyEndingCinematic(EWSEndingType Ending);
@@ -503,6 +537,9 @@ private:
 
 	UFUNCTION()
 	void QuitGame();
+
+	UFUNCTION()
+	void CloseGuide();
 
 	UFUNCTION()
 	void PlayHoverSound();

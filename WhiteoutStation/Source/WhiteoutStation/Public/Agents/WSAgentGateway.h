@@ -39,6 +39,12 @@ struct FWSDialogueIntentResult
 
 DECLARE_DELEGATE_OneParam(FWSDialogueIntentCallback, const FWSDialogueIntentResult&);
 
+struct FWSAgentDialogueTurn
+{
+	FString UserContextJson;
+	FString AssistantPayloadJson;
+};
+
 UCLASS()
 class WHITEOUTSTATION_API UWSAgentGateway : public UObject
 {
@@ -107,15 +113,26 @@ private:
 
 	TSharedPtr<FHttpRetrySystem::FManager, ESPMode::ThreadSafe> RetryManager;
 	TArray<TSharedPtr<IHttpRequest, ESPMode::ThreadSafe>> ActiveRequests;
+	TMap<FGuid, TArray<FWSAgentDialogueTurn>> DialogueHistory;
 	FCriticalSection AuditMutex;
 
 	void LoadConfig();
+	FString BuildExpressionContextJson(
+		const FWSAgentReply& Decision,
+		const TArray<FName>& AllowedFactIds,
+		const FWSGameState& State,
+		const FWSActionRequest& ActionRequest) const;
 	FString BuildRequestJson(
 		const FWSAgentReply& Decision,
 		const TArray<FName>& AllowedFactIds,
 		const FWSGameState& State,
 		const FWSActionRequest& ActionRequest) const;
 	FString BuildIntentRequestJson(const FString& UserText) const;
+	static FString BuildHistoryAssistantJson(const FWSAgentReply& Reply);
+	void RecordDialogueTurn(
+		const FWSActionRequest& ActionRequest,
+		const FString& UserContextJson,
+		const FString& AssistantPayloadJson);
 	static bool HasPromiseKeyword(const FString& UserText, FName PromiseCondition);
 	static FString IntentResultJson(const FWSDialogueIntentResult& Intent);
 	void UntrackRequest(const TSharedPtr<IHttpRequest, ESPMode::ThreadSafe>& Request);

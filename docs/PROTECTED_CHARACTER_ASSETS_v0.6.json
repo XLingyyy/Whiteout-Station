@@ -1,0 +1,20 @@
+{
+  "schema": "whiteout.protected-assets.v1",
+  "version": "0.6.0",
+  "baseline_commit": "01cb35689d866cab34bb60260f6ab55483ae3420",
+  "protected_git_objects": {
+    "WhiteoutStation/Content/WindStation/Art/Characters": "40a1df3f70d6ff92c9bc4dc674a1f77842bc2853",
+    "SourceAssets/MakeHuman/Characters": "42ed4e60a5ea44705bc08b19399c25c6616c4f89",
+    "WhiteoutStation/Source/WhiteoutStation/Private/World/WSInteractableActor.cpp": "35fb70a87ad39291f8c2f18f3ba1361043dd93d1",
+    "WhiteoutStation/Source/WhiteoutStation/Private/World/WSLookAtSkeletalMeshComponent.cpp": "9790380929258418e68c8fd0d400368001af746c"
+  },
+  "preserved_user_worktree": {
+    "workspace": "G:/Whiteout Station",
+    "notes": "The main worktree contains user-owned map, AnimeNPC, VRM4U, LookAt and interaction changes. v0.6 is implemented in G:/WhiteoutStation-v06-worktree and must not stage, reset, clean or overwrite the main worktree."
+  },
+  "map_baseline": {
+    "path": "WhiteoutStation/Content/WindStation/World/MVP_StationMap.umap",
+    "git_object": "ac0570fc2edbfbe0a919cfb32a7bd2d7d96ffecd",
+    "policy": "Do not edit in the isolated v0.6 worktree."
+  }
+}

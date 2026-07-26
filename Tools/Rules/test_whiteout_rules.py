@@ -217,6 +217,7 @@ class KnowledgeAndAgentTests(unittest.TestCase):
 
     def test_promise_is_recognized_and_settled_once(self) -> None:
         sim = WhiteoutSimulator()
+        sim.apply_action("investigate_generator_log", transaction_id="records-context")
         sim.apply_action(
             "talk_gu_heng",
             {"dialogue_act": "promise", "condition": "keep_records"},
@@ -311,6 +312,7 @@ class DialogueIntentTests(unittest.TestCase):
 
     def test_duplicate_gu_heng_promise_is_rejected_atomically(self) -> None:
         sim = WhiteoutSimulator()
+        sim.apply_action("investigate_generator_log", transaction_id="records-context")
         params = {
             "dialogue_act": "promise",
             "promise_condition": "keep_records",
@@ -328,6 +330,81 @@ class DialogueIntentTests(unittest.TestCase):
         self.assertFalse(duplicate.committed)
         self.assertEqual("duplicate_promise", duplicate.reason_code)
         self.assertEqual(before_duplicate, sim.state)
+
+    def test_intents_unlock_from_story_context(self) -> None:
+        sim = WhiteoutSimulator()
+        self.assertTrue(sim.preview_action("talk_ye_cheng", {"dialogue_act": "ask"})["can_execute"])
+        self.assertFalse(
+            sim.preview_action("talk_ye_cheng", {"dialogue_act": "challenge"})[
+                "can_execute"
+            ]
+        )
+        self.assertFalse(
+            sim.preview_action("talk_ye_cheng", {"dialogue_act": "reassure"})[
+                "can_execute"
+            ]
+        )
+        self.assertTrue(
+            sim.preview_action("talk_gu_heng", {"dialogue_act": "reassure"})[
+                "can_execute"
+            ]
+        )
+        self.assertFalse(
+            sim.preview_action(
+                "talk_gu_heng",
+                {
+                    "dialogue_act": "promise",
+                    "promise_condition": "heat_repair_room",
+                },
+            )["can_execute"]
+        )
+
+        sim.apply_action("investigate_generator_log", transaction_id="stage-log")
+        self.assertTrue(
+            sim.preview_action("talk_gu_heng", {"dialogue_act": "challenge"})[
+                "can_execute"
+            ]
+        )
+        self.assertTrue(
+            sim.preview_action(
+                "talk_gu_heng",
+                {
+                    "dialogue_act": "promise",
+                    "promise_condition": "keep_records",
+                },
+            )["can_execute"]
+        )
+        self.assertFalse(
+            sim.preview_action(
+                "talk_gu_heng",
+                {
+                    "dialogue_act": "promise",
+                    "promise_condition": "reserve_medicine",
+                },
+            )["can_execute"]
+        )
+
+        sim = WhiteoutSimulator()
+        sim.apply_action(
+            "talk_ye_cheng",
+            {"dialogue_act": "ask"},
+            "stage-ask-ye",
+        )
+        self.assertTrue(
+            sim.preview_action("talk_ye_cheng", {"dialogue_act": "challenge"})[
+                "can_execute"
+            ]
+        )
+        for condition in ("reserve_medicine", "heat_repair_room"):
+            self.assertTrue(
+                sim.preview_action(
+                    "talk_gu_heng",
+                    {
+                        "dialogue_act": "promise",
+                        "promise_condition": condition,
+                    },
+                )["can_execute"]
+            )
 
     def test_dialogue_intents_apply_deterministic_post_base_deltas(self) -> None:
         cases = [
@@ -349,6 +426,17 @@ class DialogueIntentTests(unittest.TestCase):
         for action_id, dialogue_act, condition, trust, pressure, promises in cases:
             with self.subTest(action=action_id, intent=dialogue_act):
                 sim = WhiteoutSimulator()
+                if action_id == "talk_ye_cheng" and dialogue_act == "challenge":
+                    sim.state["flags"]["heat_pack_revealed"] = True
+                elif action_id == "talk_ye_cheng" and dialogue_act == "reassure":
+                    sim.state["mid_crisis_triggered"] = True
+                elif action_id == "talk_gu_heng" and dialogue_act in {
+                    "challenge",
+                    "promise",
+                }:
+                    sim.state["player_knowledge"][
+                        "FACT_FORCED_RESTART_SUSPICION"
+                    ] = "suspected"
                 params = {"dialogue_act": dialogue_act}
                 if condition is not None:
                     params["promise_condition"] = condition
