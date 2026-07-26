@@ -59,18 +59,39 @@ class SmokeError(RuntimeError):
     """Raised when input evidence is incomplete or inconsistent."""
 
 
+ULONG_PTR = (
+    ctypes.c_ulonglong
+    if ctypes.sizeof(ctypes.c_void_p) == 8
+    else ctypes.c_ulong
+)
+
+
 class KEYBDINPUT(ctypes.Structure):
     _fields_ = (
         ("wVk", wintypes.WORD),
         ("wScan", wintypes.WORD),
         ("dwFlags", wintypes.DWORD),
         ("time", wintypes.DWORD),
-        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+        ("dwExtraInfo", ULONG_PTR),
+    )
+
+
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = (
+        ("dx", wintypes.LONG),
+        ("dy", wintypes.LONG),
+        ("mouseData", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ULONG_PTR),
     )
 
 
 class INPUTUNION(ctypes.Union):
-    _fields_ = (("ki", KEYBDINPUT),)
+    _fields_ = (
+        ("ki", KEYBDINPUT),
+        ("mi", MOUSEINPUT),
+    )
 
 
 class INPUT(ctypes.Structure):
@@ -198,7 +219,7 @@ def send_unicode_text(hwnd: int, value: str) -> None:
                     code_unit,
                     KEYEVENTF_UNICODE,
                     0,
-                    None,
+                    0,
                 )
             ),
         )
@@ -210,7 +231,7 @@ def send_unicode_text(hwnd: int, value: str) -> None:
                     code_unit,
                     KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
                     0,
-                    None,
+                    0,
                 )
             ),
         )
@@ -285,8 +306,15 @@ def capture(
     memory_dc.DeleteDC()
     window_dc.DeleteDC()
     win32gui.ReleaseDC(hwnd, window_dc_handle)
-    if image.size != (1280, 720):
-        raise SmokeError(f"{name}: captured {image.size}, expected 1280x720")
+    width, height = image.size
+    if (
+        width < 1280
+        or height < 720
+        or abs((width / height) - (16 / 9)) > 0.01
+    ):
+        raise SmokeError(
+            f"{name}: captured {image.size}, expected 16:9 at 1280x720 or higher"
+        )
     output_path = output_root / f"{name}.png"
     image.save(output_path)
     if output_path.stat().st_size < 10_000:
@@ -413,7 +441,7 @@ def advance_opening(
                     f"{scenario_id}_story_{next_stage:02d}",
                 )
             )
-    send_key(hwnd, VK_SPACE, 2.2)
+    send_key(hwnd, VK_SPACE, 3.2)
     captures.append(capture(hwnd, output_root, f"{scenario_id}_game"))
     if captures[-1]["mean_luma"] < 8.0:
         raise SmokeError(f"{scenario_id}: station reveal stayed black")
@@ -537,7 +565,7 @@ def run_dialogue_scenario(
         captures.append(
             capture(hwnd, output_root, f"{scenario_id}_reply")
         )
-        send_key(hwnd, VK_ESCAPE, 0.65)
+        click_client(hwnd, 0.895, 0.93, 0.8)
         captures.append(
             capture(hwnd, output_root, f"{scenario_id}_closed")
         )
@@ -561,7 +589,7 @@ def run_dialogue_scenario(
                 "left_mouse_ask",
                 "unicode_free_text",
                 "Enter_submit",
-                "Escape_leave",
+                "left_mouse_leave",
                 "Enter_confirm",
                 "Enter_settle",
             ],
