@@ -1,4 +1,4 @@
-"""Run the v0.7 Shipping routes and AI fail-safe smoke scenarios.
+"""Run the v0.8 Shipping routes and AI fail-safe smoke scenarios.
 
 The selected artifact must not have a release manifest yet because the
 evidence produced here must be included in that manifest's checksums.
@@ -27,17 +27,17 @@ if str(AGENT_TOOLS) not in sys.path:
     sys.path.insert(0, str(AGENT_TOOLS))
 
 try:
-    from .v07_gate_common import MANIFEST_REL, RUN_ID_PATTERN
+    from .v08_gate_common import MANIFEST_REL, RUN_ID_PATTERN
 except ImportError:
-    from v07_gate_common import MANIFEST_REL, RUN_ID_PATTERN
+    from v08_gate_common import MANIFEST_REL, RUN_ID_PATTERN
 
 from mock_server import MockConfig, create_server
 
 
-ARTIFACT_PREFIX = "WhiteoutStation-v0.7-Win64-"
+ARTIFACT_PREFIX = "WhiteoutStation-v0.8-Win64-"
 EXECUTABLE_REL = Path("Windows/WhiteoutStation.exe")
 AGENT_RUNTIME_REL = Path(
-    "Windows/WhiteoutStation/Content/Agents/AgentRuntime.v0.7.json"
+    "Windows/WhiteoutStation/Content/Agents/AgentRuntime.v0.8.json"
 )
 OUTPUT_REL = Path("Validation/ShippingSmoke")
 EVENT_LOG_REL = Path("Saved/Logs/WhiteoutStation_EventLog.json")
@@ -283,10 +283,10 @@ def validate_artifact_root(artifact_root: Path) -> tuple[Path, Path]:
     if not root.is_dir() or root.is_symlink():
         raise SmokeError(f"Artifact root must be a regular directory: {root}")
     if not root.name.startswith(ARTIFACT_PREFIX):
-        raise SmokeError(f"Artifact root is not a unique v0.7 archive: {root.name}")
+        raise SmokeError(f"Artifact root is not a unique v0.8 archive: {root.name}")
     run_id = root.name[len(ARTIFACT_PREFIX) :]
     if not RUN_ID_PATTERN.fullmatch(run_id):
-        raise SmokeError(f"Artifact root has an invalid v0.7 run id: {run_id}")
+        raise SmokeError(f"Artifact root has an invalid v0.8 run id: {run_id}")
     if (root / MANIFEST_REL).exists():
         raise SmokeError(
             f"{MANIFEST_REL} already exists; smoke evidence must precede manifest creation"
@@ -301,8 +301,8 @@ def validate_artifact_root(artifact_root: Path) -> tuple[Path, Path]:
     agent = load_json(agent_path)
     if not isinstance(agent, dict):
         raise SmokeError("Packaged Agent runtime root must be an object")
-    if agent.get("runtime_version") != "0.7.0":
-        raise SmokeError("Packaged Agent runtime_version must be 0.7.0")
+    if agent.get("runtime_version") != "0.8.0":
+        raise SmokeError("Packaged Agent runtime_version must be 0.8.0")
     if agent.get("schema_version") != 3:
         raise SmokeError("Packaged Agent schema_version must be 3")
     if agent.get("llm_enabled") is not True:
@@ -353,7 +353,7 @@ def validate_event_log(
         if isinstance(event, dict)
     ):
         raise SmokeError(f"{scenario.scenario_id}: non-committed event found")
-    if event_log.get("rules_version") != "0.7.0":
+    if event_log.get("rules_version") != "0.8.0":
         raise SmokeError(f"{scenario.scenario_id}: rules_version mismatch")
     if event_log.get("ending") != expected["ending"]:
         raise SmokeError(f"{scenario.scenario_id}: ending mismatch")
@@ -801,7 +801,7 @@ def run_performance_probe(
     if not isinstance(performance, dict):
         raise SmokeError(f"{scenario_id}: performance evidence must be an object")
     expected_fields = {
-        "schema": "whiteout.v0.7.performance-probe.v1",
+        "schema": "whiteout.v0.8.performance-probe.v1",
         "action_id": action_id,
         "provider": "command-line-provider",
         "fallback": False,
@@ -935,7 +935,7 @@ def run_shipping_smoke(
             raise SmokeError("AI A/B changed authoritative route results")
         evidence_root = staging_root / "Evidence"
         report = {
-            "schema": "whiteout.v0.7.shipping-smoke.v1",
+            "schema": "whiteout.v0.8.shipping-smoke.v1",
             "passed": True,
             "artifact_root_name": root.name,
             "credential_policy": {
@@ -968,7 +968,7 @@ def main() -> int:
         "--artifact-root",
         type=Path,
         required=True,
-        help="Exact unique WhiteoutStation-v0.7-Win64-<run_id> artifact root",
+        help="Exact unique WhiteoutStation-v0.8-Win64-<run_id> artifact root",
     )
     parser.add_argument("--timeout-seconds", type=float, default=90.0)
     args = parser.parse_args()
@@ -980,9 +980,9 @@ def main() -> int:
             timeout_seconds=args.timeout_seconds,
         )
     except (SmokeError, OSError) as exc:
-        print(f"SHIPPING SMOKE v0.7: FAIL: {exc}")
+        print(f"SHIPPING SMOKE v0.8: FAIL: {exc}")
         return 1
-    print(f"SHIPPING SMOKE v0.7: PASS (12/12) summary={summary_path}")
+    print(f"SHIPPING SMOKE v0.8: PASS (12/12) summary={summary_path}")
     return 0
 
 

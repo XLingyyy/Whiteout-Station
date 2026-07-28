@@ -1,4 +1,4 @@
-"""Shared primitives for the Whiteout Station v0.7 release gates.
+"""Shared primitives for the Whiteout Station v0.8 release gates.
 
 The helpers in this module are intentionally limited to read-only repository
 inspection and deterministic artifact hashing.  They never modify or clean a
@@ -18,13 +18,13 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 
-PROJECT_VERSION = "0.7.0"
-VERSION_TOKEN = "v0.7"
+PROJECT_VERSION = "0.8.0"
+VERSION_TOKEN = "v0.8"
 DISTRIBUTION_CLASS = "local_review_only"
 PROJECT_CONFIG_REL = "WhiteoutStation/Config/DefaultGame.ini"
-RULES_REL = "WhiteoutStation/Content/Rules/WhiteoutStationRules.v0.7.json"
-AGENT_RUNTIME_REL = "WhiteoutStation/Content/Agents/AgentRuntime.v0.7.json"
-PROTECTED_MANIFEST_REL = "docs/PROTECTED_CHARACTER_ASSETS_v0.7.json"
+RULES_REL = "WhiteoutStation/Content/Rules/WhiteoutStationRules.v0.8.json"
+AGENT_RUNTIME_REL = "WhiteoutStation/Content/Agents/AgentRuntime.v0.8.json"
+PROTECTED_MANIFEST_REL = "docs/PROTECTED_CHARACTER_ASSETS_v0.8.json"
 USER_MAP_REL = "WhiteoutStation/Content/WindStation/World/MVP_StationMap.umap"
 
 REQUIRED_PACKAGE_FILES = (
@@ -33,14 +33,16 @@ REQUIRED_PACKAGE_FILES = (
     "Windows/WhiteoutStation/Content/Paks/WhiteoutStation-Windows.pak",
     "Windows/WhiteoutStation/Content/Paks/WhiteoutStation-Windows.ucas",
     "Windows/WhiteoutStation/Content/Paks/WhiteoutStation-Windows.utoc",
-    "Windows/WhiteoutStation/Content/Rules/WhiteoutStationRules.v0.7.json",
-    "Windows/WhiteoutStation/Content/Agents/AgentRuntime.v0.7.json",
-    "README_v0.7.txt",
+    "Windows/WhiteoutStation/Content/Rules/WhiteoutStationRules.v0.8.json",
+    "Windows/WhiteoutStation/Content/Agents/AgentRuntime.v0.8.json",
+    "README_v0.8.txt",
     "ASSET_LICENSES.md",
+    "Validation/InputSmoke/input_smoke_summary.json",
+    "Validation/ShippingSmoke/shipping_smoke_summary.json",
 )
 
 MANIFEST_REL = "Validation/gate_manifest.json"
-MANIFEST_SCHEMA = "whiteout.v0.7.release-manifest.v1"
+MANIFEST_SCHEMA = "whiteout.v0.8.release-manifest.v1"
 RUN_ID_PATTERN = re.compile(
     r"^\d{8}T\d{6}Z-[0-9a-f]{8}-[a-z0-9]{4,16}$"
 )

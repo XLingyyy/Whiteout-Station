@@ -22,9 +22,9 @@ import win32ui
 from PIL import Image, ImageGrab, ImageStat
 
 try:
-    from .v07_gate_common import MANIFEST_REL, RUN_ID_PATTERN
+    from .v08_gate_common import MANIFEST_REL, RUN_ID_PATTERN
 except ImportError:
-    from v07_gate_common import MANIFEST_REL, RUN_ID_PATTERN
+    from v08_gate_common import MANIFEST_REL, RUN_ID_PATTERN
 
 
 ARTIFACT_PREFIX = "WhiteoutStation-v0.8-Win64-"

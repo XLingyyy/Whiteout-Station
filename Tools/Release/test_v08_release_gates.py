@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
-    from .v07_gate_common import (
+    from .v08_gate_common import (
         AGENT_RUNTIME_REL,
         DISTRIBUTION_CLASS,
         MANIFEST_REL,
@@ -19,17 +19,17 @@ try:
         RULES_REL,
         sha256_file,
     )
-    from .validate_release_v07 import validate_release_artifact
-    from .validate_source_v07 import (
+    from .validate_release_v08 import validate_release_artifact
+    from .validate_source_v08 import (
         AGENT_BASENAME,
         RULES_BASENAME,
         scan_tracked_secrets,
         validate_protected_assets,
         validate_versions,
     )
-    from .run_v07_shipping_smoke import EXPECTED_ROUTES, SCENARIOS
+    from .run_v08_shipping_smoke import EXPECTED_ROUTES, SCENARIOS
 except ImportError:
-    from v07_gate_common import (
+    from v08_gate_common import (
         AGENT_RUNTIME_REL,
         DISTRIBUTION_CLASS,
         MANIFEST_REL,
@@ -40,15 +40,15 @@ except ImportError:
         RULES_REL,
         sha256_file,
     )
-    from validate_release_v07 import validate_release_artifact
-    from validate_source_v07 import (
+    from validate_release_v08 import validate_release_artifact
+    from validate_source_v08 import (
         AGENT_BASENAME,
         RULES_BASENAME,
         scan_tracked_secrets,
         validate_protected_assets,
         validate_versions,
     )
-    from run_v07_shipping_smoke import EXPECTED_ROUTES, SCENARIOS
+    from run_v08_shipping_smoke import EXPECTED_ROUTES, SCENARIOS
 
 
 PROTECTED_PATHS = (
@@ -56,7 +56,7 @@ PROTECTED_PATHS = (
     "SourceAssets/MakeHuman/Characters",
 )
 DIFF_ONLY_ROOT = "WhiteoutStation/Content/WindStation/Art/AnimeNPC"
-ALLOWED_ADDITION = f"{DIFF_ONLY_ROOT}/GuHeng/AnimationsV07"
+ALLOWED_ADDITION = f"{DIFF_ONLY_ROOT}/GuHeng/AnimationsV08"
 
 
 def git(repo: Path, *arguments: str) -> str:
@@ -180,10 +180,10 @@ def make_repository(tmp_path: Path) -> tuple[Path, str, str]:
     ]
     write_text(
         repo,
-        "docs/PROTECTED_CHARACTER_ASSETS_v0.7.json",
+        "docs/PROTECTED_CHARACTER_ASSETS_v0.8.json",
         json.dumps(
             {
-                "version": "0.7",
+                "version": "0.8.0",
                 "baseline_commit": baseline_commit,
                 "protected_roots": [*PROTECTED_PATHS, DIFF_ONLY_ROOT],
                 "allowed_additions": [ALLOWED_ADDITION],
@@ -193,7 +193,7 @@ def make_repository(tmp_path: Path) -> tuple[Path, str, str]:
         )
         + "\n",
     )
-    git(repo, "add", "--", "docs/PROTECTED_CHARACTER_ASSETS_v0.7.json")
+    git(repo, "add", "--", "docs/PROTECTED_CHARACTER_ASSETS_v0.8.json")
     git(repo, "commit", "-m", "record protected assets")
     return repo, git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "HEAD^{tree}")
 
@@ -216,7 +216,7 @@ def make_valid_artifact(
     now = datetime.now(timezone.utc)
     run_id = f"{now.strftime('%Y%m%dT%H%M%SZ')}-{source_commit[:8]}-test"
     artifact_root = (
-        tmp_path / "artifacts" / f"WhiteoutStation-v0.7-Win64-{run_id}"
+        tmp_path / "artifacts" / f"WhiteoutStation-v0.8-Win64-{run_id}"
     )
     artifact_root.mkdir(parents=True)
 
@@ -224,24 +224,86 @@ def make_valid_artifact(
         "Windows/WhiteoutStation.exe",
         "Windows/WhiteoutStation/Binaries/Win64/WhiteoutStation-Win64-Shipping.exe",
     }
+    input_summary = {
+        "schema": "whiteout.v0.8.real-input-smoke.v1",
+        "passed": True,
+        "scenarios": [
+            {
+                "passed": True,
+                "cursor_center_checks": [
+                    {
+                        "label": label,
+                        "passed": True,
+                        "error_px": [0, 0],
+                    }
+                    for label in (
+                        "guide_open",
+                        "guide_close",
+                        "evidence_open",
+                        "evidence_close",
+                    )
+                ],
+                "captures": [{"name": "survival_controls_story_10"}],
+            },
+            {
+                "passed": True,
+                "cursor_center_checks": [
+                    {
+                        "label": label,
+                        "passed": True,
+                        "error_px": [0, 0],
+                    }
+                    for label in ("dialogue_open", "dialogue_close")
+                ],
+                "captures": [{"name": "dialogue_free_text_story_10"}],
+            },
+        ],
+    }
+    shipping_summary = {
+        "schema": "whiteout.v0.8.shipping-smoke.v1",
+        "passed": True,
+        "scenarios": [
+            {"scenario_id": f"route_{index}", "passed": True}
+            for index in range(9)
+        ],
+        "dialogue_history_probe": {
+            "passed": True,
+            "requests": 2,
+        },
+        "performance_probes": [
+            {
+                "passed": True,
+                "action_id": action_id,
+                "movement_intent": "step_closer",
+                "reaction_action": "acknowledge",
+            }
+            for action_id in ("talk_gu_heng", "talk_ye_cheng")
+        ],
+    }
     json_payloads = {
         "Windows/WhiteoutStation/Content/Rules/"
-        "WhiteoutStationRules.v0.7.json": git(
+        "WhiteoutStationRules.v0.8.json": git(
             repo,
             "show",
             f"{source_commit}:{RULES_REL}",
         ).encode(),
         "Windows/WhiteoutStation/Content/Agents/"
-        "AgentRuntime.v0.7.json": git(
+        "AgentRuntime.v0.8.json": git(
             repo,
             "show",
             f"{source_commit}:{AGENT_RUNTIME_REL}",
         ).encode(),
-        "README_v0.7.txt": (
-            b"Whiteout Station v0.7\n"
+        "README_v0.8.txt": (
+            b"Whiteout Station v0.8\n"
             b"LOCAL REVIEW BUILD - DO NOT REDISTRIBUTE\n"
         ),
         "ASSET_LICENSES.md": b"# Asset licenses\nTest fixture only.\n",
+        "Validation/InputSmoke/input_smoke_summary.json": json.dumps(
+            input_summary
+        ).encode(),
+        "Validation/ShippingSmoke/shipping_smoke_summary.json": json.dumps(
+            shipping_summary
+        ).encode(),
     }
     for relative_path in REQUIRED_PACKAGE_FILES:
         path = artifact_root / relative_path
@@ -272,7 +334,7 @@ def make_valid_artifact(
         if path.is_file()
     }
     manifest_path = artifact_root / MANIFEST_REL
-    manifest_path.parent.mkdir(parents=True)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest = {
         "schema": MANIFEST_SCHEMA,
         "version": PROJECT_VERSION,
@@ -344,7 +406,7 @@ def test_stale_v04_false_green_artifact_is_rejected(tmp_path: Path) -> None:
     )
     report = validate_release_artifact(repo, stale_root)
     assert not report.passed
-    assert any("v0.7" in error or "v0.4" in error for error in report.errors)
+    assert any("v0.8" in error or "v0.4" in error for error in report.errors)
 
 
 def test_manifest_provenance_mismatch_is_rejected(tmp_path: Path) -> None:
@@ -377,7 +439,7 @@ def test_packaged_rules_must_match_declared_source_commit(tmp_path: Path) -> Non
     )
     rules_rel = (
         "Windows/WhiteoutStation/Content/Rules/"
-        "WhiteoutStationRules.v0.7.json"
+        "WhiteoutStationRules.v0.8.json"
     )
     rules_path = artifact_root / rules_rel
     rules = json.loads(rules_path.read_text(encoding="utf-8"))
@@ -411,7 +473,7 @@ def test_packaged_agent_runtime_must_match_declared_source_commit(
     )
     agent_rel = (
         "Windows/WhiteoutStation/Content/Agents/"
-        "AgentRuntime.v0.7.json"
+        "AgentRuntime.v0.8.json"
     )
     agent_path = artifact_root / agent_rel
     agent = json.loads(agent_path.read_text(encoding="utf-8"))
@@ -433,7 +495,7 @@ def test_packaged_agent_runtime_must_match_declared_source_commit(
     )
 
 
-def test_stale_v07_build_timestamp_is_rejected(tmp_path: Path) -> None:
+def test_stale_v08_build_timestamp_is_rejected(tmp_path: Path) -> None:
     repo, commit, tree = make_repository(tmp_path)
     artifact_root, manifest_path, validation_time = make_valid_artifact(
         tmp_path,
@@ -537,7 +599,7 @@ def test_modified_file_below_diff_only_root_is_rejected(tmp_path: Path) -> None:
 
 def test_missing_protected_manifest_fails_closed(tmp_path: Path) -> None:
     repo, _commit, _tree = make_repository(tmp_path)
-    manifest = repo / "docs/PROTECTED_CHARACTER_ASSETS_v0.7.json"
+    manifest = repo / "docs/PROTECTED_CHARACTER_ASSETS_v0.8.json"
     manifest.unlink()
     report = validate_protected_assets(repo)
     assert not report.passed
@@ -548,7 +610,7 @@ def test_untracked_protection_manifest_warns_until_final_mode(
     tmp_path: Path,
 ) -> None:
     repo, _commit, _tree = make_repository(tmp_path)
-    relative_path = "docs/PROTECTED_CHARACTER_ASSETS_v0.7.json"
+    relative_path = "docs/PROTECTED_CHARACTER_ASSETS_v0.8.json"
     git(repo, "rm", "--cached", "--", relative_path)
     development = validate_protected_assets(repo)
     final = validate_protected_assets(repo, require_tracked=True)

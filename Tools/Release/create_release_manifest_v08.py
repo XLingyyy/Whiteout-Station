@@ -1,4 +1,4 @@
-"""Create the checksum/provenance manifest for a completed v0.7 package.
+"""Create the checksum/provenance manifest for a completed v0.8 package.
 
 Run this only from the clean detached worktree used for the build.  The script
 fails on every dirty path, including the user's editable map, and never tries
@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 try:
-    from .v07_gate_common import (
+    from .v08_gate_common import (
         DISTRIBUTION_CLASS,
         MANIFEST_REL,
         MANIFEST_SCHEMA,
@@ -31,7 +31,7 @@ try:
         sha256_file,
     )
 except ImportError:
-    from v07_gate_common import (
+    from v08_gate_common import (
         DISTRIBUTION_CLASS,
         MANIFEST_REL,
         MANIFEST_SCHEMA,
@@ -67,8 +67,8 @@ def create_manifest(
     if not artifact_root.is_dir():
         raise GateError(f"Artifact root is not a directory: {artifact_root}")
     if not RUN_ID_PATTERN.fullmatch(run_id):
-        raise GateError("run_id does not match the v0.7 unique-run format")
-    expected_name = f"WhiteoutStation-v0.7-Win64-{run_id}"
+        raise GateError("run_id does not match the v0.8 unique-run format")
+    expected_name = f"WhiteoutStation-v0.8-Win64-{run_id}"
     if artifact_root.name != expected_name:
         raise GateError(
             f"Artifact root must be named {expected_name}; got {artifact_root.name}"
@@ -158,9 +158,9 @@ def main() -> int:
             engine_version=args.engine_version,
         )
     except (GateError, OSError) as exc:
-        print(f"MANIFEST v0.7: FAIL: {exc}")
+        print(f"MANIFEST v0.8: FAIL: {exc}")
         return 1
-    print(f"MANIFEST v0.7: CREATED {manifest_path}")
+    print(f"MANIFEST v0.8: CREATED {manifest_path}")
     return 0
 
 

@@ -1,93 +1,87 @@
 # Whiteout Station / 风雪站：断电前夜
 
-Unreal Engine 5.8 C++ 项目，目标是一局 10—15 分钟的社会生存与轻推理体验。
+Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前版本为 v0.8。
 
-## 固定开发环境
+玩家在暴风雪抵达前管理 8 点行动力，与工程师顾衡、医生叶澄调查停电、
+分配物资、修复发电机和室外天线，并尝试发出求救信号。开场、探索、行动
+预览、分阶段对话、自由文本、结算和四类结局已形成完整闭环。
 
-- Unreal Engine 5.8
+## v0.8 重点
+
+- HUD 警报和任务面板完成裁剪与多分辨率验证；默认准心为小型空心圆，
+  瞄准可交互对象后变为居中的手形。
+- 打开或关闭手册、证据板、对话、暂停和设置等面板时，鼠标回到视口中心。
+- 所有人物健康、体温、精力、饱腹、稳定与信任统一使用 0—10。
+- 黑幕开场扩展为 10 句手动推进文本，明确顾衡、叶澄的职责、合作价值和
+  玩家目标。
+- 修复叶澄眼部黑框、顾衡眼睛异常材质；保留用户替换的人物模型和地图摆放。
+- 为两个当前模型的精确骨架分别生成待机、行走和五类反应动画，避免旧比例
+  重定向造成的穿体与扭曲。
+- DeepSeek 可选择受本地约束的移动意向和反应动作；C++ 继续独占 AP、资源、
+  事实、承诺、任务、评分和结局。
+- 墙面与地面升级为项目内生成的 v0.8 材质，用户自定义材质覆盖不被替换。
+
+## 环境与运行
+
 - Windows 64-bit
-- C++ 权威规则层，蓝图 / UMG 表现层
-- Enhanced Input
-- 官方 Model Context Protocol 插件（仅开发期）
+- Unreal Engine 5.8
+- 项目：`WhiteoutStation/WhiteoutStation.uproject`
+- 默认地图：`/Game/WindStation/World/MVP_StationMap`
 
-## 当前开发版本
+编辑器内操作：
 
-v0.5 发布版已完成受控 AI 表达和玩法选择：
+- `WASD` 移动，鼠标观察，`Space` 跳跃或推进开场；
+- `F` 对话或预览/确认行动，`Q` 切换行动方案；
+- `E` 证据板，`H` 生存手册，`Esc` 返回或暂停；
+- `Enter` 结算，`C` 读取最近自动存档，`R` 开始新一轮。
 
-- DeepSeek `deepseek-v4-flash` 仅改写 NPC 台词；AP、资源、事实权限、承诺、任务、评分和结局始终由 C++ 决定。
-- 询问、质疑、安抚和承诺以结构化意图进入规则；无效或重复承诺不会消耗 AP。
-- 行动预览中按 Q 可循环口粮分配方案，或在药品与已披露的保温包之间选择。
-- HUD 统一显示“健 / 温 / 精 / 饱 / 稳”，并修正连续分数评级边界。
-- 顾衡与叶澄的人物模型、骨骼、材质、动作、动画及 LookAt 表现均未修改。用户工作树中的 `MVP_StationMap.umap` 既有改动保持原样。
+构建、Shipping、验收和 AI 配置见
+[`docs/BUILD_AND_PLAY_v0.8.md`](docs/BUILD_AND_PLAY_v0.8.md)；关卡对象的编辑器
+拖动与替换方法见 [`docs/LEVEL_EDITING.md`](docs/LEVEL_EDITING.md)。
 
-已确认 Editor Development 与 Win64 Shipping 构建成功，Python 回归 81 / 81、UE Automation 7 / 7、Shipping 烟测 5 / 5，源码与发布门禁均为 PASS。当前证据见 `docs/QA_REPORT_v0.5.md`，发布清单见 `docs/RELEASE_MANIFEST_v0.5.md`。
+## DeepSeek 接入
 
-最终 Demo：
+运行配置位于
+`WhiteoutStation/Content/Agents/AgentRuntime.v0.8.json`。当前使用
+`deepseek-v4-flash`、官方 Chat Completions 端点、非思考模式、非流式输出和
+JSON Object 响应。
 
-- 目录：`Builds/WhiteoutStation-v0.5-Win64-20260725T134938Z-9bd94fab-release`
-- 启动：`Windows/WhiteoutStation.exe`
-- 源提交：`9bd94fab63f446290fbb5ababf809529a91c1b7c`
-- 源树：`bc4ac95f5dd4120fbfa545c4d92719336bfa0ac9`
-
-## 规则回归
-
-在仓库根目录运行：
+仅在启动进程环境中提供密钥：
 
 ```powershell
-Push-Location Tools/Rules
-python -X utf8 -m pytest test_whiteout_rules.py -q
-python -X utf8 run_routes.py
-Pop-Location
+$env:WHITEOUT_LLM_API_KEY = '<your-key>'
 ```
 
-`WhiteoutStation/Content/Rules/WhiteoutStationRules.v0.5.json` 记录 v0.5 的版本化规则与平衡规格，并提供 Python 工具和 C++ 运行时启动配置。`FWhiteoutRulesEngine` 是游戏运行时唯一提交入口；Python/C++ 的边界与三条路线由双端回归锁定。
+没有密钥、显式离线、网络失败、超时或非法响应时，游戏立即使用本地确定性
+结果。密钥只允许发送给 `api.deepseek.com` 的 HTTPS 端点；loopback mock
+不会携带 Authorization。
 
-## 编辑器游玩
-
-默认地图为 `MVP_StationMap`。WASD / 鼠标移动观察；看向物体后按 F 打开预览、再次按 F 确认；看向 NPC 按 F 开始对话；行动预览中按 Q 切换资源方案；E 打开或关闭证据板；Space 跳过开场；Enter 结算，提前接受失败结局需要再次确认；R 重开；C 读取自动存档；Esc 返回上一层或打开暂停。
-
-完整构建、启动、操作、本地数据与 AI 开关说明见 `docs/BUILD_AND_PLAY_v0.5.md`。关卡中的站体、陈设、灯光、NPC 与交互点可在编辑器里直接选择、拖动和替换，操作说明见 `docs/LEVEL_EDITING.md`。
-
-运行态回归可传入 `-WhiteoutAutoRoute=medical|technical|quick -WhiteoutAutoCapture`，自动走完指定路线、结算、导出事件日志，并保存 `Saved/WhiteoutRuntimeSmoke.png`。
-
-## DeepSeek V4 表达合同
-
-在线表达默认关闭。启用时使用 `deepseek-v4-flash`，请求显式设置非思考模式、非流式输出和 JSON Object 响应。正常游戏直接采用玩家选择的规则意图，不调用模型判定意图。
-
-模型正文只接受以下四个必填字段，额外或缺失字段均会触发本地降级：
-
-- `npc_line`
-- `emotion`
-- `used_action_id`
-- `referenced_fact_ids`
-
-`used_action_id` 必须匹配已提交动作；事实引用必须位于 C++ 投影的白名单内。网络失败、429 / 5xx、非 `stop` 结束原因、空正文、截断、schema 错误或事实越权均返回确定性本地台词。
-
-启用官方服务需要在启动进程环境中同时设置 `WHITEOUT_LLM_ENABLED=true` 与 `WHITEOUT_LLM_API_KEY`。密钥只会发送给 HTTPS 且主机严格等于 `api.deepseek.com` 的端点；loopback mock 永不携带 Authorization，其他端点会被拒绝。不要把密钥放入仓库、命令行、日志或分发文件。
-
-本地合同 mock：
+## 回归
 
 ```powershell
-python -X utf8 Tools/Agents/mock_agent_server.py --host 127.0.0.1 --port 8765
+python -X utf8 -m pytest Tools/Agents -q
+python -X utf8 -m pytest Tools/Rules -q
+python -X utf8 -m pytest Tools/Release/test_v08_release_gates.py -q
+python -X utf8 Tools/Capture/audit_v08_ui.py
+python -X utf8 Tools/Release/validate_source_v08.py --repo-root . --final
 ```
 
-随后给游戏进程传入：
+UE 自动化覆盖对话边界、模型预算、AP、资源选择、阶段意向、知识权限、路线与
+事务。Shipping 发布流程另执行真实键鼠输入、九条路线/降级场景、连续对话
+历史，以及顾衡和叶澄的移动与反应探针。
 
-```text
--WhiteoutLLMEnabled=true -WhiteoutAgentEndpoint=http://127.0.0.1:8765/chat/completions
-```
+## 目录
 
-## 工程目录
+- `WhiteoutStation/Source/WhiteoutStation`：C++ 运行时
+- `WhiteoutStation/Content/WindStation`：地图、角色、材质、UI、音频与资产
+- `WhiteoutStation/Content/Rules`：版本化规则和平衡配置
+- `WhiteoutStation/Content/Agents`：AI 运行配置
+- `Tools/Agents`：协议、mock 和在线脱敏探针
+- `Tools/Rules`：规则模拟与回归
+- `Tools/Editor`：资产生成与审计
+- `Tools/Capture`：视觉基线与像素审计
+- `Tools/Release`：源码、Shipping 和发布门禁
+- `docs`：设计、操作、进度、QA 与发布记录
 
-- `WhiteoutStation/Source/WhiteoutStation`：UE C++ 运行时代码
-- `WhiteoutStation/Content/WindStation`：场景、数据、UI、角色、音频和测试资产
-- `WhiteoutStation/Content/Rules`：可复现的规则配置
-- `WhiteoutStation/Content/Agents`：表达层运行配置
-- `Tools/Agents`：协议校验、mock 与 DeepSeek 探针
-- `Tools/Rules`：脱离编辑器运行的规则模拟与回归
-- `Tools/Release`：源码与发布门禁
-- `docs`：设计、实施清单、范围、进度与 QA 记录
-
-## 版本管理
-
-`.uasset`、`.umap` 与大型媒体通过 Git LFS 管理；`Binaries`、`Intermediate`、`Saved`、`DerivedDataCache`、本机密钥配置和 IDE 临时文件不入库。
+`.uasset`、`.umap` 和大型媒体由 Git LFS 管理。本机密钥、构建缓存、日志与
+临时文件不进入仓库。

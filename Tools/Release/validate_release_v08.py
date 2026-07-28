@@ -1,15 +1,15 @@
-"""Validate one explicitly selected, fresh Whiteout Station v0.7 artifact.
+"""Validate one explicitly selected, fresh Whiteout Station v0.8 artifact.
 
 The validator never searches for a package and therefore cannot silently fall
 back to a historical v0.4 archive.  The artifact directory must be unique for
 the run and contain ``Validation/gate_manifest.json`` with this shape:
 
 {
-  "schema": "whiteout.v0.7.release-manifest.v1",
-  "version": "0.7.0",
+  "schema": "whiteout.v0.8.release-manifest.v1",
+  "version": "0.8.0",
   "distribution_class": "local_review_only",
   "run_id": "YYYYMMDDTHHMMSSZ-<commit8>-<nonce>",
-  "artifact_root_name": "WhiteoutStation-v0.7-Win64-<run_id>",
+  "artifact_root_name": "WhiteoutStation-v0.8-Win64-<run_id>",
   "source_commit": "<full git object id>",
   "source_tree": "<full git tree id>",
   "source_dirty": false,
@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
-    from .v07_gate_common import (
+    from .v08_gate_common import (
         AGENT_RUNTIME_REL,
         DISTRIBUTION_CLASS,
         MANIFEST_REL,
@@ -61,7 +61,7 @@ try:
         utc_now,
         validate_relative_path,
     )
-    from .validate_source_v07 import (
+    from .validate_source_v08 import (
         AGENT_BASENAME,
         EXPECTED_MOVEMENT_INTENTS,
         EXPECTED_REACTION_ACTIONS,
@@ -73,7 +73,7 @@ try:
         validate_protected_assets,
     )
 except ImportError:
-    from v07_gate_common import (
+    from v08_gate_common import (
         AGENT_RUNTIME_REL,
         DISTRIBUTION_CLASS,
         MANIFEST_REL,
@@ -104,7 +104,7 @@ except ImportError:
         utc_now,
         validate_relative_path,
     )
-    from validate_source_v07 import (
+    from validate_source_v08 import (
         AGENT_BASENAME,
         EXPECTED_MOVEMENT_INTENTS,
         EXPECTED_REACTION_ACTIONS,
@@ -128,10 +128,12 @@ MINIMUM_PACKAGE_SIZES = {
     "Windows/WhiteoutStation/Content/Paks/WhiteoutStation-Windows.pak": 100_000,
     "Windows/WhiteoutStation/Content/Paks/WhiteoutStation-Windows.ucas": 1_000_000,
     "Windows/WhiteoutStation/Content/Paks/WhiteoutStation-Windows.utoc": 10_000,
-    "Windows/WhiteoutStation/Content/Rules/WhiteoutStationRules.v0.7.json": 100,
-    "Windows/WhiteoutStation/Content/Agents/AgentRuntime.v0.7.json": 100,
-    "README_v0.7.txt": 10,
+    "Windows/WhiteoutStation/Content/Rules/WhiteoutStationRules.v0.8.json": 100,
+    "Windows/WhiteoutStation/Content/Agents/AgentRuntime.v0.8.json": 100,
+    "README_v0.8.txt": 10,
     "ASSET_LICENSES.md": 10,
+    "Validation/InputSmoke/input_smoke_summary.json": 100,
+    "Validation/ShippingSmoke/shipping_smoke_summary.json": 100,
 }
 
 
@@ -229,10 +231,10 @@ def _validate_manifest_identity(
             "YYYYMMDDTHHMMSSZ-<commit8>-<4..16 lowercase nonce>"
         )
         return None
-    expected_root_name = f"WhiteoutStation-v0.7-Win64-{run_id}"
+    expected_root_name = f"WhiteoutStation-v0.8-Win64-{run_id}"
     if artifact_root.name != expected_root_name:
         report.error(
-            f"Artifact directory must be the unique v0.7 run directory "
+            f"Artifact directory must be the unique v0.8 run directory "
             f"{expected_root_name}; got {artifact_root.name}"
         )
     if manifest.get("artifact_root_name") != expected_root_name:
@@ -321,11 +323,11 @@ def _validate_package_versions(
 ) -> None:
     rules_rel = (
         "Windows/WhiteoutStation/Content/Rules/"
-        "WhiteoutStationRules.v0.7.json"
+        "WhiteoutStationRules.v0.8.json"
     )
     agent_rel = (
         "Windows/WhiteoutStation/Content/Agents/"
-        "AgentRuntime.v0.7.json"
+        "AgentRuntime.v0.8.json"
     )
     try:
         rules = load_json_file(artifact_root / rules_rel)
@@ -383,12 +385,12 @@ def _validate_package_versions(
     except GateError as exc:
         report.error(str(exc))
     try:
-        readme_text = artifact_root.joinpath("README_v0.7.txt").read_text(
+        readme_text = artifact_root.joinpath("README_v0.8.txt").read_text(
             encoding="utf-8-sig"
         )
         first_line = readme_text.splitlines()[0]
-        if "v0.7" not in first_line or "v0.4" in first_line:
-            report.error("Packaged README first line must identify v0.7 only")
+        if "v0.8" not in first_line or "v0.4" in first_line:
+            report.error("Packaged README first line must identify v0.8 only")
         if "LOCAL REVIEW BUILD - DO NOT REDISTRIBUTE" not in readme_text:
             report.error(
                 "Packaged README must carry the local-review distribution warning"
@@ -421,7 +423,7 @@ def _validate_artifact_files(
     for relative_path in REQUIRED_PACKAGE_FILES:
         path = artifact_root / relative_path
         if relative_path not in actual_paths or not path.is_file():
-            report.error(f"Missing required v0.7 artifact file: {relative_path}")
+            report.error(f"Missing required v0.8 artifact file: {relative_path}")
             continue
         minimum_size = MINIMUM_PACKAGE_SIZES[relative_path]
         if path.stat().st_size < minimum_size:
@@ -434,7 +436,7 @@ def _validate_artifact_files(
         lowered = relative_path.lower()
         if "v0.4" in lowered:
             report.error(
-                f"Historical v0.4 file is forbidden in v0.7 artifact: {relative_path}"
+                f"Historical v0.4 file is forbidden in v0.8 artifact: {relative_path}"
             )
         if lowered.endswith(
             (
@@ -443,7 +445,7 @@ def _validate_artifact_files(
             )
         ):
             report.error(
-                f"Legacy runtime config is forbidden in v0.7 artifact: {relative_path}"
+                f"Legacy runtime config is forbidden in v0.8 artifact: {relative_path}"
             )
 
     checksums = manifest.get("checksums")
@@ -510,6 +512,137 @@ def _validate_artifact_files(
             report.error(f"Packaged executable lacks PE signature: {executable_rel}")
 
 
+def _validate_smoke_evidence(
+    report: GateReport,
+    artifact_root: Path,
+) -> None:
+    input_path = (
+        artifact_root
+        / "Validation"
+        / "InputSmoke"
+        / "input_smoke_summary.json"
+    )
+    shipping_path = (
+        artifact_root
+        / "Validation"
+        / "ShippingSmoke"
+        / "shipping_smoke_summary.json"
+    )
+    try:
+        input_summary = load_json_file(input_path)
+    except GateError as exc:
+        report.error(str(exc))
+        input_summary = None
+    if isinstance(input_summary, dict):
+        if (
+            input_summary.get("schema")
+            != "whiteout.v0.8.real-input-smoke.v1"
+            or input_summary.get("passed") is not True
+        ):
+            report.error("v0.8 real-input smoke summary is not a passing report")
+        scenarios = input_summary.get("scenarios")
+        if not isinstance(scenarios, list) or len(scenarios) != 2:
+            report.error("v0.8 real-input smoke must contain two scenarios")
+        else:
+            cursor_checks: list[object] = []
+            capture_names: set[str] = set()
+            for scenario in scenarios:
+                if (
+                    not isinstance(scenario, dict)
+                    or scenario.get("passed") is not True
+                ):
+                    report.error("v0.8 real-input scenario did not pass")
+                    continue
+                checks = scenario.get("cursor_center_checks")
+                if isinstance(checks, list):
+                    cursor_checks.extend(checks)
+                captures = scenario.get("captures")
+                if isinstance(captures, list):
+                    capture_names.update(
+                        str(capture.get("name"))
+                        for capture in captures
+                        if isinstance(capture, dict)
+                    )
+            if len(cursor_checks) < 6:
+                report.error(
+                    "v0.8 real-input smoke lacks six panel cursor-center checks"
+                )
+            for check in cursor_checks:
+                if (
+                    not isinstance(check, dict)
+                    or check.get("passed") is not True
+                ):
+                    report.error("v0.8 cursor-center check did not pass")
+                    continue
+                error = check.get("error_px")
+                if (
+                    not isinstance(error, list)
+                    or len(error) != 2
+                    or any(
+                        isinstance(value, bool)
+                        or not isinstance(value, (int, float))
+                        or abs(float(value)) > 4.0
+                        for value in error
+                    )
+                ):
+                    report.error("v0.8 cursor-center evidence is malformed")
+            if not any(name.endswith("_story_10") for name in capture_names):
+                report.error(
+                    "v0.8 real-input smoke did not capture the tenth opening line"
+                )
+    elif input_summary is not None:
+        report.error("v0.8 real-input smoke summary root must be an object")
+
+    try:
+        shipping_summary = load_json_file(shipping_path)
+    except GateError as exc:
+        report.error(str(exc))
+        shipping_summary = None
+    if isinstance(shipping_summary, dict):
+        if (
+            shipping_summary.get("schema")
+            != "whiteout.v0.8.shipping-smoke.v1"
+            or shipping_summary.get("passed") is not True
+        ):
+            report.error("v0.8 Shipping smoke summary is not a passing report")
+        scenarios = shipping_summary.get("scenarios")
+        if (
+            not isinstance(scenarios, list)
+            or len(scenarios) != 9
+            or any(
+                not isinstance(scenario, dict)
+                or scenario.get("passed") is not True
+                for scenario in scenarios
+            )
+        ):
+            report.error("v0.8 Shipping smoke route matrix is incomplete")
+        history = shipping_summary.get("dialogue_history_probe")
+        if (
+            not isinstance(history, dict)
+            or history.get("passed") is not True
+            or history.get("requests") != 2
+        ):
+            report.error("v0.8 dialogue-history probe is incomplete")
+        performances = shipping_summary.get("performance_probes")
+        if not isinstance(performances, list) or len(performances) != 2:
+            report.error("v0.8 Shipping smoke must contain two NPC performances")
+        else:
+            actions = {
+                performance.get("action_id")
+                for performance in performances
+                if isinstance(performance, dict)
+                and performance.get("passed") is True
+                and performance.get("movement_intent") == "step_closer"
+                and performance.get("reaction_action") == "acknowledge"
+            }
+            if actions != {"talk_gu_heng", "talk_ye_cheng"}:
+                report.error(
+                    "v0.8 Shipping smoke lacks both NPC movement/reaction probes"
+                )
+    elif shipping_summary is not None:
+        report.error("v0.8 Shipping smoke summary root must be an object")
+
+
 def validate_release_artifact(
     repo_root: Path,
     artifact_root: Path,
@@ -549,9 +682,9 @@ def validate_release_artifact(
     if not artifact_root.is_dir():
         report.error(f"Artifact root is not a directory: {artifact_root}")
         return report
-    if not artifact_root.name.startswith("WhiteoutStation-v0.7-Win64-"):
+    if not artifact_root.name.startswith("WhiteoutStation-v0.8-Win64-"):
         report.error(
-            "Artifact root must be an explicitly selected unique v0.7 directory; "
+            "Artifact root must be an explicitly selected unique v0.8 directory; "
             f"got {artifact_root.name}"
         )
     if "v0.4" in artifact_root.name.lower():
@@ -620,12 +753,13 @@ def validate_release_artifact(
         build_time,
         now=now,
     )
+    _validate_smoke_evidence(report, artifact_root)
     if source_commit:
         _validate_package_versions(report, repo_root, artifact_root, source_commit)
 
     if not report.errors:
         report.detail(
-            f"Validated fresh v0.7 artifact {artifact_root.name} "
+            f"Validated fresh v0.8 artifact {artifact_root.name} "
             f"from source {source_commit}"
         )
     return report
@@ -639,9 +773,9 @@ def print_report(report: GateReport) -> None:
     for error in report.errors:
         print(f"ERROR: {error}")
     print(
-        "RELEASE VALIDATION v0.7: PASS"
+        "RELEASE VALIDATION v0.8: PASS"
         if report.passed
-        else f"RELEASE VALIDATION v0.7: FAIL ({len(report.errors)} error(s))"
+        else f"RELEASE VALIDATION v0.8: FAIL ({len(report.errors)} error(s))"
     )
 
 
@@ -652,7 +786,7 @@ def main() -> int:
         "--artifact-root",
         type=Path,
         required=True,
-        help="Exact unique v0.7 artifact directory; no directory auto-discovery occurs",
+        help="Exact unique v0.8 artifact directory; no directory auto-discovery occurs",
     )
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--expected-source-ref", default="HEAD")

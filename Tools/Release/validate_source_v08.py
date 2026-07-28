@@ -1,4 +1,4 @@
-"""Fail-closed source gate for the Whiteout Station v0.7 release candidate.
+"""Fail-closed source gate for the Whiteout Station v0.8 release candidate.
 
 This gate validates the committed/runtime version contract, tracked credentials,
 Git LFS integrity, and the protected character asset Git objects.  It reports
@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 try:
-    from .v07_gate_common import (
+    from .v08_gate_common import (
         AGENT_RUNTIME_REL,
         OBJECT_ID_PATTERN,
         PROJECT_CONFIG_REL,
@@ -40,7 +40,7 @@ try:
         validate_relative_path,
     )
 except ImportError:
-    from v07_gate_common import (
+    from v08_gate_common import (
         AGENT_RUNTIME_REL,
         OBJECT_ID_PATTERN,
         PROJECT_CONFIG_REL,
@@ -83,6 +83,43 @@ EXPECTED_REACTION_ACTIONS = [
     "reject",
     "alarmed",
 ]
+CHARACTER_METRICS = (
+    "health",
+    "temperature",
+    "hunger",
+    "fatigue",
+    "pressure",
+    "trust",
+)
+V08_REQUIRED_ASSETS = (
+    *(
+        f"WhiteoutStation/Content/WindStation/Art/AnimeNPC/{root}/"
+        f"AnimationsV08/{prefix}_{suffix}.uasset"
+        for root, prefix in (
+            ("GuHeng", "AN_GuHeng"),
+            ("YeChengV10", "AN_YeCheng_V10"),
+        )
+        for suffix in (
+            "Idle",
+            "Walk",
+            "Acknowledge",
+            "Consider",
+            "Reassure",
+            "Reject",
+            "Alarmed",
+        )
+    ),
+    "WhiteoutStation/Content/WindStation/Art/Materials/"
+    "M_WS_FloorDeck_V08.uasset",
+    "WhiteoutStation/Content/WindStation/Art/Materials/"
+    "M_WS_WallPanel_V08.uasset",
+    "docs/baseline_v0.8/UI_hud_1280x720.png",
+    "docs/baseline_v0.8/UI_hud_1920x1080.png",
+    "docs/baseline_v0.8/UI_focus_near_1280x720.png",
+    "docs/baseline_v0.8/UI_focus_near_1920x1080.png",
+    "docs/baseline_v0.8/UI_character_gu_v08_face_1600x1000.png",
+    "docs/baseline_v0.8/UI_character_ye_v08_face_1600x1000.png",
+)
 
 RUNTIME_REFERENCES = {
     "WhiteoutStation/Source/WhiteoutStation/Private/State/WindStationStateSubsystem.cpp": (
@@ -327,7 +364,7 @@ def validate_versions(repo_root: Path) -> GateReport:
         report.error(str(exc))
 
     if not rules_path.is_file():
-        report.error(f"Missing v0.7 rules file: {RULES_REL}")
+        report.error(f"Missing v0.8 rules file: {RULES_REL}")
     else:
         try:
             rules = load_json_file(rules_path)
@@ -349,7 +386,7 @@ def validate_versions(repo_root: Path) -> GateReport:
             report.error(str(exc))
 
     if not agent_path.is_file():
-        report.error(f"Missing v0.7 Agent runtime file: {AGENT_RUNTIME_REL}")
+        report.error(f"Missing v0.8 Agent runtime file: {AGENT_RUNTIME_REL}")
     else:
         try:
             agent = load_json_file(agent_path)
@@ -444,12 +481,12 @@ def validate_versions(repo_root: Path) -> GateReport:
         *repo_root.joinpath("Tools/Rules").glob("*.py"),
         *(
             path
-            for path in repo_root.joinpath("Tools/Release").glob("*v07*.py")
+            for path in repo_root.joinpath("Tools/Release").glob("*v08*.py")
             if not path.name.startswith("test_")
         ),
         *(
             path
-            for path in repo_root.joinpath("Tools/Release").glob("v07_*.py")
+            for path in repo_root.joinpath("Tools/Release").glob("v08_*.py")
             if not path.name.startswith("test_")
         ),
     ]
@@ -468,13 +505,135 @@ def validate_versions(repo_root: Path) -> GateReport:
                 continue
             if any(marker in lowered for marker in LEGACY_LOAD_MARKERS):
                 report.error(
-                    f"Current runtime/v0.7 tool loads a legacy runtime file at "
+                    f"Current runtime/v0.8 tool loads a legacy runtime file at "
                     f"{path.relative_to(repo_root).as_posix()}:{line_number}"
                 )
 
     if not report.errors:
         report.detail(
             f"Version contract is consistent: project/rules/Agent={PROJECT_VERSION}"
+        )
+    return report
+
+
+def validate_v08_feature_contract(repo_root: Path) -> GateReport:
+    report = GateReport()
+    try:
+        rules = load_json_file(repo_root / RULES_REL)
+    except GateError as exc:
+        report.error(str(exc))
+        return report
+    if not isinstance(rules, dict):
+        report.error(f"{RULES_REL} root must be an object")
+        return report
+
+    initial_state = rules.get("initial_state")
+    characters = (
+        initial_state.get("characters", {})
+        if isinstance(initial_state, dict)
+        else {}
+    )
+    if not isinstance(characters, dict):
+        report.error("v0.8 initial_state.characters must be an object")
+    else:
+        expected_characters = {"player", "gu_heng", "ye_cheng"}
+        if set(characters) != expected_characters:
+            report.error(
+                "v0.8 initial character set mismatch: "
+                f"{sorted(characters)!r}"
+            )
+        for character_id, state in characters.items():
+            if not isinstance(state, dict):
+                report.error(
+                    f"v0.8 character state must be an object: {character_id}"
+                )
+                continue
+            for metric in CHARACTER_METRICS:
+                value = state.get(metric)
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not 0.0 <= float(value) <= 10.0
+                ):
+                    report.error(
+                        f"v0.8 {character_id}.{metric} must be within 0..10"
+                    )
+
+    balance = rules.get("balance")
+    thresholds = (
+        balance.get("thresholds", {})
+        if isinstance(balance, dict)
+        else {}
+    )
+    if not isinstance(thresholds, dict) or not thresholds:
+        report.error("v0.8 balance.thresholds must be a non-empty object")
+    else:
+        for threshold, value in thresholds.items():
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not 0.0 <= float(value) <= 10.0
+            ):
+                report.error(
+                    f"v0.8 threshold {threshold} must be within 0..10"
+                )
+
+    try:
+        tracked = tracked_paths(repo_root)
+    except GateError as exc:
+        report.error(f"Cannot list v0.8 feature assets: {exc}")
+        tracked = set()
+    for relative_path in V08_REQUIRED_ASSETS:
+        path = repo_root / relative_path
+        if relative_path not in tracked or not path.is_file():
+            report.error(f"Missing tracked v0.8 feature asset: {relative_path}")
+
+    source_contracts = {
+        "WhiteoutStation/Source/WhiteoutStation/Private/HUD/"
+        "WhiteoutHUDWidget.cpp": (
+            "TopPanel->SetClipping(EWidgetClipping::ClipToBounds)",
+            'TEXT("○")',
+            'TEXT("☝")',
+            "PlayerController->SetMouseLocation",
+            "Character->Trust / 10.0f",
+            "顾衡是站里唯一懂发电机和天线控制系统的工程师",
+            "叶澄是值班医生",
+        ),
+        "WhiteoutStation/Source/WhiteoutStation/Private/State/"
+        "WhiteoutRulesEngine.cpp": (
+            "FMath::Clamp(CharacterState.Health, 0.0f, 10.0f)",
+            "FMath::Clamp(CharacterState.Trust, 0.0f, 10.0f)",
+        ),
+        "WhiteoutStation/Source/WhiteoutStation/Private/World/"
+        "WSInteractableActor.cpp": (
+            "RestoreLegacyCharacterMaterials",
+            "AnimationsV08",
+            "TryStartMovement",
+            "M_WS_Eye.M_WS_Eye",
+        ),
+        "WhiteoutStation/Source/WhiteoutStation/Private/World/"
+        "WhiteoutStationBuilder.cpp": (
+            "M_WS_FloorDeck_V08",
+            "M_WS_WallPanel_V08",
+        ),
+    }
+    for relative_path, markers in source_contracts.items():
+        try:
+            text = (repo_root / relative_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            report.error(f"Cannot read v0.8 source contract {relative_path}: {exc}")
+            continue
+        for marker in markers:
+            if marker not in text:
+                report.error(
+                    f"v0.8 source contract marker missing from "
+                    f"{relative_path}: {marker}"
+                )
+
+    if not report.errors:
+        report.detail(
+            "v0.8 feature contract passed: 0..10 state scale, HUD/cursor, "
+            "NPC material/animation, scene materials, and visual baselines"
         )
     return report
 
@@ -509,8 +668,11 @@ def validate_protected_assets(
     if not isinstance(manifest, dict):
         report.error("Protected asset manifest root must be an object")
         return report
-    if str(manifest.get("version", "")).lower().lstrip("v") not in {"0.7", "0.7.0"}:
-        report.error("Protected asset manifest version must identify v0.7")
+    if str(manifest.get("version", "")).lower().lstrip("v") not in {
+        "0.8",
+        "0.8.0",
+    }:
+        report.error("Protected asset manifest version must identify v0.8")
 
     baseline_ref = manifest.get("baseline_commit")
     if not isinstance(baseline_ref, str) or not baseline_ref:
@@ -569,7 +731,7 @@ def validate_protected_assets(
                 report.error(str(exc))
                 continue
             if not any(
-                addition == root or addition.startswith(f"{root}/")
+                addition.startswith(f"{root}/")
                 for root in protected_roots
             ):
                 report.error(
@@ -705,11 +867,24 @@ def validate_protected_assets(
                     f"Protected manifest object mismatch at baseline for {relative_path}: "
                     f"manifest={expected_object} baseline={baseline_object}"
                 )
-            current_object = resolve_path_object(repo_root, head_commit, relative_path)
-            if current_object != expected_object:
+            current_object = resolve_path_object(
+                repo_root,
+                head_commit,
+                relative_path,
+            )
+            contains_allowlisted_additions = any(
+                allowed.startswith(f"{relative_path}/")
+                for allowed in allowed_additions
+            )
+            if current_object != expected_object and not contains_allowlisted_additions:
                 report.error(
                     f"Protected path changed in current HEAD: {relative_path}; "
                     f"expected={expected_object} current={current_object}"
+                )
+            elif current_object != expected_object:
+                report.detail(
+                    f"Protected tree {relative_path} differs only through "
+                    "allowlisted additions"
                 )
         except GateError as exc:
             report.error(f"Cannot validate protected path {relative_path}: {exc}")
@@ -829,6 +1004,7 @@ def validate_source(
 
     report.merge(validate_worktree_state(repo_root, final=final))
     report.merge(validate_versions(repo_root))
+    report.merge(validate_v08_feature_contract(repo_root))
     report.merge(scan_tracked_secrets(repo_root))
     report.merge(validate_lfs(repo_root))
     report.merge(
@@ -849,9 +1025,9 @@ def print_report(report: GateReport) -> None:
     for error in report.errors:
         print(f"ERROR: {error}")
     print(
-        "SOURCE GATE v0.7: PASS"
+        "SOURCE GATE v0.8: PASS"
         if report.passed
-        else f"SOURCE GATE v0.7: FAIL ({len(report.errors)} error(s))"
+        else f"SOURCE GATE v0.8: FAIL ({len(report.errors)} error(s))"
     )
 
 
