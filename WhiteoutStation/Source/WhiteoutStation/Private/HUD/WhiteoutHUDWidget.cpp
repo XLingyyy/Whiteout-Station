@@ -660,9 +660,9 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	DialogueReplyBorder->SetBrushColor(FLinearColor::Transparent);
 	UVerticalBox* ReplyBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueReplyBox"));
 	DialogueReplyBorder->SetContent(ReplyBox);
-	UButton* ContinueButton = MakeButton(ReplyBox, FWSPresentationText::UI(TEXT("dlg_continue_button_v04"), TEXT("继续交涉")), TEXT("DialogueContinue"));
+	DialogueContinueButton = MakeButton(ReplyBox, FWSPresentationText::UI(TEXT("dlg_continue_button_v04"), TEXT("继续交涉")), TEXT("DialogueContinue"));
 	UButton* EndDialogueButton = MakeButton(ReplyBox, FWSPresentationText::UI(TEXT("dlg_end_button_v04"), TEXT("结束对话")), TEXT("DialogueEnd"));
-	ContinueButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ContinueDialogue);
+	DialogueContinueButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ContinueDialogue);
 	EndDialogueButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CancelDialogue);
 	DialogueBarBox->AddChildToVerticalBox(DialogueReplyBorder);
 	DialogueReplyBorder->SetVisibility(ESlateVisibility::Collapsed);
@@ -2507,6 +2507,7 @@ void UWhiteoutHUDWidget::ShowDialogueReplyActions()
 	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (DialogueReplyBorder) DialogueReplyBorder->SetVisibility(ESlateVisibility::Visible);
+	if (DialogueContinueButton) DialogueContinueButton->SetKeyboardFocus();
 }
 
 void UWhiteoutHUDWidget::ContinueDialogue()

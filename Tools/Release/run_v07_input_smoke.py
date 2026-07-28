@@ -31,16 +31,26 @@ ARTIFACT_PREFIX = "WhiteoutStation-v0.7-Win64-"
 EXECUTABLE_REL = Path("Windows/WhiteoutStation.exe")
 OUTPUT_REL = Path("Validation/InputSmoke")
 EVENT_LOG_REL = Path("Saved/Logs/WhiteoutStation_EventLog.json")
+SMOKE_RES_X = 1280
+SMOKE_RES_Y = 720
 
 VK_ESCAPE = 0x1B
 VK_RETURN = 0x0D
 VK_SPACE = 0x20
+VK_TAB = 0x09
 VK_E = 0x45
 VK_F = 0x46
 VK_H = 0x48
 VK_Q = 0x51
 VK_W = 0x57
 WM_CLOSE = 0x0010
+WM_KEYDOWN = 0x0100
+WM_KEYUP = 0x0101
+WM_CHAR = 0x0102
+WM_MOUSEMOVE = 0x0200
+WM_LBUTTONDOWN = 0x0201
+WM_LBUTTONUP = 0x0202
+MK_LBUTTON = 0x0001
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 INPUT_KEYBOARD = 1
@@ -103,7 +113,7 @@ def force_empty_credential_inputs(environment: dict[str, str]) -> None:
     environment["WHITEOUT_LLM_ENABLED"] = ""
 
 
-def activate_window(hwnd: int) -> None:
+def activate_window(hwnd: int) -> bool:
     user32.ShowWindow(hwnd, 9)
     user32.SetWindowPos(
         hwnd,
@@ -116,6 +126,17 @@ def activate_window(hwnd: int) -> None:
     )
     user32.BringWindowToTop(hwnd)
     user32.SetForegroundWindow(hwnd)
+    return int(user32.GetForegroundWindow()) == int(hwnd)
+
+
+def post_window_message(
+    hwnd: int,
+    message: int,
+    wparam: int,
+    lparam: int,
+) -> None:
+    if not user32.PostMessageW(hwnd, message, wparam, lparam):
+        raise ctypes.WinError()
 
 
 def visible_game_windows() -> dict[int, int]:
@@ -169,10 +190,14 @@ def wait_for_window(
 
 
 def send_key(hwnd: int, virtual_key: int, settle: float = 0.4) -> None:
-    activate_window(hwnd)
-    user32.keybd_event(virtual_key, 0, 0, 0)
-    time.sleep(0.05)
-    user32.keybd_event(virtual_key, 0, KEYEVENTF_KEYUP, 0)
+    if activate_window(hwnd):
+        user32.keybd_event(virtual_key, 0, 0, 0)
+        time.sleep(0.05)
+        user32.keybd_event(virtual_key, 0, KEYEVENTF_KEYUP, 0)
+    else:
+        post_window_message(hwnd, WM_KEYDOWN, virtual_key, 0)
+        time.sleep(0.05)
+        post_window_message(hwnd, WM_KEYUP, virtual_key, 0)
     time.sleep(settle)
 
 
@@ -182,10 +207,14 @@ def hold_key(
     duration: float,
     settle: float = 0.5,
 ) -> None:
-    activate_window(hwnd)
-    user32.keybd_event(virtual_key, 0, 0, 0)
-    time.sleep(duration)
-    user32.keybd_event(virtual_key, 0, KEYEVENTF_KEYUP, 0)
+    if activate_window(hwnd):
+        user32.keybd_event(virtual_key, 0, 0, 0)
+        time.sleep(duration)
+        user32.keybd_event(virtual_key, 0, KEYEVENTF_KEYUP, 0)
+    else:
+        post_window_message(hwnd, WM_KEYDOWN, virtual_key, 0)
+        time.sleep(duration)
+        post_window_message(hwnd, WM_KEYUP, virtual_key, 0)
     time.sleep(settle)
 
 
@@ -195,22 +224,34 @@ def click_client(
     y_ratio: float,
     settle: float = 0.5,
 ) -> None:
-    activate_window(hwnd)
+    has_foreground = activate_window(hwnd)
     left, top, right, bottom = client_bounds(hwnd)
-    x = round(left + (right - left) * x_ratio)
-    y = round(top + (bottom - top) * y_ratio)
-    user32.SetCursorPos(x, y)
-    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-    time.sleep(0.06)
-    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+    input_width = min(right - left, SMOKE_RES_X)
+    input_height = min(bottom - top, SMOKE_RES_Y)
+    client_x = round(input_width * x_ratio)
+    client_y = round(input_height * y_ratio)
+    if has_foreground:
+        user32.SetCursorPos(left + client_x, top + client_y)
+        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        time.sleep(0.06)
+        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+    else:
+        position = (client_y << 16) | (client_x & 0xFFFF)
+        post_window_message(hwnd, WM_MOUSEMOVE, 0, position)
+        post_window_message(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, position)
+        time.sleep(0.06)
+        post_window_message(hwnd, WM_LBUTTONUP, 0, position)
     time.sleep(settle)
 
 
 def send_unicode_text(hwnd: int, value: str) -> None:
-    activate_window(hwnd)
+    has_foreground = activate_window(hwnd)
     encoded = value.encode("utf-16-le")
     for index in range(0, len(encoded), 2):
         code_unit = int.from_bytes(encoded[index : index + 2], "little")
+        if not has_foreground:
+            post_window_message(hwnd, WM_CHAR, code_unit, 0)
+            continue
         down = INPUT(
             INPUT_KEYBOARD,
             INPUTUNION(
@@ -366,8 +407,8 @@ def launch_game(
         "-WhiteoutLLMEnabled=false",
         f"-UserDir={runtime_root.resolve()}",
         "-windowed",
-        "-ResX=1280",
-        "-ResY=720",
+        f"-ResX={SMOKE_RES_X}",
+        f"-ResY={SMOKE_RES_Y}",
         "-ForceRes",
         "-NoSound",
         "-NoSplash",
@@ -556,7 +597,8 @@ def run_dialogue_scenario(
         captures.append(
             capture(hwnd, output_root, f"{scenario_id}_intent")
         )
-        click_client(hwnd, 0.345, 0.825, 0.55)
+        send_key(hwnd, VK_TAB, 0.3)
+        send_key(hwnd, VK_RETURN, 0.55)
         captures.append(
             capture(hwnd, output_root, f"{scenario_id}_text_entry")
         )
@@ -565,7 +607,7 @@ def run_dialogue_scenario(
         captures.append(
             capture(hwnd, output_root, f"{scenario_id}_reply")
         )
-        click_client(hwnd, 0.895, 0.93, 0.8)
+        send_key(hwnd, VK_ESCAPE, 0.8)
         captures.append(
             capture(hwnd, output_root, f"{scenario_id}_closed")
         )
@@ -586,10 +628,11 @@ def run_dialogue_scenario(
                 "left_mouse_opening",
                 "space_opening",
                 "F_dialogue",
-                "left_mouse_ask",
+                "Tab_focus_ask",
+                "Enter_select_ask",
                 "unicode_free_text",
                 "Enter_submit",
-                "left_mouse_leave",
+                "Escape_leave",
                 "Enter_confirm",
                 "Enter_settle",
             ],

@@ -257,6 +257,9 @@ private:
 	TObjectPtr<UBorder> DialogueReplyBorder;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UButton> DialogueContinueButton;
+
+	UPROPERTY(Transient)
 	TArray<TObjectPtr<UButton>> DialogueIntentButtons;
 
 	UPROPERTY(Transient)
