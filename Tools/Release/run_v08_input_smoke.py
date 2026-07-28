@@ -407,7 +407,10 @@ def capture(
     image.save(output_path)
     if output_path.stat().st_size < 10_000:
         raise SmokeError(f"{name}: screenshot is unexpectedly small")
-    mean_luma = float(ImageStat.Stat(image.convert("L")).mean[0])
+    luma = image.convert("L")
+    mean_luma = float(ImageStat.Stat(luma).mean[0])
+    histogram = luma.histogram()
+    lit_pixel_fraction = sum(histogram[9:]) / sum(histogram)
     return {
         "name": name,
         "file": output_path.name,
@@ -415,6 +418,7 @@ def capture(
         "bytes": output_path.stat().st_size,
         "sha256": sha256_file(output_path),
         "mean_luma": round(mean_luma, 2),
+        "lit_pixel_fraction": round(lit_pixel_fraction, 4),
     }
 
 
@@ -531,8 +535,11 @@ def advance_opening(
             )
     send_key(hwnd, VK_SPACE, 3.2)
     captures.append(capture(hwnd, output_root, f"{scenario_id}_game"))
-    if captures[-1]["mean_luma"] < 8.0:
-        raise SmokeError(f"{scenario_id}: station reveal stayed black")
+    if captures[-1]["lit_pixel_fraction"] < 0.05:
+        raise SmokeError(
+            f"{scenario_id}: station reveal stayed black "
+            f"(lit_pixel_fraction={captures[-1]['lit_pixel_fraction']:.4f})"
+        )
 
 
 def settle_run(
