@@ -108,7 +108,10 @@ void AWSInteractableActor::Tick(const float DeltaSeconds)
 	float TargetPitch = 0.0f;
 	if (bPlayerInRange)
 	{
-		const FVector HeadLocation = CharacterMesh->GetBoneLocation(TEXT("head"), EBoneSpaces::WorldSpace);
+		const FName HeadBone = CharacterMesh->GetBoneIndex(TEXT("head")) != INDEX_NONE
+			? FName(TEXT("head"))
+			: FName(TEXT("J_Bip_C_Head"));
+		const FVector HeadLocation = CharacterMesh->GetBoneLocation(HeadBone, EBoneSpaces::WorldSpace);
 		const FVector ToPlayer = PlayerPawn->GetPawnViewLocation() - HeadLocation;
 		const FRotator TargetRotation = ToPlayer.Rotation();
 		TargetYaw = FMath::Clamp(FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, TargetRotation.Yaw), -55.0f, 55.0f);

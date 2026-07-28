@@ -24,7 +24,7 @@ int32 UWSLookAtSkeletalMeshComponent::ResolveHeadBoneIndex()
 	CachedHeadBoneIndex = INDEX_NONE;
 	const FReferenceSkeleton& Skeleton = MeshAsset->GetRefSkeleton();
 	for (const FName Candidate : {
-		FName(TEXT("head")), FName(TEXT("Head")), FName(TEXT("head.x")),
+		FName(TEXT("head")), FName(TEXT("Head")), FName(TEXT("head.x")), FName(TEXT("J_Bip_C_Head")),
 		FName(TEXT("neck_01")), FName(TEXT("neck")), FName(TEXT("Neck"))})
 	{
 		const int32 Index = Skeleton.FindBoneIndex(Candidate);
