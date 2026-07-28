@@ -1,4 +1,4 @@
-"""Drive the packaged v0.7 Demo through real keyboard and mouse input."""
+"""Drive the packaged v0.8 Demo through real keyboard and mouse input."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ except ImportError:
     from v07_gate_common import MANIFEST_REL, RUN_ID_PATTERN
 
 
-ARTIFACT_PREFIX = "WhiteoutStation-v0.7-Win64-"
+ARTIFACT_PREFIX = "WhiteoutStation-v0.8-Win64-"
 EXECUTABLE_REL = Path("Windows/WhiteoutStation.exe")
 OUTPUT_REL = Path("Validation/InputSmoke")
 EVENT_LOG_REL = Path("Saved/Logs/WhiteoutStation_EventLog.json")
@@ -292,6 +292,53 @@ def client_bounds(hwnd: int) -> tuple[int, int, int, int]:
     return point.x, point.y, point.x + rect.right, point.y + rect.bottom
 
 
+def move_cursor_away_from_center(hwnd: int) -> dict[str, list[int]]:
+    left, top, right, bottom = client_bounds(hwnd)
+    target = (
+        left + round((right - left) * 0.82),
+        top + round((bottom - top) * 0.78),
+    )
+    if not user32.SetCursorPos(*target):
+        raise ctypes.WinError()
+    time.sleep(0.08)
+    actual = wintypes.POINT()
+    if not user32.GetCursorPos(ctypes.byref(actual)):
+        raise ctypes.WinError()
+    return {
+        "requested_screen": [target[0], target[1]],
+        "actual_screen": [actual.x, actual.y],
+    }
+
+
+def assert_cursor_centered(
+    hwnd: int,
+    label: str,
+    before: dict[str, list[int]],
+) -> dict[str, Any]:
+    left, top, right, bottom = client_bounds(hwnd)
+    expected = (
+        left + (right - left) // 2,
+        top + (bottom - top) // 2,
+    )
+    actual = wintypes.POINT()
+    if not user32.GetCursorPos(ctypes.byref(actual)):
+        raise ctypes.WinError()
+    error = (actual.x - expected[0], actual.y - expected[1])
+    if abs(error[0]) > 4 or abs(error[1]) > 4:
+        raise SmokeError(
+            f"{label}: cursor did not return to client center; "
+            f"expected={expected}, actual={(actual.x, actual.y)}"
+        )
+    return {
+        "label": label,
+        "before": before,
+        "expected_screen": [expected[0], expected[1]],
+        "actual_screen": [actual.x, actual.y],
+        "error_px": [error[0], error[1]],
+        "passed": True,
+    }
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -448,7 +495,7 @@ def load_event_log(
             f"{scenario_id}: action path mismatch {action_ids!r}"
         )
     if (
-        event_log.get("rules_version") != "0.7.0"
+        event_log.get("rules_version") != "0.8.0"
         or event_log.get("ending") != "SurvivalWait"
         or event_log.get("signal_sent") is not False
     ):
@@ -472,9 +519,9 @@ def advance_opening(
     captures.append(capture(hwnd, output_root, f"{scenario_id}_story_01"))
     click_client(hwnd, 0.5, 0.5, 1.25)
     captures.append(capture(hwnd, output_root, f"{scenario_id}_story_02"))
-    for next_stage in range(3, 8):
+    for next_stage in range(3, 11):
         send_key(hwnd, VK_SPACE, 1.25)
-        if next_stage in {4, 7}:
+        if next_stage in {4, 7, 10}:
             captures.append(
                 capture(
                     hwnd,
@@ -516,6 +563,7 @@ def run_food_scenario(
     runtime_root.mkdir(parents=True)
     output_root.mkdir(parents=True, exist_ok=True)
     captures: list[dict[str, Any]] = []
+    cursor_checks: list[dict[str, Any]] = []
     process, hwnd, window_process_id = launch_game(
         executable,
         runtime_root,
@@ -523,14 +571,30 @@ def run_food_scenario(
     )
     try:
         advance_opening(hwnd, output_root, scenario_id, captures)
+        before = move_cursor_away_from_center(hwnd)
         send_key(hwnd, VK_H, 0.8)
+        cursor_checks.append(
+            assert_cursor_centered(hwnd, "guide_open", before)
+        )
         captures.append(capture(hwnd, output_root, f"{scenario_id}_guide"))
+        before = move_cursor_away_from_center(hwnd)
         send_key(hwnd, VK_ESCAPE, 0.55)
+        cursor_checks.append(
+            assert_cursor_centered(hwnd, "guide_close", before)
+        )
+        before = move_cursor_away_from_center(hwnd)
         send_key(hwnd, VK_E, 0.8)
+        cursor_checks.append(
+            assert_cursor_centered(hwnd, "evidence_open", before)
+        )
         captures.append(
             capture(hwnd, output_root, f"{scenario_id}_evidence")
         )
+        before = move_cursor_away_from_center(hwnd)
         send_key(hwnd, VK_E, 0.55)
+        cursor_checks.append(
+            assert_cursor_centered(hwnd, "evidence_close", before)
+        )
         hold_key(hwnd, VK_W, 0.35, 0.8)
         captures.append(capture(hwnd, output_root, f"{scenario_id}_focus"))
         send_key(hwnd, VK_F, 0.75)
@@ -569,6 +633,7 @@ def run_food_scenario(
                 "Enter_confirm",
                 "Enter_settle",
             ],
+            "cursor_center_checks": cursor_checks,
             "event_log": event_summary,
             "captures": captures,
         }
@@ -586,6 +651,7 @@ def run_dialogue_scenario(
     runtime_root.mkdir(parents=True)
     output_root.mkdir(parents=True, exist_ok=True)
     captures: list[dict[str, Any]] = []
+    cursor_checks: list[dict[str, Any]] = []
     process, hwnd, window_process_id = launch_game(
         executable,
         runtime_root,
@@ -593,7 +659,11 @@ def run_dialogue_scenario(
     )
     try:
         advance_opening(hwnd, output_root, scenario_id, captures)
+        before = move_cursor_away_from_center(hwnd)
         send_key(hwnd, VK_F, 0.9)
+        cursor_checks.append(
+            assert_cursor_centered(hwnd, "dialogue_open", before)
+        )
         captures.append(
             capture(hwnd, output_root, f"{scenario_id}_intent")
         )
@@ -607,7 +677,11 @@ def run_dialogue_scenario(
         captures.append(
             capture(hwnd, output_root, f"{scenario_id}_reply")
         )
+        before = move_cursor_away_from_center(hwnd)
         send_key(hwnd, VK_ESCAPE, 0.8)
+        cursor_checks.append(
+            assert_cursor_centered(hwnd, "dialogue_close", before)
+        )
         captures.append(
             capture(hwnd, output_root, f"{scenario_id}_closed")
         )
@@ -636,6 +710,7 @@ def run_dialogue_scenario(
                 "Enter_confirm",
                 "Enter_settle",
             ],
+            "cursor_center_checks": cursor_checks,
             "event_log": event_summary,
             "captures": captures,
         }
@@ -651,10 +726,10 @@ def validate_artifact_root(artifact_root: Path) -> tuple[Path, Path]:
     if not root.is_dir() or root.is_symlink():
         raise SmokeError("Artifact root must be a regular directory")
     if not root.name.startswith(ARTIFACT_PREFIX):
-        raise SmokeError("Artifact root is not a unique v0.7 archive")
+        raise SmokeError("Artifact root is not a unique v0.8 archive")
     run_id = root.name[len(ARTIFACT_PREFIX) :]
     if not RUN_ID_PATTERN.fullmatch(run_id):
-        raise SmokeError("Artifact root has an invalid v0.7 run id")
+        raise SmokeError("Artifact root has an invalid v0.8 run id")
     if (root / MANIFEST_REL).exists():
         raise SmokeError("Input smoke must run before manifest creation")
     if (root / OUTPUT_REL).exists():
@@ -680,7 +755,7 @@ def run_input_smoke(artifact_root: Path) -> Path:
         ]
         evidence_root = staging_root / "Evidence"
         report = {
-            "schema": "whiteout.v0.7.real-input-smoke.v1",
+            "schema": "whiteout.v0.8.real-input-smoke.v1",
             "passed": True,
             "artifact_root_name": root.name,
             "credential_policy": {
@@ -707,9 +782,9 @@ def main() -> int:
     try:
         summary_path = run_input_smoke(args.artifact_root)
     except (SmokeError, OSError, subprocess.SubprocessError) as exc:
-        print(f"REAL INPUT SMOKE v0.7: FAIL: {exc}")
+        print(f"REAL INPUT SMOKE v0.8: FAIL: {exc}")
         return 1
-    print(f"REAL INPUT SMOKE v0.7: PASS (2/2) summary={summary_path}")
+    print(f"REAL INPUT SMOKE v0.8: PASS (2/2) summary={summary_path}")
     return 0
 
 

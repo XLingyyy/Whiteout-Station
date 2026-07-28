@@ -215,6 +215,16 @@ bool AWhiteoutStationBuilder::RegisterEditableStationActors()
 {
 	ResetRuntimeActorCache();
 	EditableStationActorCount = 0;
+	UMaterialInterface* LegacyConcrete = LoadObject<UMaterialInterface>(
+		nullptr,
+		TEXT("/Game/WindStation/Art/Materials/M_WS_Concrete.M_WS_Concrete"));
+	UMaterialInterface* FloorDeckMaterial = LoadObject<UMaterialInterface>(
+		nullptr,
+		TEXT("/Game/WindStation/Art/Materials/M_WS_FloorDeck_V08.M_WS_FloorDeck_V08"));
+	UMaterialInterface* WallPanelMaterial = LoadObject<UMaterialInterface>(
+		nullptr,
+		TEXT("/Game/WindStation/Art/Materials/M_WS_WallPanel_V08.M_WS_WallPanel_V08"));
+	int32 UpgradedArchitectureSurfaces = 0;
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
 		AActor* Actor = *It;
@@ -251,6 +261,26 @@ bool AWhiteoutStationBuilder::RegisterEditableStationActors()
 		{
 			RuntimeAssemblyMeshes.Add(MeshActor);
 		}
+		if (AStaticMeshActor* MeshActor = Cast<AStaticMeshActor>(Actor);
+			MeshActor && MeshActor->ActorHasTag(TEXT("WSRuntimeGeometry")))
+		{
+			UStaticMeshComponent* Component = MeshActor->GetStaticMeshComponent();
+			if (Component
+				&& LegacyConcrete
+				&& Component->GetMaterial(0) == LegacyConcrete)
+			{
+				const bool bFloorSurface =
+					Component->Bounds.BoxExtent.Z <= 80.0f
+					&& MeshActor->GetActorLocation().Z <= 125.0f;
+				UMaterialInterface* UpgradedMaterial =
+					bFloorSurface ? FloorDeckMaterial : WallPanelMaterial;
+				if (UpgradedMaterial)
+				{
+					Component->SetMaterial(0, UpgradedMaterial);
+					++UpgradedArchitectureSurfaces;
+				}
+			}
+		}
 		if (AWSInteractableActor* Hotspot = Cast<AWSInteractableActor>(Actor);
 			Hotspot && Hotspot->ActorHasTag(TEXT("WSRuntimeHotspot")))
 		{
@@ -260,7 +290,12 @@ bool AWhiteoutStationBuilder::RegisterEditableStationActors()
 
 	if (EditableStationActorCount > 0)
 	{
-		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: using %d editable actors saved in the level"), EditableStationActorCount);
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("WhiteoutStation: using %d editable actors saved in the level; upgraded %d legacy architecture surfaces"),
+			EditableStationActorCount,
+			UpgradedArchitectureSurfaces);
 		return true;
 	}
 	return false;
@@ -545,11 +580,18 @@ void AWhiteoutStationBuilder::SpawnBlock(
 	Block->SetActorScale3D(Scale);
 	const bool bSnowSurface = Label.Contains(TEXT("Outdoor")) || Label.Contains(TEXT("Snow"));
 	const bool bMetalSurface = Label.Contains(TEXT("Metal")) || Label.Contains(TEXT("Pipe"));
+	const bool bFloorSurface =
+		!bSnowSurface
+		&& !bMetalSurface
+		&& Location.Z <= 125.0f
+		&& Scale.Z <= 0.8f;
 	const TCHAR* MaterialPath = bSnowSurface
 		? TEXT("/Game/WindStation/Art/Materials/M_WS_Snow.M_WS_Snow")
 		: bMetalSurface
 			? TEXT("/Game/WindStation/Art/Materials/M_WS_RustedMetal.M_WS_RustedMetal")
-			: TEXT("/Game/WindStation/Art/Materials/M_WS_Concrete.M_WS_Concrete");
+			: bFloorSurface
+				? TEXT("/Game/WindStation/Art/Materials/M_WS_FloorDeck_V08.M_WS_FloorDeck_V08")
+				: TEXT("/Game/WindStation/Art/Materials/M_WS_WallPanel_V08.M_WS_WallPanel_V08");
 	if (UMaterialInterface* SurfaceMaterial = LoadObject<UMaterialInterface>(nullptr, MaterialPath))
 	{
 		Block->GetStaticMeshComponent()->SetMaterial(0, SurfaceMaterial);

@@ -73,13 +73,13 @@ FWhiteoutRulesEngine::FWhiteoutRulesEngine()
 	Config.InitialState.Phase = EWSGamePhase::ActionPhase;
 	Config.InitialState.Characters.Add(
 		EWSCharacterId::Player,
-		WhiteoutRules::MakeCharacter(100.0f, 72.0f, 65.0f, 65.0f, 40.0f, 0.0f));
+		WhiteoutRules::MakeCharacter(10.0f, 7.2f, 6.5f, 6.5f, 4.0f, 5.0f));
 	Config.InitialState.Characters.Add(
 		EWSCharacterId::GuHeng,
-		WhiteoutRules::MakeCharacter(62.0f, 66.0f, 55.0f, 50.0f, 72.0f, -15.0f));
+		WhiteoutRules::MakeCharacter(6.2f, 6.6f, 5.5f, 5.0f, 7.2f, 3.5f));
 	Config.InitialState.Characters.Add(
 		EWSCharacterId::YeCheng,
-		WhiteoutRules::MakeCharacter(92.0f, 70.0f, 68.0f, 55.0f, 48.0f, 10.0f));
+		WhiteoutRules::MakeCharacter(9.2f, 7.0f, 6.8f, 5.5f, 4.8f, 6.0f));
 	Reset();
 }
 
@@ -150,8 +150,22 @@ bool FWhiteoutRulesEngine::LoadConfig(const FString& ConfigPath, FString& OutErr
 
 	if (Config.StartingActionPoints != 8 || Config.MidCrisisThreshold != 4)
 	{
-		OutError = TEXT("v0.7 requires 8 starting AP and a 4 AP crisis threshold");
+		OutError = TEXT("v0.8 requires 8 starting AP and a 4 AP crisis threshold");
 		return false;
+	}
+	for (const TPair<EWSCharacterId, FWSCharacterState>& Pair : Parsed.Characters)
+	{
+		const FWSCharacterState& CharacterState = Pair.Value;
+		if (CharacterState.Health < 0.0f || CharacterState.Health > 10.0f
+			|| CharacterState.Temperature < 0.0f || CharacterState.Temperature > 10.0f
+			|| CharacterState.Hunger < 0.0f || CharacterState.Hunger > 10.0f
+			|| CharacterState.Fatigue < 0.0f || CharacterState.Fatigue > 10.0f
+			|| CharacterState.Pressure < 0.0f || CharacterState.Pressure > 10.0f
+			|| CharacterState.Trust < 0.0f || CharacterState.Trust > 10.0f)
+		{
+			OutError = TEXT("v0.8 character attributes must remain within 0..10");
+			return false;
+		}
 	}
 
 	Config.InitialState = MoveTemp(Parsed);
@@ -180,6 +194,16 @@ void FWhiteoutRulesEngine::Reset()
 void FWhiteoutRulesEngine::SetState(const FWSGameState& InState)
 {
 	State = InState;
+	for (TPair<EWSCharacterId, FWSCharacterState>& Pair : State.Characters)
+	{
+		FWSCharacterState& CharacterState = Pair.Value;
+		CharacterState.Health = FMath::Clamp(CharacterState.Health, 0.0f, 10.0f);
+		CharacterState.Temperature = FMath::Clamp(CharacterState.Temperature, 0.0f, 10.0f);
+		CharacterState.Hunger = FMath::Clamp(CharacterState.Hunger, 0.0f, 10.0f);
+		CharacterState.Fatigue = FMath::Clamp(CharacterState.Fatigue, 0.0f, 10.0f);
+		CharacterState.Pressure = FMath::Clamp(CharacterState.Pressure, 0.0f, 10.0f);
+		CharacterState.Trust = FMath::Clamp(CharacterState.Trust, 0.0f, 10.0f);
+	}
 }
 
 FWSActionPreview FWhiteoutRulesEngine::Preview(const FWSActionRequest& Request) const
@@ -332,7 +356,7 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecute(const FWSActionRequest& Request) 
 				: EWSCharacterId::YeCheng;
 			const float Pressure = Character(CharacterId).Pressure;
 			const bool bReassureAvailable = State.bMidCrisisTriggered
-				|| Pressure >= (CharacterId == EWSCharacterId::GuHeng ? 65.0f : 60.0f)
+				|| Pressure >= (CharacterId == EWSCharacterId::GuHeng ? 6.5f : 6.0f)
 				|| (CharacterId == EWSCharacterId::GuHeng && State.Flags.bGuHengDiagnosed);
 			if (!bReassureAvailable)
 			{
@@ -430,7 +454,7 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecute(const FWSActionRequest& Request) 
 	{
 		if (State.Tasks.GeneratorProgress >= Config.GeneratorRequired)
 			return EWSReasonCode::GeneratorAlreadyRepaired;
-		if (Character(EWSCharacterId::GuHeng).Health <= 30.0f) return EWSReasonCode::GuHengCritical;
+		if (Character(EWSCharacterId::GuHeng).Health <= 3.0f) return EWSReasonCode::GuHengCritical;
 		if (
 			!State.Flags.bGuHengCooperative && !State.Flags.bGuHengTreated
 			&& !(State.Flags.bRepairRoomHeated && State.Flags.bGuHengFed))
@@ -482,27 +506,27 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 	}
 	else if (Request.ActionId == TalkYeCheng)
 	{
-		ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, -4, 4);
+		ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, -0.4f, 0.4f);
 		State.Flags.bGuHengDiagnosed = true;
 		AddEvidence(TEXT("EVIDENCE_MEDICAL_DIAGNOSIS"), &OutChanges);
 		DiscoverFact(FactHandInjury, EWSKnowledgeLevel::Confirmed, &OutChanges);
 		DiscoverFact(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed, &OutChanges);
-		if (Character(EWSCharacterId::YeCheng).Trust >= 10.0f)
+		if (Character(EWSCharacterId::YeCheng).Trust >= 6.0f)
 		{
 			State.Flags.bHeatPackRevealed = true;
 			AddEvidence(TEXT("EVIDENCE_HEAT_PACK"), &OutChanges);
 			DiscoverFact(FactHeatPack, EWSKnowledgeLevel::Confirmed, &OutChanges);
 		}
-		OutChanges.Add(TEXT("Ye Cheng trust +4, pressure -4"));
+		OutChanges.Add(TEXT("Ye Cheng trust +0.4, pressure -0.4"));
 		if (Request.DialogueAct == EWSDialogueAct::Challenge)
 		{
-			ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, 3, -3);
-			OutChanges.Add(TEXT("Challenge modifier: Ye Cheng trust -3, pressure +3"));
+			ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, 0.3f, -0.3f);
+			OutChanges.Add(TEXT("Challenge modifier: Ye Cheng trust -0.3, pressure +0.3"));
 		}
 		else if (Request.DialogueAct == EWSDialogueAct::Reassure)
 		{
-			ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, -4, 3);
-			OutChanges.Add(TEXT("Reassure modifier: Ye Cheng trust +3, pressure -4"));
+			ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, -0.4f, 0.3f);
+			OutChanges.Add(TEXT("Reassure modifier: Ye Cheng trust +0.3, pressure -0.4"));
 		}
 	}
 	else if (Request.ActionId == TalkGuHeng)
@@ -510,13 +534,13 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 		const bool bStrongEvidence = Knows(FactForcedRestartSuspicion) && Knows(FactBurntRelay);
 		if (State.Flags.bGuHengTreated)
 		{
-			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, -8, 12);
+			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, -0.8f, 1.2f);
 			State.Flags.bGuHengCooperative = true;
 			OutChanges.Add(TEXT("Gu Heng accepts cooperation after treatment"));
 		}
 		else if (bStrongEvidence)
 		{
-			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 3, 8);
+			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0.3f, 0.8f);
 			State.Flags.bGuHengCooperative = true;
 			State.Flags.bRelayCompatibilityKnown = true;
 			AddEvidence(TEXT("EVIDENCE_HEATER_SERVICE_LABEL"), &OutChanges);
@@ -526,31 +550,31 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 		}
 		else
 		{
-			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 4, -3);
+			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0.4f, -0.3f);
 			OutChanges.Add(TEXT("Gu Heng refuses an unsupported request"));
 		}
 		if (Request.DialogueAct == EWSDialogueAct::Challenge)
 		{
 			if (bStrongEvidence)
 			{
-				ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 2, 2);
-				OutChanges.Add(TEXT("Evidence challenge modifier: Gu Heng trust +2, pressure +2"));
+				ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0.2f, 0.2f);
+				OutChanges.Add(TEXT("Evidence challenge modifier: Gu Heng trust +0.2, pressure +0.2"));
 			}
 			else
 			{
-				ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 3, -3);
-				OutChanges.Add(TEXT("Challenge modifier: Gu Heng trust -3, pressure +3"));
+				ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0.3f, -0.3f);
+				OutChanges.Add(TEXT("Challenge modifier: Gu Heng trust -0.3, pressure +0.3"));
 			}
 		}
 		else if (Request.DialogueAct == EWSDialogueAct::Reassure)
 		{
-			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, -4, 3);
-			OutChanges.Add(TEXT("Reassure modifier: Gu Heng trust +3, pressure -4"));
+			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, -0.4f, 0.3f);
+			OutChanges.Add(TEXT("Reassure modifier: Gu Heng trust +0.3, pressure -0.4"));
 		}
 		else if (Request.DialogueAct == EWSDialogueAct::Promise)
 		{
-			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, -2, 2);
-			OutChanges.Add(TEXT("Promise modifier: Gu Heng trust +2, pressure -2"));
+			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, -0.2f, 0.2f);
+			OutChanges.Add(TEXT("Promise modifier: Gu Heng trust +0.2, pressure -0.2"));
 		}
 		if (Request.DialogueAct == EWSDialogueAct::Promise)
 		{
@@ -561,24 +585,24 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 	{
 		State.Resources.Fuel -= 1;
 		State.Flags.bRepairRoomHeated = true;
-		ChangeCharacter(EWSCharacterId::GuHeng, 0, 6, 0, 0, -4, 0);
+		ChangeCharacter(EWSCharacterId::GuHeng, 0, 0.6f, 0, 0, -0.4f, 0);
 		OutChanges.Add(TEXT("Repair room heated; fuel -1"));
 	}
 	else if (Request.ActionId == HeatMedicalRoom)
 	{
 		State.Resources.Fuel -= 1;
 		State.Flags.bMedicalRoomHeated = true;
-		ChangeCharacter(EWSCharacterId::GuHeng, 0, 4, 0, 0, 0, 0);
-		ChangeCharacter(EWSCharacterId::YeCheng, 0, 3, 0, 0, -3, 0);
+		ChangeCharacter(EWSCharacterId::GuHeng, 0, 0.4f, 0, 0, 0, 0);
+		ChangeCharacter(EWSCharacterId::YeCheng, 0, 0.3f, 0, 0, -0.3f, 0);
 		OutChanges.Add(TEXT("Medical room heated; fuel -1"));
 	}
 	else if (Request.ActionId == DistributeFood)
 	{
 		const int32 Total = Request.FoodForPlayer + Request.FoodForGuHeng + Request.FoodForYeCheng;
 		State.Resources.Food -= Total;
-		ChangeCharacter(EWSCharacterId::Player, 0, 0, Request.FoodForPlayer * 20.0f, 0, 0, 0);
-		ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, Request.FoodForGuHeng * 20.0f, 0, 0, Request.FoodForGuHeng ? 12.0f : -6.0f);
-		ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, Request.FoodForYeCheng * 20.0f, 0, 0, Request.FoodForYeCheng ? 5.0f : -5.0f);
+		ChangeCharacter(EWSCharacterId::Player, 0, 0, Request.FoodForPlayer * 2.0f, 0, 0, 0);
+		ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, Request.FoodForGuHeng * 2.0f, 0, 0, Request.FoodForGuHeng ? 1.2f : -0.6f);
+		ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, Request.FoodForYeCheng * 2.0f, 0, 0, Request.FoodForYeCheng ? 0.5f : -0.5f);
 		State.Flags.bGuHengFed = Request.FoodForGuHeng > 0;
 		OutChanges.Add(FString::Printf(TEXT("Food allocated: player=%d gu=%d ye=%d"), Request.FoodForPlayer, Request.FoodForGuHeng, Request.FoodForYeCheng));
 	}
@@ -587,13 +611,13 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 		if (Request.TreatmentResource == EWSResourceType::Medicine)
 		{
 			State.Resources.Medicine -= 1;
-			ChangeCharacter(EWSCharacterId::GuHeng, 22, 5, 0, 8, -16, 8);
+			ChangeCharacter(EWSCharacterId::GuHeng, 2.2f, 0.5f, 0, 0.8f, -1.6f, 0.8f);
 			OutChanges.Add(TEXT("Gu Heng treated with medicine"));
 		}
 		else
 		{
 			State.Resources.HeatPack -= 1;
-			ChangeCharacter(EWSCharacterId::GuHeng, 12, 10, 0, 5, -10, 5);
+			ChangeCharacter(EWSCharacterId::GuHeng, 1.2f, 1.0f, 0, 0.5f, -1.0f, 0.5f);
 			OutChanges.Add(TEXT("Gu Heng stabilized with heat pack"));
 		}
 		State.Flags.bGuHengTreated = true;
@@ -604,12 +628,12 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 		const bool bCooperative = State.Flags.bGuHengCooperative && State.Flags.bRelayCompatibilityKnown;
 		if (bCooperative)
 		{
-			ChangeCharacter(EWSCharacterId::GuHeng, -2, 0, 0, 0, -3, 0);
+			ChangeCharacter(EWSCharacterId::GuHeng, -0.2f, 0, 0, 0, -0.3f, 0);
 		}
 		else
 		{
-			ChangeCharacter(EWSCharacterId::Player, -4, 0, 0, -5, 0, 0);
-			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0, -3);
+			ChangeCharacter(EWSCharacterId::Player, -0.4f, 0, 0, -0.5f, 0, 0);
+			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0, -0.3f);
 		}
 		State.Resources.ReplacementRelay = 1;
 		State.Flags.bKitchenHeaterIntact = false;
@@ -627,11 +651,11 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 		State.Tasks.GeneratorProgress = FMath::Min(Config.GeneratorRequired, State.Tasks.GeneratorProgress + Progress);
 		if (bStable)
 		{
-			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, -4, -4, 0);
+			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, -0.4f, -0.4f, 0);
 		}
 		else
 		{
-			ChangeCharacter(EWSCharacterId::GuHeng, -6, -2, 0, -6, 7, 0);
+			ChangeCharacter(EWSCharacterId::GuHeng, -0.6f, -0.2f, 0, -0.6f, 0.7f, 0);
 		}
 		OutChanges.Add(FString::Printf(TEXT("Generator progress +%d"), Progress));
 	}
@@ -639,7 +663,7 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 	{
 		State.Flags.bSelfRepairUsed = true;
 		State.Tasks.GeneratorProgress = FMath::Min(Config.GeneratorRequired, State.Tasks.GeneratorProgress + 1);
-		ChangeCharacter(EWSCharacterId::Player, -10, -4, 0, -15, 8, 0);
+		ChangeCharacter(EWSCharacterId::Player, -1.0f, -0.4f, 0, -1.5f, 0.8f, 0);
 		OutChanges.Add(TEXT("Player forced one generator progress at high cost"));
 	}
 	else if (Request.ActionId == CalibrateAntenna)
@@ -660,11 +684,11 @@ void FWhiteoutRulesEngine::ApplyEnvironment(const int32 APCost, const bool bOutd
 	{
 		for (const EWSCharacterId CharacterId : {EWSCharacterId::Player, EWSCharacterId::GuHeng, EWSCharacterId::YeCheng})
 		{
-			ChangeCharacter(CharacterId, 0, -1, -1, -1, 0, 0);
+			ChangeCharacter(CharacterId, 0, -0.1f, -0.1f, -0.1f, 0, 0);
 		}
 		if (bOutdoors)
 		{
-			ChangeCharacter(EWSCharacterId::Player, 0, -5, 0, -4, 0, 0);
+			ChangeCharacter(EWSCharacterId::Player, 0, -0.5f, 0, -0.4f, 0, 0);
 		}
 	}
 	if (APCost > 0)
@@ -678,14 +702,14 @@ void FWhiteoutRulesEngine::TriggerMidCrisis(TArray<FString>& OutChanges)
 	State.bMidCrisisTriggered = true;
 	if (State.Tasks.GeneratorProgress == 0)
 	{
-		ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 3, 0);
-		ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, 3, 0);
+		ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0.3f, 0);
+		ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, 0.3f, 0);
 	}
 	if (!State.Flags.bGuHengTreated && ActionCount(WhiteoutRules::RepairGenerator) > 0)
 	{
-		ChangeCharacter(EWSCharacterId::GuHeng, -2, 0, 0, 0, 4, 0);
+		ChangeCharacter(EWSCharacterId::GuHeng, -0.2f, 0, 0, 0, 0.4f, 0);
 	}
-	if (Character(EWSCharacterId::YeCheng).Trust >= 10.0f)
+	if (Character(EWSCharacterId::YeCheng).Trust >= 6.0f)
 	{
 		State.Flags.bHeatPackRevealed = true;
 		DiscoverFact(WhiteoutRules::FactHeatPack, EWSKnowledgeLevel::Confirmed, &OutChanges);
@@ -735,7 +759,7 @@ void FWhiteoutRulesEngine::SettlePromises()
 			Promise.bFulfilled = State.Flags.bRepairRoomHeated;
 		}
 		Promise.bSettled = true;
-		ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0, Promise.bFulfilled ? 6.0f : -12.0f);
+		ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0, Promise.bFulfilled ? 0.6f : -1.2f);
 	}
 }
 
@@ -801,7 +825,7 @@ FWSScoreBreakdown FWhiteoutRulesEngine::CalculateScore() const
 		const FWSCharacterState& Current = Character(CharacterId);
 		const float Normalized = (
 			0.40f * Current.Health + 0.25f * Current.Temperature + 0.20f * Current.Fatigue
-			+ 0.15f * Current.Hunger) / 100.0f;
+			+ 0.15f * Current.Hunger) / 10.0f;
 		Score.People += 10.0f * FMath::Clamp(Normalized, 0.0f, 1.0f);
 	}
 
@@ -820,8 +844,8 @@ FWSScoreBreakdown FWhiteoutRulesEngine::CalculateScore() const
 	}
 	Score.EffectiveReserves = FuelScore + FoodScore + MedicalScore + HeaterScore;
 
-	const float GuTrust = FMath::Clamp((Character(EWSCharacterId::GuHeng).Trust + 50.0f) / 100.0f, 0.0f, 1.0f);
-	const float YeTrust = FMath::Clamp((Character(EWSCharacterId::YeCheng).Trust + 50.0f) / 100.0f, 0.0f, 1.0f);
+	const float GuTrust = FMath::Clamp(Character(EWSCharacterId::GuHeng).Trust / 10.0f, 0.0f, 1.0f);
+	const float YeTrust = FMath::Clamp(Character(EWSCharacterId::YeCheng).Trust / 10.0f, 0.0f, 1.0f);
 	Score.SocialStability = 12.0f * (GuTrust + YeTrust) / 2.0f;
 	for (const FWSPromiseRecord& Promise : State.Promises)
 	{
@@ -950,12 +974,12 @@ void FWhiteoutRulesEngine::ChangeCharacter(
 	const float Trust)
 {
 	FWSCharacterState& Current = Character(CharacterId);
-	Current.Health = FMath::Clamp(Current.Health + Health, 0.0f, 100.0f);
-	Current.Temperature = FMath::Clamp(Current.Temperature + Temperature, 0.0f, 100.0f);
-	Current.Hunger = FMath::Clamp(Current.Hunger + Hunger, 0.0f, 100.0f);
-	Current.Fatigue = FMath::Clamp(Current.Fatigue + Fatigue, 0.0f, 100.0f);
-	Current.Pressure = FMath::Clamp(Current.Pressure + Pressure, 0.0f, 100.0f);
-	Current.Trust = FMath::Clamp(Current.Trust + Trust, -100.0f, 100.0f);
+	Current.Health = FMath::Clamp(Current.Health + Health, 0.0f, 10.0f);
+	Current.Temperature = FMath::Clamp(Current.Temperature + Temperature, 0.0f, 10.0f);
+	Current.Hunger = FMath::Clamp(Current.Hunger + Hunger, 0.0f, 10.0f);
+	Current.Fatigue = FMath::Clamp(Current.Fatigue + Fatigue, 0.0f, 10.0f);
+	Current.Pressure = FMath::Clamp(Current.Pressure + Pressure, 0.0f, 10.0f);
+	Current.Trust = FMath::Clamp(Current.Trust + Trust, 0.0f, 10.0f);
 }
 
 FWSCharacterState& FWhiteoutRulesEngine::Character(const EWSCharacterId CharacterId)

@@ -122,10 +122,9 @@ class TransactionTests(unittest.TestCase):
                     all(value >= 0 for value in sim.state["resources"].values())
                 )
                 for character in sim.state["characters"].values():
-                    for stat, value in character.items():
-                        low = -100 if stat == "trust" else 0
-                        self.assertGreaterEqual(value, low)
-                        self.assertLessEqual(value, 100)
+                    for value in character.values():
+                        self.assertGreaterEqual(value, 0)
+                        self.assertLessEqual(value, 10)
                 self.assertEqual(
                     len(sim.state["committed_transactions"]),
                     len(sim.state["event_log"]),
@@ -178,8 +177,14 @@ class FlowTests(unittest.TestCase):
         before_temp = sim.state["characters"]["player"]["temperature"]
         before_fatigue = sim.state["characters"]["player"]["fatigue"]
         sim.apply_action("calibrate_antenna")
-        self.assertEqual(before_temp - 12, sim.state["characters"]["player"]["temperature"])
-        self.assertEqual(before_fatigue - 10, sim.state["characters"]["player"]["fatigue"])
+        self.assertAlmostEqual(
+            before_temp - 1.2,
+            sim.state["characters"]["player"]["temperature"],
+        )
+        self.assertAlmostEqual(
+            before_fatigue - 1.0,
+            sim.state["characters"]["player"]["fatigue"],
+        )
 
     def test_endings_are_exclusive(self) -> None:
         sim = WhiteoutSimulator()
@@ -188,7 +193,7 @@ class FlowTests(unittest.TestCase):
         cases.append(sim.classify_ending())
         sim.state["tasks"]["signal_sent"] = True
         cases.append(sim.classify_ending())
-        sim.state["characters"]["gu_heng"]["health"] = 20
+        sim.state["characters"]["gu_heng"]["health"] = 2
         cases.append(sim.classify_ending())
         sim.state["tasks"]["signal_sent"] = False
         sim.state["tasks"]["generator_progress"] = 0
@@ -417,18 +422,18 @@ class DialogueIntentTests(unittest.TestCase):
 
     def test_dialogue_intents_apply_deterministic_post_base_deltas(self) -> None:
         cases = [
-            ("talk_ye_cheng", "ask", None, 14, 44, 0),
-            ("talk_ye_cheng", "challenge", None, 11, 47, 0),
-            ("talk_ye_cheng", "reassure", None, 17, 40, 0),
-            ("talk_gu_heng", "ask", None, -18, 76, 0),
-            ("talk_gu_heng", "challenge", None, -21, 79, 0),
-            ("talk_gu_heng", "reassure", None, -15, 72, 0),
+            ("talk_ye_cheng", "ask", None, 6.4, 4.4, 0),
+            ("talk_ye_cheng", "challenge", None, 6.1, 4.7, 0),
+            ("talk_ye_cheng", "reassure", None, 6.7, 4.0, 0),
+            ("talk_gu_heng", "ask", None, 3.2, 7.6, 0),
+            ("talk_gu_heng", "challenge", None, 2.9, 7.9, 0),
+            ("talk_gu_heng", "reassure", None, 3.5, 7.2, 0),
             (
                 "talk_gu_heng",
                 "promise",
                 "keep_records",
-                -16,
-                74,
+                3.4,
+                7.4,
                 1,
             ),
         ]
@@ -457,8 +462,8 @@ class DialogueIntentTests(unittest.TestCase):
                 character = sim.state["characters"][character_id]
 
                 self.assertTrue(result.committed)
-                self.assertEqual(trust, character["trust"])
-                self.assertEqual(pressure, character["pressure"])
+                self.assertAlmostEqual(trust, character["trust"])
+                self.assertAlmostEqual(pressure, character["pressure"])
                 self.assertEqual(promises, len(sim.state["promises"]))
 
     def test_evidence_backed_gu_heng_challenge_uses_special_modifier(self) -> None:
@@ -475,8 +480,10 @@ class DialogueIntentTests(unittest.TestCase):
             self.assertTrue(result.committed)
             results[dialogue_act] = (gu_heng["trust"], gu_heng["pressure"])
 
-        self.assertEqual((-7, 75), results["ask"])
-        self.assertEqual((-5, 77), results["challenge"])
+        self.assertAlmostEqual(4.3, results["ask"][0])
+        self.assertAlmostEqual(7.5, results["ask"][1])
+        self.assertAlmostEqual(4.5, results["challenge"][0])
+        self.assertAlmostEqual(7.7, results["challenge"][1])
 
 
 class RouteAndScoreTests(unittest.TestCase):

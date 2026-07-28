@@ -88,7 +88,8 @@ void AWSInteractableActor::BeginPlay()
 	bCharacterPresentation = true;
 	SetActorTickEnabled(true);
 	CaptureHomeTransform();
-	ResolveV07Animations();
+	RestoreLegacyCharacterMaterials();
+	ResolveV08Animations();
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
@@ -471,7 +472,8 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
 		{
 			CaptureHomeTransform();
-			ResolveV07Animations();
+			RestoreLegacyCharacterMaterials();
+			ResolveV08Animations();
 			StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterStateChanged);
 			StateSubsystem->OnActionCommitted.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterActionCommitted);
 			StateSubsystem->OnDialogueLine.AddUniqueDynamic(this, &AWSInteractableActor::HandleDialogueLine);
@@ -480,7 +482,8 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 		}
 	}
 	CaptureHomeTransform();
-	ResolveV07Animations();
+	RestoreLegacyCharacterMaterials();
+	ResolveV08Animations();
 	PlayCharacterAnimation(IdleAnimation);
 }
 
@@ -495,7 +498,44 @@ void AWSInteractableActor::CaptureHomeTransform()
 	bHomeTransformCaptured = true;
 }
 
-void AWSInteractableActor::ResolveV07Animations()
+void AWSInteractableActor::RestoreLegacyCharacterMaterials()
+{
+	if (!CharacterMesh)
+	{
+		return;
+	}
+	const USkeletalMesh* SkeletalMesh = CharacterMesh->GetSkeletalMeshAsset();
+	UMaterialInterface* LegacyEyeMaterial = LoadObject<UMaterialInterface>(
+		nullptr,
+		TEXT("/Game/WindStation/Art/Materials/M_WS_Eye.M_WS_Eye"));
+	if (!SkeletalMesh || !LegacyEyeMaterial)
+	{
+		return;
+	}
+
+	const TArray<FSkeletalMaterial>& ImportedMaterials = SkeletalMesh->GetMaterials();
+	const int32 MaterialCount = FMath::Min(CharacterMesh->GetNumMaterials(), ImportedMaterials.Num());
+	for (int32 Index = 0; Index < MaterialCount; ++Index)
+	{
+		UMaterialInterface* CurrentMaterial = CharacterMesh->GetMaterial(Index);
+		UMaterialInterface* ImportedMaterial = ImportedMaterials[Index].MaterialInterface;
+		if (CurrentMaterial == LegacyEyeMaterial
+			&& ImportedMaterial
+			&& ImportedMaterial != LegacyEyeMaterial)
+		{
+			CharacterMesh->SetMaterial(Index, ImportedMaterial);
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("WhiteoutStation v0.8: restored imported character material action=%s slot=%d material=%s"),
+				*ActionId.ToString(),
+				Index,
+				*ImportedMaterial->GetPathName());
+		}
+	}
+}
+
+void AWSInteractableActor::ResolveV08Animations()
 {
 	if (!bCharacterPresentation)
 	{
@@ -503,15 +543,11 @@ void AWSInteractableActor::ResolveV07Animations()
 	}
 	const bool bGuHeng = ActionId == TEXT("talk_gu_heng");
 	const FString Root = bGuHeng
-		? TEXT("/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV07")
-		: TEXT("/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV07");
+		? TEXT("/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV08")
+		: TEXT("/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV08");
 	const FString Prefix = bGuHeng ? TEXT("AN_GuHeng") : TEXT("AN_YeCheng_V10");
-	const auto LoadIfMissing = [&Root, &Prefix](TObjectPtr<UAnimSequence>& Animation, const TCHAR* Suffix)
+	const auto LoadAnimation = [&Root, &Prefix](const TCHAR* Suffix)
 	{
-		if (Animation)
-		{
-			return;
-		}
 		const FString AssetPath = FString::Printf(
 			TEXT("%s/%s_%s.%s_%s"),
 			*Root,
@@ -519,14 +555,27 @@ void AWSInteractableActor::ResolveV07Animations()
 			Suffix,
 			*Prefix,
 			Suffix);
-		Animation = LoadObject<UAnimSequence>(nullptr, *AssetPath);
+		return LoadObject<UAnimSequence>(nullptr, *AssetPath);
 	};
-	LoadIfMissing(WalkAnimation, TEXT("Walk"));
-	LoadIfMissing(AcknowledgeAnimation, TEXT("Acknowledge"));
-	LoadIfMissing(ConsiderAnimation, TEXT("Consider"));
-	LoadIfMissing(ReassureAnimation, TEXT("Reassure"));
-	LoadIfMissing(RejectAnimation, TEXT("Reject"));
-	LoadIfMissing(AlarmedAnimation, TEXT("Alarmed"));
+	IdleAnimation = LoadAnimation(TEXT("Idle"));
+	WalkAnimation = LoadAnimation(TEXT("Walk"));
+	AcknowledgeAnimation = LoadAnimation(TEXT("Acknowledge"));
+	ConsiderAnimation = LoadAnimation(TEXT("Consider"));
+	ReassureAnimation = LoadAnimation(TEXT("Reassure"));
+	RejectAnimation = LoadAnimation(TEXT("Reject"));
+	AlarmedAnimation = LoadAnimation(TEXT("Alarmed"));
+	GestureAnimation = AcknowledgeAnimation;
+	GuardedAnimation = RejectAnimation;
+	WorkAnimation = ConsiderAnimation;
+	if (!IdleAnimation || !WalkAnimation || !AcknowledgeAnimation || !ConsiderAnimation
+		|| !ReassureAnimation || !RejectAnimation || !AlarmedAnimation)
+	{
+		UE_LOG(
+			LogTemp,
+			Error,
+			TEXT("WhiteoutStation v0.8: exact-skeleton animation set is incomplete for %s"),
+			*ActionId.ToString());
+	}
 }
 
 void AWSInteractableActor::PlayCharacterAnimation(UAnimSequence* Animation, const bool bLoop)
@@ -544,15 +593,15 @@ UAnimSequence* AWSInteractableActor::AnimationForReaction(const EWSNPCReaction R
 	switch (Reaction)
 	{
 	case EWSNPCReaction::Acknowledge:
-		return AcknowledgeAnimation ? AcknowledgeAnimation.Get() : GestureAnimation.Get();
+		return AcknowledgeAnimation ? AcknowledgeAnimation.Get() : IdleAnimation.Get();
 	case EWSNPCReaction::Consider:
-		return ConsiderAnimation ? ConsiderAnimation.Get() : WorkAnimation.Get();
+		return ConsiderAnimation ? ConsiderAnimation.Get() : IdleAnimation.Get();
 	case EWSNPCReaction::Reassure:
-		return ReassureAnimation ? ReassureAnimation.Get() : GestureAnimation.Get();
+		return ReassureAnimation ? ReassureAnimation.Get() : IdleAnimation.Get();
 	case EWSNPCReaction::Reject:
-		return RejectAnimation ? RejectAnimation.Get() : GuardedAnimation.Get();
+		return RejectAnimation ? RejectAnimation.Get() : IdleAnimation.Get();
 	case EWSNPCReaction::Alarmed:
-		return AlarmedAnimation ? AlarmedAnimation.Get() : GuardedAnimation.Get();
+		return AlarmedAnimation ? AlarmedAnimation.Get() : IdleAnimation.Get();
 	default:
 		return nullptr;
 	}
@@ -715,8 +764,6 @@ void AWSInteractableActor::ApplyCharacterState(const FWSGameState& State)
 		return;
 	}
 	static_cast<void>(State);
-	// v0.4: all trust/task-driven animation switching is suspended until the
-	// character art milestone. Guarded/Gesture/Work stay loaded for rollback.
 	if (bMovementActive || bReactionActive)
 	{
 		return;
@@ -773,6 +820,45 @@ void AWSInteractableActor::SetCharacterPreviewMood(const bool bHighTrust)
 	bReactionActive = false;
 	PendingReaction = EWSNPCReaction::Neutral;
 	PlayCharacterAnimation(IdleAnimation);
+}
+
+void AWSInteractableActor::SetCharacterPreviewPerformance(const FName PerformanceName)
+{
+	if (!bCharacterPresentation)
+	{
+		return;
+	}
+	bMovementActive = false;
+	bReactionActive = false;
+	PendingReaction = EWSNPCReaction::Neutral;
+	if (PerformanceName == TEXT("walk"))
+	{
+		PlayCharacterAnimation(WalkAnimation ? WalkAnimation.Get() : IdleAnimation.Get(), true);
+	}
+	else if (PerformanceName == TEXT("acknowledge"))
+	{
+		PlayCharacterAnimation(AcknowledgeAnimation ? AcknowledgeAnimation.Get() : IdleAnimation.Get());
+	}
+	else if (PerformanceName == TEXT("consider"))
+	{
+		PlayCharacterAnimation(ConsiderAnimation ? ConsiderAnimation.Get() : IdleAnimation.Get());
+	}
+	else if (PerformanceName == TEXT("reassure"))
+	{
+		PlayCharacterAnimation(ReassureAnimation ? ReassureAnimation.Get() : IdleAnimation.Get());
+	}
+	else if (PerformanceName == TEXT("reject"))
+	{
+		PlayCharacterAnimation(RejectAnimation ? RejectAnimation.Get() : IdleAnimation.Get());
+	}
+	else if (PerformanceName == TEXT("alarmed"))
+	{
+		PlayCharacterAnimation(AlarmedAnimation ? AlarmedAnimation.Get() : IdleAnimation.Get());
+	}
+	else
+	{
+		PlayCharacterAnimation(IdleAnimation);
+	}
 }
 
 void AWSInteractableActor::SetDialogueLookAtActive(const bool bActive)

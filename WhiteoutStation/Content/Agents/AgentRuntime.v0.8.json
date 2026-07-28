@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "runtime_version": "0.7.0",
+  "runtime_version": "0.8.0",
   "provider_name": "deepseek",
   "model": "deepseek-v4-flash",
   "endpoint": "https://api.deepseek.com/chat/completions",

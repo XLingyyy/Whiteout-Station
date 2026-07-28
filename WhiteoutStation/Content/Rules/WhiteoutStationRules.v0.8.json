@@ -1,8 +1,8 @@
 {
-  "schema_version": 2,
-  "rules_version": "0.7.0",
+  "schema_version": 3,
+  "rules_version": "0.8.0",
   "display_name": "风雪站：断电前夜",
-  "design_date": "2026-07-28",
+  "design_date": "2026-07-29",
   "gameplay": {
     "starting_action_points": 8,
     "mid_crisis_threshold": 4,
@@ -40,144 +40,144 @@
     },
     "characters": {
       "player": {
-        "health": 100,
-        "temperature": 72,
-        "hunger": 65,
-        "fatigue": 65,
-        "pressure": 40,
-        "trust": 0
+        "health": 10.0,
+        "temperature": 7.2,
+        "hunger": 6.5,
+        "fatigue": 6.5,
+        "pressure": 4.0,
+        "trust": 5.0
       },
       "gu_heng": {
-        "health": 62,
-        "temperature": 66,
-        "hunger": 55,
-        "fatigue": 50,
-        "pressure": 72,
-        "trust": -15
+        "health": 6.2,
+        "temperature": 6.6,
+        "hunger": 5.5,
+        "fatigue": 5.0,
+        "pressure": 7.2,
+        "trust": 3.5
       },
       "ye_cheng": {
-        "health": 92,
-        "temperature": 70,
-        "hunger": 68,
-        "fatigue": 55,
-        "pressure": 48,
-        "trust": 10
+        "health": 9.2,
+        "temperature": 7.0,
+        "hunger": 6.8,
+        "fatigue": 5.5,
+        "pressure": 4.8,
+        "trust": 6.0
       }
     }
   },
   "balance": {
     "per_ap": {
-      "temperature": -1,
-      "hunger": -1,
-      "fatigue": -1
+      "temperature": -0.1,
+      "hunger": -0.1,
+      "fatigue": -0.1
     },
     "outdoor_per_ap": {
-      "player_temperature": -5,
-      "player_fatigue": -4
+      "player_temperature": -0.5,
+      "player_fatigue": -0.4
     },
     "actions": {
       "talk_ye_cheng": {
-        "ye_trust": 4,
-        "ye_pressure": -4
+        "ye_trust": 0.4,
+        "ye_pressure": -0.4
       },
       "talk_gu_heng_treated": {
-        "gu_trust": 12,
-        "gu_pressure": -8
+        "gu_trust": 1.2,
+        "gu_pressure": -0.8
       },
       "talk_gu_heng_evidence": {
-        "gu_trust": 8,
-        "gu_pressure": 3
+        "gu_trust": 0.8,
+        "gu_pressure": 0.3
       },
       "talk_gu_heng_unprepared": {
-        "gu_trust": -3,
-        "gu_pressure": 4
+        "gu_trust": -0.3,
+        "gu_pressure": 0.4
       },
       "dialogue_challenge": {
-        "trust": -3,
-        "pressure": 3
+        "trust": -0.3,
+        "pressure": 0.3
       },
       "dialogue_challenge_with_gu_evidence": {
-        "trust": 2,
-        "pressure": 2
+        "trust": 0.2,
+        "pressure": 0.2
       },
       "dialogue_reassure": {
-        "trust": 3,
-        "pressure": -4
+        "trust": 0.3,
+        "pressure": -0.4
       },
       "dialogue_promise": {
-        "trust": 2,
-        "pressure": -2
+        "trust": 0.2,
+        "pressure": -0.2
       },
       "heat_repair_room": {
         "fuel": -1,
-        "gu_temperature": 6,
-        "gu_pressure": -4
+        "gu_temperature": 0.6,
+        "gu_pressure": -0.4
       },
       "heat_medical_room": {
         "fuel": -1,
-        "gu_temperature": 4,
-        "ye_temperature": 3,
-        "ye_pressure": -3
+        "gu_temperature": 0.4,
+        "ye_temperature": 0.3,
+        "ye_pressure": -0.3
       },
       "food_unit": {
-        "hunger": 20
+        "hunger": 2.0
       },
-      "food_fair_gu_trust": 12,
-      "food_unfair_gu_trust": -6,
-      "food_fair_ye_trust": 5,
-      "food_unfair_ye_trust": -5,
+      "food_fair_gu_trust": 1.2,
+      "food_unfair_gu_trust": -0.6,
+      "food_fair_ye_trust": 0.5,
+      "food_unfair_ye_trust": -0.5,
       "treat_with_medicine": {
-        "gu_health": 22,
-        "gu_temperature": 5,
-        "gu_fatigue": 8,
-        "gu_pressure": -16,
-        "gu_trust": 8
+        "gu_health": 2.2,
+        "gu_temperature": 0.5,
+        "gu_fatigue": 0.8,
+        "gu_pressure": -1.6,
+        "gu_trust": 0.8
       },
       "treat_with_heat_pack": {
-        "gu_health": 12,
-        "gu_temperature": 10,
-        "gu_fatigue": 5,
-        "gu_pressure": -10,
-        "gu_trust": 5
+        "gu_health": 1.2,
+        "gu_temperature": 1.0,
+        "gu_fatigue": 0.5,
+        "gu_pressure": -1.0,
+        "gu_trust": 0.5
       },
       "dismantle_cooperative": {
-        "gu_health": -2,
-        "gu_pressure": -3
+        "gu_health": -0.2,
+        "gu_pressure": -0.3
       },
       "dismantle_solo": {
-        "player_health": -4,
-        "player_fatigue": -5,
-        "gu_trust": -3
+        "player_health": -0.4,
+        "player_fatigue": -0.5,
+        "gu_trust": -0.3
       },
       "injured_repair": {
-        "gu_health": -6,
-        "gu_temperature": -2,
-        "gu_fatigue": -6,
-        "gu_pressure": 7
+        "gu_health": -0.6,
+        "gu_temperature": -0.2,
+        "gu_fatigue": -0.6,
+        "gu_pressure": 0.7
       },
       "stable_repair": {
-        "gu_fatigue": -4,
-        "gu_pressure": -4
+        "gu_fatigue": -0.4,
+        "gu_pressure": -0.4
       },
       "forced_self_repair": {
-        "player_health": -10,
-        "player_temperature": -4,
-        "player_fatigue": -15,
-        "player_pressure": 8
+        "player_health": -1.0,
+        "player_temperature": -0.4,
+        "player_fatigue": -1.5,
+        "player_pressure": 0.8
       },
-      "mid_crisis_generator_idle_pressure": 3,
-      "mid_crisis_injured_worker_health": -2,
-      "mid_crisis_injured_worker_pressure": 4
+      "mid_crisis_generator_idle_pressure": 0.3,
+      "mid_crisis_injured_worker_health": -0.2,
+      "mid_crisis_injured_worker_pressure": 0.4
     },
     "thresholds": {
-      "critical_health": 30,
-      "critical_temperature": 30,
-      "critical_fatigue": 30,
-      "critical_pressure": 85,
-      "safe_antenna_temperature": 55,
-      "heated_repair_temperature": 45,
-      "gu_food_cooperation_trust": -8,
-      "ye_heat_pack_disclosure_trust": 10
+      "critical_health": 3.0,
+      "critical_temperature": 3.0,
+      "critical_fatigue": 3.0,
+      "critical_pressure": 8.5,
+      "safe_antenna_temperature": 5.5,
+      "heated_repair_temperature": 4.5,
+      "gu_food_cooperation_trust": 4.2,
+      "ye_heat_pack_disclosure_trust": 6.0
     }
   },
   "facts": [

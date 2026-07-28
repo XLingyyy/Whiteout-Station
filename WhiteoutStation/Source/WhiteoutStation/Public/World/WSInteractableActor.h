@@ -62,6 +62,7 @@ public:
 	void Configure(FName InActionId, const FText& InDisplayName, FLinearColor InAccentColor);
 
 	void SetCharacterPreviewMood(bool bHighTrust);
+	void SetCharacterPreviewPerformance(FName PerformanceName);
 	void SetDialogueLookAtActive(bool bActive);
 	void SetInteractionFocused(bool bFocused);
 	bool IsCharacterHotspot() const;
@@ -101,22 +102,22 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Interaction|Character")
 	TObjectPtr<UAnimSequence> WorkAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.7")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
 	TObjectPtr<UAnimSequence> WalkAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.7")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
 	TObjectPtr<UAnimSequence> AcknowledgeAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.7")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
 	TObjectPtr<UAnimSequence> ConsiderAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.7")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
 	TObjectPtr<UAnimSequence> ReassureAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.7")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
 	TObjectPtr<UAnimSequence> RejectAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.7")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
 	TObjectPtr<UAnimSequence> AlarmedAnimation;
 
 	UPROPERTY()
@@ -139,7 +140,8 @@ private:
 
 	void ConfigureCharacterPresentation();
 	void CaptureHomeTransform();
-	void ResolveV07Animations();
+	void RestoreLegacyCharacterMaterials();
+	void ResolveV08Animations();
 	void PlayCharacterAnimation(UAnimSequence* Animation, bool bLoop = true);
 	UAnimSequence* AnimationForReaction(EWSNPCReaction Reaction) const;
 	void PlayReaction(EWSNPCReaction Reaction);

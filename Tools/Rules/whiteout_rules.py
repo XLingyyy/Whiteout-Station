@@ -10,7 +10,7 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 RULES_DIRECTORY = ROOT / "WhiteoutStation" / "Content" / "Rules"
-DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.7.json"
+DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.8.json"
 
 PROMISE_CONDITIONS = frozenset(
     {"reserve_medicine", "keep_records", "heat_repair_room"}
@@ -71,9 +71,25 @@ def validate_rules(rules: dict[str, Any]) -> list[str]:
     if sum(rules.get("score", {}).get("weights", {}).values()) != 100:
         errors.append("Score weights must total 100")
     if rules.get("gameplay", {}).get("starting_action_points") != 8:
-        errors.append("v0.7 requires exactly 8 starting AP")
+        errors.append("v0.8 requires exactly 8 starting AP")
     if rules.get("gameplay", {}).get("mid_crisis_threshold") != 4:
-        errors.append("v0.7 mid-crisis threshold must be 4 AP")
+        errors.append("v0.8 mid-crisis threshold must be 4 AP")
+    for character_id, character in (
+        rules.get("initial_state", {}).get("characters", {}).items()
+    ):
+        for stat in (
+            "health",
+            "temperature",
+            "hunger",
+            "fatigue",
+            "pressure",
+            "trust",
+        ):
+            value = character.get(stat)
+            if not isinstance(value, (int, float)) or not 0 <= value <= 10:
+                errors.append(
+                    f"Character {character_id} {stat} must be within 0..10"
+                )
 
     action_set = set(action_ids)
     for route_id, route in rules.get("routes", {}).items():
@@ -109,7 +125,7 @@ def classify_rating(total: float, ratings: dict[str, list[float]]) -> str:
 
 
 class WhiteoutSimulator:
-    """Deterministic, transaction-safe implementation of the v0.1 paper rules."""
+    """Deterministic, transaction-safe implementation of the v0.8 rules."""
 
     KNOWLEDGE_ORDER = {"unknown": 0, "claimed": 1, "suspected": 2, "confirmed": 3}
 
@@ -174,8 +190,7 @@ class WhiteoutSimulator:
     def _change_character(self, character_id: str, **changes: float) -> None:
         character = self.state["characters"][character_id]
         for stat, delta in changes.items():
-            low, high = (-100, 100) if stat == "trust" else (0, 100)
-            character[stat] = self._clamp(character[stat] + delta, low, high)
+            character[stat] = self._clamp(character[stat] + delta, 0, 10)
 
     def _can_execute(self, action_id: str, params: dict[str, Any]) -> str:
         if action_id not in self.actions:
@@ -217,7 +232,7 @@ class WhiteoutSimulator:
                 character_id = (
                     "gu_heng" if action_id == "talk_gu_heng" else "ye_cheng"
                 )
-                threshold = 65 if character_id == "gu_heng" else 60
+                threshold = 6.5 if character_id == "gu_heng" else 6.0
                 reassure_available = (
                     self.state["mid_crisis_triggered"]
                     or self.state["characters"][character_id]["pressure"] >= threshold
@@ -642,13 +657,13 @@ class WhiteoutSimulator:
                 and self._knows("FACT_FORCED_RESTART_SUSPICION")
                 and self._knows("FACT_BURNT_RELAY")
             ):
-                self._change_character(character_id, pressure=2, trust=2)
+                self._change_character(character_id, pressure=0.2, trust=0.2)
             else:
-                self._change_character(character_id, pressure=3, trust=-3)
+                self._change_character(character_id, pressure=0.3, trust=-0.3)
         elif dialogue_act == "reassure":
-            self._change_character(character_id, pressure=-4, trust=3)
+            self._change_character(character_id, pressure=-0.4, trust=0.3)
         elif dialogue_act == "promise" and action_id == "talk_gu_heng":
-            self._change_character(character_id, pressure=-2, trust=2)
+            self._change_character(character_id, pressure=-0.2, trust=0.2)
 
     def _recognize_promise(self, params: dict[str, Any]) -> None:
         condition = self._promise_condition(params)
@@ -681,7 +696,10 @@ class WhiteoutSimulator:
             }[condition]
             promise["settled"] = True
             promise["fulfilled"] = fulfilled
-            self._change_character("gu_heng", trust=6 if fulfilled else -12)
+            self._change_character(
+                "gu_heng",
+                trust=0.6 if fulfilled else -1.2,
+            )
 
     def _signal_available(self) -> bool:
         tasks = self.state["tasks"]
@@ -740,7 +758,7 @@ class WhiteoutSimulator:
                 + 0.25 * character["temperature"]
                 + 0.20 * character["fatigue"]
                 + 0.15 * character["hunger"]
-            ) / 100.0
+            ) / 10.0
             people_raw += 10.0 * self._clamp(normalized, 0.0, 1.0)
 
         resources = self.state["resources"]
@@ -763,7 +781,7 @@ class WhiteoutSimulator:
             reserves_raw = fuel_raw + food_raw + medical_raw + heater_raw
 
         trust_scores = [
-            self._clamp((self.state["characters"][cid]["trust"] + 50.0) / 100.0, 0.0, 1.0)
+            self._clamp(self.state["characters"][cid]["trust"] / 10.0, 0.0, 1.0)
             for cid in ("gu_heng", "ye_cheng")
         ]
         social_raw = weights["social_stability"] * sum(trust_scores) / len(trust_scores)

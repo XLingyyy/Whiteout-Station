@@ -259,8 +259,9 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UCanvasPanel* Canvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDRoot"));
 	WidgetTree->RootWidget = Canvas;
 
-	TopPanel = MakeGlassPanel(Canvas, TEXT("TopPanel"), FAnchors(0, 0), FMargin(20, 20, 340, 96), 12.0f, WSUITokens::Color::SurfacePanel);
+	TopPanel = MakeGlassPanel(Canvas, TEXT("TopPanel"), FAnchors(0, 0), FMargin(20, 20, 340, 124), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(TopPanel, FMargin(10, 7));
+	TopPanel->SetClipping(EWidgetClipping::ClipToBounds);
 	UVerticalBox* TopBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("TopBox"));
 	TopText = MakeText(TEXT("TopText"), 16, Body, false);
 	TopText->SetFont(UIFont(16, true));
@@ -271,7 +272,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	TopBox->AddChildToVerticalBox(TopConditionText)->SetPadding(FMargin(0, 2, 0, 0));
 	SetGlassPanelContent(TopPanel, TopBox);
 
-	ObjectivePanel = MakeGlassPanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 128, 340, 440), 12.0f, WSUITokens::Color::SurfacePanel);
+	ObjectivePanel = MakeGlassPanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 156, 340, 420), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(ObjectivePanel, FMargin(12));
 	ObjectivePanel->SetClipping(EWidgetClipping::ClipToBounds);
 	UVerticalBox* ObjectiveBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ObjectiveBox"));
@@ -376,14 +377,14 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	BottomBox->AddChildToVerticalBox(PromptText)->SetPadding(FMargin(0, 0, 0, 3));
 	BottomBox->AddChildToVerticalBox(HelpText);
 
-	CrosshairText = MakeText(TEXT("CrosshairText"), 22, Body, false);
+	CrosshairText = MakeText(TEXT("CrosshairText"), 14, Body, false);
 	CrosshairText->SetText(FText::FromString(TEXT("○")));
 	CrosshairText->SetJustification(ETextJustify::Center);
-	CrosshairText->SetRenderTranslation(FVector2D(0.0f, -6.0f));
+	CrosshairText->SetRenderTranslation(FVector2D(0.0f, -3.0f));
 	UCanvasPanelSlot* CrosshairSlot = Canvas->AddChildToCanvas(CrosshairText);
 	CrosshairSlot->SetAnchors(FAnchors(0.5f, 0.5f));
 	CrosshairSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	CrosshairSlot->SetOffsets(FMargin(0.0f, 0.0f, 32.0f, 32.0f));
+	CrosshairSlot->SetOffsets(FMargin(0.0f, 0.0f, 24.0f, 24.0f));
 	FocusBorder = MakePanel(Canvas, TEXT("FocusPanel"), FAnchors(0.5f, 0.5f), FMargin(0, 44, 460, 56), FLinearColor::Transparent);
 	if (UCanvasPanelSlot* FocusSlot = Cast<UCanvasPanelSlot>(FocusBorder->Slot))
 	{
@@ -551,9 +552,9 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		TEXT("核心流程\n")
 		TEXT("修复发电机 2/2 → 前往室外校准天线 1/1 → 回控制室发送求救信号。\n")
 		TEXT("每个付费行动都会推进约 75 分钟并消耗 AP；按 F 先查看代价和条件，再按 F 确认。\n\n")
-		TEXT("人物状态\n")
+		TEXT("人物状态（所有读数均为 0—10）\n")
 		TEXT("健康：受伤与生存状况。治疗顾衡可恢复；强修和危险作业会损失健康。\n")
-		TEXT("体温：寒冷暴露。室外天线会快速降温，低于 55 无法校准；供暖与保温包能改善。\n")
+		TEXT("体温：寒冷暴露。室外天线会快速降温，低于 5.5 无法校准；供暖与保温包能改善。\n")
 		TEXT("精力：行动余力。每次行动都会下降，危险维修下降更多。\n")
 		TEXT("饱腹：食物储备效果。分配食物可提升，并会影响两名队员的信任。\n")
 		TEXT("稳定：数值越高越冷静。供暖和安抚可提升；无证据的质疑可能恶化。\n")
@@ -862,13 +863,16 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		OpeningBorder->SetContent(OpeningOverlay);
 	}
 	OpeningLines = {
-		FText::FromString(TEXT("昨夜，风暴切断了风雪站与外界的最后一条线路。")),
-		FText::FromString(TEXT("清晨八点十五分，你在警报声和结霜的玻璃旁醒来。")),
-		FText::FromString(TEXT("备用电池只能支撑到傍晚；顾衡负伤，叶澄守着所剩无几的医疗物资。")),
-		FText::FromString(TEXT("要让救援听见这里，你必须修复发电机、校准室外天线，再发出求救信号。")),
-		FText::FromString(TEXT("每项行动都会消耗时间，也会改变三个人的状态、信任与剩余物资。")),
-		FText::FromString(TEXT("先看清现场，再决定该相信谁、把什么留到最后。")),
-		FText::FromString(TEXT("风雪仍在敲打站体。你睁开了眼。"))};
+		FText::FromString(TEXT("风雪站是高纬山区的气象与通信中继站。今天，你是三人值班组的负责人。")),
+		FText::FromString(TEXT("昨夜，暴风雪切断了外部线路；清晨八点十五分，主电源又在一次异常重启后停机。")),
+		FText::FromString(TEXT("备用电池只能撑到傍晚。届时供暖、照明和无线电会一起停止。")),
+		FText::FromString(TEXT("顾衡是站里唯一懂发电机和天线控制系统的工程师。他的右手受伤，也对停机原因有所隐瞒。")),
+		FText::FromString(TEXT("没有顾衡的判断和配合，你很难安全修好发电机、找到可用继电器并恢复天线。")),
+		FText::FromString(TEXT("叶澄是值班医生，保管仅剩的药品和保温物资。她必须决定先救谁、先给哪个房间供暖。")),
+		FText::FromString(TEXT("没有叶澄的诊断和物资分配，顾衡可能无法维修，三个人的身体状况也会迅速恶化。")),
+		FText::FromString(TEXT("两人对责任、风险和资源顺序意见不一。你需要调查现场，再用证据、帮助或承诺争取合作。")),
+		FText::FromString(TEXT("你只有 8 点行动力。修复发电机、校准室外天线、发出求救信号，救援才能找到这里。")),
+		FText::FromString(TEXT("每次行动都会推进时间并改变状态、信任与物资。风雪敲打站体——你在控制室睁开了眼。"))};
 	OpeningElapsed = 0.0f;
 	OpeningPhase = EWSOpeningPhase::FadingInLine;
 	ApplyOpeningStage(0);
@@ -1296,6 +1300,21 @@ void UWhiteoutHUDWidget::SetLayer(const EWSUILayer Layer)
 	{
 		CrosshairText->SetVisibility(bHideBaseHud ? ESlateVisibility::Hidden : ESlateVisibility::Visible);
 	}
+	ResetMouseToViewportCenter();
+}
+
+void UWhiteoutHUDWidget::ResetMouseToViewportCenter()
+{
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		int32 ViewportWidth = 0;
+		int32 ViewportHeight = 0;
+		PlayerController->GetViewportSize(ViewportWidth, ViewportHeight);
+		if (ViewportWidth > 0 && ViewportHeight > 0)
+		{
+			PlayerController->SetMouseLocation(ViewportWidth / 2, ViewportHeight / 2);
+		}
+	}
 }
 
 void UWhiteoutHUDWidget::SetEvidenceFilter(const int32 FilterIndex)
@@ -1407,11 +1426,11 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 				CrewCardTexts[CharacterIndex]->SetText(FText::FromString(Card));
 			}
 			const TArray<float> Ratios = {
-				Character->Health / 100.0f,
-				Character->Temperature / 100.0f,
-				Character->Fatigue / 100.0f,
-				Character->Hunger / 100.0f,
-				1.0f - Character->Pressure / 100.0f};
+				Character->Health / 10.0f,
+				Character->Temperature / 10.0f,
+				Character->Fatigue / 10.0f,
+				Character->Hunger / 10.0f,
+				1.0f - Character->Pressure / 10.0f};
 			for (int32 StatusIndex = 0; StatusIndex < Ratios.Num(); ++StatusIndex)
 			{
 				const int32 FlatIndex = CharacterIndex * Ratios.Num() + StatusIndex;
@@ -1422,7 +1441,7 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 			}
 			if (CrewTrustBars.IsValidIndex(CharacterIndex) && CrewTrustBars[CharacterIndex])
 			{
-				CrewTrustBars[CharacterIndex]->SetPercent(FMath::Clamp((Character->Trust + 100.0f) / 200.0f, 0.0f, 1.0f));
+				CrewTrustBars[CharacterIndex]->SetPercent(FMath::Clamp(Character->Trust / 10.0f, 0.0f, 1.0f));
 			}
 		}
 	}
@@ -1488,7 +1507,7 @@ FString UWhiteoutHUDWidget::BuildTutorialHint(const FWSGameState& State) const
 	}
 	if (State.Tasks.AntennaCalibration < 1)
 	{
-		return TEXT("发电机已恢复。确认玩家体温不低于 55，再到室外天线区校准；该行动消耗 2 AP。");
+		return TEXT("发电机已恢复。确认玩家体温不低于 5.5，再到室外天线区校准；该行动消耗 2 AP。");
 	}
 	if (!State.Tasks.bSignalSent)
 	{
@@ -1511,16 +1530,16 @@ void UWhiteoutHUDWidget::UpdateGuideContext(const FWSGameState& State)
 			return FString();
 		}
 		FString Result = FString::Printf(
-			TEXT("%s　健康 %.0f｜体温 %.0f｜精力 %.0f｜饱腹 %.0f｜稳定 %.0f"),
+			TEXT("%s　健康 %.1f｜体温 %.1f｜精力 %.1f｜饱腹 %.1f｜稳定 %.1f"),
 			*FWSPresentationText::CharacterName(CharacterId).ToString(),
 			Character->Health,
 			Character->Temperature,
 			Character->Fatigue,
 			Character->Hunger,
-			100.0f - Character->Pressure);
+			10.0f - Character->Pressure);
 		if (CharacterId != EWSCharacterId::Player)
 		{
-			Result += FString::Printf(TEXT("｜信任 %.0f"), Character->Trust);
+			Result += FString::Printf(TEXT("｜信任 %.1f"), Character->Trust);
 		}
 		return Result;
 	};
@@ -1543,9 +1562,9 @@ void UWhiteoutHUDWidget::UpdateDialogueCard(const FWSGameState& State)
 	const EWSCharacterId CharacterId = bGuHeng ? EWSCharacterId::GuHeng : EWSCharacterId::YeCheng;
 	const FWSCharacterState* Character = State.Characters.Find(CharacterId);
 	const FWSCharacterState SafeState = Character ? *Character : FWSCharacterState();
-	const FString Relationship = SafeState.Trust >= 12.0f ? TEXT("信任")
-		: SafeState.Trust >= 0.0f ? TEXT("可合作")
-		: SafeState.Trust >= -8.0f ? TEXT("有所保留") : TEXT("戒备");
+	const FString Relationship = SafeState.Trust >= 6.2f ? TEXT("信任")
+		: SafeState.Trust >= 5.0f ? TEXT("可合作")
+		: SafeState.Trust >= 4.2f ? TEXT("有所保留") : TEXT("戒备");
 	FString Stance;
 	if (bGuHeng)
 	{
@@ -1564,15 +1583,15 @@ void UWhiteoutHUDWidget::UpdateDialogueCard(const FWSGameState& State)
 		? FWSPresentationText::UI(TEXT("character_gu_heng"), TEXT("顾衡｜工程师｜41 岁")).ToString()
 		: FWSPresentationText::UI(TEXT("character_ye_cheng"), TEXT("叶澄｜医生｜31 岁")).ToString();
 	DialogueNPCText->SetText(FText::FromString(FString::Printf(
-		TEXT("%s\n\n关系　%s（信任 %.0f）\n立场　%s\n\n状态概览\n健康 %.0f　体温 %.0f\n压力 %.0f　信任 %.0f"),
+		TEXT("%s\n\n关系　%s（信任 %.1f / 10）\n立场　%s\n\n状态概览\n健康 %.1f　体温 %.1f\n压力 %.1f　信任 %.1f"),
 		*Identity, *Relationship, SafeState.Trust, *Stance,
 		SafeState.Health, SafeState.Temperature, SafeState.Pressure, SafeState.Trust)));
 	if (DialogueNPCBars.Num() >= 4)
 	{
-		DialogueNPCBars[0]->SetPercent(ScoreRatio(SafeState.Health, 100.0f));
-		DialogueNPCBars[1]->SetPercent(ScoreRatio(SafeState.Temperature, 100.0f));
-		DialogueNPCBars[2]->SetPercent(ScoreRatio(SafeState.Pressure, 100.0f));
-		DialogueNPCBars[3]->SetPercent(FMath::Clamp((SafeState.Trust + 20.0f) / 40.0f, 0.0f, 1.0f));
+		DialogueNPCBars[0]->SetPercent(ScoreRatio(SafeState.Health, 10.0f));
+		DialogueNPCBars[1]->SetPercent(ScoreRatio(SafeState.Temperature, 10.0f));
+		DialogueNPCBars[2]->SetPercent(ScoreRatio(SafeState.Pressure, 10.0f));
+		DialogueNPCBars[3]->SetPercent(ScoreRatio(SafeState.Trust, 10.0f));
 	}
 }
 
@@ -1942,9 +1961,9 @@ void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSA
 	if (CrosshairText)
 	{
 		CrosshairText->SetText(FText::FromString(TEXT("☝")));
-		CrosshairText->SetFont(UIFont(26, true));
+		CrosshairText->SetFont(UIFont(20, true));
 		CrosshairText->SetColorAndOpacity(FSlateColor(Amber));
-		CrosshairText->SetRenderTranslation(FVector2D(0.0f, -10.0f));
+		CrosshairText->SetRenderTranslation(FVector2D(0.0f, -7.0f));
 		CrosshairText->SetVisibility(ESlateVisibility::Visible);
 	}
 	if (FocusBorder && FocusText && FocusAPText && FocusKeyText)
@@ -1977,9 +1996,9 @@ void UWhiteoutHUDWidget::ClearInteractionFocus()
 	if (CrosshairText)
 	{
 		CrosshairText->SetText(FText::FromString(TEXT("○")));
-		CrosshairText->SetFont(UIFont(22, false));
+		CrosshairText->SetFont(UIFont(14, false));
 		CrosshairText->SetColorAndOpacity(FSlateColor(Body));
-		CrosshairText->SetRenderTranslation(FVector2D(0.0f, -6.0f));
+		CrosshairText->SetRenderTranslation(FVector2D(0.0f, -3.0f));
 		CrosshairText->SetVisibility(CurrentLayer == EWSUILayer::Game || CurrentLayer == EWSUILayer::Preview
 			? ESlateVisibility::Visible
 			: ESlateVisibility::Hidden);
@@ -2148,6 +2167,7 @@ void UWhiteoutHUDWidget::ToggleEvidence()
 		InputMode.SetWidgetToFocus(TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 		SetKeyboardFocus();
 	}
 }
@@ -2161,6 +2181,7 @@ void UWhiteoutHUDWidget::CloseEvidence()
 	{
 		PlayerController->SetShowMouseCursor(false);
 		PlayerController->SetInputMode(FInputModeGameOnly());
+		ResetMouseToViewportCenter();
 	}
 }
 
@@ -2212,6 +2233,7 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bV
 		InputMode.SetWidgetToFocus(DialogueWheelPanel->TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 	}
 }
 
@@ -2687,6 +2709,7 @@ void UWhiteoutHUDWidget::ShowSettingsForCapture()
 			InputMode.SetWidgetToFocus(PauseDefaultButton ? PauseDefaultButton->TakeWidget() : PauseBorder->TakeWidget());
 			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 			PlayerController->SetInputMode(InputMode);
+			ResetMouseToViewportCenter();
 		}
 	}
 	RefreshSettingsUI();
@@ -3177,6 +3200,7 @@ void UWhiteoutHUDWidget::ToggleGuide()
 		InputMode.SetWidgetToFocus(TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 		SetKeyboardFocus();
 	}
 }
@@ -3192,6 +3216,7 @@ void UWhiteoutHUDWidget::CloseGuide()
 	{
 		PlayerController->SetShowMouseCursor(false);
 		PlayerController->SetInputMode(FInputModeGameOnly());
+		ResetMouseToViewportCenter();
 	}
 }
 
@@ -3274,6 +3299,7 @@ void UWhiteoutHUDWidget::TogglePauseMenu()
 		InputMode.SetWidgetToFocus(PauseDefaultButton ? PauseDefaultButton->TakeWidget() : PauseBorder->TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 	}
 }
 
@@ -3294,6 +3320,7 @@ void UWhiteoutHUDWidget::ResumeGame()
 		PlayerController->SetPause(false);
 		PlayerController->bShowMouseCursor = false;
 		PlayerController->SetInputMode(FInputModeGameOnly());
+		ResetMouseToViewportCenter();
 	}
 }
 
@@ -3330,7 +3357,7 @@ void UWhiteoutHUDWidget::LoadGame()
 		const bool bLoaded = StateSubsystem->LoadSnapshot();
 		SystemMessage = bLoaded
 			? TEXT("已恢复最近保存的本轮状态。")
-			: TEXT("没有可读取的 v0.7 存档。");
+			: TEXT("没有可读取的 v0.8 或兼容旧版存档。");
 		PlayUISound(bLoaded ? UIConfirmSound : UIRejectSound, 0.68f);
 		if (bLoaded)
 		{
@@ -3357,6 +3384,7 @@ void UWhiteoutHUDWidget::OpenSettings()
 		InputMode.SetWidgetToFocus(FOVSlider ? FOVSlider->TakeWidget() : SettingsBorder->TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 	}
 	PlayUISound(UIConfirmSound, 0.62f);
 }
@@ -3378,6 +3406,7 @@ void UWhiteoutHUDWidget::CloseSettings()
 		InputMode.SetWidgetToFocus(PauseDefaultButton ? PauseDefaultButton->TakeWidget() : PauseBorder->TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 	}
 	PlayUISound(UIHoverSound, 0.48f);
 }

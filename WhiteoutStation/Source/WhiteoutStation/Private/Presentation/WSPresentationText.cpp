@@ -269,17 +269,17 @@ FText FWSPresentationText::DialogueOpening(const EWSCharacterId CharacterId, con
 
 FText FWSPresentationText::ConditionLevel(const float Value)
 {
-	if (Value >= 70.0f) return TableText(TEXT("level_stable"), TEXT("稳定"));
-	if (Value >= 45.0f) return TableText(TEXT("level_strained"), TEXT("吃紧"));
-	if (Value >= 30.0f) return TableText(TEXT("level_danger"), TEXT("危险"));
+	if (Value >= 7.0f) return TableText(TEXT("level_stable"), TEXT("稳定"));
+	if (Value >= 4.5f) return TableText(TEXT("level_strained"), TEXT("吃紧"));
+	if (Value >= 3.0f) return TableText(TEXT("level_danger"), TEXT("危险"));
 	return TableText(TEXT("level_critical"), TEXT("危急"));
 }
 
 FText FWSPresentationText::TrustLevel(const float Value)
 {
-	if (Value >= 35.0f) return TableText(TEXT("trust_trusted"), TEXT("信任"));
-	if (Value >= 0.0f) return TableText(TEXT("trust_neutral"), TEXT("中立"));
-	if (Value >= -35.0f) return TableText(TEXT("trust_guarded"), TEXT("戒备"));
+	if (Value >= 7.5f) return TableText(TEXT("trust_trusted"), TEXT("信任"));
+	if (Value >= 5.0f) return TableText(TEXT("trust_neutral"), TEXT("中立"));
+	if (Value >= 2.5f) return TableText(TEXT("trust_guarded"), TEXT("戒备"));
 	return TableText(TEXT("trust_hostile"), TEXT("敌对"));
 }
 

@@ -37,7 +37,7 @@ namespace WhiteoutRuleTests
 		Test.TestTrue(
 			TEXT("Rules JSON loads"),
 			Engine.LoadConfig(
-				FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.7.json"), Error));
+				FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.8.json"), Error));
 		if (!Error.IsEmpty())
 		{
 			Test.AddError(Error);
@@ -74,8 +74,8 @@ bool FWhiteoutAPFlowTest::RunTest(const FString& Parameters)
 
 	Engine.Reset();
 	TestTrue(
-		TEXT("Safe antenna temperature loads from v0.7 rules"),
-		FMath::IsNearlyEqual(Engine.GetConfig().SafeAntennaTemperature, 55.0f));
+		TEXT("Safe antenna temperature loads from v0.8 rules"),
+		FMath::IsNearlyEqual(Engine.GetConfig().SafeAntennaTemperature, 5.5f));
 	FWSGameState& ColdState = Engine.GetMutableStateForTesting();
 	ColdState.Tasks.GeneratorProgress = Engine.GetConfig().GeneratorRequired;
 	ColdState.Characters.FindChecked(EWSCharacterId::Player).Temperature =

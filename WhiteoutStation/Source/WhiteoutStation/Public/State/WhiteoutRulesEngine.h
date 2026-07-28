@@ -10,11 +10,11 @@ struct FWhiteoutRuleConfig
 	int32 GeneratorRequired = 2;
 	int32 AntennaRequired = 1;
 	int32 ModelCallHardLimit = 10;
-	float SafeAntennaTemperature = 55.0f;
-	float CriticalHealth = 30.0f;
-	float CriticalTemperature = 30.0f;
-	float CriticalFatigue = 30.0f;
-	float CriticalPressure = 85.0f;
+	float SafeAntennaTemperature = 5.5f;
+	float CriticalHealth = 3.0f;
+	float CriticalTemperature = 3.0f;
+	float CriticalFatigue = 3.0f;
+	float CriticalPressure = 8.5f;
 	FWSGameState InitialState;
 };
 

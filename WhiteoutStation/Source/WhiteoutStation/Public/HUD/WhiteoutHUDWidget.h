@@ -480,6 +480,7 @@ private:
 	void UpdateFromState(const FWSGameState& State);
 	void UpdateEvidence(const FWSGameState& State);
 	void SetLayer(EWSUILayer Layer);
+	void ResetMouseToViewportCenter();
 	void SetBaseHudHidden(bool bHidden);
 	void SetEvidenceFilter(int32 FilterIndex);
 	void ShowEvidenceDetail(const FString& DetailCopy);

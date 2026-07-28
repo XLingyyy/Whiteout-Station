@@ -69,7 +69,8 @@ public:
 
 private:
 	static const FString SaveSlot;
-	static const FString LegacySaveSlot;
+	static const FString LegacyV07SaveSlot;
+	static const FString LegacyV06SaveSlot;
 	FWhiteoutRulesEngine RulesEngine;
 
 	UPROPERTY()
