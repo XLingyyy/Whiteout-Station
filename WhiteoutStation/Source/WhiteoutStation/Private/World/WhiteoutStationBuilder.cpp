@@ -25,6 +25,7 @@
 #include "Serialization/JsonWriter.h"
 #include "State/WindStationStateSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
+#include "WorldCollision.h"
 #include "World/WSInteractableActor.h"
 #include "World/WhiteoutSnowField.h"
 
@@ -53,9 +54,69 @@ void AWhiteoutStationBuilder::BeginPlay()
 	{
 		BuildStation();
 	}
-	else if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutSceneAudit")))
+	else
 	{
-		GetWorldTimerManager().SetTimer(SceneAuditTimer, this, &AWhiteoutStationBuilder::AuditStationLayout, 1.0f, false);
+		if (!RuntimeHotspots.ContainsByPredicate(
+			[](const TObjectPtr<AWSInteractableActor>& Hotspot)
+			{
+				return Hotspot
+					&& Hotspot->ActionId == TEXT("distribute_food");
+		}))
+		{
+			FVector FoodStationLocation(900.0f, 760.0f, 70.0f);
+			FVector KitchenAnchor = FoodStationLocation;
+			for (const TObjectPtr<AWSInteractableActor>& Hotspot : RuntimeHotspots)
+			{
+				if (Hotspot
+					&& Hotspot->ActionId == TEXT("dismantle_kitchen_heater"))
+				{
+					KitchenAnchor = Hotspot->GetActorLocation();
+					break;
+				}
+			}
+			const TArray<FVector> CandidateOffsets = {
+				FVector(-180.0f, -180.0f, 0.0f),
+				FVector(-260.0f, -120.0f, 0.0f),
+				FVector(-120.0f, -260.0f, 0.0f),
+				FVector(180.0f, -180.0f, 0.0f),
+				FVector(-300.0f, -260.0f, 0.0f),
+				FVector(260.0f, -120.0f, 0.0f),
+			};
+			for (const FVector& Offset : CandidateOffsets)
+			{
+				FVector Candidate = KitchenAnchor + Offset;
+				Candidate.Z = 70.0f;
+				const FVector OccupancyCenter(
+					Candidate.X,
+					Candidate.Y,
+					90.0f);
+				if (!GetWorld()->OverlapBlockingTestByChannel(
+					OccupancyCenter,
+					FQuat::Identity,
+					ECC_Visibility,
+					FCollisionShape::MakeBox(
+						FVector(55.0f, 55.0f, 85.0f))))
+				{
+					FoodStationLocation = Candidate;
+					break;
+				}
+			}
+			SpawnHotspot(
+				TEXT("distribute_food"),
+				TEXT("口粮台"),
+				FoodStationLocation,
+				FLinearColor(0.9f, 0.65f, 0.12f),
+				FVector(0.72f));
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("WhiteoutStation: restored missing editable-layout hotspot distribute_food at runtime (%s)"),
+				*FoodStationLocation.ToCompactString());
+		}
+		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutSceneAudit")))
+		{
+			GetWorldTimerManager().SetTimer(SceneAuditTimer, this, &AWhiteoutStationBuilder::AuditStationLayout, 1.0f, false);
+		}
 	}
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{

@@ -762,13 +762,14 @@ void AWhiteoutGameMode::SetupInputSmokeTarget(const FString& ActionId)
 				0.0f);
 			FVector CandidateLocation =
 				BoundsOrigin + Direction * CandidateDistance;
-			CandidateLocation.Z = OriginalPawnLocation.Z;
-			if (!GetWorld()->FindTeleportSpot(
+			CandidateLocation.Z = OriginalPawnLocation.Z + 8.0f;
+			FVector AdjustedCandidateLocation = CandidateLocation;
+			if (GetWorld()->FindTeleportSpot(
 				Pawn,
-				CandidateLocation,
+				AdjustedCandidateLocation,
 				Pawn->GetActorRotation()))
 			{
-				continue;
+				CandidateLocation = AdjustedCandidateLocation;
 			}
 			const FVector CandidateCameraLocation =
 				CandidateLocation + FVector(0.0f, 0.0f, 64.0f);

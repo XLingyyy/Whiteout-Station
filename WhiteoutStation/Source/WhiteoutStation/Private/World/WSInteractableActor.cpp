@@ -5,6 +5,7 @@
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimInstance.h"
 #include "CollisionQueryParams.h"
+#include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/MeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -32,6 +33,18 @@ AWSInteractableActor::AWSInteractableActor()
 	Mesh->SetupAttachment(SceneRoot);
 	Mesh->SetCollisionProfileName(TEXT("BlockAll"));
 	Mesh->SetGenerateOverlapEvents(false);
+	InteractionCollision = CreateDefaultSubobject<UBoxComponent>(
+		TEXT("InteractionCollision"));
+	InteractionCollision->SetupAttachment(SceneRoot);
+	InteractionCollision->SetBoxExtent(FVector(65.0f, 65.0f, 90.0f));
+	InteractionCollision->SetRelativeLocation(FVector(0.0f, 0.0f, 90.0f));
+	InteractionCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	InteractionCollision->SetCollisionObjectType(ECC_WorldDynamic);
+	InteractionCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
+	InteractionCollision->SetCollisionResponseToChannel(
+		ECC_Visibility,
+		ECR_Block);
+	InteractionCollision->SetGenerateOverlapEvents(false);
 	HeadMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeadMesh"));
 	HeadMesh->SetupAttachment(SceneRoot);
 	HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);

@@ -6,6 +6,7 @@
 #include "WSInteractableActor.generated.h"
 
 class UStaticMeshComponent;
+class UBoxComponent;
 class USceneComponent;
 class USkeletalMeshComponent;
 class UWSLookAtSkeletalMeshComponent;
@@ -29,6 +30,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
 	TObjectPtr<UStaticMeshComponent> Mesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+	TObjectPtr<UBoxComponent> InteractionCollision;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
 	TObjectPtr<UStaticMeshComponent> HeadMesh;
