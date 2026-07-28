@@ -11,13 +11,14 @@
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 
-const FString UWindStationStateSubsystem::SaveSlot(TEXT("WhiteoutStation_Autosave_v0_6"));
+const FString UWindStationStateSubsystem::SaveSlot(TEXT("WhiteoutStation_Autosave_v0_7"));
+const FString UWindStationStateSubsystem::LegacySaveSlot(TEXT("WhiteoutStation_Autosave_v0_6"));
 
 void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	FString Error;
-	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.6.json");
+	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.7.json");
 	if (!RulesEngine.LoadConfig(ConfigPath, Error))
 	{
 		UE_LOG(LogTemp, Error, TEXT("Whiteout rules config fallback: %s"), *Error);
@@ -106,7 +107,13 @@ bool UWindStationStateSubsystem::SaveSnapshot()
 bool UWindStationStateSubsystem::LoadSnapshot()
 {
 	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlot, 0));
-	if (!Save || Save->SaveVersion != TEXT("0.6.0"))
+	bool bMigratingV06 = false;
+	if (!Save)
+	{
+		Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(LegacySaveSlot, 0));
+		bMigratingV06 = Save != nullptr;
+	}
+	if (!Save || (Save->SaveVersion != TEXT("0.7.0") && Save->SaveVersion != TEXT("0.6.0")))
 	{
 		return false;
 	}
@@ -116,13 +123,18 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	}
 	RulesEngine.SetState(Save->State);
 	LatestDialogue = FWSAgentReply();
+	if (bMigratingV06 || Save->SaveVersion == TEXT("0.6.0"))
+	{
+		SaveSnapshot();
+	}
 	BroadcastState();
 	return true;
 }
 
 bool UWindStationStateSubsystem::HasSnapshot() const
 {
-	return UGameplayStatics::DoesSaveGameExist(SaveSlot, 0);
+	return UGameplayStatics::DoesSaveGameExist(SaveSlot, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlot, 0);
 }
 
 bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
@@ -155,7 +167,7 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 	}
 
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetStringField(TEXT("rules_version"), TEXT("0.6.0"));
+	Root->SetStringField(TEXT("rules_version"), TEXT("0.7.0"));
 	Root->SetArrayField(TEXT("events"), Events);
 	const FWSGameState& Snapshot = RulesEngine.GetState();
 	Root->SetNumberField(TEXT("remaining_ap"), Snapshot.ActionPoints);

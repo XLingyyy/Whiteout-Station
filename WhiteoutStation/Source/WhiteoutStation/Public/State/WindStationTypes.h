@@ -67,6 +67,26 @@ enum class EWSResponseType : uint8
 };
 
 UENUM(BlueprintType)
+enum class EWSNPCMovementIntent : uint8
+{
+	Stay,
+	StepCloser,
+	StepBack,
+	ReturnToPost
+};
+
+UENUM(BlueprintType)
+enum class EWSNPCReaction : uint8
+{
+	Neutral,
+	Acknowledge,
+	Consider,
+	Reassure,
+	Reject,
+	Alarmed
+};
+
+UENUM(BlueprintType)
 enum class EWSReasonCode : uint8
 {
 	Ok,
@@ -486,6 +506,12 @@ struct FWSAgentReply
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FName> ReferencedFactIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSNPCMovementIntent MovementIntent = EWSNPCMovementIntent::Stay;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSNPCReaction Reaction = EWSNPCReaction::Neutral;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bAccepted = true;

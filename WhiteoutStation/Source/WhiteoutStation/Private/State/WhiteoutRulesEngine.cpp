@@ -150,7 +150,7 @@ bool FWhiteoutRulesEngine::LoadConfig(const FString& ConfigPath, FString& OutErr
 
 	if (Config.StartingActionPoints != 8 || Config.MidCrisisThreshold != 4)
 	{
-		OutError = TEXT("v0.6 requires 8 starting AP and a 4 AP crisis threshold");
+		OutError = TEXT("v0.7 requires 8 starting AP and a 4 AP crisis threshold");
 		return false;
 	}
 

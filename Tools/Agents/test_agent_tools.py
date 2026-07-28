@@ -28,7 +28,7 @@ from agent_contract import (
     make_completion_envelope,
     validate_completion,
 )
-from mock_server import MockConfig, create_server
+from mock_server import MockConfig, build_mock_content, create_server
 from probe_deepseek import (
     ACTION_ID,
     build_http_request,
@@ -43,6 +43,8 @@ def valid_content(action_id: str = ACTION_ID) -> dict[str, object]:
         "emotion": "focused",
         "used_action_id": action_id,
         "referenced_fact_ids": [],
+        "movement_intent": "stay",
+        "reaction_action": "neutral",
     }
 
 
@@ -209,6 +211,8 @@ def test_valid_completion_is_accepted() -> None:
     assert response.npc_line == "联调响应正常。"
     assert response.used_action_id == ACTION_ID
     assert response.referenced_fact_ids == ()
+    assert response.movement_intent == "stay"
+    assert response.reaction_action == "neutral"
 
 
 @pytest.mark.parametrize(
@@ -430,6 +434,42 @@ def _stop_mock(server: object, thread: threading.Thread) -> None:
 
 def test_both_mock_entrypoints_share_the_same_server() -> None:
     assert mock_agent_server.run_from_cli is mock_chat_proxy.run_from_cli
+
+
+@pytest.mark.parametrize(
+    ("player_said", "movement", "reaction"),
+    (
+        ("请过来一点", "step_closer", "acknowledge"),
+        ("退后，离我远点", "step_back", "reject"),
+        ("回原位去", "return_to_post", "consider"),
+        ("别怕，先冷静", "stay", "reassure"),
+        ("你一直在隐瞒什么？", "step_back", "alarmed"),
+    ),
+)
+def test_mock_selects_constrained_performance(
+    player_said: str,
+    movement: str,
+    reaction: str,
+) -> None:
+    context = {
+        "action_id": "talk_gu_heng",
+        "emotion": "focused",
+        "preset_utterance": "我听见了。",
+        "preset_movement_intent": "stay",
+        "preset_reaction_action": "neutral",
+        "player_said": player_said,
+    }
+    kind, content = build_mock_content(
+        {
+            "messages": [
+                {"role": "system", "content": "Return json dialogue."},
+                {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
+            ]
+        }
+    )
+    assert kind == "npc_line"
+    assert content["movement_intent"] == movement
+    assert content["reaction_action"] == reaction
 
 
 def test_mock_is_openai_compatible_and_drops_authorization(

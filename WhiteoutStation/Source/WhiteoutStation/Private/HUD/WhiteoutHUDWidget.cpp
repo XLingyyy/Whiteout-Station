@@ -271,17 +271,22 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	TopBox->AddChildToVerticalBox(TopConditionText)->SetPadding(FMargin(0, 2, 0, 0));
 	SetGlassPanelContent(TopPanel, TopBox);
 
-	ObjectivePanel = MakeGlassPanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 128, 320, 408), 12.0f, WSUITokens::Color::SurfacePanel);
+	ObjectivePanel = MakeGlassPanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 128, 340, 440), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(ObjectivePanel, FMargin(12));
+	ObjectivePanel->SetClipping(EWidgetClipping::ClipToBounds);
 	UVerticalBox* ObjectiveBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ObjectiveBox"));
-	ObjectiveText = MakeText(TEXT("ObjectiveText"), 13, Body, false);
+	ObjectiveText = MakeText(TEXT("ObjectiveText"), 13, Body, true);
+	ObjectiveText->SetWrapTextAt(316.0f);
 	ObjectiveText->SetLineHeightPercentage(1.25f);
 	ObjectiveBox->AddChildToVerticalBox(ObjectiveText);
 	TutorialTitleText = MakeText(TEXT("TutorialTitleText"), 13, Cyan, false);
 	TutorialTitleText->SetFont(UIFont(13, true));
 	TutorialTitleText->SetText(FText::FromString(TEXT("当前建议")));
+	TutorialTitleText->SetAutoWrapText(true);
+	TutorialTitleText->SetWrapTextAt(316.0f);
 	ObjectiveBox->AddChildToVerticalBox(TutorialTitleText)->SetPadding(FMargin(0, 12, 0, 3));
 	TutorialText = MakeText(TEXT("TutorialText"), 12, WSUITokens::Color::TextCinematicWarm);
+	TutorialText->SetWrapTextAt(316.0f);
 	TutorialText->SetLineHeightPercentage(1.2f);
 	ObjectiveBox->AddChildToVerticalBox(TutorialText);
 	SetGlassPanelContent(ObjectivePanel, ObjectiveBox);
@@ -371,28 +376,32 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	BottomBox->AddChildToVerticalBox(PromptText)->SetPadding(FMargin(0, 0, 0, 3));
 	BottomBox->AddChildToVerticalBox(HelpText);
 
-	CrosshairText = MakeText(TEXT("CrosshairText"), 28, Body, false);
-	CrosshairText->SetText(FText::FromString(TEXT("+")));
+	CrosshairText = MakeText(TEXT("CrosshairText"), 22, Body, false);
+	CrosshairText->SetText(FText::FromString(TEXT("○")));
 	CrosshairText->SetJustification(ETextJustify::Center);
+	CrosshairText->SetRenderTranslation(FVector2D(0.0f, -6.0f));
 	UCanvasPanelSlot* CrosshairSlot = Canvas->AddChildToCanvas(CrosshairText);
 	CrosshairSlot->SetAnchors(FAnchors(0.5f, 0.5f));
 	CrosshairSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	CrosshairSlot->SetOffsets(FMargin(-22.0f, -22.0f, 44.0f, 44.0f));
-	FocusBorder = MakePanel(Canvas, TEXT("FocusPanel"), FAnchors(0.5f, 0.5f), FMargin(-270, 42, 540, 78), FLinearColor::Transparent);
-	FocusBorder->SetPadding(FMargin(8));
+	CrosshairSlot->SetOffsets(FMargin(0.0f, 0.0f, 32.0f, 32.0f));
+	FocusBorder = MakePanel(Canvas, TEXT("FocusPanel"), FAnchors(0.5f, 0.5f), FMargin(0, 44, 460, 56), FLinearColor::Transparent);
+	if (UCanvasPanelSlot* FocusSlot = Cast<UCanvasPanelSlot>(FocusBorder->Slot))
+	{
+		FocusSlot->SetAlignment(FVector2D(0.5f, 0.0f));
+	}
+	FocusBorder->SetPadding(FMargin(0));
+	FocusBorder->SetClipping(EWidgetClipping::ClipToBounds);
 	UOverlay* FocusOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("FocusOverlay"));
 	if (InkBrushTexture)
 	{
 		UImage* FocusBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("FocusBrush"));
 		FocusBrush->SetBrushFromTexture(InkBrushTexture, true);
+		FocusBrush->SetDesiredSizeOverride(FVector2D(460.0f, 56.0f));
 		FocusBrush->SetColorAndOpacity(FLinearColor(0.015f, 0.015f, 0.015f, 0.92f));
-		FocusOverlay->AddChildToOverlay(FocusBrush);
+		UOverlaySlot* FocusBrushSlot = FocusOverlay->AddChildToOverlay(FocusBrush);
+		FocusBrushSlot->SetHorizontalAlignment(HAlign_Fill);
+		FocusBrushSlot->SetVerticalAlignment(VAlign_Fill);
 	}
-	UVerticalBox* FocusContent = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FocusContent"));
-	UTextBlock* FocusMarker = MakeText(TEXT("FocusMarker"), 11, Amber, false);
-	FocusMarker->SetText(FText::FromString(TEXT("◆")));
-	FocusMarker->SetJustification(ETextJustify::Center);
-	FocusContent->AddChildToVerticalBox(FocusMarker);
 	UHorizontalBox* FocusLine = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FocusLine"));
 	FocusText = MakeText(TEXT("FocusText"), 15, Body, false);
 	FocusText->SetJustification(ETextJustify::Center);
@@ -403,9 +412,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	FocusKeyText = MakeText(TEXT("FocusKeyText"), 15, Body, false);
 	FocusKeyText->SetJustification(ETextJustify::Center);
 	FocusLine->AddChildToHorizontalBox(FocusKeyText)->SetVerticalAlignment(VAlign_Center);
-	UVerticalBoxSlot* FocusLineSlot = FocusContent->AddChildToVerticalBox(FocusLine);
-	FocusLineSlot->SetHorizontalAlignment(HAlign_Center);
-	UOverlaySlot* FocusContentSlot = FocusOverlay->AddChildToOverlay(FocusContent);
+	UOverlaySlot* FocusContentSlot = FocusOverlay->AddChildToOverlay(FocusLine);
 	FocusContentSlot->SetHorizontalAlignment(HAlign_Center);
 	FocusContentSlot->SetVerticalAlignment(VAlign_Center);
 	FocusBorder->SetContent(FocusOverlay);
@@ -1934,26 +1941,28 @@ void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSA
 	}
 	if (CrosshairText)
 	{
-		CrosshairText->SetText(FText::FromString(TEXT("+")));
-		CrosshairText->SetFont(UIFont(28, true));
-		CrosshairText->SetColorAndOpacity(FSlateColor(Body));
+		CrosshairText->SetText(FText::FromString(TEXT("☝")));
+		CrosshairText->SetFont(UIFont(26, true));
+		CrosshairText->SetColorAndOpacity(FSlateColor(Amber));
+		CrosshairText->SetRenderTranslation(FVector2D(0.0f, -10.0f));
+		CrosshairText->SetVisibility(ESlateVisibility::Visible);
 	}
 	if (FocusBorder && FocusText && FocusAPText && FocusKeyText)
 	{
 		FocusBorder->SetVisibility(ESlateVisibility::Visible);
 		FocusBorder->SetBrushColor(FLinearColor::Transparent);
 		FocusText->SetColorAndOpacity(FSlateColor(Body));
-		FocusText->SetText(FText::FromString(NewName + TEXT("　")));
+		FocusText->SetText(FText::FromString(NewName));
 		if (bDialogue)
 		{
 			FocusAPText->SetVisibility(ESlateVisibility::Collapsed);
-			FocusKeyText->SetText(FText::FromString(TEXT("｜　[F] 开始对话")));
+			FocusKeyText->SetText(FText::FromString(TEXT("　·　[F] 开始对话")));
 		}
 		else
 		{
 			FocusAPText->SetVisibility(ESlateVisibility::Visible);
-			FocusAPText->SetText(FText::FromString(FString::Printf(TEXT("｜　%d AP　"), Preview.APCost)));
-			FocusKeyText->SetText(FText::FromString(TEXT("｜　[F] 查看行动")));
+			FocusAPText->SetText(FText::FromString(FString::Printf(TEXT("　·　%d AP"), Preview.APCost)));
+			FocusKeyText->SetText(FText::FromString(TEXT("　·　[F] 查看行动")));
 		}
 	}
 }
@@ -1967,9 +1976,10 @@ void UWhiteoutHUDWidget::ClearInteractionFocus()
 	FocusedActionName.Reset();
 	if (CrosshairText)
 	{
-		CrosshairText->SetText(FText::FromString(TEXT("+")));
-		CrosshairText->SetFont(UIFont(28, false));
+		CrosshairText->SetText(FText::FromString(TEXT("○")));
+		CrosshairText->SetFont(UIFont(22, false));
 		CrosshairText->SetColorAndOpacity(FSlateColor(Body));
+		CrosshairText->SetRenderTranslation(FVector2D(0.0f, -6.0f));
 		CrosshairText->SetVisibility(CurrentLayer == EWSUILayer::Game || CurrentLayer == EWSUILayer::Preview
 			? ESlateVisibility::Visible
 			: ESlateVisibility::Hidden);
@@ -2548,11 +2558,34 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 	DialogueLineText->SetColorAndOpacity(FSlateColor(Body));
 	if (DialogueStatusText)
 	{
-		const FString Status = !Reply.bFallback
+		const FString ProviderStatus = !Reply.bFallback
 			? TEXT("DeepSeek 在线表达")
 			: Reply.Provider == TEXT("preset")
 				? TEXT("本地预设")
 				: TEXT("在线失败后本地降级");
+		const TCHAR* MovementLabel = TEXT("原地");
+		switch (Reply.MovementIntent)
+		{
+		case EWSNPCMovementIntent::StepCloser: MovementLabel = TEXT("靠近"); break;
+		case EWSNPCMovementIntent::StepBack: MovementLabel = TEXT("后退"); break;
+		case EWSNPCMovementIntent::ReturnToPost: MovementLabel = TEXT("归位"); break;
+		default: break;
+		}
+		const TCHAR* ReactionLabel = TEXT("自然");
+		switch (Reply.Reaction)
+		{
+		case EWSNPCReaction::Acknowledge: ReactionLabel = TEXT("回应"); break;
+		case EWSNPCReaction::Consider: ReactionLabel = TEXT("思考"); break;
+		case EWSNPCReaction::Reassure: ReactionLabel = TEXT("安抚"); break;
+		case EWSNPCReaction::Reject: ReactionLabel = TEXT("拒绝"); break;
+		case EWSNPCReaction::Alarmed: ReactionLabel = TEXT("警觉"); break;
+		default: break;
+		}
+		const FString Status = FString::Printf(
+			TEXT("%s　｜　表演：%s · %s"),
+			*ProviderStatus,
+			MovementLabel,
+			ReactionLabel);
 		DialogueStatusText->SetText(FText::FromString(Status));
 		DialogueStatusText->SetColorAndOpacity(FSlateColor(!Reply.bFallback ? Cyan : Secondary));
 	}
@@ -3296,7 +3329,7 @@ void UWhiteoutHUDWidget::LoadGame()
 		const bool bLoaded = StateSubsystem->LoadSnapshot();
 		SystemMessage = bLoaded
 			? TEXT("已恢复最近保存的本轮状态。")
-			: TEXT("没有可读取的 v0.6 存档。");
+			: TEXT("没有可读取的 v0.7 存档。");
 		PlayUISound(bLoaded ? UIConfirmSound : UIRejectSound, 0.68f);
 		if (bLoaded)
 		{

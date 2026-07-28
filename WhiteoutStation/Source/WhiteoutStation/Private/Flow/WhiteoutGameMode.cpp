@@ -160,7 +160,7 @@ AWhiteoutGameMode::AWhiteoutGameMode()
 void AWhiteoutGameMode::BeginPlay()
 {
 	Super::BeginPlay();
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.6 flow"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.7 flow"));
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		const bool bContinueRequested = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutContinue"));
@@ -276,6 +276,88 @@ void AWhiteoutGameMode::BeginPlay()
 			ESearchCase::IgnoreCase)
 			? FName(TEXT("talk_ye_cheng"))
 			: FName(TEXT("talk_gu_heng"));
+		bool bApplyExpressionProbe = FParse::Param(
+			FCommandLine::Get(),
+			TEXT("WhiteoutApplyExpressionProbe"));
+		TWeakObjectPtr<AWSInteractableActor> ExpressionProbeActor;
+		FVector ExpressionProbeStart = FVector::ZeroVector;
+		if (bApplyExpressionProbe)
+		{
+			for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+			{
+				if (It->ActionId == ExpressionProbeAction)
+				{
+					ExpressionProbeActor = *It;
+					ExpressionProbeStart = It->GetActorLocation();
+					break;
+				}
+			}
+			APawn* ProbePawn = UGameplayStatics::GetPlayerPawn(this, 0);
+			APlayerController* ProbeController = UGameplayStatics::GetPlayerController(this, 0);
+			if (!ExpressionProbeActor.IsValid() || !ProbePawn || !ProbeController)
+			{
+				bApplyExpressionProbe = false;
+				UE_LOG(LogTemp, Error, TEXT("WhiteoutStation ExpressionProbe: performance target unavailable"));
+			}
+			else
+			{
+				const FVector ActorLocation = ExpressionProbeActor->GetActorLocation();
+				FVector ProbeDirection = ExpressionProbeActor->GetActorForwardVector().GetSafeNormal2D();
+				bool bProbePositioned = false;
+				FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(WhiteoutExpressionProbe), false);
+				QueryParams.AddIgnoredActor(ExpressionProbeActor.Get());
+				QueryParams.AddIgnoredActor(ProbePawn);
+				for (int32 DirectionIndex = 0; DirectionIndex < 8; ++DirectionIndex)
+				{
+					const FVector CandidateDirection =
+						ProbeDirection.RotateAngleAxis(DirectionIndex * 45.0f, FVector::UpVector).GetSafeNormal2D();
+					const FVector PlayerLocation = ActorLocation + CandidateDirection * 280.0f;
+					const FVector CapsuleOffset(0.0f, 0.0f, 86.0f);
+					const bool bMoveBlocked = GetWorld()->SweepTestByChannel(
+						ActorLocation + CapsuleOffset,
+						ActorLocation + CandidateDirection * 85.0f + CapsuleOffset,
+						FQuat::Identity,
+						ECC_WorldStatic,
+						FCollisionShape::MakeCapsule(28.0f, 78.0f),
+						QueryParams);
+					const bool bSightBlocked = GetWorld()->LineTraceTestByChannel(
+						ActorLocation + FVector(0.0f, 0.0f, 105.0f),
+						PlayerLocation + FVector(0.0f, 0.0f, 105.0f),
+						ECC_Visibility,
+						QueryParams);
+					const bool bPlayerBlocked = GetWorld()->OverlapBlockingTestByChannel(
+						PlayerLocation + FVector(0.0f, 0.0f, 92.0f),
+						FQuat::Identity,
+						ECC_WorldStatic,
+						FCollisionShape::MakeCapsule(34.0f, 88.0f),
+						QueryParams);
+					if (!bMoveBlocked && !bSightBlocked && !bPlayerBlocked)
+					{
+						ProbeDirection = CandidateDirection;
+						ProbePawn->SetActorLocation(
+							PlayerLocation + FVector(0.0f, 0.0f, 92.0f),
+							false,
+							nullptr,
+							ETeleportType::TeleportPhysics);
+						bProbePositioned = true;
+						break;
+					}
+				}
+				if (!bProbePositioned)
+				{
+					bApplyExpressionProbe = false;
+					UE_LOG(LogTemp, Error, TEXT("WhiteoutStation ExpressionProbe: no safe performance direction"));
+				}
+				const FVector LookTarget = ActorLocation + FVector(0.0f, 0.0f, 105.0f);
+				ProbeController->SetControlRotation(
+					(LookTarget - ProbePawn->GetPawnViewLocation()).Rotation());
+				if (AWhiteoutHUD* ProbeHUD = Cast<AWhiteoutHUD>(ProbeController->GetHUD()))
+				{
+					ProbeHUD->DismissOpening();
+					ProbeHUD->SetInterfaceVisibleForCapture(false);
+				}
+			}
+		}
 		IntentProbeGateway = NewObject<UWSAgentGateway>(this);
 		IntentProbeGateway->Initialize();
 		const UWindStationStateSubsystem* ProbeSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
@@ -288,23 +370,111 @@ void AWhiteoutGameMode::BeginPlay()
 			ProbeState,
 			true,
 			FWSAgentReplyCallback::CreateLambda(
-				[WeakThis](const FWSAgentReply& Reply)
+				[WeakThis, bApplyExpressionProbe, ExpressionProbeActor, ExpressionProbeStart](const FWSAgentReply& Reply)
 				{
 					UE_LOG(
 						LogTemp,
 						Display,
-						TEXT("WhiteoutStation ExpressionProbe: provider=%s fallback=%s validation=%s line_chars=%d"),
+						TEXT("WhiteoutStation ExpressionProbe: provider=%s fallback=%s validation=%s movement=%s reaction=%s line_chars=%d"),
 						*Reply.Provider,
 						Reply.bFallback ? TEXT("true") : TEXT("false"),
 						*Reply.ValidationReason,
+						*StaticEnum<EWSNPCMovementIntent>()->GetNameStringByValue(static_cast<int64>(Reply.MovementIntent)),
+						*StaticEnum<EWSNPCReaction>()->GetNameStringByValue(static_cast<int64>(Reply.Reaction)),
 						Reply.Utterance.Len());
 					if (WeakThis.IsValid())
 					{
+						if (bApplyExpressionProbe)
+						{
+							if (APlayerController* ProbeController =
+								UGameplayStatics::GetPlayerController(WeakThis.Get(), 0))
+							{
+								if (AWhiteoutHUD* ProbeHUD = Cast<AWhiteoutHUD>(ProbeController->GetHUD()))
+								{
+									ProbeHUD->DismissOpening();
+									ProbeHUD->SetInterfaceVisibleForCapture(false);
+								}
+								if (APawn* ProbePawn = UGameplayStatics::GetPlayerPawn(WeakThis.Get(), 0))
+								{
+									ProbeController->SetViewTarget(ProbePawn);
+									if (ExpressionProbeActor.IsValid())
+									{
+										const FVector LookTarget =
+											ExpressionProbeActor->GetActorLocation() + FVector(0.0f, 0.0f, 105.0f);
+										ProbeController->SetControlRotation(
+											(LookTarget - ProbePawn->GetPawnViewLocation()).Rotation());
+									}
+								}
+							}
+							if (UWindStationStateSubsystem* StateSubsystem =
+								WeakThis->GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+							{
+								StateSubsystem->OnDialogueLine.Broadcast(Reply);
+							}
+							if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutPerformanceCapture")))
+							{
+								const FString EvidenceDirectory = FPaths::ConvertRelativePathToFull(
+									FPaths::ProjectDir() / TEXT("../docs/evidence_v0.7"));
+								IFileManager::Get().MakeDirectory(*EvidenceDirectory, true);
+								const FString EvidenceToken =
+									ExpressionProbeActor.IsValid()
+									&& ExpressionProbeActor->ActionId == TEXT("talk_ye_cheng")
+									? TEXT("YeCheng")
+									: TEXT("GuHeng");
+								FTimerHandle MoveCaptureTimer;
+								WeakThis->GetWorldTimerManager().SetTimer(
+									MoveCaptureTimer,
+									[EvidenceDirectory, EvidenceToken]()
+									{
+										FScreenshotRequest::RequestScreenshot(
+											EvidenceDirectory / FString::Printf(
+												TEXT("NPC_%s_Walk.png"),
+												*EvidenceToken),
+											true,
+											false,
+											false,
+											FIntRect(),
+											true);
+									},
+									0.45f,
+									false);
+								FTimerHandle ReactionCaptureTimer;
+								WeakThis->GetWorldTimerManager().SetTimer(
+									ReactionCaptureTimer,
+									[EvidenceDirectory, EvidenceToken]()
+									{
+										FScreenshotRequest::RequestScreenshot(
+											EvidenceDirectory / FString::Printf(
+												TEXT("NPC_%s_Acknowledge.png"),
+												*EvidenceToken),
+											true,
+											false,
+											false,
+											FIntRect(),
+											true);
+									},
+									1.35f,
+									false);
+							}
+						}
 						FTimerHandle ExitTimer;
 						WeakThis->GetWorldTimerManager().SetTimer(
 							ExitTimer,
-							[]() { FPlatformMisc::RequestExit(false); },
-							0.4f,
+							[ExpressionProbeActor, ExpressionProbeStart]()
+							{
+								if (ExpressionProbeActor.IsValid())
+								{
+									UE_LOG(
+										LogTemp,
+										Display,
+										TEXT("WhiteoutStation ExpressionProbe: applied_distance=%.2f"),
+										FVector::Dist2D(
+											ExpressionProbeStart,
+											ExpressionProbeActor->GetActorLocation()));
+								}
+								FPlatformMisc::RequestExit(false);
+							},
+							bApplyExpressionProbe ? 2.9f : 0.4f,
 							false);
 					}
 				}),
@@ -620,7 +790,7 @@ void AWhiteoutGameMode::BeginOpeningPresentation()
 	PlayerController->SetIgnoreMoveInput(true);
 	PlayerController->SetIgnoreLookInput(true);
 	PlayerController->SetViewTargetWithBlend(OpeningCamera, 0.75f, EViewTargetBlendFunction::VTBlend_Cubic);
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.6: manual opening presentation started"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.7: manual opening presentation started"));
 }
 
 void AWhiteoutGameMode::PrepareOpeningReveal()
@@ -653,7 +823,7 @@ void AWhiteoutGameMode::FinishOpeningPresentation()
 		OpeningCamera->SetLifeSpan(1.1f);
 		OpeningCamera = nullptr;
 	}
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.6: opening handed control to player"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.7: opening handed control to player"));
 }
 
 void AWhiteoutGameMode::BeginPresentationCapture()
@@ -763,6 +933,11 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 			TEXT("pause"), TEXT("settings_default"),
 			TEXT("results_task"), TEXT("results_survival"),
 			TEXT("results_cost"), TEXT("results_collapse")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v07ui"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("hud"), TEXT("focus_near"), TEXT("focus_npc"), TEXT("dialogue_response")};
 	}
 	else
 	{
@@ -1448,9 +1623,12 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 		|| PresentationCaptureMode.Equals(TEXT("hud"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("pause"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("evidence"), ESearchCase::IgnoreCase);
+	const bool bV07Capture = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV07Capture"));
 	const bool bV06Capture = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV06Capture"));
 	const bool bV04Capture = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV04Capture"));
-	const TCHAR* CaptureFolder = bV06Capture
+	const TCHAR* CaptureFolder = bV07Capture
+		? TEXT("../docs/baseline_v0.7")
+		: bV06Capture
 		? TEXT("../docs/baseline_v0.6")
 		: bV04Capture
 		? TEXT("../docs/baseline_v0.4")

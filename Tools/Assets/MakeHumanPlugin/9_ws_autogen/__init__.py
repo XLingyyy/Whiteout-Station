@@ -116,7 +116,7 @@ def _animation_track(rig, name: str, style: str) -> animation.AnimationTrack:
     """Build a short, looping local-space performance for the game-engine rig."""
     bones = rig.getBones()
     bone_indices = {bone.name: index for index, bone in enumerate(bones)}
-    frame_count = 48
+    frame_count = 32 if style == "walk" else 48
     frame_rate = 24.0
     data = np.zeros((frame_count * len(bones), 3, 4), dtype=np.float32)
     identity = np.identity(4, dtype=np.float32)[:3, :4]
@@ -171,6 +171,93 @@ def _animation_track(rig, name: str, style: str) -> animation.AnimationTrack:
                     "hand_r": (0.0, 0.0, 8.0 * math.sin(phase)),
                 }
             )
+        elif style == "walk":
+            stride = math.sin(phase)
+            left_lift = max(0.0, -stride)
+            right_lift = max(0.0, stride)
+            pose.update(
+                {
+                    "pelvis": (0.0, 2.2 * math.sin(phase * 2.0), 0.0),
+                    "spine_01": (2.5, -2.0 * stride, 0.0),
+                    "spine_02": (1.0, -1.5 * stride, 0.0),
+                    "upperarm_l": (-18.0 * stride, 0.0, -76.0),
+                    "upperarm_r": (18.0 * stride, 0.0, 76.0),
+                    "lowerarm_l": (-8.0 - 11.0 * left_lift, 0.0, 0.0),
+                    "lowerarm_r": (8.0 + 11.0 * right_lift, 0.0, 0.0),
+                    "thigh_l": (27.0 * stride, 0.0, 0.0),
+                    "thigh_r": (-27.0 * stride, 0.0, 0.0),
+                    "calf_l": (-34.0 * left_lift, 0.0, 0.0),
+                    "calf_r": (-34.0 * right_lift, 0.0, 0.0),
+                    "foot_l": (15.0 * left_lift - 5.0 * right_lift, 0.0, 0.0),
+                    "foot_r": (15.0 * right_lift - 5.0 * left_lift, 0.0, 0.0),
+                }
+            )
+        elif style == "acknowledge":
+            envelope = math.sin((frame / (frame_count - 1)) * math.pi)
+            nod = envelope * (7.0 + 4.0 * math.sin(phase * 2.0))
+            pose.update(
+                {
+                    "head": (nod, 0.0, 0.0),
+                    "neck_01": (0.45 * nod, 0.0, 0.0),
+                    "upperarm_l": (-12.0 * envelope, 0.0, -68.0),
+                    "lowerarm_l": (-34.0 * envelope, 0.0, 8.0 * envelope),
+                    "spine_03": (2.5 * envelope, 0.0, 0.0),
+                }
+            )
+        elif style == "consider":
+            envelope = math.sin((frame / (frame_count - 1)) * math.pi)
+            pose.update(
+                {
+                    "head": (-3.0 * envelope, 7.0 * envelope, -5.0 * envelope),
+                    "neck_01": (-2.0 * envelope, 4.0 * envelope, 0.0),
+                    "upperarm_r": (30.0 * envelope, -8.0 * envelope, 56.0),
+                    "lowerarm_r": (82.0 * envelope, 0.0, -20.0 * envelope),
+                    "hand_r": (0.0, -12.0 * envelope, 6.0 * envelope),
+                    "spine_02": (-2.0 * envelope, 4.0 * envelope, 0.0),
+                }
+            )
+        elif style == "reassure":
+            envelope = math.sin((frame / (frame_count - 1)) * math.pi)
+            pulse = 3.0 * math.sin(phase) * envelope
+            pose.update(
+                {
+                    "spine_02": (4.0 * envelope, 0.0, 0.0),
+                    "head": (-2.0 * envelope, 0.0, 0.0),
+                    "upperarm_l": (-34.0 * envelope + pulse, 8.0, -48.0),
+                    "upperarm_r": (34.0 * envelope - pulse, -8.0, 48.0),
+                    "lowerarm_l": (-58.0 * envelope, 0.0, 18.0),
+                    "lowerarm_r": (58.0 * envelope, 0.0, -18.0),
+                    "hand_l": (0.0, 12.0 * envelope, 0.0),
+                    "hand_r": (0.0, -12.0 * envelope, 0.0),
+                }
+            )
+        elif style == "reject":
+            envelope = math.sin((frame / (frame_count - 1)) * math.pi)
+            shake = 8.0 * math.sin(phase * 2.0) * envelope
+            pose.update(
+                {
+                    "head": (0.0, shake, 0.0),
+                    "neck_01": (0.0, 0.45 * shake, 0.0),
+                    "upperarm_l": (-52.0 * envelope, 4.0, -35.0),
+                    "lowerarm_l": (-72.0 * envelope, 0.0, 8.0),
+                    "hand_l": (0.0, 18.0 * envelope, 0.0),
+                    "spine_03": (-4.0 * envelope, 0.0, 0.0),
+                }
+            )
+        elif style == "alarmed":
+            envelope = math.sin((frame / (frame_count - 1)) * math.pi)
+            tremor = 3.0 * math.sin(phase * 4.0) * envelope
+            pose.update(
+                {
+                    "spine_01": (-9.0 * envelope, 0.0, 0.0),
+                    "spine_02": (-7.0 * envelope, tremor, 0.0),
+                    "head": (7.0 * envelope, -tremor, 0.0),
+                    "upperarm_l": (-54.0 * envelope, 0.0, -42.0),
+                    "upperarm_r": (54.0 * envelope, 0.0, 42.0),
+                    "lowerarm_l": (-44.0 * envelope, 0.0, 20.0),
+                    "lowerarm_r": (44.0 * envelope, 0.0, -20.0),
+                }
+            )
         for bone_name, angles in pose.items():
             bone_index = bone_indices.get(bone_name)
             if bone_index is not None:
@@ -192,6 +279,12 @@ def _export_animations(app, exporter, output_path: str, character: str) -> None:
         ("Gesture", "gesture"),
         ("Guarded", "guarded"),
         ("Work", "work"),
+        ("Walk", "walk"),
+        ("Acknowledge", "acknowledge"),
+        ("Consider", "consider"),
+        ("Reassure", "reassure"),
+        ("Reject", "reject"),
+        ("Alarmed", "alarmed"),
     ):
         human.removeAnimations()
         track = _animation_track(rig, prefix + "_" + suffix, style)

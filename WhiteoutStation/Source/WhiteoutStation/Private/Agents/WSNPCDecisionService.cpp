@@ -229,6 +229,38 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		Reply.Utterance = TEXT("信号已经送出。现在守住温度和伤员，等救援确认回执。");
 	}
 
+	Reply.MovementIntent = EWSNPCMovementIntent::Stay;
+	if (Reply.Emotion.Equals(TEXT("alarmed"), ESearchCase::IgnoreCase)
+		|| Reply.Emotion.Equals(TEXT("urgent"), ESearchCase::IgnoreCase))
+	{
+		Reply.Reaction = EWSNPCReaction::Alarmed;
+	}
+	else
+	{
+		switch (Reply.ResponseType)
+		{
+		case EWSResponseType::Accept:
+		case EWSResponseType::ConditionalAccept:
+			Reply.Reaction = EWSNPCReaction::Acknowledge;
+			break;
+		case EWSResponseType::PartialDisclosure:
+		case EWSResponseType::FullDisclosure:
+			Reply.Reaction = EWSNPCReaction::Consider;
+			break;
+		case EWSResponseType::Reassure:
+			Reply.Reaction = EWSNPCReaction::Reassure;
+			break;
+		case EWSResponseType::Refuse:
+		case EWSResponseType::Deflect:
+		case EWSResponseType::Accuse:
+			Reply.Reaction = EWSNPCReaction::Reject;
+			break;
+		default:
+			Reply.Reaction = EWSNPCReaction::Neutral;
+			break;
+		}
+	}
+
 	const TArray<FName> AllowedFacts = BuildAllowedFacts(Request.ActionId, Reply.Speaker, State);
 	Reply.ReferencedFactIds = Reply.ReferencedFactIds.FilterByPredicate(
 		[&AllowedFacts](const FName FactId) { return AllowedFacts.Contains(FactId); });

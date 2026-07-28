@@ -37,7 +37,7 @@ namespace WhiteoutRuleTests
 		Test.TestTrue(
 			TEXT("Rules JSON loads"),
 			Engine.LoadConfig(
-				FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.6.json"), Error));
+				FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.7.json"), Error));
 		if (!Error.IsEmpty())
 		{
 			Test.AddError(Error);
@@ -74,7 +74,7 @@ bool FWhiteoutAPFlowTest::RunTest(const FString& Parameters)
 
 	Engine.Reset();
 	TestTrue(
-		TEXT("Safe antenna temperature loads from v0.6 rules"),
+		TEXT("Safe antenna temperature loads from v0.7 rules"),
 		FMath::IsNearlyEqual(Engine.GetConfig().SafeAntennaTemperature, 55.0f));
 	FWSGameState& ColdState = Engine.GetMutableStateForTesting();
 	ColdState.Tasks.GeneratorProgress = Engine.GetConfig().GeneratorRequired;
@@ -426,29 +426,51 @@ bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
 
 	FWSAgentReply ModelReply;
 	FString Reason;
-	const FString ValidPayload = TEXT("{\"npc_line\":\"手伤还在，先处理低温。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HAND_INJURY\"]}");
+	const FString ValidPayload = TEXT("{\"npc_line\":\"手伤还在，先处理低温。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HAND_INJURY\"],\"movement_intent\":\"step_closer\",\"reaction_action\":\"consider\"}");
 	TestTrue(
 		TEXT("Schema-valid expression is accepted"),
 		UWSAgentGateway::ValidateModelPayload(ValidPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestFalse(TEXT("Accepted model line is not marked fallback"), ModelReply.bFallback);
+	TestEqual(TEXT("Movement intent is constrained"), ModelReply.MovementIntent, EWSNPCMovementIntent::StepCloser);
+	TestEqual(TEXT("Reaction action is constrained"), ModelReply.Reaction, EWSNPCReaction::Consider);
 
-	const FString MutationPayload = TEXT("{\"npc_line\":\"修好了。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"ap_delta\":2}");
+	const FString MutationPayload = TEXT("{\"npc_line\":\"修好了。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"neutral\",\"ap_delta\":2}");
 	TestFalse(
 		TEXT("State mutation field is rejected"),
 		UWSAgentGateway::ValidateModelPayload(MutationPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestEqual(TEXT("Mutation rejection is explicit"), Reason, FString(TEXT("unexpected_field_count")));
 
-	const FString LeakPayload = TEXT("{\"npc_line\":\"保温包在柜底。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HEAT_PACK\"]}");
+	const FString LeakPayload = TEXT("{\"npc_line\":\"保温包在柜底。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HEAT_PACK\"],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
 	TestFalse(
 		TEXT("Unauthorized fact citation is rejected"),
 		UWSAgentGateway::ValidateModelPayload(LeakPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestEqual(TEXT("Leak rejection is explicit"), Reason, FString(TEXT("fact_permission_violation")));
 
-	const FString UntaggedLeakPayload = TEXT("{\"npc_line\":\"柜底还有保温包。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[]}");
+	const FString UntaggedLeakPayload = TEXT("{\"npc_line\":\"柜底还有保温包。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
 	TestFalse(
 		TEXT("Untagged protected claim is rejected"),
 		UWSAgentGateway::ValidateModelPayload(UntaggedLeakPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestTrue(TEXT("Semantic leak identifies protected fact"), Reason.StartsWith(TEXT("semantic_fact_permission_violation:FACT_HEAT_PACK")));
+
+	const FString InvalidMovementPayload = TEXT("{\"npc_line\":\"我过去看看。\",\"emotion\":\"focused\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"walk_anywhere\",\"reaction_action\":\"acknowledge\"}");
+	TestFalse(
+		TEXT("Unbounded movement command is rejected"),
+		UWSAgentGateway::ValidateModelPayload(InvalidMovementPayload, Decision, AllowedFacts, ModelReply, Reason));
+	TestEqual(TEXT("Movement rejection is explicit"), Reason, FString(TEXT("invalid_movement_intent")));
+
+	const FString InvalidReactionPayload = TEXT("{\"npc_line\":\"我听见了。\",\"emotion\":\"focused\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"attack_player\"}");
+	TestFalse(
+		TEXT("Unbounded reaction command is rejected"),
+		UWSAgentGateway::ValidateModelPayload(InvalidReactionPayload, Decision, AllowedFacts, ModelReply, Reason));
+	TestEqual(TEXT("Reaction rejection is explicit"), Reason, FString(TEXT("invalid_reaction_action")));
+
+	FWSAgentReply NonDialogueDecision = Decision;
+	NonDialogueDecision.ActionId = TEXT("inspect_control_cabinet");
+	const FString NonDialogueMovementPayload = TEXT("{\"npc_line\":\"我过去看看。\",\"emotion\":\"focused\",\"used_action_id\":\"inspect_control_cabinet\",\"referenced_fact_ids\":[],\"movement_intent\":\"step_back\",\"reaction_action\":\"acknowledge\"}");
+	TestFalse(
+		TEXT("Non-dialogue expression cannot move an NPC"),
+		UWSAgentGateway::ValidateModelPayload(NonDialogueMovementPayload, NonDialogueDecision, {}, ModelReply, Reason));
+	TestEqual(TEXT("Context movement rejection is explicit"), Reason, FString(TEXT("movement_not_allowed")));
 
 	struct FIntentSample
 	{
