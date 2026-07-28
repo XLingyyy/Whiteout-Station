@@ -4,13 +4,22 @@ import copy
 import random
 import unittest
 
-from whiteout_rules import (
-    WhiteoutSimulator,
-    classify_rating,
-    load_rules,
-    run_route,
-    validate_rules,
-)
+try:
+    from .whiteout_rules import (
+        WhiteoutSimulator,
+        classify_rating,
+        load_rules,
+        run_route,
+        validate_rules,
+    )
+except ImportError:
+    from whiteout_rules import (
+        WhiteoutSimulator,
+        classify_rating,
+        load_rules,
+        run_route,
+        validate_rules,
+    )
 
 
 class RuleConfigTests(unittest.TestCase):

@@ -97,6 +97,10 @@ RUNTIME_REFERENCES = {
         AGENT_BASENAME,
         OLD_AGENT_BASENAME,
     ),
+    "Tools/Rules/whiteout_rules.py": (
+        RULES_BASENAME,
+        OLD_RULES_BASENAME,
+    ),
 }
 LEGACY_LOAD_MARKERS = (
     "_path",
@@ -437,6 +441,7 @@ def validate_versions(repo_root: Path) -> GateReport:
         *repo_root.joinpath("WhiteoutStation/Source").rglob("*.cpp"),
         *repo_root.joinpath("WhiteoutStation/Source").rglob("*.h"),
         *repo_root.joinpath("Tools/Agents").glob("*.py"),
+        *repo_root.joinpath("Tools/Rules").glob("*.py"),
         *(
             path
             for path in repo_root.joinpath("Tools/Release").glob("*v07*.py")

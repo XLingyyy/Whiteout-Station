@@ -309,7 +309,7 @@ def test_valid_version_and_release_fixture_passes(tmp_path: Path) -> None:
     assert report.passed, report.errors
 
 
-def test_rules_tool_explicit_legacy_compatibility_path_is_allowed(
+def test_rules_tool_legacy_fallback_is_rejected(
     tmp_path: Path,
 ) -> None:
     repo, _commit, _tree = make_repository(tmp_path)
@@ -321,7 +321,8 @@ def test_rules_tool_explicit_legacy_compatibility_path_is_allowed(
         "SELECTED = DEFAULT_RULES_PATH if True else LEGACY_RULES_PATH\n",
     )
     report = validate_versions(repo)
-    assert report.passed, report.errors
+    assert not report.passed
+    assert any("legacy runtime file" in error for error in report.errors)
 
 
 def test_stale_v04_false_green_artifact_is_rejected(tmp_path: Path) -> None:

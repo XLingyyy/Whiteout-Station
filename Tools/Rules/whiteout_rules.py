@@ -10,15 +10,14 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 RULES_DIRECTORY = ROOT / "WhiteoutStation" / "Content" / "Rules"
-DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.6.json"
-LEGACY_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.1.json"
+DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.7.json"
 
 PROMISE_CONDITIONS = frozenset(
     {"reserve_medicine", "keep_records", "heat_repair_room"}
 )
 
-# The v0.1 rules file predates explicit route intent parameters. Explicit JSON
-# parameters take precedence when the content-side rules version is migrated.
+# Older route fixtures predate explicit dialogue intent parameters. Explicit JSON
+# parameters take precedence when present.
 ROUTE_DIALOGUE_DEFAULTS: dict[tuple[str, str], dict[str, Any]] = {
     ("medical_cooperation", "talk_gu_heng"): {
         "dialogue_act": "promise",
@@ -48,7 +47,7 @@ class RuleError(ValueError):
 
 def load_rules(path: Path | str | None = None) -> dict[str, Any]:
     if path is None:
-        path = DEFAULT_RULES_PATH if DEFAULT_RULES_PATH.exists() else LEGACY_RULES_PATH
+        path = DEFAULT_RULES_PATH
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
@@ -72,9 +71,9 @@ def validate_rules(rules: dict[str, Any]) -> list[str]:
     if sum(rules.get("score", {}).get("weights", {}).values()) != 100:
         errors.append("Score weights must total 100")
     if rules.get("gameplay", {}).get("starting_action_points") != 8:
-        errors.append("v0.1 requires exactly 8 starting AP")
+        errors.append("v0.7 requires exactly 8 starting AP")
     if rules.get("gameplay", {}).get("mid_crisis_threshold") != 4:
-        errors.append("v0.1 mid-crisis threshold must be 4 AP")
+        errors.append("v0.7 mid-crisis threshold must be 4 AP")
 
     action_set = set(action_ids)
     for route_id, route in rules.get("routes", {}).items():
