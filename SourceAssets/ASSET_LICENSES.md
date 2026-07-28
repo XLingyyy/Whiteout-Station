@@ -88,6 +88,8 @@ The MakeHuman application is used only as an offline exporter; its AGPL code is 
 
 v0.4 (2026-07-22): 叶澄夹克贴图已在原 CC BY 4.0 资产基础上做去徽章化修改；移除救援组织文字与红十字圆徽，不新增标识或文字，修改脚本为 `Tools/Assets/process_v04_jacket.py`。
 
+v0.7 (2026-07-28): 走路、确认、思考、安抚、拒绝和警觉共 12 个 FBX 动画由项目内 MakeHuman 插件脚本程序化生成，不使用第三方动作捕捉数据。生成脚本为 `Tools/Assets/MakeHumanPlugin/9_ws_autogen/__init__.py`，重建入口为 `Tools/Assets/generate_v07_npc_animations.ps1`。
+
 ## VRoidPreset A–Z anime NPC replacements — VRoid official terms
 
 | Asset | Author | Project use | Source |
@@ -103,4 +105,6 @@ VRM4U `v1.2026.07.22` (MIT, https://github.com/ruyo/VRM4U/releases/tag/v1.2026.0
 
 ## Ye Cheng V10 — Noanoa black long hair
 
-`YeCheng_NoanoaHair_RefinedFace_v10` uses the free Noanoa “黑髪ロングヘア” asset from https://booth.pm/ja/items/7564879. The listing currently provides the files at JPY 0 but publishes no explicit commercial-use or redistribution terms. The imported V10 assets under `/Game/WindStation/Art/AnimeNPC/YeChengV10` are approved for local development and review only; do not package or distribute them with Whiteout Station until the creator grants suitable permission. The source `.vrm` remains outside the repository.
+`YeCheng_NoanoaHair_RefinedFace_v10` uses the free Noanoa “黒髪ロングヘア” asset from https://booth.pm/ja/items/7564879. The shop page states that its VN3 terms also govern free avatars, clothes and textures, but does not explicitly name hair items. The Japanese terms permit individual commercial/non-commercial use and online-game-platform upload, prohibit redistribution of original or modified data, and require an individual inquiry before embedding the data in product/service software. Terms: https://drive.google.com/file/d/1_Iwv6mZniWGfWlnsL_Dv2jJgSuKrEm8E/view (retrieved 2026-07-28, SHA-256 `c5ebe775ea71443f66a5e7209a0f8cfd0231f31af326d18e169c669a0ace6f55`).
+
+Because a downloadable Whiteout Station build is product software and the hair-specific applicability is ambiguous, the imported V10 assets under `/Game/WindStation/Art/AnimeNPC/YeChengV10` remain approved only for private local development and review. Any v0.7 package containing them must be marked `LOCAL REVIEW BUILD - DO NOT REDISTRIBUTE`. Public or commercial distribution requires written permission from Noanoa or replacement of the hair with an asset carrying suitable terms. The source `.vrm` remains outside the repository.

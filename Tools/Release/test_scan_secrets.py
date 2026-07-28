@@ -17,10 +17,16 @@ class SecretPatternTests(unittest.TestCase):
         self.pattern = SCANNER.PATTERNS["api_key_assignment"]
 
     def test_detects_unquoted_assignment(self) -> None:
-        self.assertIsNotNone(self.pattern.search(b"api_key = Abcdefghijklmnopqrstuvwxyz012345"))
+        payload = b"api_" + b"key = " + b"Abcdefghijklmnopqrstuvwxyz012345"
+        self.assertIsNotNone(self.pattern.search(payload))
 
     def test_detects_json_assignment(self) -> None:
-        self.assertIsNotNone(self.pattern.search(b'\"secret_key\": \"Abcdefghijklmnopqrstuvwxyz012345\"'))
+        payload = (
+            b'\"secret_'
+            + b'key\": \"'
+            + b'Abcdefghijklmnopqrstuvwxyz012345\"'
+        )
+        self.assertIsNotNone(self.pattern.search(payload))
 
     def test_ignores_api_key_suffix_in_identifier(self) -> None:
         self.assertIsNone(self.pattern.search(b"bRequiresApiKey = IsOfficialDeepSeekEndpoint"))

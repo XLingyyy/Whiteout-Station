@@ -27,6 +27,7 @@ PATTERNS = {
 }
 ALLOWLIST_PATHS = {
     "Tools/Release/scan_secrets.py",
+    "Tools/Release/test_scan_secrets.py",
     "WhiteoutStation/LocalConfig/WhiteoutLLM.ini.example",
 }
 SCANNABLE_SUFFIXES = {

@@ -17,6 +17,7 @@
 #include "Components/PointLightComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
+#include "Dom/JsonObject.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformTime.h"
 #include "HAL/FileManager.h"
@@ -33,6 +34,8 @@
 #include "Presentation/WSPresentationText.h"
 #include "Settings/WhiteoutSettingsSubsystem.h"
 #include "State/WindStationStateSubsystem.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 #include "World/WSInteractableActor.h"
 #include "World/WhiteoutStationBuilder.h"
 #include "TimerManager.h"
@@ -40,6 +43,66 @@
 
 namespace
 {
+	FString PerformanceMovementToken(const EWSNPCMovementIntent Intent)
+	{
+		switch (Intent)
+		{
+		case EWSNPCMovementIntent::StepCloser: return TEXT("step_closer");
+		case EWSNPCMovementIntent::StepBack: return TEXT("step_back");
+		case EWSNPCMovementIntent::ReturnToPost: return TEXT("return_to_post");
+		default: return TEXT("stay");
+		}
+	}
+
+	FString PerformanceReactionToken(const EWSNPCReaction Reaction)
+	{
+		switch (Reaction)
+		{
+		case EWSNPCReaction::Acknowledge: return TEXT("acknowledge");
+		case EWSNPCReaction::Consider: return TEXT("consider");
+		case EWSNPCReaction::Reassure: return TEXT("reassure");
+		case EWSNPCReaction::Reject: return TEXT("reject");
+		case EWSNPCReaction::Alarmed: return TEXT("alarmed");
+		default: return TEXT("neutral");
+		}
+	}
+
+	void SavePerformanceProbeEvidence(
+		const FName ActionId,
+		const FWSAgentReply& Reply,
+		const bool bApplied,
+		const float AppliedDistance)
+	{
+		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+		Root->SetStringField(TEXT("schema"), TEXT("whiteout.v0.7.performance-probe.v1"));
+		Root->SetStringField(TEXT("action_id"), ActionId.ToString());
+		Root->SetStringField(TEXT("provider"), Reply.Provider);
+		Root->SetBoolField(TEXT("fallback"), Reply.bFallback);
+		Root->SetStringField(TEXT("validation_reason"), Reply.ValidationReason);
+		Root->SetStringField(TEXT("movement_intent"), PerformanceMovementToken(Reply.MovementIntent));
+		Root->SetStringField(TEXT("reaction_action"), PerformanceReactionToken(Reply.Reaction));
+		Root->SetBoolField(TEXT("performance_applied"), bApplied);
+		Root->SetNumberField(TEXT("applied_distance_cm"), AppliedDistance);
+
+		FString Serialized;
+		const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Serialized);
+		if (!FJsonSerializer::Serialize(Root, Writer))
+		{
+			UE_LOG(LogTemp, Error, TEXT("WhiteoutStation ExpressionProbe: evidence serialization failed"));
+			return;
+		}
+		const FString EvidencePath =
+			FPaths::ProjectSavedDir() / TEXT("Logs/WhiteoutStation_PerformanceProbe.json");
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(EvidencePath), true);
+		if (!FFileHelper::SaveStringToFile(
+			Serialized + LINE_TERMINATOR,
+			*EvidencePath,
+			FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+		{
+			UE_LOG(LogTemp, Error, TEXT("WhiteoutStation ExpressionProbe: evidence write failed"));
+		}
+	}
+
 	void AddPresentationEvent(FWSGameState& State, const TCHAR* ActionId, const int32 APBefore, const int32 APAfter, const bool bCrisis = false)
 	{
 		FWSEventRecord& Event = State.EventLog.Emplace_GetRef();
@@ -370,7 +433,7 @@ void AWhiteoutGameMode::BeginPlay()
 			ProbeState,
 			true,
 			FWSAgentReplyCallback::CreateLambda(
-				[WeakThis, bApplyExpressionProbe, ExpressionProbeActor, ExpressionProbeStart](const FWSAgentReply& Reply)
+				[WeakThis, bApplyExpressionProbe, ExpressionProbeActor, ExpressionProbeStart, ExpressionProbeAction](const FWSAgentReply& Reply)
 				{
 					UE_LOG(
 						LogTemp,
@@ -411,10 +474,17 @@ void AWhiteoutGameMode::BeginPlay()
 							{
 								StateSubsystem->OnDialogueLine.Broadcast(Reply);
 							}
-							if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutPerformanceCapture")))
+							const bool bCaptureToSaved = FParse::Param(
+								FCommandLine::Get(),
+								TEXT("WhiteoutPerformanceCaptureToSaved"));
+							if (
+								bCaptureToSaved
+								|| FParse::Param(FCommandLine::Get(), TEXT("WhiteoutPerformanceCapture")))
 							{
-								const FString EvidenceDirectory = FPaths::ConvertRelativePathToFull(
-									FPaths::ProjectDir() / TEXT("../docs/evidence_v0.7"));
+								const FString EvidenceDirectory = bCaptureToSaved
+									? FPaths::ProjectSavedDir() / TEXT("PerformanceProbe")
+									: FPaths::ConvertRelativePathToFull(
+										FPaths::ProjectDir() / TEXT("../docs/evidence_v0.7"));
 								IFileManager::Get().MakeDirectory(*EvidenceDirectory, true);
 								const FString EvidenceToken =
 									ExpressionProbeActor.IsValid()
@@ -460,18 +530,31 @@ void AWhiteoutGameMode::BeginPlay()
 						FTimerHandle ExitTimer;
 						WeakThis->GetWorldTimerManager().SetTimer(
 							ExitTimer,
-							[ExpressionProbeActor, ExpressionProbeStart]()
+							[
+								ExpressionProbeActor,
+								ExpressionProbeStart,
+								ExpressionProbeAction,
+								bApplyExpressionProbe,
+								PerformanceReply = Reply
+							]()
 							{
+								float AppliedDistance = 0.0f;
 								if (ExpressionProbeActor.IsValid())
 								{
+									AppliedDistance = FVector::Dist2D(
+										ExpressionProbeStart,
+										ExpressionProbeActor->GetActorLocation());
 									UE_LOG(
 										LogTemp,
 										Display,
 										TEXT("WhiteoutStation ExpressionProbe: applied_distance=%.2f"),
-										FVector::Dist2D(
-											ExpressionProbeStart,
-											ExpressionProbeActor->GetActorLocation()));
+										AppliedDistance);
 								}
+								SavePerformanceProbeEvidence(
+									ExpressionProbeAction,
+									PerformanceReply,
+									bApplyExpressionProbe && ExpressionProbeActor.IsValid(),
+									AppliedDistance);
 								FPlatformMisc::RequestExit(false);
 							},
 							bApplyExpressionProbe ? 2.9f : 0.4f,
