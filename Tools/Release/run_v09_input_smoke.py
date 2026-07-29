@@ -62,7 +62,12 @@ SWP_NOMOVE = 0x0002
 SWP_SHOWWINDOW = 0x0040
 
 user32 = ctypes.windll.user32
-user32.SetProcessDPIAware()
+kernel32 = ctypes.windll.kernel32
+try:
+    if not user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+        user32.SetProcessDPIAware()
+except AttributeError:
+    user32.SetProcessDPIAware()
 
 
 class SmokeError(RuntimeError):
@@ -114,6 +119,22 @@ def force_empty_credential_inputs(environment: dict[str, str]) -> None:
 
 
 def activate_window(hwnd: int) -> bool:
+    foreground = user32.GetForegroundWindow()
+    current_thread = kernel32.GetCurrentThreadId()
+    foreground_thread = (
+        user32.GetWindowThreadProcessId(foreground, None)
+        if foreground
+        else 0
+    )
+    target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+    attached_threads: list[int] = []
+    for thread_id in {foreground_thread, target_thread}:
+        if (
+            thread_id
+            and thread_id != current_thread
+            and user32.AttachThreadInput(current_thread, thread_id, True)
+        ):
+            attached_threads.append(thread_id)
     user32.ShowWindow(hwnd, 9)
     user32.SetWindowPos(
         hwnd,
@@ -125,8 +146,13 @@ def activate_window(hwnd: int) -> bool:
         SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
     )
     user32.BringWindowToTop(hwnd)
+    user32.SwitchToThisWindow(hwnd, True)
     user32.SetForegroundWindow(hwnd)
-    return int(user32.GetForegroundWindow()) == int(hwnd)
+    user32.SetFocus(hwnd)
+    activated = int(user32.GetForegroundWindow()) == int(hwnd)
+    for thread_id in attached_threads:
+        user32.AttachThreadInput(current_thread, thread_id, False)
+    return activated
 
 
 def post_window_message(
@@ -292,28 +318,38 @@ def client_bounds(hwnd: int) -> tuple[int, int, int, int]:
     return point.x, point.y, point.x + rect.right, point.y + rect.bottom
 
 
-def move_cursor_away_from_center(hwnd: int) -> dict[str, list[int]]:
+def move_cursor_away_from_center(hwnd: int) -> dict[str, Any]:
     left, top, right, bottom = client_bounds(hwnd)
     target = (
         left + round((right - left) * 0.82),
         top + round((bottom - top) * 0.78),
     )
-    if not user32.SetCursorPos(*target):
-        raise ctypes.WinError()
-    time.sleep(0.08)
+    positioned_by_os = bool(user32.SetCursorPos(*target))
+    if not positioned_by_os:
+        client_x = target[0] - left
+        client_y = target[1] - top
+        position = (client_y << 16) | (client_x & 0xFFFF)
+        user32.SendMessageW(hwnd, WM_MOUSEMOVE, 0, position)
+    time.sleep(0.2)
     actual = wintypes.POINT()
     if not user32.GetCursorPos(ctypes.byref(actual)):
         raise ctypes.WinError()
     return {
         "requested_screen": [target[0], target[1]],
         "actual_screen": [actual.x, actual.y],
+        "input_method": (
+            "set_cursor_pos"
+            if positioned_by_os
+            else "window_message_fallback"
+        ),
+        "os_preposition_supported": positioned_by_os,
     }
 
 
 def assert_cursor_centered(
     hwnd: int,
     label: str,
-    before: dict[str, list[int]],
+    before: dict[str, Any],
 ) -> dict[str, Any]:
     left, top, right, bottom = client_bounds(hwnd)
     expected = (
