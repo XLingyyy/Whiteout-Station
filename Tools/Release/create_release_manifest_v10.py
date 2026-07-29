@@ -60,7 +60,7 @@ def create_manifest(
     run_id: str,
     source_ref: str,
     build_timestamp_utc: str,
-    engine_version: str = "5.8.0",
+    engine_version: str = "5.8.1",
 ) -> Path:
     repo_root = repo_root.resolve(strict=True)
     artifact_root = artifact_root.resolve(strict=True)
@@ -78,7 +78,7 @@ def create_manifest(
     if statuses:
         summary = ", ".join(f"{status} {path}" for status, path in statuses)
         raise GateError(
-            "Manifest creation requires a clean detached build worktree. "
+            "Manifest creation requires a clean committed source checkout. "
             f"Dirty paths were reported and left untouched: {summary}"
         )
 
@@ -145,7 +145,7 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--source-ref", default="HEAD")
     parser.add_argument("--build-timestamp-utc", required=True)
-    parser.add_argument("--engine-version", default="5.8.0")
+    parser.add_argument("--engine-version", default="5.8.1")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
     try:

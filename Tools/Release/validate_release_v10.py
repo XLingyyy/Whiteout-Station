@@ -14,7 +14,7 @@ the run and contain ``Validation/gate_manifest.json`` with this shape:
   "source_tree": "<full git tree id>",
   "source_dirty": false,
   "build_timestamp_utc": "<timezone-aware ISO-8601>",
-  "engine_version": "5.8.0",
+  "engine_version": "5.8.1",
   "python_version": "<version>",
   "checksums": {"relative/file": "<sha256>", "...": "..."}
 }
@@ -118,7 +118,7 @@ except ImportError:
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ENGINE_VERSION = "5.8.0"
+ENGINE_VERSION = "5.8.1"
 FRESHNESS_SKEW = timedelta(seconds=120)
 FUTURE_SKEW = timedelta(minutes=5)
 

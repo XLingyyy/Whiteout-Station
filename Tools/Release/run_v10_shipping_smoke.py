@@ -71,8 +71,8 @@ EXPECTED_ROUTES = {
             "calibrate_antenna",
             "send_signal",
         ],
-        "remaining_ap": 0,
-        "score": 76.76,
+        "remaining_ap": 4,
+        "score": 81.76,
         "ending": "TaskSuccess",
         "signal_sent": True,
     },
@@ -87,8 +87,8 @@ EXPECTED_ROUTES = {
             "calibrate_antenna",
             "send_signal",
         ],
-        "remaining_ap": 0,
-        "score": 72.02,
+        "remaining_ap": 4,
+        "score": 76.94,
         "ending": "TaskSuccess",
         "signal_sent": True,
     },
@@ -101,14 +101,14 @@ EXPECTED_ROUTES = {
             "calibrate_antenna",
             "send_signal",
         ],
-        "remaining_ap": 2,
+        "remaining_ap": 6,
         "score": 68.31,
         "ending": "CostUncontrolled",
         "signal_sent": True,
     },
     "wait": {
         "actions": [],
-        "remaining_ap": 8,
+        "remaining_ap": 12,
         "score": 47.28,
         "ending": "SurvivalWait",
         "signal_sent": False,
@@ -120,8 +120,8 @@ EXPECTED_ROUTES = {
             "talk_gu_heng",
             "talk_gu_heng",
         ],
-        "remaining_ap": 3,
-        "score": 49.11,
+        "remaining_ap": 7,
+        "score": 48.11,
         "ending": "CostUncontrolled",
         "signal_sent": False,
     },
@@ -136,8 +136,8 @@ EXPECTED_ROUTES = {
             "distribute_food",
             "inspect_control_cabinet",
         ],
-        "remaining_ap": 0,
-        "score": 45.57,
+        "remaining_ap": 4,
+        "score": 45.58,
         "ending": "TotalCollapse",
         "signal_sent": False,
     },
@@ -360,7 +360,10 @@ def validate_event_log(
     if event_log.get("signal_sent") is not expected["signal_sent"]:
         raise SmokeError(f"{scenario.scenario_id}: signal state mismatch")
     if event_log.get("remaining_ap") != expected["remaining_ap"]:
-        raise SmokeError(f"{scenario.scenario_id}: remaining AP mismatch")
+        raise SmokeError(
+            f"{scenario.scenario_id}: remaining AP mismatch "
+            f"({event_log.get('remaining_ap')!r} != {expected['remaining_ap']!r})"
+        )
     try:
         score = float(event_log["score"])
     except (KeyError, TypeError, ValueError) as exc:

@@ -345,7 +345,7 @@ def make_valid_artifact(
         "source_tree": source_tree,
         "source_dirty": False,
         "build_timestamp_utc": now.isoformat().replace("+00:00", "Z"),
-        "engine_version": "5.8.0",
+        "engine_version": "5.8.1",
         "python_version": ".".join(map(str, sys.version_info[:3])),
         "checksums": checksums,
     }
