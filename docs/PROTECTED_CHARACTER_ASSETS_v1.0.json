@@ -1,7 +1,7 @@
 {
   "schema": "whiteout.protected-assets.v3",
   "version": "1.0.0",
-  "baseline_commit": "b0c409cab63e4e7028d44a418e37c45a5ba6d109",
+  "baseline_commit": "e7c63421411c2e40262bf77e2ff11652320d1b5a",
   "protected_roots": [
     "WhiteoutStation/Content/WindStation/World/MVP_StationMap.umap",
     "WhiteoutStation/Content/WindStation/Art/AnimeNPC",
@@ -17,7 +17,7 @@
     {
       "path": "WhiteoutStation/Content/WindStation/Art/AnimeNPC",
       "type": "tree",
-      "object_id": "86db42cbd52864e798e7d8e598048d494b00f5a9"
+      "object_id": "81019b3aec2658623a9834075e298a7a28bd4fe1"
     },
     {
       "path": "WhiteoutStation/Content/WindStation/Presentation/Characters",
