@@ -46,6 +46,10 @@
 		{
 			"Name": "Niagara",
 			"Enabled": true
+		},
+		{
+			"Name": "VRM4U",
+			"Enabled": true
 		}
 	]
 }

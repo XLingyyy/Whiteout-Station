@@ -87,3 +87,20 @@ This is official Unreal Engine template content supplied with the installed engi
 The MakeHuman application is used only as an offline exporter; its AGPL code is neither linked nor redistributed. Exact download URLs and SHA-256 values are pinned in `Tools/Assets/download_makehuman_inputs.py`; the generated FBX files, textures and detailed attribution are stored under `SourceAssets/MakeHuman/`.
 
 v0.4 (2026-07-22): 叶澄夹克贴图已在原 CC BY 4.0 资产基础上做去徽章化修改；移除救援组织文字与红十字圆徽，不新增标识或文字，修改脚本为 `Tools/Assets/process_v04_jacket.py`。
+
+## VRoidPreset A–Z anime NPC replacements — VRoid official terms
+
+| Asset | Author | Project use | Source |
+|---|---|---|---|
+| `AvatarSample_C` | pixiv / VRoid Project | 顾衡 prototype character mesh, materials, morphs and skeleton | https://hub.vroid.com/en/characters/1248981995540129234/models/8640547963669442173 |
+| `AvatarSample_B` | pixiv / VRoid Project | 叶澄 prototype character mesh, materials, morphs and skeleton | https://hub.vroid.com/en/characters/7939147878897061040/models/2292219474373673889 |
+
+Retrieved 2026-07-25 from the pinned `madjin/vrm-samples` mirror revision `e16eb187100149a315ad92c3c9968f1d5baa6c7d`. The official VRoidPreset A–Z terms permit commercial and non-commercial use, modification and use as original characters without attribution. They prohibit selling or redistributing the original `.vroid`, `.vrm`, or extracted model data as standalone assets and prohibit character-generation-service use. The models are not CC0.
+
+Official terms: https://vroid.pixiv.help/hc/en-us/articles/4402394424089-VRoidPreset-A-Z. Imported project assets are under `/Game/WindStation/Art/AnimeNPC`; their VRM license metadata is retained in the generated `VL_*_VrmLicense` assets. The source `.vrm` files are kept outside the project repository in `G:\MyWorkSpace\AnimeNPCKit\Models\ReadyPair_Recommended` to avoid standalone redistribution.
+
+VRM4U `v1.2026.07.22` (MIT, https://github.com/ruyo/VRM4U/releases/tag/v1.2026.07.22) was used to import the VRM files and generate Unreal Engine materials, skeletons, physics assets and retargeting data.
+
+## Ye Cheng V10 — Noanoa black long hair
+
+`YeCheng_NoanoaHair_RefinedFace_v10` uses the free Noanoa “黑髪ロングヘア” asset from https://booth.pm/ja/items/7564879. The listing currently provides the files at JPY 0 but publishes no explicit commercial-use or redistribution terms. The imported V10 assets under `/Game/WindStation/Art/AnimeNPC/YeChengV10` are approved for local development and review only; do not package or distribute them with Whiteout Station until the creator grants suitable permission. The source `.vrm` remains outside the repository.
