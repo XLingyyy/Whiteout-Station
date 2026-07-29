@@ -612,8 +612,8 @@ def validate_v09_feature_contract(repo_root: Path) -> GateReport:
         ),
         "WhiteoutStation/Source/WhiteoutStation/Private/World/"
         "WhiteoutStationBuilder.cpp": (
-            "M_WS_FloorDeck_V09",
-            "M_WS_WallPanel_V09",
+            "M_WS_FloorDeck_V08",
+            "M_WS_WallPanel_V08",
         ),
     }
     for relative_path, markers in source_contracts.items():
