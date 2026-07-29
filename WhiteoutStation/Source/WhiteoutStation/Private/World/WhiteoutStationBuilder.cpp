@@ -25,6 +25,7 @@
 #include "Serialization/JsonWriter.h"
 #include "State/WindStationStateSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
+#include "WorldCollision.h"
 #include "World/WSInteractableActor.h"
 #include "World/WhiteoutSnowField.h"
 
@@ -53,9 +54,69 @@ void AWhiteoutStationBuilder::BeginPlay()
 	{
 		BuildStation();
 	}
-	else if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutSceneAudit")))
+	else
 	{
-		GetWorldTimerManager().SetTimer(SceneAuditTimer, this, &AWhiteoutStationBuilder::AuditStationLayout, 1.0f, false);
+		if (!RuntimeHotspots.ContainsByPredicate(
+			[](const TObjectPtr<AWSInteractableActor>& Hotspot)
+			{
+				return Hotspot
+					&& Hotspot->ActionId == TEXT("distribute_food");
+		}))
+		{
+			FVector FoodStationLocation(900.0f, 760.0f, 70.0f);
+			FVector KitchenAnchor = FoodStationLocation;
+			for (const TObjectPtr<AWSInteractableActor>& Hotspot : RuntimeHotspots)
+			{
+				if (Hotspot
+					&& Hotspot->ActionId == TEXT("dismantle_kitchen_heater"))
+				{
+					KitchenAnchor = Hotspot->GetActorLocation();
+					break;
+				}
+			}
+			const TArray<FVector> CandidateOffsets = {
+				FVector(-180.0f, -180.0f, 0.0f),
+				FVector(-260.0f, -120.0f, 0.0f),
+				FVector(-120.0f, -260.0f, 0.0f),
+				FVector(180.0f, -180.0f, 0.0f),
+				FVector(-300.0f, -260.0f, 0.0f),
+				FVector(260.0f, -120.0f, 0.0f),
+			};
+			for (const FVector& Offset : CandidateOffsets)
+			{
+				FVector Candidate = KitchenAnchor + Offset;
+				Candidate.Z = 70.0f;
+				const FVector OccupancyCenter(
+					Candidate.X,
+					Candidate.Y,
+					90.0f);
+				if (!GetWorld()->OverlapBlockingTestByChannel(
+					OccupancyCenter,
+					FQuat::Identity,
+					ECC_Visibility,
+					FCollisionShape::MakeBox(
+						FVector(55.0f, 55.0f, 85.0f))))
+				{
+					FoodStationLocation = Candidate;
+					break;
+				}
+			}
+			SpawnHotspot(
+				TEXT("distribute_food"),
+				TEXT("口粮台"),
+				FoodStationLocation,
+				FLinearColor(0.9f, 0.65f, 0.12f),
+				FVector(0.72f));
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("WhiteoutStation: restored missing editable-layout hotspot distribute_food at runtime (%s)"),
+				*FoodStationLocation.ToCompactString());
+		}
+		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutSceneAudit")))
+		{
+			GetWorldTimerManager().SetTimer(SceneAuditTimer, this, &AWhiteoutStationBuilder::AuditStationLayout, 1.0f, false);
+		}
 	}
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
@@ -154,6 +215,16 @@ bool AWhiteoutStationBuilder::RegisterEditableStationActors()
 {
 	ResetRuntimeActorCache();
 	EditableStationActorCount = 0;
+	UMaterialInterface* LegacyConcrete = LoadObject<UMaterialInterface>(
+		nullptr,
+		TEXT("/Game/WindStation/Art/Materials/M_WS_Concrete.M_WS_Concrete"));
+	UMaterialInterface* FloorDeckMaterial = LoadObject<UMaterialInterface>(
+		nullptr,
+		TEXT("/Game/WindStation/Art/Materials/M_WS_FloorDeck_V08.M_WS_FloorDeck_V08"));
+	UMaterialInterface* WallPanelMaterial = LoadObject<UMaterialInterface>(
+		nullptr,
+		TEXT("/Game/WindStation/Art/Materials/M_WS_WallPanel_V08.M_WS_WallPanel_V08"));
+	int32 UpgradedArchitectureSurfaces = 0;
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
 		AActor* Actor = *It;
@@ -190,6 +261,26 @@ bool AWhiteoutStationBuilder::RegisterEditableStationActors()
 		{
 			RuntimeAssemblyMeshes.Add(MeshActor);
 		}
+		if (AStaticMeshActor* MeshActor = Cast<AStaticMeshActor>(Actor);
+			MeshActor && MeshActor->ActorHasTag(TEXT("WSRuntimeGeometry")))
+		{
+			UStaticMeshComponent* Component = MeshActor->GetStaticMeshComponent();
+			if (Component
+				&& LegacyConcrete
+				&& Component->GetMaterial(0) == LegacyConcrete)
+			{
+				const bool bFloorSurface =
+					Component->Bounds.BoxExtent.Z <= 80.0f
+					&& MeshActor->GetActorLocation().Z <= 125.0f;
+				UMaterialInterface* UpgradedMaterial =
+					bFloorSurface ? FloorDeckMaterial : WallPanelMaterial;
+				if (UpgradedMaterial)
+				{
+					Component->SetMaterial(0, UpgradedMaterial);
+					++UpgradedArchitectureSurfaces;
+				}
+			}
+		}
 		if (AWSInteractableActor* Hotspot = Cast<AWSInteractableActor>(Actor);
 			Hotspot && Hotspot->ActorHasTag(TEXT("WSRuntimeHotspot")))
 		{
@@ -199,7 +290,12 @@ bool AWhiteoutStationBuilder::RegisterEditableStationActors()
 
 	if (EditableStationActorCount > 0)
 	{
-		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: using %d editable actors saved in the level"), EditableStationActorCount);
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("WhiteoutStation: using %d editable actors saved in the level; upgraded %d legacy architecture surfaces"),
+			EditableStationActorCount,
+			UpgradedArchitectureSurfaces);
 		return true;
 	}
 	return false;
@@ -484,11 +580,18 @@ void AWhiteoutStationBuilder::SpawnBlock(
 	Block->SetActorScale3D(Scale);
 	const bool bSnowSurface = Label.Contains(TEXT("Outdoor")) || Label.Contains(TEXT("Snow"));
 	const bool bMetalSurface = Label.Contains(TEXT("Metal")) || Label.Contains(TEXT("Pipe"));
+	const bool bFloorSurface =
+		!bSnowSurface
+		&& !bMetalSurface
+		&& Location.Z <= 125.0f
+		&& Scale.Z <= 0.8f;
 	const TCHAR* MaterialPath = bSnowSurface
 		? TEXT("/Game/WindStation/Art/Materials/M_WS_Snow.M_WS_Snow")
 		: bMetalSurface
 			? TEXT("/Game/WindStation/Art/Materials/M_WS_RustedMetal.M_WS_RustedMetal")
-			: TEXT("/Game/WindStation/Art/Materials/M_WS_Concrete.M_WS_Concrete");
+			: bFloorSurface
+				? TEXT("/Game/WindStation/Art/Materials/M_WS_FloorDeck_V08.M_WS_FloorDeck_V08")
+				: TEXT("/Game/WindStation/Art/Materials/M_WS_WallPanel_V08.M_WS_WallPanel_V08");
 	if (UMaterialInterface* SurfaceMaterial = LoadObject<UMaterialInterface>(nullptr, MaterialPath))
 	{
 		Block->GetStaticMeshComponent()->SetMaterial(0, SurfaceMaterial);

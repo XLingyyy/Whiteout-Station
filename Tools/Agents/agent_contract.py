@@ -13,7 +13,20 @@ MODEL = "deepseek-v4-flash"
 OFFICIAL_ENDPOINT = "https://api.deepseek.com/chat/completions"
 MAX_RESPONSE_BYTES = 64 * 1024
 NPC_RESPONSE_FIELDS = frozenset(
-    {"npc_line", "emotion", "used_action_id", "referenced_fact_ids"}
+    {
+        "npc_line",
+        "emotion",
+        "used_action_id",
+        "referenced_fact_ids",
+        "movement_intent",
+        "reaction_action",
+    }
+)
+MOVEMENT_INTENTS = frozenset(
+    {"stay", "step_closer", "step_back", "return_to_post"}
+)
+REACTION_ACTIONS = frozenset(
+    {"neutral", "acknowledge", "consider", "reassure", "reject", "alarmed"}
 )
 
 
@@ -43,6 +56,8 @@ class NPCResponse:
     emotion: str
     used_action_id: str
     referenced_fact_ids: tuple[str, ...]
+    movement_intent: str
+    reaction_action: str
 
 
 def classify_endpoint(endpoint: str) -> EndpointPolicy:
@@ -94,16 +109,24 @@ def build_request_payload(action_id: str = "probe_availability") -> dict[str, An
         "emotion": "focused",
         "used_action_id": action_id,
         "referenced_fact_ids": [],
+        "movement_intent": "stay",
+        "reaction_action": "neutral",
     }
     system_prompt = (
         "Return exactly one JSON object and no markdown. The JSON must contain "
-        "exactly four fields: npc_line string, emotion string, used_action_id "
-        "string equal to the supplied action_id, and referenced_fact_ids string "
-        "array. Do not add facts. Example JSON: "
+        "exactly six fields: npc_line string, emotion string, used_action_id "
+        "string equal to the supplied action_id, referenced_fact_ids string "
+        "array, movement_intent enum, and reaction_action enum. Do not add facts "
+        "or coordinates. Example JSON: "
         + json.dumps(example, ensure_ascii=False, separators=(",", ":"))
     )
     user_prompt = json.dumps(
-        {"action_id": action_id, "allowed_fact_ids": []},
+        {
+            "action_id": action_id,
+            "allowed_fact_ids": [],
+            "allowed_movement_intents": ["stay"],
+            "allowed_reaction_actions": ["neutral"],
+        },
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -144,7 +167,7 @@ def make_completion_envelope(
         else json.dumps(content, ensure_ascii=False, separators=(",", ":"))
     )
     return {
-        "id": "whiteout-mock-v05",
+        "id": "whiteout-mock-v06",
         "object": "chat.completion",
         "created": 0,
         "model": model,
@@ -240,6 +263,8 @@ def validate_completion(
     npc_line = response["npc_line"]
     emotion = response["emotion"]
     used_action_id = response["used_action_id"]
+    movement_intent = response["movement_intent"]
+    reaction_action = response["reaction_action"]
     if not isinstance(npc_line, str) or not npc_line.strip():
         raise ContractError("npc_line_invalid")
     if len(npc_line) > 240:
@@ -254,6 +279,10 @@ def validate_completion(
         raise ContractError("used_action_id_invalid")
     if used_action_id != expected_action_id:
         raise ContractError("used_action_id_mismatch")
+    if movement_intent not in MOVEMENT_INTENTS:
+        raise ContractError("movement_intent_invalid")
+    if reaction_action not in REACTION_ACTIONS:
+        raise ContractError("reaction_action_invalid")
 
     referenced_fact_ids = _validate_fact_ids(
         response["referenced_fact_ids"],
@@ -264,4 +293,6 @@ def validate_completion(
         emotion=emotion.strip(),
         used_action_id=used_action_id,
         referenced_fact_ids=referenced_fact_ids,
+        movement_intent=movement_intent,
+        reaction_action=reaction_action,
     )

@@ -17,6 +17,7 @@
 #include "Components/PointLightComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
+#include "Dom/JsonObject.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformTime.h"
 #include "HAL/FileManager.h"
@@ -33,6 +34,8 @@
 #include "Presentation/WSPresentationText.h"
 #include "Settings/WhiteoutSettingsSubsystem.h"
 #include "State/WindStationStateSubsystem.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 #include "World/WSInteractableActor.h"
 #include "World/WhiteoutStationBuilder.h"
 #include "TimerManager.h"
@@ -40,6 +43,66 @@
 
 namespace
 {
+	FString PerformanceMovementToken(const EWSNPCMovementIntent Intent)
+	{
+		switch (Intent)
+		{
+		case EWSNPCMovementIntent::StepCloser: return TEXT("step_closer");
+		case EWSNPCMovementIntent::StepBack: return TEXT("step_back");
+		case EWSNPCMovementIntent::ReturnToPost: return TEXT("return_to_post");
+		default: return TEXT("stay");
+		}
+	}
+
+	FString PerformanceReactionToken(const EWSNPCReaction Reaction)
+	{
+		switch (Reaction)
+		{
+		case EWSNPCReaction::Acknowledge: return TEXT("acknowledge");
+		case EWSNPCReaction::Consider: return TEXT("consider");
+		case EWSNPCReaction::Reassure: return TEXT("reassure");
+		case EWSNPCReaction::Reject: return TEXT("reject");
+		case EWSNPCReaction::Alarmed: return TEXT("alarmed");
+		default: return TEXT("neutral");
+		}
+	}
+
+	void SavePerformanceProbeEvidence(
+		const FName ActionId,
+		const FWSAgentReply& Reply,
+		const bool bApplied,
+		const float AppliedDistance)
+	{
+		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+		Root->SetStringField(TEXT("schema"), TEXT("whiteout.v0.8.performance-probe.v1"));
+		Root->SetStringField(TEXT("action_id"), ActionId.ToString());
+		Root->SetStringField(TEXT("provider"), Reply.Provider);
+		Root->SetBoolField(TEXT("fallback"), Reply.bFallback);
+		Root->SetStringField(TEXT("validation_reason"), Reply.ValidationReason);
+		Root->SetStringField(TEXT("movement_intent"), PerformanceMovementToken(Reply.MovementIntent));
+		Root->SetStringField(TEXT("reaction_action"), PerformanceReactionToken(Reply.Reaction));
+		Root->SetBoolField(TEXT("performance_applied"), bApplied);
+		Root->SetNumberField(TEXT("applied_distance_cm"), AppliedDistance);
+
+		FString Serialized;
+		const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Serialized);
+		if (!FJsonSerializer::Serialize(Root, Writer))
+		{
+			UE_LOG(LogTemp, Error, TEXT("WhiteoutStation ExpressionProbe: evidence serialization failed"));
+			return;
+		}
+		const FString EvidencePath =
+			FPaths::ProjectSavedDir() / TEXT("Logs/WhiteoutStation_PerformanceProbe.json");
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(EvidencePath), true);
+		if (!FFileHelper::SaveStringToFile(
+			Serialized + LINE_TERMINATOR,
+			*EvidencePath,
+			FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+		{
+			UE_LOG(LogTemp, Error, TEXT("WhiteoutStation ExpressionProbe: evidence write failed"));
+		}
+	}
+
 	void AddPresentationEvent(FWSGameState& State, const TCHAR* ActionId, const int32 APBefore, const int32 APAfter, const bool bCrisis = false)
 	{
 		FWSEventRecord& Event = State.EventLog.Emplace_GetRef();
@@ -49,6 +112,7 @@ namespace
 		Event.APAfter = APAfter;
 		Event.ReasonCode = EWSReasonCode::Committed;
 		Event.bCrisisTriggered = bCrisis;
+		State.ActionCounts.FindOrAdd(Event.ActionId) += 1;
 	}
 
 	FWSGameState MakePresentationResultsState(const FWSGameState& BaseState, const EWSEndingType Ending)
@@ -57,6 +121,7 @@ namespace
 		State.Phase = EWSGamePhase::Results;
 		State.Ending = Ending;
 		State.EventLog.Reset();
+		State.ActionCounts.Reset();
 		State.bMidCrisisTriggered = true;
 		State.Score.Rating = TEXT("C");
 		State.Tasks = FWSTaskState();
@@ -64,6 +129,8 @@ namespace
 
 		if (Ending == EWSEndingType::TaskSuccess)
 		{
+			State.Flags.bRelayInstalled = true;
+			State.Flags.bKitchenHeaterIntact = false;
 			State.Tasks.GeneratorProgress = 2;
 			State.Tasks.AntennaCalibration = 1;
 			State.Tasks.bSignalSent = true;
@@ -85,6 +152,7 @@ namespace
 		}
 		else if (Ending == EWSEndingType::SurvivalWait)
 		{
+			State.Flags.bMedicalRoomHeated = true;
 			State.Tasks.GeneratorProgress = 1;
 			State.Score.TaskQuality = 10.0f;
 			State.Score.People = 24.5f;
@@ -100,6 +168,7 @@ namespace
 		}
 		else if (Ending == EWSEndingType::CostUncontrolled)
 		{
+			State.Flags.bSelfRepairUsed = true;
 			State.Tasks.GeneratorProgress = 2;
 			State.Tasks.AntennaCalibration = 1;
 			State.Tasks.bSignalSent = true;
@@ -112,8 +181,8 @@ namespace
 			State.Score.Rating = TEXT("D");
 			if (FWSCharacterState* Player = State.Characters.Find(EWSCharacterId::Player))
 			{
-				Player->Health = 26.0f;
-				Player->Temperature = 24.0f;
+				Player->Health = 2.6f;
+				Player->Temperature = 2.4f;
 			}
 			AddPresentationEvent(State, TEXT("forced_self_repair"), 8, 6);
 			AddPresentationEvent(State, TEXT("dismantle_kitchen_heater"), 6, 5);
@@ -132,8 +201,8 @@ namespace
 			State.Score.Rating = TEXT("D");
 			for (TPair<EWSCharacterId, FWSCharacterState>& Pair : State.Characters)
 			{
-				Pair.Value.Health = 25.0f;
-				Pair.Value.Temperature = 22.0f;
+				Pair.Value.Health = 2.5f;
+				Pair.Value.Temperature = 2.2f;
 			}
 			AddPresentationEvent(State, TEXT("forced_self_repair"), 8, 6);
 			AddPresentationEvent(State, TEXT("distribute_food"), 6, 5);
@@ -154,7 +223,7 @@ AWhiteoutGameMode::AWhiteoutGameMode()
 void AWhiteoutGameMode::BeginPlay()
 {
 	Super::BeginPlay();
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.5 flow"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.8 flow"));
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		const bool bContinueRequested = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutContinue"));
@@ -270,6 +339,88 @@ void AWhiteoutGameMode::BeginPlay()
 			ESearchCase::IgnoreCase)
 			? FName(TEXT("talk_ye_cheng"))
 			: FName(TEXT("talk_gu_heng"));
+		bool bApplyExpressionProbe = FParse::Param(
+			FCommandLine::Get(),
+			TEXT("WhiteoutApplyExpressionProbe"));
+		TWeakObjectPtr<AWSInteractableActor> ExpressionProbeActor;
+		FVector ExpressionProbeStart = FVector::ZeroVector;
+		if (bApplyExpressionProbe)
+		{
+			for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+			{
+				if (It->ActionId == ExpressionProbeAction)
+				{
+					ExpressionProbeActor = *It;
+					ExpressionProbeStart = It->GetActorLocation();
+					break;
+				}
+			}
+			APawn* ProbePawn = UGameplayStatics::GetPlayerPawn(this, 0);
+			APlayerController* ProbeController = UGameplayStatics::GetPlayerController(this, 0);
+			if (!ExpressionProbeActor.IsValid() || !ProbePawn || !ProbeController)
+			{
+				bApplyExpressionProbe = false;
+				UE_LOG(LogTemp, Error, TEXT("WhiteoutStation ExpressionProbe: performance target unavailable"));
+			}
+			else
+			{
+				const FVector ActorLocation = ExpressionProbeActor->GetActorLocation();
+				FVector ProbeDirection = ExpressionProbeActor->GetActorForwardVector().GetSafeNormal2D();
+				bool bProbePositioned = false;
+				FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(WhiteoutExpressionProbe), false);
+				QueryParams.AddIgnoredActor(ExpressionProbeActor.Get());
+				QueryParams.AddIgnoredActor(ProbePawn);
+				for (int32 DirectionIndex = 0; DirectionIndex < 8; ++DirectionIndex)
+				{
+					const FVector CandidateDirection =
+						ProbeDirection.RotateAngleAxis(DirectionIndex * 45.0f, FVector::UpVector).GetSafeNormal2D();
+					const FVector PlayerLocation = ActorLocation + CandidateDirection * 280.0f;
+					const FVector CapsuleOffset(0.0f, 0.0f, 86.0f);
+					const bool bMoveBlocked = GetWorld()->SweepTestByChannel(
+						ActorLocation + CapsuleOffset,
+						ActorLocation + CandidateDirection * 85.0f + CapsuleOffset,
+						FQuat::Identity,
+						ECC_WorldStatic,
+						FCollisionShape::MakeCapsule(28.0f, 78.0f),
+						QueryParams);
+					const bool bSightBlocked = GetWorld()->LineTraceTestByChannel(
+						ActorLocation + FVector(0.0f, 0.0f, 105.0f),
+						PlayerLocation + FVector(0.0f, 0.0f, 105.0f),
+						ECC_Visibility,
+						QueryParams);
+					const bool bPlayerBlocked = GetWorld()->OverlapBlockingTestByChannel(
+						PlayerLocation + FVector(0.0f, 0.0f, 92.0f),
+						FQuat::Identity,
+						ECC_WorldStatic,
+						FCollisionShape::MakeCapsule(34.0f, 88.0f),
+						QueryParams);
+					if (!bMoveBlocked && !bSightBlocked && !bPlayerBlocked)
+					{
+						ProbeDirection = CandidateDirection;
+						ProbePawn->SetActorLocation(
+							PlayerLocation + FVector(0.0f, 0.0f, 92.0f),
+							false,
+							nullptr,
+							ETeleportType::TeleportPhysics);
+						bProbePositioned = true;
+						break;
+					}
+				}
+				if (!bProbePositioned)
+				{
+					bApplyExpressionProbe = false;
+					UE_LOG(LogTemp, Error, TEXT("WhiteoutStation ExpressionProbe: no safe performance direction"));
+				}
+				const FVector LookTarget = ActorLocation + FVector(0.0f, 0.0f, 105.0f);
+				ProbeController->SetControlRotation(
+					(LookTarget - ProbePawn->GetPawnViewLocation()).Rotation());
+				if (AWhiteoutHUD* ProbeHUD = Cast<AWhiteoutHUD>(ProbeController->GetHUD()))
+				{
+					ProbeHUD->DismissOpening();
+					ProbeHUD->SetInterfaceVisibleForCapture(false);
+				}
+			}
+		}
 		IntentProbeGateway = NewObject<UWSAgentGateway>(this);
 		IntentProbeGateway->Initialize();
 		const UWindStationStateSubsystem* ProbeSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
@@ -282,27 +433,163 @@ void AWhiteoutGameMode::BeginPlay()
 			ProbeState,
 			true,
 			FWSAgentReplyCallback::CreateLambda(
-				[WeakThis](const FWSAgentReply& Reply)
+				[WeakThis, bApplyExpressionProbe, ExpressionProbeActor, ExpressionProbeStart, ExpressionProbeAction](const FWSAgentReply& Reply)
 				{
 					UE_LOG(
 						LogTemp,
 						Display,
-						TEXT("WhiteoutStation ExpressionProbe: provider=%s fallback=%s validation=%s line_chars=%d"),
+						TEXT("WhiteoutStation ExpressionProbe: provider=%s fallback=%s validation=%s movement=%s reaction=%s line_chars=%d"),
 						*Reply.Provider,
 						Reply.bFallback ? TEXT("true") : TEXT("false"),
 						*Reply.ValidationReason,
+						*StaticEnum<EWSNPCMovementIntent>()->GetNameStringByValue(static_cast<int64>(Reply.MovementIntent)),
+						*StaticEnum<EWSNPCReaction>()->GetNameStringByValue(static_cast<int64>(Reply.Reaction)),
 						Reply.Utterance.Len());
 					if (WeakThis.IsValid())
 					{
+						if (bApplyExpressionProbe)
+						{
+							if (APlayerController* ProbeController =
+								UGameplayStatics::GetPlayerController(WeakThis.Get(), 0))
+							{
+								if (AWhiteoutHUD* ProbeHUD = Cast<AWhiteoutHUD>(ProbeController->GetHUD()))
+								{
+									ProbeHUD->DismissOpening();
+									ProbeHUD->SetInterfaceVisibleForCapture(false);
+								}
+								if (APawn* ProbePawn = UGameplayStatics::GetPlayerPawn(WeakThis.Get(), 0))
+								{
+									ProbeController->SetViewTarget(ProbePawn);
+									if (ExpressionProbeActor.IsValid())
+									{
+										const FVector LookTarget =
+											ExpressionProbeActor->GetActorLocation() + FVector(0.0f, 0.0f, 105.0f);
+										ProbeController->SetControlRotation(
+											(LookTarget - ProbePawn->GetPawnViewLocation()).Rotation());
+									}
+								}
+							}
+							if (UWindStationStateSubsystem* StateSubsystem =
+								WeakThis->GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+							{
+								StateSubsystem->OnDialogueLine.Broadcast(Reply);
+							}
+							const bool bCaptureToSaved = FParse::Param(
+								FCommandLine::Get(),
+								TEXT("WhiteoutPerformanceCaptureToSaved"));
+							if (
+								bCaptureToSaved
+								|| FParse::Param(FCommandLine::Get(), TEXT("WhiteoutPerformanceCapture")))
+							{
+								const FString EvidenceDirectory = bCaptureToSaved
+									? FPaths::ProjectSavedDir() / TEXT("PerformanceProbe")
+									: FPaths::ConvertRelativePathToFull(
+										FPaths::ProjectDir() / TEXT("../docs/evidence_v0.8"));
+								IFileManager::Get().MakeDirectory(*EvidenceDirectory, true);
+								const FString EvidenceToken =
+									ExpressionProbeActor.IsValid()
+									&& ExpressionProbeActor->ActionId == TEXT("talk_ye_cheng")
+									? TEXT("YeCheng")
+									: TEXT("GuHeng");
+								FTimerHandle MoveCaptureTimer;
+								WeakThis->GetWorldTimerManager().SetTimer(
+									MoveCaptureTimer,
+									[EvidenceDirectory, EvidenceToken]()
+									{
+										FScreenshotRequest::RequestScreenshot(
+											EvidenceDirectory / FString::Printf(
+												TEXT("NPC_%s_Walk.png"),
+												*EvidenceToken),
+											true,
+											false,
+											false,
+											FIntRect(),
+											true);
+									},
+									0.45f,
+									false);
+								FTimerHandle ReactionCaptureTimer;
+								WeakThis->GetWorldTimerManager().SetTimer(
+									ReactionCaptureTimer,
+									[EvidenceDirectory, EvidenceToken]()
+									{
+										FScreenshotRequest::RequestScreenshot(
+											EvidenceDirectory / FString::Printf(
+												TEXT("NPC_%s_Acknowledge.png"),
+												*EvidenceToken),
+											true,
+											false,
+											false,
+											FIntRect(),
+											true);
+									},
+									1.35f,
+									false);
+							}
+						}
 						FTimerHandle ExitTimer;
 						WeakThis->GetWorldTimerManager().SetTimer(
 							ExitTimer,
-							[]() { FPlatformMisc::RequestExit(false); },
-							0.4f,
+							[
+								ExpressionProbeActor,
+								ExpressionProbeStart,
+								ExpressionProbeAction,
+								bApplyExpressionProbe,
+								PerformanceReply = Reply
+							]()
+							{
+								float AppliedDistance = 0.0f;
+								if (ExpressionProbeActor.IsValid())
+								{
+									AppliedDistance = FVector::Dist2D(
+										ExpressionProbeStart,
+										ExpressionProbeActor->GetActorLocation());
+									UE_LOG(
+										LogTemp,
+										Display,
+										TEXT("WhiteoutStation ExpressionProbe: applied_distance=%.2f"),
+										AppliedDistance);
+								}
+								SavePerformanceProbeEvidence(
+									ExpressionProbeAction,
+									PerformanceReply,
+									bApplyExpressionProbe && ExpressionProbeActor.IsValid(),
+									AppliedDistance);
+								FPlatformMisc::RequestExit(false);
+							},
+							bApplyExpressionProbe ? 2.9f : 0.4f,
 							false);
 					}
 				}),
 			ExpressionProbeText);
+	}
+
+	const bool bDialogueHistoryProbeRequested = FParse::Param(
+		FCommandLine::Get(),
+		TEXT("WhiteoutDialogueHistoryProbe"));
+	if (bDialogueHistoryProbeRequested)
+	{
+		IntentProbeGateway = NewObject<UWSAgentGateway>(this);
+		IntentProbeGateway->Initialize();
+		DialogueHistoryProbeSessionId = FGuid::NewGuid();
+		RunDialogueHistoryProbeStep(0);
+	}
+
+	FString InputSmokeTarget;
+	if (FParse::Value(
+		FCommandLine::Get(),
+		TEXT("WhiteoutInputSmokeTarget="),
+		InputSmokeTarget))
+	{
+		FTimerHandle InputSmokeSetupTimer;
+		GetWorldTimerManager().SetTimer(
+			InputSmokeSetupTimer,
+			[this, InputSmokeTarget]()
+			{
+				SetupInputSmokeTarget(InputSmokeTarget);
+			},
+			0.75f,
+			false);
 	}
 
 	if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoCapture")))
@@ -358,6 +645,7 @@ void AWhiteoutGameMode::BeginPlay()
 	if (AutoRoute.IsEmpty()
 		&& !bIntentProbeRequested
 		&& !bExpressionProbeRequested
+		&& !bDialogueHistoryProbeRequested
 		&& !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutBaselineCapture"))
 		&& SettingsAuditMode.IsEmpty()
 		&& !FParse::Param(FCommandLine::Get(), TEXT("WhiteoutJumpAudit"))
@@ -366,6 +654,164 @@ void AWhiteoutGameMode::BeginPlay()
 		FTimerHandle OpeningStartTimer;
 		GetWorldTimerManager().SetTimer(OpeningStartTimer, this, &AWhiteoutGameMode::BeginOpeningPresentation, 0.25f, false);
 	}
+}
+
+void AWhiteoutGameMode::RunDialogueHistoryProbeStep(const int32 Step)
+{
+	if (!IntentProbeGateway || !DialogueHistoryProbeSessionId.IsValid())
+	{
+		FPlatformMisc::RequestExit(false);
+		return;
+	}
+	const UWindStationStateSubsystem* StateSubsystem =
+		GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	const FWSGameState State = StateSubsystem
+		? StateSubsystem->GetStateSnapshot()
+		: FWSGameState();
+	FWSActionRequest Request;
+	Request.ActionId = TEXT("talk_gu_heng");
+	Request.DialogueAct = Step == 0
+		? EWSDialogueAct::Ask
+		: EWSDialogueAct::Reassure;
+	Request.PlayerSaid = Step == 0
+		? TEXT("继电器现在是什么状态？")
+		: TEXT("先稳住，我们会按顺序处理。");
+	Request.TransactionId = FGuid::NewGuid();
+	Request.DialogueSessionId = DialogueHistoryProbeSessionId;
+	TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
+	IntentProbeGateway->RequestExpression(
+		Request,
+		State,
+		true,
+		FWSAgentReplyCallback::CreateLambda(
+			[WeakThis, Step](const FWSAgentReply& Reply)
+			{
+				UE_LOG(
+					LogTemp,
+					Display,
+					TEXT("WhiteoutStation DialogueHistoryProbe: step=%d provider=%s fallback=%s validation=%s line_chars=%d"),
+					Step + 1,
+					*Reply.Provider,
+					Reply.bFallback ? TEXT("true") : TEXT("false"),
+					*Reply.ValidationReason,
+					Reply.Utterance.Len());
+				if (!WeakThis.IsValid())
+				{
+					return;
+				}
+				if (Step == 0)
+				{
+					WeakThis->RunDialogueHistoryProbeStep(1);
+					return;
+				}
+				FTimerHandle ExitTimer;
+				WeakThis->GetWorldTimerManager().SetTimer(
+					ExitTimer,
+					[]() { FPlatformMisc::RequestExit(false); },
+					0.4f,
+					false);
+			}));
+}
+
+void AWhiteoutGameMode::SetupInputSmokeTarget(const FString& ActionId)
+{
+	APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	APlayerController* PlayerController =
+		UGameplayStatics::GetPlayerController(this, 0);
+	if (!Pawn || !PlayerController)
+	{
+		UE_LOG(
+			LogTemp,
+			Error,
+			TEXT("WhiteoutStation InputSmokeSetup: missing pawn/controller"));
+		return;
+	}
+	for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+	{
+		if (!It->ActionId.ToString().Equals(ActionId, ESearchCase::IgnoreCase))
+		{
+			continue;
+		}
+		FVector BoundsOrigin = It->GetActorLocation();
+		FVector BoundsExtent = FVector::ZeroVector;
+		It->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+		const FVector OriginalPawnLocation = Pawn->GetActorLocation();
+		const float CandidateDistance = FMath::Clamp(
+			FMath::Max(BoundsExtent.X, BoundsExtent.Y) + 260.0f,
+			300.0f,
+			380.0f);
+		FVector PawnLocation = It->GetActorLocation()
+			+ FVector(CandidateDistance, 0.0f, 0.0f);
+		PawnLocation.Z = OriginalPawnLocation.Z;
+		int32 SelectedCandidate = INDEX_NONE;
+		FCollisionQueryParams SightParams(
+			SCENE_QUERY_STAT(WhiteoutInputSmokeSight),
+			false,
+			Pawn);
+		constexpr int32 CandidateCount = 16;
+		for (int32 CandidateIndex = 0;
+			CandidateIndex < CandidateCount;
+			++CandidateIndex)
+		{
+			const float Angle = 2.0f * PI
+				* static_cast<float>(CandidateIndex)
+				/ static_cast<float>(CandidateCount);
+			const FVector Direction(
+				FMath::Cos(Angle),
+				FMath::Sin(Angle),
+				0.0f);
+			FVector CandidateLocation =
+				BoundsOrigin + Direction * CandidateDistance;
+			CandidateLocation.Z = OriginalPawnLocation.Z + 8.0f;
+			FVector AdjustedCandidateLocation = CandidateLocation;
+			if (GetWorld()->FindTeleportSpot(
+				Pawn,
+				AdjustedCandidateLocation,
+				Pawn->GetActorRotation()))
+			{
+				CandidateLocation = AdjustedCandidateLocation;
+			}
+			const FVector CandidateCameraLocation =
+				CandidateLocation + FVector(0.0f, 0.0f, 64.0f);
+			FHitResult SightHit;
+			if (!GetWorld()->LineTraceSingleByChannel(
+					SightHit,
+					CandidateCameraLocation,
+					BoundsOrigin,
+					ECC_Visibility,
+					SightParams)
+				|| SightHit.GetActor() != *It)
+			{
+				continue;
+			}
+			PawnLocation = CandidateLocation;
+			SelectedCandidate = CandidateIndex;
+			break;
+		}
+		Pawn->SetActorLocation(
+			PawnLocation,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+		const FVector CameraLocation =
+			PawnLocation + FVector(0.0f, 0.0f, 64.0f);
+		PlayerController->SetControlRotation(
+			(BoundsOrigin - CameraLocation).Rotation());
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("WhiteoutStation InputSmokeSetup: target=%s pawn=%s focus=%s candidate=%d"),
+			*It->ActionId.ToString(),
+			*PawnLocation.ToCompactString(),
+			*BoundsOrigin.ToCompactString(),
+			SelectedCandidate);
+		return;
+	}
+	UE_LOG(
+		LogTemp,
+		Error,
+		TEXT("WhiteoutStation InputSmokeSetup: target not found (%s)"),
+		*ActionId);
 }
 
 void AWhiteoutGameMode::Tick(const float DeltaSeconds)
@@ -478,8 +924,18 @@ void AWhiteoutGameMode::BeginOpeningPresentation()
 	PlayerController->SetIgnoreMoveInput(true);
 	PlayerController->SetIgnoreLookInput(true);
 	PlayerController->SetViewTargetWithBlend(OpeningCamera, 0.75f, EViewTargetBlendFunction::VTBlend_Cubic);
-	GetWorldTimerManager().SetTimer(OpeningFinishTimer, this, &AWhiteoutGameMode::FinishOpeningPresentation, 14.0f, false);
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: opening establishing camera started"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.8: manual opening presentation started"));
+}
+
+void AWhiteoutGameMode::PrepareOpeningReveal()
+{
+	if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
+	{
+		if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
+		{
+			PlayerController->SetViewTarget(PlayerPawn);
+		}
+	}
 }
 
 void AWhiteoutGameMode::FinishOpeningPresentation()
@@ -490,12 +946,9 @@ void AWhiteoutGameMode::FinishOpeningPresentation()
 	}
 	bOpeningFinished = true;
 	GetWorldTimerManager().ClearTimer(OpeningFinishTimer);
+	PrepareOpeningReveal();
 	if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
 	{
-		if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
-		{
-			PlayerController->SetViewTargetWithBlend(PlayerPawn, 0.85f, EViewTargetBlendFunction::VTBlend_Cubic);
-		}
 		PlayerController->SetIgnoreMoveInput(false);
 		PlayerController->SetIgnoreLookInput(false);
 	}
@@ -504,7 +957,15 @@ void AWhiteoutGameMode::FinishOpeningPresentation()
 		OpeningCamera->SetLifeSpan(1.1f);
 		OpeningCamera = nullptr;
 	}
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: opening handed control to player"));
+	FString InputSmokeTarget;
+	if (FParse::Value(
+			FCommandLine::Get(),
+			TEXT("WhiteoutInputSmokeTarget="),
+			InputSmokeTarget))
+	{
+		SetupInputSmokeTarget(InputSmokeTarget);
+	}
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.8: opening handed control to player"));
 }
 
 void AWhiteoutGameMode::BeginPresentationCapture()
@@ -601,6 +1062,57 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 		PresentationCaptureNames = {
 			TEXT("lighting_control_ceiling"), TEXT("lighting_antenna_front"), TEXT("lighting_antenna_side")};
 	}
+	else if (PresentationCaptureMode.Equals(TEXT("v06ux"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("opening_story_01"), TEXT("opening_story_04"), TEXT("opening_story_07"),
+			TEXT("guide"),
+			TEXT("dialogue_gu_initial"), TEXT("dialogue_ye_initial"), TEXT("dialogue_gu_unlocked")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v06product"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("pause"), TEXT("settings_default"),
+			TEXT("results_task"), TEXT("results_survival"),
+			TEXT("results_cost"), TEXT("results_collapse")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v07ui"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("hud"), TEXT("focus_near"), TEXT("focus_npc"), TEXT("dialogue_response")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v08ux"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("opening_story_01"), TEXT("opening_story_04"),
+			TEXT("opening_story_05"), TEXT("opening_story_06"),
+			TEXT("opening_story_07"), TEXT("opening_story_09"),
+			TEXT("opening_story_10"), TEXT("hud"), TEXT("guide"),
+			TEXT("focus_near"), TEXT("focus_npc"), TEXT("dialogue_response")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v08characters"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("character_gu_v08_face"), TEXT("character_gu_v08_idle"),
+			TEXT("character_gu_v08_walk"),
+			TEXT("character_gu_v08_acknowledge"), TEXT("character_gu_v08_consider"),
+			TEXT("character_gu_v08_reassure"), TEXT("character_gu_v08_reject"),
+			TEXT("character_gu_v08_alarmed"),
+			TEXT("character_ye_v08_face"), TEXT("character_ye_v08_idle"),
+			TEXT("character_ye_v08_walk"),
+			TEXT("character_ye_v08_acknowledge"), TEXT("character_ye_v08_consider"),
+			TEXT("character_ye_v08_reassure"), TEXT("character_ye_v08_reject"),
+			TEXT("character_ye_v08_alarmed")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v08scene"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("scene_01_after_control_grounding"),
+			TEXT("scene_03_after_central_passage"),
+			TEXT("scene_04_after_quarters_grounding"),
+			TEXT("scene_07_after_repair_grounding"),
+			TEXT("scene_08_after_medical_layout")};
+	}
 	else
 	{
 		PresentationCaptureNames.Add(PresentationCaptureMode);
@@ -613,7 +1125,7 @@ void AWhiteoutGameMode::StagePresentationCapture()
 {
 	if (!PresentationCaptureNames.IsValidIndex(PresentationCaptureIndex))
 	{
-		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: presentation capture completed"));
+		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.8: presentation capture completed"));
 		FPlatformMisc::RequestExit(false);
 		return;
 	}
@@ -649,10 +1161,12 @@ void AWhiteoutGameMode::StagePresentationCapture()
 
 	if (CaptureName.StartsWith(TEXT("opening_")))
 	{
-		const int32 Stage = CaptureName.Equals(TEXT("opening_title")) ? 0
-			: CaptureName.Equals(TEXT("opening_establishing")) ? 1
-			: CaptureName.Equals(TEXT("opening_objective")) ? 2
-			: 3;
+		const int32 Stage = CaptureName.StartsWith(TEXT("opening_story_"))
+			? FMath::Clamp(FCString::Atoi(*CaptureName.Right(2)) - 1, 0, 9)
+			: CaptureName.Equals(TEXT("opening_title")) ? 0
+				: CaptureName.Equals(TEXT("opening_establishing")) ? 1
+				: CaptureName.Equals(TEXT("opening_objective")) ? 2
+				: 3;
 		HUD->SetOpeningCaptureStage(Stage);
 	}
 	else if (CaptureName.StartsWith(TEXT("focus_")))
@@ -675,7 +1189,7 @@ void AWhiteoutGameMode::StagePresentationCapture()
 				{
 					const FVector FocusInspectionLocation(10000.0f, 10000.0f, 0.0f);
 					It->SetActorLocation(FocusInspectionLocation, false, nullptr, ETeleportType::TeleportPhysics);
-					It->SetActorRotation(FRotator(0.0f, 180.0f, 0.0f));
+					It->SetActorRotation(FRotator::ZeroRotator);
 					if (PlayerController && PlayerController->PlayerCameraManager)
 					{
 						PlayerController->PlayerCameraManager->SetFOV(55.0f);
@@ -698,7 +1212,7 @@ void AWhiteoutGameMode::StagePresentationCapture()
 					}
 				}
 				const FVector LookTarget = It->GetActorLocation() + FVector(0.0f, 0.0f, 70.0f);
-				FVector ViewDirection = bNPC ? -It->GetActorRightVector() : Pawn->GetPawnViewLocation() - LookTarget;
+				FVector ViewDirection = bNPC ? It->GetActorRightVector() : Pawn->GetPawnViewLocation() - LookTarget;
 				if (!ViewDirection.Normalize())
 				{
 					ViewDirection = FVector(-1.0f, 0.0f, 0.0f);
@@ -787,6 +1301,11 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		{
 			PlayerController->SetPause(false);
 		}
+	}
+	else if (CaptureName.Equals(TEXT("guide")))
+	{
+		HUD->SetPresentationCaptureState(StateSubsystem->GetStateSnapshot());
+		HUD->ToggleGuide();
 	}
 	else if (CaptureName.StartsWith(TEXT("settings_")))
 	{
@@ -878,23 +1397,30 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		DialogueState.Flags.bMedicalRoomHeated = false;
 		if (FWSCharacterState* GuHeng = DialogueState.Characters.Find(EWSCharacterId::GuHeng))
 		{
-			GuHeng->Trust = 8.0f;
-			GuHeng->Health = 62.0f;
-			GuHeng->Temperature = 47.0f;
-			GuHeng->Pressure = 68.0f;
+			GuHeng->Trust = 5.8f;
+			GuHeng->Health = 6.2f;
+			GuHeng->Temperature = 4.7f;
+			GuHeng->Pressure = 6.8f;
 		}
 		if (FWSCharacterState* YeCheng = DialogueState.Characters.Find(EWSCharacterId::YeCheng))
 		{
-			YeCheng->Trust = 13.0f;
-			YeCheng->Health = 88.0f;
-			YeCheng->Temperature = 63.0f;
-			YeCheng->Pressure = 55.0f;
+			YeCheng->Trust = 6.3f;
+			YeCheng->Health = 8.8f;
+			YeCheng->Temperature = 6.3f;
+			YeCheng->Pressure = 5.5f;
 		}
 		if (CaptureName.Equals(TEXT("dialogue_gu_diagnosed"))) DialogueState.Flags.bGuHengDiagnosed = true;
 		else if (CaptureName.Equals(TEXT("dialogue_gu_treated"))) DialogueState.Flags.bGuHengTreated = true;
 		else if (CaptureName.Equals(TEXT("dialogue_gu_cooperative"))) DialogueState.Flags.bGuHengCooperative = true;
 		else if (CaptureName.Equals(TEXT("dialogue_ye_heated"))) DialogueState.Flags.bMedicalRoomHeated = true;
 		else if (CaptureName.Equals(TEXT("dialogue_ye_treated"))) DialogueState.Flags.bGuHengTreated = true;
+		else if (CaptureName.Equals(TEXT("dialogue_gu_unlocked")))
+		{
+			DialogueState.Flags.bGuHengDiagnosed = true;
+			DialogueState.PlayerKnowledge.Add(
+				TEXT("FACT_FORCED_RESTART_SUSPICION"),
+				EWSKnowledgeLevel::Suspected);
+		}
 		HUD->SetPresentationCaptureState(DialogueState);
 		const FName NPCAction = CaptureName.StartsWith(TEXT("dialogue_ye_"))
 			? FName(TEXT("talk_ye_cheng")) : FName(TEXT("talk_gu_heng"));
@@ -1075,22 +1601,29 @@ void AWhiteoutGameMode::StagePresentationCapture()
 					continue;
 				}
 				It->SetActorLocation(InspectionLocation, false, nullptr, ETeleportType::TeleportPhysics);
-				It->SetActorRotation(FRotator(0.0f, 180.0f, 0.0f));
+				It->SetActorRotation(FRotator::ZeroRotator);
 				It->SetCharacterPreviewMood(true);
+				const FString PerformanceToken = TEXT("_v08_");
+				const int32 PerformanceIndex = CaptureName.Find(PerformanceToken);
+				if (PerformanceIndex != INDEX_NONE)
+				{
+					It->SetCharacterPreviewPerformance(FName(
+						*CaptureName.Mid(PerformanceIndex + PerformanceToken.Len())));
+				}
 				const FVector Forward = It->GetActorForwardVector();
 				const FVector Right = It->GetActorRightVector();
-				FVector ViewDirection = -Right;
+				FVector ViewDirection = Right;
 				if (CaptureName.EndsWith(TEXT("_side"))) ViewDirection = Forward;
-				else if (CaptureName.EndsWith(TEXT("_back"))) ViewDirection = Right;
-				else if (CaptureName.EndsWith(TEXT("_arm"))) ViewDirection = (-Right + Forward).GetSafeNormal();
+				else if (CaptureName.EndsWith(TEXT("_back"))) ViewDirection = -Right;
+				else if (CaptureName.EndsWith(TEXT("_arm"))) ViewDirection = (Right + Forward).GetSafeNormal();
 				const bool bMidView = CaptureName.EndsWith(TEXT("_mid"));
 				const bool bFeetView = CaptureName.EndsWith(TEXT("_feet"));
-				const float Distance = bMidView ? 420.0f : bFeetView ? 280.0f : 240.0f;
+				const float Distance = bMidView ? 480.0f : bFeetView ? 350.0f : 390.0f;
 				FVector PawnLocation = It->GetActorLocation() + ViewDirection * Distance;
 				PawnLocation.Z = 105.0f;
 				Pawn->SetActorLocation(PawnLocation, false, nullptr, ETeleportType::TeleportPhysics);
 				const FVector CameraLocation = Pawn->GetPawnViewLocation();
-				const float LookTargetHeight = bFeetView ? 26.0f : bMidView ? 92.0f : 145.0f;
+				const float LookTargetHeight = bFeetView ? 35.0f : bMidView ? 105.0f : 110.0f;
 				const FVector LookTarget = It->GetActorLocation() + FVector(0.0f, 0.0f, LookTargetHeight);
 				PlayerController->SetControlRotation((LookTarget - CameraLocation).Rotation());
 				if (!LookAtCaptureLight)
@@ -1180,7 +1713,7 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 					{
 						CaptureHUD->ShowNPCFocusForCapture(It->DisplayName, It->PreviewInteraction());
 						const FVector LookTarget = It->GetActorLocation() + FVector(0.0f, 0.0f, 105.0f);
-						const FVector CameraLocation = LookTarget - It->GetActorRightVector() * 300.0f;
+						const FVector CameraLocation = LookTarget + It->GetActorRightVector() * 300.0f;
 						ACameraActor* CaptureCamera = GetWorld()->SpawnActor<ACameraActor>(
 							CameraLocation, (LookTarget - CameraLocation).Rotation());
 						if (CaptureCamera && CaptureCamera->GetCameraComponent())
@@ -1203,7 +1736,43 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 	{
 		if (APlayerController* CaptureController = UGameplayStatics::GetPlayerController(this, 0))
 		{
-			if (APawn* CapturePawn = UGameplayStatics::GetPlayerPawn(this, 0))
+			if (CaptureName.StartsWith(TEXT("character_")))
+			{
+				const bool bEngineer = CaptureName.Contains(TEXT("_gu_"));
+				const FName TargetAction = bEngineer
+					? FName(TEXT("talk_gu_heng"))
+					: FName(TEXT("talk_ye_cheng"));
+				for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
+				{
+					if (It->ActionId != TargetAction)
+					{
+						continue;
+					}
+					const FVector Forward = It->GetActorForwardVector();
+					const FVector Right = It->GetActorRightVector();
+					FVector ViewDirection = Right;
+					if (CaptureName.EndsWith(TEXT("_side"))) ViewDirection = Forward;
+					else if (CaptureName.EndsWith(TEXT("_back"))) ViewDirection = -Right;
+					else if (CaptureName.EndsWith(TEXT("_arm"))) ViewDirection = (Right + Forward).GetSafeNormal();
+					const bool bFaceView = CaptureName.EndsWith(TEXT("_face"));
+					const float Distance = bFaceView ? 140.0f : 400.0f;
+					const float TargetHeight = bFaceView ? 158.0f : 92.0f;
+					const FVector LookTarget =
+						It->GetActorLocation() + FVector(0.0f, 0.0f, TargetHeight);
+					const FVector CameraLocation = LookTarget + ViewDirection * Distance;
+					ACameraActor* CaptureCamera = GetWorld()->SpawnActor<ACameraActor>(
+						CameraLocation,
+						(LookTarget - CameraLocation).Rotation());
+					if (CaptureCamera && CaptureCamera->GetCameraComponent())
+					{
+						CaptureCamera->GetCameraComponent()->SetFieldOfView(55.0f);
+						CaptureCamera->SetLifeSpan(1.0f);
+						CaptureController->SetViewTarget(CaptureCamera);
+					}
+					break;
+				}
+			}
+			else if (APawn* CapturePawn = UGameplayStatics::GetPlayerPawn(this, 0))
 			{
 				const FVector CameraLocation = CapturePawn->GetPawnViewLocation();
 				const FRotator CameraRotation = CaptureController->GetControlRotation();
@@ -1211,14 +1780,14 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 				if (CaptureCamera && CaptureCamera->GetCameraComponent())
 				{
 					CaptureCamera->GetCameraComponent()->SetFieldOfView(
-						CaptureName.StartsWith(TEXT("character_")) ? 55.0f : 90.0f);
+						90.0f);
 					CaptureCamera->SetLifeSpan(1.0f);
 					CaptureController->SetViewTarget(CaptureCamera);
 				}
-				if (CaptureController->PlayerCameraManager)
-				{
-					CaptureController->PlayerCameraManager->UpdateCamera(0.0f);
-				}
+			}
+			if (CaptureController->PlayerCameraManager)
+			{
+				CaptureController->PlayerCameraManager->UpdateCamera(0.0f);
 			}
 		}
 	}
@@ -1271,8 +1840,17 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 		|| PresentationCaptureMode.Equals(TEXT("hud"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("pause"), ESearchCase::IgnoreCase)
 		|| PresentationCaptureMode.Equals(TEXT("evidence"), ESearchCase::IgnoreCase);
+	const bool bV08Capture = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV08Capture"));
+	const bool bV07Capture = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV07Capture"));
+	const bool bV06Capture = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV06Capture"));
 	const bool bV04Capture = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV04Capture"));
-	const TCHAR* CaptureFolder = bV04Capture
+	const TCHAR* CaptureFolder = bV08Capture
+		? TEXT("../docs/baseline_v0.8")
+		: bV07Capture
+		? TEXT("../docs/baseline_v0.7")
+		: bV06Capture
+		? TEXT("../docs/baseline_v0.6")
+		: bV04Capture
 		? TEXT("../docs/baseline_v0.4")
 		: bV03Capture ? TEXT("../docs/baseline_v0.3") : TEXT("../docs/baseline_v0.2");
 	const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / CaptureFolder);
@@ -1281,7 +1859,7 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 		TEXT("UI_%s_%dx%d.png"),
 		*CaptureName, Size.X, Size.Y);
 	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false, false, FIntRect(), true);
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: requested presentation screenshot %s"), *ScreenshotPath);
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.8: requested presentation screenshot %s"), *ScreenshotPath);
 	++PresentationCaptureIndex;
 	FTimerHandle NextTimer;
 	GetWorldTimerManager().SetTimer(NextTimer, this, &AWhiteoutGameMode::StagePresentationCapture, 1.1f, false);
@@ -1546,6 +2124,8 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 	};
 
 	bool bSucceeded = true;
+	EWSEndingType ExpectedEnding = EWSEndingType::TaskSuccess;
+	bool bExpectSignal = true;
 	if (RouteName.Equals(TEXT("medical"), ESearchCase::IgnoreCase))
 	{
 		bSucceeded &= Commit(TEXT("talk_ye_cheng"));
@@ -1577,6 +2157,7 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 	}
 	else if (RouteName.Equals(TEXT("quick"), ESearchCase::IgnoreCase))
 	{
+		ExpectedEnding = EWSEndingType::CostUncontrolled;
 		bSucceeded &= Commit(TEXT("heat_repair_room"));
 		bSucceeded &= Commit(TEXT("distribute_food"), [](FWSActionRequest& Request)
 		{
@@ -1588,6 +2169,46 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 		bSucceeded &= Commit(TEXT("calibrate_antenna"));
 		bSucceeded &= Commit(TEXT("send_signal"));
 	}
+	else if (RouteName.Equals(TEXT("wait"), ESearchCase::IgnoreCase))
+	{
+		ExpectedEnding = EWSEndingType::SurvivalWait;
+		bExpectSignal = false;
+	}
+	else if (RouteName.Equals(TEXT("cost"), ESearchCase::IgnoreCase))
+	{
+		ExpectedEnding = EWSEndingType::CostUncontrolled;
+		bExpectSignal = false;
+		bSucceeded &= Commit(TEXT("investigate_generator_log"));
+		bSucceeded &= Commit(TEXT("forced_self_repair"));
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			bSucceeded &= Commit(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
+			{
+				Request.DialogueAct = EWSDialogueAct::Challenge;
+			});
+		}
+	}
+	else if (RouteName.Equals(TEXT("collapse"), ESearchCase::IgnoreCase))
+	{
+		ExpectedEnding = EWSEndingType::TotalCollapse;
+		bExpectSignal = false;
+		bSucceeded &= Commit(TEXT("investigate_generator_log"));
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			bSucceeded &= Commit(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
+			{
+				Request.DialogueAct = EWSDialogueAct::Challenge;
+			});
+		}
+		bSucceeded &= Commit(TEXT("heat_medical_room"));
+		bSucceeded &= Commit(TEXT("heat_repair_room"));
+		bSucceeded &= Commit(TEXT("talk_ye_cheng"));
+		bSucceeded &= Commit(TEXT("distribute_food"), [](FWSActionRequest& Request)
+		{
+			Request.FoodForPlayer = 1;
+		});
+		bSucceeded &= Commit(TEXT("inspect_control_cabinet"));
+	}
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: unknown route '%s'"), *RouteName);
@@ -1597,14 +2218,19 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 	const FWSGameState Results = StateSubsystem->EndGame();
 	FString EventLogPath;
 	StateSubsystem->ExportEventLog(EventLogPath);
+	const bool bOutcomeMatches = bSucceeded
+		&& Results.Ending == ExpectedEnding
+		&& Results.Tasks.bSignalSent == bExpectSignal;
 	const FString Summary = FString::Printf(
-		TEXT("route=%s success=%d ending=%s score=%.2f log=%s"),
+		TEXT("route=%s success=%d ending=%s expected=%s signal=%d score=%.2f log=%s"),
 		*RouteName,
-		bSucceeded && Results.Tasks.bSignalSent,
+		bOutcomeMatches,
 		*StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(Results.Ending)),
+		*StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(ExpectedEnding)),
+		Results.Tasks.bSignalSent ? 1 : 0,
 		Results.Score.Total,
 		*EventLogPath);
-	if (bSucceeded && Results.Tasks.bSignalSent)
+	if (bOutcomeMatches)
 	{
 		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation AutoRoute: %s"), *Summary);
 	}

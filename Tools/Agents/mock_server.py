@@ -75,6 +75,30 @@ def _request_context(user_text: str) -> dict[str, Any]:
     return context if isinstance(context, dict) else {}
 
 
+def _select_performance(
+    context: dict[str, Any],
+    preset_movement: str,
+    preset_reaction: str,
+) -> tuple[str, str]:
+    if context.get("action_id") not in {"talk_gu_heng", "talk_ye_cheng"}:
+        return "stay", preset_reaction
+
+    player_said = context.get("player_said", "")
+    if not isinstance(player_said, str):
+        return preset_movement, preset_reaction
+    if any(token in player_said for token in ("退后", "离我远", "别靠近")):
+        return "step_back", "reject"
+    if any(token in player_said for token in ("回去", "归位", "回原位")):
+        return "return_to_post", "consider"
+    if any(token in player_said for token in ("过来", "靠近", "来我这")):
+        return "step_closer", "acknowledge"
+    if any(token in player_said for token in ("别怕", "放心", "冷静", "撑住")):
+        return "stay", "reassure"
+    if any(token in player_said for token in ("撒谎", "骗我", "隐瞒")):
+        return "step_back", "alarmed"
+    return preset_movement, preset_reaction
+
+
 def build_mock_content(request: dict[str, Any]) -> tuple[str, dict[str, object]]:
     messages = request.get("messages")
     if not isinstance(messages, list):
@@ -94,6 +118,24 @@ def build_mock_content(request: dict[str, Any]) -> tuple[str, dict[str, object]]
     preset = context.get("preset_utterance", "联调响应正常。")
     if not isinstance(preset, str) or not preset.strip():
         preset = "联调响应正常。"
+    movement_intent = context.get("preset_movement_intent", "stay")
+    if movement_intent not in {"stay", "step_closer", "step_back", "return_to_post"}:
+        movement_intent = "stay"
+    reaction_action = context.get("preset_reaction_action", "neutral")
+    if reaction_action not in {
+        "neutral",
+        "acknowledge",
+        "consider",
+        "reassure",
+        "reject",
+        "alarmed",
+    }:
+        reaction_action = "neutral"
+    movement_intent, reaction_action = _select_performance(
+        context,
+        movement_intent,
+        reaction_action,
+    )
     npc_line = f"【mock】{preset.strip()}"[:240]
     return (
         "npc_line",
@@ -102,6 +144,8 @@ def build_mock_content(request: dict[str, Any]) -> tuple[str, dict[str, object]]
             "emotion": emotion[:32],
             "used_action_id": action_id[:64],
             "referenced_fact_ids": [],
+            "movement_intent": movement_intent,
+            "reaction_action": reaction_action,
         },
     )
 
@@ -156,6 +200,17 @@ class Handler(BaseHTTPRequestHandler):
         messages = request.get("messages")
         user_text = _message_text(messages[-1]) if isinstance(messages, list) and messages else ""
         context = _request_context(user_text)
+        safe_messages = messages if isinstance(messages, list) else []
+        role_sequence = [
+            message.get("role", "")
+            for message in safe_messages
+            if isinstance(message, dict)
+        ]
+        history_turns = (
+            max(0, (len(safe_messages) - 2) // 2)
+            if kind == "npc_line"
+            else 0
+        )
         thinking = request.get("thinking")
         response_format = request.get("response_format")
         record = {
@@ -168,6 +223,9 @@ class Handler(BaseHTTPRequestHandler):
             "action_id": context.get("action_id", ""),
             "dialogue_act": context.get("dialogue_act", ""),
             "has_player_text": bool(context.get("player_said")),
+            "message_count": len(safe_messages),
+            "role_sequence": role_sequence,
+            "history_turns": history_turns,
             "request_bytes": request_bytes,
             "status_code": status_code,
             "finish_reason": server.config.finish_reason,

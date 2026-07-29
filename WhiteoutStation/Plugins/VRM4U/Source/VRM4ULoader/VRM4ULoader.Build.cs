@@ -20,6 +20,10 @@ public class VRM4ULoader : ModuleRules
 	public VRM4ULoader(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+		// VrmConvertModel and VrmConvertModel_Description intentionally reuse
+		// translation-unit-local helpers. UE 5.8 unity builds merge both files
+		// and turn those helpers into duplicate definitions.
+		bUseUnity = false;
 
 		BuildVersion Version;
 		BuildVersion.TryRead(BuildVersion.GetDefaultFileName(), out Version);

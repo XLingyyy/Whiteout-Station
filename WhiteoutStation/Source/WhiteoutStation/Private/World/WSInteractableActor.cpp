@@ -4,10 +4,13 @@
 #include "Animation/AnimBlueprint.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimInstance.h"
+#include "CollisionQueryParams.h"
+#include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/MeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/World.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/GameModeBase.h"
@@ -18,6 +21,7 @@
 #include "Presentation/WSPresentationData.h"
 #include "State/WindStationStateSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
+#include "WorldCollision.h"
 
 AWSInteractableActor::AWSInteractableActor()
 {
@@ -29,6 +33,18 @@ AWSInteractableActor::AWSInteractableActor()
 	Mesh->SetupAttachment(SceneRoot);
 	Mesh->SetCollisionProfileName(TEXT("BlockAll"));
 	Mesh->SetGenerateOverlapEvents(false);
+	InteractionCollision = CreateDefaultSubobject<UBoxComponent>(
+		TEXT("InteractionCollision"));
+	InteractionCollision->SetupAttachment(SceneRoot);
+	InteractionCollision->SetBoxExtent(FVector(65.0f, 65.0f, 90.0f));
+	InteractionCollision->SetRelativeLocation(FVector(0.0f, 0.0f, 90.0f));
+	InteractionCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	InteractionCollision->SetCollisionObjectType(ECC_WorldDynamic);
+	InteractionCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
+	InteractionCollision->SetCollisionResponseToChannel(
+		ECC_Visibility,
+		ECR_Block);
+	InteractionCollision->SetGenerateOverlapEvents(false);
 	HeadMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeadMesh"));
 	HeadMesh->SetupAttachment(SceneRoot);
 	HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -71,17 +87,35 @@ void AWSInteractableActor::BeginPlay()
 	// Restore only the runtime behavior here so those instance-level visual edits survive PIE.
 	bCharacterPresentation = true;
 	SetActorTickEnabled(true);
+	CaptureHomeTransform();
+	RestoreLegacyCharacterMaterials();
+	ResolveV08Animations();
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
 		{
 			StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterStateChanged);
 			StateSubsystem->OnActionCommitted.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterActionCommitted);
+			StateSubsystem->OnDialogueLine.AddUniqueDynamic(this, &AWSInteractableActor::HandleDialogueLine);
 			ApplyCharacterState(StateSubsystem->GetStateSnapshot());
 			return;
 		}
 	}
 	PlayCharacterAnimation(IdleAnimation);
+}
+
+void AWSInteractableActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			StateSubsystem->OnStateChanged.RemoveDynamic(this, &AWSInteractableActor::HandleCharacterStateChanged);
+			StateSubsystem->OnActionCommitted.RemoveDynamic(this, &AWSInteractableActor::HandleCharacterActionCommitted);
+			StateSubsystem->OnDialogueLine.RemoveDynamic(this, &AWSInteractableActor::HandleDialogueLine);
+		}
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void AWSInteractableActor::Tick(const float DeltaSeconds)
@@ -90,6 +124,31 @@ void AWSInteractableActor::Tick(const float DeltaSeconds)
 	if (!bCharacterPresentation)
 	{
 		return;
+	}
+
+	if (bMovementActive)
+	{
+		const FVector CurrentLocation = GetActorLocation();
+		const FVector NextLocation = FMath::VInterpConstantTo(CurrentLocation, MovementTarget, DeltaSeconds, 82.0f);
+		const FVector TravelDirection = (MovementTarget - CurrentLocation).GetSafeNormal2D();
+		if (!TravelDirection.IsNearlyZero())
+		{
+			const FRotator DesiredRotation(0.0f, TravelDirection.Rotation().Yaw, 0.0f);
+			SetActorRotation(FMath::RInterpTo(GetActorRotation(), DesiredRotation, DeltaSeconds, 7.0f));
+		}
+		if (!IsMovementPathClear(CurrentLocation, NextLocation))
+		{
+			FinishMovement();
+		}
+		else
+		{
+			SetActorLocation(NextLocation, false, nullptr, ETeleportType::None);
+			if (FVector::DistSquared2D(NextLocation, MovementTarget) <= FMath::Square(2.0f))
+			{
+				SetActorLocation(MovementTarget, false, nullptr, ETeleportType::None);
+				FinishMovement();
+			}
+		}
 	}
 
 	if (bReactionActive && GetWorld()->GetTimeSeconds() >= ReactionUntilTime)
@@ -412,13 +471,111 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 	{
 		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
 		{
+			CaptureHomeTransform();
+			RestoreLegacyCharacterMaterials();
+			ResolveV08Animations();
 			StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterStateChanged);
 			StateSubsystem->OnActionCommitted.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterActionCommitted);
+			StateSubsystem->OnDialogueLine.AddUniqueDynamic(this, &AWSInteractableActor::HandleDialogueLine);
 			ApplyCharacterState(StateSubsystem->GetStateSnapshot());
 			return;
 		}
 	}
+	CaptureHomeTransform();
+	RestoreLegacyCharacterMaterials();
+	ResolveV08Animations();
 	PlayCharacterAnimation(IdleAnimation);
+}
+
+void AWSInteractableActor::CaptureHomeTransform()
+{
+	if (bHomeTransformCaptured)
+	{
+		return;
+	}
+	HomeLocation = GetActorLocation();
+	HomeRotation = GetActorRotation();
+	bHomeTransformCaptured = true;
+}
+
+void AWSInteractableActor::RestoreLegacyCharacterMaterials()
+{
+	if (!CharacterMesh)
+	{
+		return;
+	}
+	const USkeletalMesh* SkeletalMesh = CharacterMesh->GetSkeletalMeshAsset();
+	UMaterialInterface* LegacyEyeMaterial = LoadObject<UMaterialInterface>(
+		nullptr,
+		TEXT("/Game/WindStation/Art/Materials/M_WS_Eye.M_WS_Eye"));
+	if (!SkeletalMesh || !LegacyEyeMaterial)
+	{
+		return;
+	}
+
+	const TArray<FSkeletalMaterial>& ImportedMaterials = SkeletalMesh->GetMaterials();
+	const int32 MaterialCount = FMath::Min(CharacterMesh->GetNumMaterials(), ImportedMaterials.Num());
+	for (int32 Index = 0; Index < MaterialCount; ++Index)
+	{
+		UMaterialInterface* CurrentMaterial = CharacterMesh->GetMaterial(Index);
+		UMaterialInterface* ImportedMaterial = ImportedMaterials[Index].MaterialInterface;
+		if (CurrentMaterial == LegacyEyeMaterial
+			&& ImportedMaterial
+			&& ImportedMaterial != LegacyEyeMaterial)
+		{
+			CharacterMesh->SetMaterial(Index, ImportedMaterial);
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("WhiteoutStation v0.8: restored imported character material action=%s slot=%d material=%s"),
+				*ActionId.ToString(),
+				Index,
+				*ImportedMaterial->GetPathName());
+		}
+	}
+}
+
+void AWSInteractableActor::ResolveV08Animations()
+{
+	if (!bCharacterPresentation)
+	{
+		return;
+	}
+	const bool bGuHeng = ActionId == TEXT("talk_gu_heng");
+	const FString Root = bGuHeng
+		? TEXT("/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV08")
+		: TEXT("/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV08");
+	const FString Prefix = bGuHeng ? TEXT("AN_GuHeng") : TEXT("AN_YeCheng_V10");
+	const auto LoadAnimation = [&Root, &Prefix](const TCHAR* Suffix)
+	{
+		const FString AssetPath = FString::Printf(
+			TEXT("%s/%s_%s.%s_%s"),
+			*Root,
+			*Prefix,
+			Suffix,
+			*Prefix,
+			Suffix);
+		return LoadObject<UAnimSequence>(nullptr, *AssetPath);
+	};
+	IdleAnimation = LoadAnimation(TEXT("Idle"));
+	WalkAnimation = LoadAnimation(TEXT("Walk"));
+	AcknowledgeAnimation = LoadAnimation(TEXT("Acknowledge"));
+	ConsiderAnimation = LoadAnimation(TEXT("Consider"));
+	ReassureAnimation = LoadAnimation(TEXT("Reassure"));
+	RejectAnimation = LoadAnimation(TEXT("Reject"));
+	AlarmedAnimation = LoadAnimation(TEXT("Alarmed"));
+	GestureAnimation = AcknowledgeAnimation;
+	GuardedAnimation = RejectAnimation;
+	WorkAnimation = ConsiderAnimation;
+	if (!IdleAnimation || !WalkAnimation || !AcknowledgeAnimation || !ConsiderAnimation
+		|| !ReassureAnimation || !RejectAnimation || !AlarmedAnimation)
+	{
+		UE_LOG(
+			LogTemp,
+			Error,
+			TEXT("WhiteoutStation v0.8: exact-skeleton animation set is incomplete for %s"),
+			*ActionId.ToString());
+	}
 }
 
 void AWSInteractableActor::PlayCharacterAnimation(UAnimSequence* Animation, const bool bLoop)
@@ -431,6 +588,175 @@ void AWSInteractableActor::PlayCharacterAnimation(UAnimSequence* Animation, cons
 	CharacterMesh->PlayAnimation(Animation, bLoop);
 }
 
+UAnimSequence* AWSInteractableActor::AnimationForReaction(const EWSNPCReaction Reaction) const
+{
+	switch (Reaction)
+	{
+	case EWSNPCReaction::Acknowledge:
+		return AcknowledgeAnimation ? AcknowledgeAnimation.Get() : IdleAnimation.Get();
+	case EWSNPCReaction::Consider:
+		return ConsiderAnimation ? ConsiderAnimation.Get() : IdleAnimation.Get();
+	case EWSNPCReaction::Reassure:
+		return ReassureAnimation ? ReassureAnimation.Get() : IdleAnimation.Get();
+	case EWSNPCReaction::Reject:
+		return RejectAnimation ? RejectAnimation.Get() : IdleAnimation.Get();
+	case EWSNPCReaction::Alarmed:
+		return AlarmedAnimation ? AlarmedAnimation.Get() : IdleAnimation.Get();
+	default:
+		return nullptr;
+	}
+}
+
+void AWSInteractableActor::PlayReaction(const EWSNPCReaction Reaction)
+{
+	bMovementActive = false;
+	PendingReaction = EWSNPCReaction::Neutral;
+	UAnimSequence* Animation = AnimationForReaction(Reaction);
+	if (!Animation)
+	{
+		bReactionActive = false;
+		PlayCharacterAnimation(IdleAnimation);
+		return;
+	}
+	bReactionActive = true;
+	ReactionUntilTime = GetWorld()->GetTimeSeconds()
+		+ FMath::Clamp(Animation->GetPlayLength(), 0.65f, 3.25f);
+	PlayCharacterAnimation(Animation, false);
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("WhiteoutStation NPCPerformance: action=%s phase=reaction reaction=%s duration=%.3f"),
+		*ActionId.ToString(),
+		*StaticEnum<EWSNPCReaction>()->GetNameStringByValue(static_cast<int64>(Reaction)),
+		Animation->GetPlayLength());
+}
+
+bool AWSInteractableActor::TryStartMovement(
+	const EWSNPCMovementIntent Intent,
+	const EWSNPCReaction FollowupReaction)
+{
+	if (!bCharacterPresentation || Intent == EWSNPCMovementIntent::Stay || !GetWorld())
+	{
+		return false;
+	}
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (Now < NextMovementAllowedTime)
+	{
+		return false;
+	}
+	CaptureHomeTransform();
+	const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (!PlayerPawn)
+	{
+		return false;
+	}
+
+	const FVector CurrentLocation = GetActorLocation();
+	const FVector ToPlayer = PlayerPawn->GetActorLocation() - CurrentLocation;
+	const FVector DirectionToPlayer = ToPlayer.GetSafeNormal2D();
+	FVector Candidate = CurrentLocation;
+	switch (Intent)
+	{
+	case EWSNPCMovementIntent::StepCloser:
+	{
+		const float PlayerDistance = ToPlayer.Size2D();
+		if (PlayerDistance <= 210.0f || DirectionToPlayer.IsNearlyZero())
+		{
+			return false;
+		}
+		Candidate += DirectionToPlayer * FMath::Min(85.0f, PlayerDistance - 175.0f);
+		break;
+	}
+	case EWSNPCMovementIntent::StepBack:
+		if (DirectionToPlayer.IsNearlyZero())
+		{
+			return false;
+		}
+		Candidate -= DirectionToPlayer * 75.0f;
+		break;
+	case EWSNPCMovementIntent::ReturnToPost:
+		Candidate = HomeLocation;
+		break;
+	default:
+		return false;
+	}
+	Candidate.Z = CurrentLocation.Z;
+	const FVector HomeOffset = Candidate - HomeLocation;
+	if (HomeOffset.SizeSquared2D() > FMath::Square(185.0f))
+	{
+		Candidate = HomeLocation + HomeOffset.GetSafeNormal2D() * 185.0f;
+		Candidate.Z = CurrentLocation.Z;
+	}
+	if (FVector::DistSquared2D(CurrentLocation, Candidate) < FMath::Square(8.0f)
+		|| FVector::DistSquared2D(PlayerPawn->GetActorLocation(), Candidate) < FMath::Square(145.0f)
+		|| !IsMovementPathClear(CurrentLocation, Candidate))
+	{
+		return false;
+	}
+
+	MovementStart = CurrentLocation;
+	MovementTarget = Candidate;
+	PendingReaction = FollowupReaction;
+	bMovementActive = true;
+	bReactionActive = false;
+	NextMovementAllowedTime = Now + 5.5f;
+	PlayCharacterAnimation(WalkAnimation ? WalkAnimation.Get() : IdleAnimation.Get(), true);
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("WhiteoutStation NPCPerformance: action=%s phase=move_start movement=%s reaction=%s distance=%.2f"),
+		*ActionId.ToString(),
+		*StaticEnum<EWSNPCMovementIntent>()->GetNameStringByValue(static_cast<int64>(Intent)),
+		*StaticEnum<EWSNPCReaction>()->GetNameStringByValue(static_cast<int64>(FollowupReaction)),
+		FVector::Dist2D(CurrentLocation, Candidate));
+	return true;
+}
+
+bool AWSInteractableActor::IsMovementPathClear(const FVector& Start, const FVector& End) const
+{
+	const UWorld* World = GetWorld();
+	if (!World || FVector::DistSquared2D(Start, End) <= FMath::Square(0.5f))
+	{
+		return true;
+	}
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(WhiteoutNPCMovement), false, this);
+	if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
+	{
+		Params.AddIgnoredActor(PlayerPawn);
+	}
+	const FVector CapsuleOffset(0.0f, 0.0f, 86.0f);
+	return !World->SweepTestByChannel(
+		Start + CapsuleOffset,
+		End + CapsuleOffset,
+		FQuat::Identity,
+		ECC_WorldStatic,
+		FCollisionShape::MakeCapsule(28.0f, 78.0f),
+		Params);
+}
+
+void AWSInteractableActor::FinishMovement()
+{
+	if (!bMovementActive)
+	{
+		return;
+	}
+	bMovementActive = false;
+	if (FVector::DistSquared2D(GetActorLocation(), HomeLocation) <= FMath::Square(4.0f))
+	{
+		SetActorRotation(HomeRotation);
+	}
+	const EWSNPCReaction Reaction = PendingReaction;
+	PendingReaction = EWSNPCReaction::Neutral;
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("WhiteoutStation NPCPerformance: action=%s phase=move_finish distance=%.2f home_offset=%.2f"),
+		*ActionId.ToString(),
+		FVector::Dist2D(MovementStart, GetActorLocation()),
+		FVector::Dist2D(HomeLocation, GetActorLocation()));
+	PlayReaction(Reaction);
+}
+
 void AWSInteractableActor::ApplyCharacterState(const FWSGameState& State)
 {
 	if (!bCharacterPresentation)
@@ -438,8 +764,10 @@ void AWSInteractableActor::ApplyCharacterState(const FWSGameState& State)
 		return;
 	}
 	static_cast<void>(State);
-	// v0.4: all trust/task-driven animation switching is suspended until the
-	// character art milestone. Guarded/Gesture/Work stay loaded for rollback.
+	if (bMovementActive || bReactionActive)
+	{
+		return;
+	}
 	bReactionActive = false;
 	PlayCharacterAnimation(IdleAnimation);
 }
@@ -456,8 +784,29 @@ void AWSInteractableActor::HandleCharacterActionCommitted(const FWSActionResult&
 	{
 		return;
 	}
+	bMovementActive = false;
 	bReactionActive = false;
+	PendingReaction = EWSNPCReaction::Neutral;
 	PlayCharacterAnimation(IdleAnimation);
+}
+
+void AWSInteractableActor::HandleDialogueLine(const FWSAgentReply& Reply)
+{
+	if (!bCharacterPresentation || Reply.ActionId != ActionId)
+	{
+		return;
+	}
+	const bool bExpectedSpeaker =
+		(ActionId == TEXT("talk_gu_heng") && Reply.Speaker == EWSCharacterId::GuHeng)
+		|| (ActionId == TEXT("talk_ye_cheng") && Reply.Speaker == EWSCharacterId::YeCheng);
+	if (!bExpectedSpeaker)
+	{
+		return;
+	}
+	if (!TryStartMovement(Reply.MovementIntent, Reply.Reaction))
+	{
+		PlayReaction(Reply.Reaction);
+	}
 }
 
 void AWSInteractableActor::SetCharacterPreviewMood(const bool bHighTrust)
@@ -467,8 +816,49 @@ void AWSInteractableActor::SetCharacterPreviewMood(const bool bHighTrust)
 		return;
 	}
 	static_cast<void>(bHighTrust);
+	bMovementActive = false;
 	bReactionActive = false;
+	PendingReaction = EWSNPCReaction::Neutral;
 	PlayCharacterAnimation(IdleAnimation);
+}
+
+void AWSInteractableActor::SetCharacterPreviewPerformance(const FName PerformanceName)
+{
+	if (!bCharacterPresentation)
+	{
+		return;
+	}
+	bMovementActive = false;
+	bReactionActive = false;
+	PendingReaction = EWSNPCReaction::Neutral;
+	if (PerformanceName == TEXT("walk"))
+	{
+		PlayCharacterAnimation(WalkAnimation ? WalkAnimation.Get() : IdleAnimation.Get(), true);
+	}
+	else if (PerformanceName == TEXT("acknowledge"))
+	{
+		PlayCharacterAnimation(AcknowledgeAnimation ? AcknowledgeAnimation.Get() : IdleAnimation.Get());
+	}
+	else if (PerformanceName == TEXT("consider"))
+	{
+		PlayCharacterAnimation(ConsiderAnimation ? ConsiderAnimation.Get() : IdleAnimation.Get());
+	}
+	else if (PerformanceName == TEXT("reassure"))
+	{
+		PlayCharacterAnimation(ReassureAnimation ? ReassureAnimation.Get() : IdleAnimation.Get());
+	}
+	else if (PerformanceName == TEXT("reject"))
+	{
+		PlayCharacterAnimation(RejectAnimation ? RejectAnimation.Get() : IdleAnimation.Get());
+	}
+	else if (PerformanceName == TEXT("alarmed"))
+	{
+		PlayCharacterAnimation(AlarmedAnimation ? AlarmedAnimation.Get() : IdleAnimation.Get());
+	}
+	else
+	{
+		PlayCharacterAnimation(IdleAnimation);
+	}
 }
 
 void AWSInteractableActor::SetDialogueLookAtActive(const bool bActive)

@@ -6,6 +6,7 @@
 #include "WSInteractableActor.generated.h"
 
 class UStaticMeshComponent;
+class UBoxComponent;
 class USceneComponent;
 class USkeletalMeshComponent;
 class UWSLookAtSkeletalMeshComponent;
@@ -21,6 +22,7 @@ class WHITEOUTSTATION_API AWSInteractableActor : public AActor
 public:
 	AWSInteractableActor();
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
@@ -28,6 +30,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
 	TObjectPtr<UStaticMeshComponent> Mesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+	TObjectPtr<UBoxComponent> InteractionCollision;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
 	TObjectPtr<UStaticMeshComponent> HeadMesh;
@@ -57,6 +62,7 @@ public:
 	void Configure(FName InActionId, const FText& InDisplayName, FLinearColor InAccentColor);
 
 	void SetCharacterPreviewMood(bool bHighTrust);
+	void SetCharacterPreviewPerformance(FName PerformanceName);
 	void SetDialogueLookAtActive(bool bActive);
 	void SetInteractionFocused(bool bFocused);
 	bool IsCharacterHotspot() const;
@@ -96,18 +102,52 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Interaction|Character")
 	TObjectPtr<UAnimSequence> WorkAnimation;
 
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
+	TObjectPtr<UAnimSequence> WalkAnimation;
+
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
+	TObjectPtr<UAnimSequence> AcknowledgeAnimation;
+
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
+	TObjectPtr<UAnimSequence> ConsiderAnimation;
+
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
+	TObjectPtr<UAnimSequence> ReassureAnimation;
+
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
+	TObjectPtr<UAnimSequence> RejectAnimation;
+
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.8")
+	TObjectPtr<UAnimSequence> AlarmedAnimation;
+
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> FocusOverlayMaterial;
 
 	bool bCharacterPresentation = false;
 	bool bReactionActive = false;
+	bool bMovementActive = false;
 	bool bDialogueLookAtActive = false;
+	bool bHomeTransformCaptured = false;
 	float ReactionUntilTime = 0.0f;
+	float NextMovementAllowedTime = 0.0f;
 	float CurrentLookAtYaw = 0.0f;
 	float CurrentLookAtPitch = 0.0f;
+	FVector HomeLocation = FVector::ZeroVector;
+	FVector MovementStart = FVector::ZeroVector;
+	FVector MovementTarget = FVector::ZeroVector;
+	FRotator HomeRotation = FRotator::ZeroRotator;
+	EWSNPCReaction PendingReaction = EWSNPCReaction::Neutral;
 
 	void ConfigureCharacterPresentation();
+	void CaptureHomeTransform();
+	void RestoreLegacyCharacterMaterials();
+	void ResolveV08Animations();
 	void PlayCharacterAnimation(UAnimSequence* Animation, bool bLoop = true);
+	UAnimSequence* AnimationForReaction(EWSNPCReaction Reaction) const;
+	void PlayReaction(EWSNPCReaction Reaction);
+	bool TryStartMovement(EWSNPCMovementIntent Intent, EWSNPCReaction FollowupReaction);
+	bool IsMovementPathClear(const FVector& Start, const FVector& End) const;
+	void FinishMovement();
 	void ApplyCharacterState(const FWSGameState& State);
 
 	UFUNCTION()
@@ -115,5 +155,8 @@ private:
 
 	UFUNCTION()
 	void HandleCharacterActionCommitted(const FWSActionResult& Result);
+
+	UFUNCTION()
+	void HandleDialogueLine(const FWSAgentReply& Reply);
 
 };

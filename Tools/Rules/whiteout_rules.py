@@ -10,15 +10,14 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 RULES_DIRECTORY = ROOT / "WhiteoutStation" / "Content" / "Rules"
-DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.5.json"
-LEGACY_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.1.json"
+DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.8.json"
 
 PROMISE_CONDITIONS = frozenset(
     {"reserve_medicine", "keep_records", "heat_repair_room"}
 )
 
-# The v0.1 rules file predates explicit route intent parameters. Explicit JSON
-# parameters take precedence when the content-side rules version is migrated.
+# Older route fixtures predate explicit dialogue intent parameters. Explicit JSON
+# parameters take precedence when present.
 ROUTE_DIALOGUE_DEFAULTS: dict[tuple[str, str], dict[str, Any]] = {
     ("medical_cooperation", "talk_gu_heng"): {
         "dialogue_act": "promise",
@@ -48,7 +47,7 @@ class RuleError(ValueError):
 
 def load_rules(path: Path | str | None = None) -> dict[str, Any]:
     if path is None:
-        path = DEFAULT_RULES_PATH if DEFAULT_RULES_PATH.exists() else LEGACY_RULES_PATH
+        path = DEFAULT_RULES_PATH
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
@@ -72,9 +71,25 @@ def validate_rules(rules: dict[str, Any]) -> list[str]:
     if sum(rules.get("score", {}).get("weights", {}).values()) != 100:
         errors.append("Score weights must total 100")
     if rules.get("gameplay", {}).get("starting_action_points") != 8:
-        errors.append("v0.1 requires exactly 8 starting AP")
+        errors.append("v0.8 requires exactly 8 starting AP")
     if rules.get("gameplay", {}).get("mid_crisis_threshold") != 4:
-        errors.append("v0.1 mid-crisis threshold must be 4 AP")
+        errors.append("v0.8 mid-crisis threshold must be 4 AP")
+    for character_id, character in (
+        rules.get("initial_state", {}).get("characters", {}).items()
+    ):
+        for stat in (
+            "health",
+            "temperature",
+            "hunger",
+            "fatigue",
+            "pressure",
+            "trust",
+        ):
+            value = character.get(stat)
+            if not isinstance(value, (int, float)) or not 0 <= value <= 10:
+                errors.append(
+                    f"Character {character_id} {stat} must be within 0..10"
+                )
 
     action_set = set(action_ids)
     for route_id, route in rules.get("routes", {}).items():
@@ -110,7 +125,7 @@ def classify_rating(total: float, ratings: dict[str, list[float]]) -> str:
 
 
 class WhiteoutSimulator:
-    """Deterministic, transaction-safe implementation of the v0.1 paper rules."""
+    """Deterministic, transaction-safe implementation of the v0.8 rules."""
 
     KNOWLEDGE_ORDER = {"unknown": 0, "claimed": 1, "suspected": 2, "confirmed": 3}
 
@@ -175,8 +190,7 @@ class WhiteoutSimulator:
     def _change_character(self, character_id: str, **changes: float) -> None:
         character = self.state["characters"][character_id]
         for stat, delta in changes.items():
-            low, high = (-100, 100) if stat == "trust" else (0, 100)
-            character[stat] = self._clamp(character[stat] + delta, low, high)
+            character[stat] = self._clamp(character[stat] + delta, 0, 10)
 
     def _can_execute(self, action_id: str, params: dict[str, Any]) -> str:
         if action_id not in self.actions:
@@ -203,19 +217,63 @@ class WhiteoutSimulator:
                 return "dialogue_act_unavailable"
             condition = self._promise_condition(params)
             has_condition = condition is not None and str(condition) != ""
-            if action_id == "talk_ye_cheng" and dialogue_act == "promise":
-                return "dialogue_act_unavailable"
+            if dialogue_act != "promise" and has_condition:
+                return "invalid_promise_condition"
+            if dialogue_act == "challenge":
+                challenge_available = (
+                    self._knows("FACT_FORCED_RESTART_SUSPICION")
+                    or self._knows("FACT_BURNT_RELAY")
+                    if action_id == "talk_gu_heng"
+                    else flags["heat_pack_revealed"]
+                )
+                if not challenge_available:
+                    return "dialogue_act_unavailable"
+            elif dialogue_act == "reassure":
+                character_id = (
+                    "gu_heng" if action_id == "talk_gu_heng" else "ye_cheng"
+                )
+                threshold = 6.5 if character_id == "gu_heng" else 6.0
+                reassure_available = (
+                    self.state["mid_crisis_triggered"]
+                    or self.state["characters"][character_id]["pressure"] >= threshold
+                    or (
+                        character_id == "gu_heng"
+                        and flags["gu_heng_diagnosed"]
+                    )
+                )
+                if not reassure_available:
+                    return "dialogue_act_unavailable"
             if dialogue_act == "promise":
                 if condition not in PROMISE_CONDITIONS:
                     return "invalid_promise_condition"
+                if action_id != "talk_gu_heng":
+                    return "dialogue_act_unavailable"
+                context_available = (
+                    condition == "reserve_medicine"
+                    and flags["gu_heng_diagnosed"]
+                    and resources["medicine"] > 0
+                ) or (
+                    condition == "keep_records"
+                    and (
+                        self._knows("FACT_FORCED_RESTART_SUSPICION")
+                        or self._knows("FACT_FORCED_RESTART_CONFIRMED")
+                    )
+                ) or (
+                    condition == "heat_repair_room"
+                    and (
+                        flags["gu_heng_diagnosed"]
+                        or self._knows("FACT_HAND_INJURY")
+                    )
+                    and not flags["repair_room_heated"]
+                )
+                if not context_available:
+                    return "dialogue_act_unavailable"
                 promise_id = f"player_to_gu_heng:{condition}"
                 if any(
                     promise.get("id") == promise_id
                     for promise in self.state["promises"]
                 ):
                     return "duplicate_promise"
-            elif has_condition:
-                return "invalid_promise_condition"
 
         if action_id == "heat_repair_room":
             if flags["repair_room_heated"]:
@@ -599,13 +657,13 @@ class WhiteoutSimulator:
                 and self._knows("FACT_FORCED_RESTART_SUSPICION")
                 and self._knows("FACT_BURNT_RELAY")
             ):
-                self._change_character(character_id, pressure=2, trust=2)
+                self._change_character(character_id, pressure=0.2, trust=0.2)
             else:
-                self._change_character(character_id, pressure=3, trust=-3)
+                self._change_character(character_id, pressure=0.3, trust=-0.3)
         elif dialogue_act == "reassure":
-            self._change_character(character_id, pressure=-4, trust=3)
+            self._change_character(character_id, pressure=-0.4, trust=0.3)
         elif dialogue_act == "promise" and action_id == "talk_gu_heng":
-            self._change_character(character_id, pressure=-2, trust=2)
+            self._change_character(character_id, pressure=-0.2, trust=0.2)
 
     def _recognize_promise(self, params: dict[str, Any]) -> None:
         condition = self._promise_condition(params)
@@ -638,7 +696,10 @@ class WhiteoutSimulator:
             }[condition]
             promise["settled"] = True
             promise["fulfilled"] = fulfilled
-            self._change_character("gu_heng", trust=6 if fulfilled else -12)
+            self._change_character(
+                "gu_heng",
+                trust=0.6 if fulfilled else -1.2,
+            )
 
     def _signal_available(self) -> bool:
         tasks = self.state["tasks"]
@@ -659,7 +720,14 @@ class WhiteoutSimulator:
 
     def classify_ending(self) -> str:
         characters = self.state["characters"].values()
-        critical = any(c["health"] <= 30 or c["temperature"] <= 30 for c in characters)
+        thresholds = self.rules["balance"]["thresholds"]
+        critical = any(
+            c["health"] <= thresholds["critical_health"]
+            or c["temperature"] <= thresholds["critical_temperature"]
+            or c["fatigue"] <= thresholds["critical_fatigue"]
+            or c["pressure"] >= thresholds["critical_pressure"]
+            for c in characters
+        )
         tasks = self.state["tasks"]
         if tasks["signal_sent"] and not critical:
             return "task_success"
@@ -690,7 +758,7 @@ class WhiteoutSimulator:
                 + 0.25 * character["temperature"]
                 + 0.20 * character["fatigue"]
                 + 0.15 * character["hunger"]
-            ) / 100.0
+            ) / 10.0
             people_raw += 10.0 * self._clamp(normalized, 0.0, 1.0)
 
         resources = self.state["resources"]
@@ -702,12 +770,18 @@ class WhiteoutSimulator:
             heater_raw = 5.0 if resources["fuel"] >= 2 else 1.25
         reserves_raw = fuel_raw + food_raw + medical_raw + heater_raw
         gu = self.state["characters"]["gu_heng"]
-        if (gu["health"] <= 30 or gu["temperature"] <= 30) and resources["medicine"] > 0:
+        thresholds = self.rules["balance"]["thresholds"]
+        if (
+            gu["health"] <= thresholds["critical_health"]
+            or gu["temperature"] <= thresholds["critical_temperature"]
+            or gu["fatigue"] <= thresholds["critical_fatigue"]
+            or gu["pressure"] >= thresholds["critical_pressure"]
+        ) and resources["medicine"] > 0:
             medical_raw = min(medical_raw, 1.25)
             reserves_raw = fuel_raw + food_raw + medical_raw + heater_raw
 
         trust_scores = [
-            self._clamp((self.state["characters"][cid]["trust"] + 50.0) / 100.0, 0.0, 1.0)
+            self._clamp(self.state["characters"][cid]["trust"] / 10.0, 0.0, 1.0)
             for cid in ("gu_heng", "ye_cheng")
         ]
         social_raw = weights["social_stability"] * sum(trust_scores) / len(trust_scores)

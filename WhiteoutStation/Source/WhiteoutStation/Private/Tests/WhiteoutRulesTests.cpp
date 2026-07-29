@@ -37,7 +37,7 @@ namespace WhiteoutRuleTests
 		Test.TestTrue(
 			TEXT("Rules JSON loads"),
 			Engine.LoadConfig(
-				FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.5.json"), Error));
+				FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.8.json"), Error));
 		if (!Error.IsEmpty())
 		{
 			Test.AddError(Error);
@@ -74,8 +74,8 @@ bool FWhiteoutAPFlowTest::RunTest(const FString& Parameters)
 
 	Engine.Reset();
 	TestTrue(
-		TEXT("Safe antenna temperature loads from v0.5 rules"),
-		FMath::IsNearlyEqual(Engine.GetConfig().SafeAntennaTemperature, 55.0f));
+		TEXT("Safe antenna temperature loads from v0.8 rules"),
+		FMath::IsNearlyEqual(Engine.GetConfig().SafeAntennaTemperature, 5.5f));
 	FWSGameState& ColdState = Engine.GetMutableStateForTesting();
 	ColdState.Tasks.GeneratorProgress = Engine.GetConfig().GeneratorRequired;
 	ColdState.Characters.FindChecked(EWSCharacterId::Player).Temperature =
@@ -94,6 +94,98 @@ bool FWhiteoutAPFlowTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Calibration at configured safe temperature is allowed"),
 		Engine.Preview(WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna"))).bCanExecute);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutDialogueStageTest,
+	"WhiteoutStation.Rules.DialogueStages",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutDialogueStageTest::RunTest(const FString& Parameters)
+{
+	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+	auto DialoguePreview = [&Engine](
+		const TCHAR* ActionId,
+		const EWSDialogueAct Act,
+		const FName Condition = NAME_None)
+	{
+		FWSActionRequest Request = WhiteoutRuleTests::MakeRequest(ActionId);
+		Request.DialogueAct = Act;
+		Request.PromiseCondition = Condition;
+		return Engine.Preview(Request);
+	};
+
+	TestTrue(
+		TEXT("Initial Ye Cheng dialogue offers Ask"),
+		DialoguePreview(TEXT("talk_ye_cheng"), EWSDialogueAct::Ask).bCanExecute);
+	TestFalse(
+		TEXT("Initial Ye Cheng dialogue hides Challenge"),
+		DialoguePreview(TEXT("talk_ye_cheng"), EWSDialogueAct::Challenge).bCanExecute);
+	TestFalse(
+		TEXT("Initial Ye Cheng dialogue hides Reassure"),
+		DialoguePreview(TEXT("talk_ye_cheng"), EWSDialogueAct::Reassure).bCanExecute);
+	TestFalse(
+		TEXT("Ye Cheng never accepts Promise"),
+		DialoguePreview(
+			TEXT("talk_ye_cheng"),
+			EWSDialogueAct::Promise,
+			TEXT("reserve_medicine")).bCanExecute);
+
+	TestTrue(
+		TEXT("Initial Gu Heng dialogue offers Ask"),
+		DialoguePreview(TEXT("talk_gu_heng"), EWSDialogueAct::Ask).bCanExecute);
+	TestTrue(
+		TEXT("Initial Gu Heng pressure unlocks Reassure"),
+		DialoguePreview(TEXT("talk_gu_heng"), EWSDialogueAct::Reassure).bCanExecute);
+	TestFalse(
+		TEXT("Initial Gu Heng dialogue hides Challenge"),
+		DialoguePreview(TEXT("talk_gu_heng"), EWSDialogueAct::Challenge).bCanExecute);
+	TestFalse(
+		TEXT("Initial Gu Heng dialogue hides contextless Promise"),
+		DialoguePreview(
+			TEXT("talk_gu_heng"),
+			EWSDialogueAct::Promise,
+			TEXT("heat_repair_room")).bCanExecute);
+
+	TestTrue(
+		TEXT("Generator log commits"),
+		Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
+	TestTrue(
+		TEXT("Generator evidence unlocks Gu Heng Challenge"),
+		DialoguePreview(TEXT("talk_gu_heng"), EWSDialogueAct::Challenge).bCanExecute);
+	TestTrue(
+		TEXT("Generator evidence unlocks records Promise"),
+		DialoguePreview(
+			TEXT("talk_gu_heng"),
+			EWSDialogueAct::Promise,
+			TEXT("keep_records")).bCanExecute);
+	TestFalse(
+		TEXT("Diagnosis-dependent medicine Promise stays hidden"),
+		DialoguePreview(
+			TEXT("talk_gu_heng"),
+			EWSDialogueAct::Promise,
+			TEXT("reserve_medicine")).bCanExecute);
+
+	Engine.Reset();
+	FWSActionRequest AskYe = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	AskYe.DialogueAct = EWSDialogueAct::Ask;
+	TestTrue(TEXT("Asking Ye Cheng commits"), Engine.Commit(AskYe).bCommitted);
+	TestTrue(
+		TEXT("Discovered heat pack unlocks Ye Cheng Challenge"),
+		DialoguePreview(TEXT("talk_ye_cheng"), EWSDialogueAct::Challenge).bCanExecute);
+	TestTrue(
+		TEXT("Diagnosis unlocks medicine Promise to Gu Heng"),
+		DialoguePreview(
+			TEXT("talk_gu_heng"),
+			EWSDialogueAct::Promise,
+			TEXT("reserve_medicine")).bCanExecute);
+	TestTrue(
+		TEXT("Diagnosis unlocks repair-room heat Promise to Gu Heng"),
+		DialoguePreview(
+			TEXT("talk_gu_heng"),
+			EWSDialogueAct::Promise,
+			TEXT("heat_repair_room")).bCanExecute);
 	return true;
 }
 
@@ -268,10 +360,51 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna")))) return false;
 		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("send_signal")))) return false;
 		Engine.EndGame();
-		TestTrue(TEXT("Quick route succeeds"), Engine.GetState().Ending == EWSEndingType::TaskSuccess);
+		TestTrue(TEXT("Quick route exposes uncontrolled cost"), Engine.GetState().Ending == EWSEndingType::CostUncontrolled);
 		TestTrue(TEXT("Quick score is in range"), Engine.GetState().Score.Total >= 55.0f && Engine.GetState().Score.Total <= 79.0f);
-		TestTrue(TEXT("Quick route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 72.06f, 0.02f));
+		TestTrue(TEXT("Quick route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 68.31f, 0.02f));
 		TestEqual(TEXT("Quick route retains two AP"), Engine.GetState().ActionPoints, 2);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+		Engine.EndGame();
+		TestTrue(TEXT("Waiting ending is reachable without state injection"), Engine.GetState().Ending == EWSEndingType::SurvivalWait);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log")))) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("forced_self_repair")))) return false;
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			FWSActionRequest Challenge = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+			Challenge.DialogueAct = EWSDialogueAct::Challenge;
+			if (!WhiteoutRuleTests::Commit(*this, Engine, Challenge)) return false;
+		}
+		Engine.EndGame();
+		TestTrue(TEXT("Partial task with an unstable crew reaches cost ending"), Engine.GetState().Ending == EWSEndingType::CostUncontrolled);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log")))) return false;
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			FWSActionRequest Challenge = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+			Challenge.DialogueAct = EWSDialogueAct::Challenge;
+			if (!WhiteoutRuleTests::Commit(*this, Engine, Challenge)) return false;
+		}
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("heat_medical_room")))) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("heat_repair_room")))) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")))) return false;
+		FWSActionRequest Food = WhiteoutRuleTests::MakeRequest(TEXT("distribute_food"));
+		Food.FoodForPlayer = 1;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, Food)) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet")))) return false;
+		TestEqual(TEXT("Collapse route spends all AP through legal actions"), Engine.GetState().ActionPoints, 0);
+		Engine.EndGame();
+		TestTrue(TEXT("Crew collapse is reachable without state injection"), Engine.GetState().Ending == EWSEndingType::TotalCollapse);
 	}
 	return true;
 }
@@ -293,29 +426,51 @@ bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
 
 	FWSAgentReply ModelReply;
 	FString Reason;
-	const FString ValidPayload = TEXT("{\"npc_line\":\"手伤还在，先处理低温。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HAND_INJURY\"]}");
+	const FString ValidPayload = TEXT("{\"npc_line\":\"手伤还在，先处理低温。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HAND_INJURY\"],\"movement_intent\":\"step_closer\",\"reaction_action\":\"consider\"}");
 	TestTrue(
 		TEXT("Schema-valid expression is accepted"),
 		UWSAgentGateway::ValidateModelPayload(ValidPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestFalse(TEXT("Accepted model line is not marked fallback"), ModelReply.bFallback);
+	TestEqual(TEXT("Movement intent is constrained"), ModelReply.MovementIntent, EWSNPCMovementIntent::StepCloser);
+	TestEqual(TEXT("Reaction action is constrained"), ModelReply.Reaction, EWSNPCReaction::Consider);
 
-	const FString MutationPayload = TEXT("{\"npc_line\":\"修好了。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"ap_delta\":2}");
+	const FString MutationPayload = TEXT("{\"npc_line\":\"修好了。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"neutral\",\"ap_delta\":2}");
 	TestFalse(
 		TEXT("State mutation field is rejected"),
 		UWSAgentGateway::ValidateModelPayload(MutationPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestEqual(TEXT("Mutation rejection is explicit"), Reason, FString(TEXT("unexpected_field_count")));
 
-	const FString LeakPayload = TEXT("{\"npc_line\":\"保温包在柜底。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HEAT_PACK\"]}");
+	const FString LeakPayload = TEXT("{\"npc_line\":\"保温包在柜底。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HEAT_PACK\"],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
 	TestFalse(
 		TEXT("Unauthorized fact citation is rejected"),
 		UWSAgentGateway::ValidateModelPayload(LeakPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestEqual(TEXT("Leak rejection is explicit"), Reason, FString(TEXT("fact_permission_violation")));
 
-	const FString UntaggedLeakPayload = TEXT("{\"npc_line\":\"柜底还有保温包。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[]}");
+	const FString UntaggedLeakPayload = TEXT("{\"npc_line\":\"柜底还有保温包。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
 	TestFalse(
 		TEXT("Untagged protected claim is rejected"),
 		UWSAgentGateway::ValidateModelPayload(UntaggedLeakPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestTrue(TEXT("Semantic leak identifies protected fact"), Reason.StartsWith(TEXT("semantic_fact_permission_violation:FACT_HEAT_PACK")));
+
+	const FString InvalidMovementPayload = TEXT("{\"npc_line\":\"我过去看看。\",\"emotion\":\"focused\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"walk_anywhere\",\"reaction_action\":\"acknowledge\"}");
+	TestFalse(
+		TEXT("Unbounded movement command is rejected"),
+		UWSAgentGateway::ValidateModelPayload(InvalidMovementPayload, Decision, AllowedFacts, ModelReply, Reason));
+	TestEqual(TEXT("Movement rejection is explicit"), Reason, FString(TEXT("invalid_movement_intent")));
+
+	const FString InvalidReactionPayload = TEXT("{\"npc_line\":\"我听见了。\",\"emotion\":\"focused\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"attack_player\"}");
+	TestFalse(
+		TEXT("Unbounded reaction command is rejected"),
+		UWSAgentGateway::ValidateModelPayload(InvalidReactionPayload, Decision, AllowedFacts, ModelReply, Reason));
+	TestEqual(TEXT("Reaction rejection is explicit"), Reason, FString(TEXT("invalid_reaction_action")));
+
+	FWSAgentReply NonDialogueDecision = Decision;
+	NonDialogueDecision.ActionId = TEXT("inspect_control_cabinet");
+	const FString NonDialogueMovementPayload = TEXT("{\"npc_line\":\"我过去看看。\",\"emotion\":\"focused\",\"used_action_id\":\"inspect_control_cabinet\",\"referenced_fact_ids\":[],\"movement_intent\":\"step_back\",\"reaction_action\":\"acknowledge\"}");
+	TestFalse(
+		TEXT("Non-dialogue expression cannot move an NPC"),
+		UWSAgentGateway::ValidateModelPayload(NonDialogueMovementPayload, NonDialogueDecision, {}, ModelReply, Reason));
+	TestEqual(TEXT("Context movement rejection is explicit"), Reason, FString(TEXT("movement_not_allowed")));
 
 	struct FIntentSample
 	{
@@ -463,12 +618,18 @@ bool FWhiteoutDialogueAndResourceChoicesTest::RunTest(const FString& Parameters)
 		FWSActionRequest Promise = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
 		Promise.DialogueAct = EWSDialogueAct::Promise;
 		Promise.PromiseCondition = TEXT("keep_records");
+		TestTrue(
+			TEXT("Records evidence creates promise context"),
+			Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
 		const FWSActionResult PromiseResult = Engine.Commit(Promise);
 		TestTrue(TEXT("Whitelisted Gu Heng promise commits"), PromiseResult.bCommitted);
 		TestTrue(TEXT("Result reports a recorded promise"), PromiseResult.bPromiseRecorded);
 		TestTrue(TEXT("Result preserves dialogue act"), PromiseResult.DialogueAct == EWSDialogueAct::Promise);
 		TestTrue(TEXT("Result preserves promise condition"), PromiseResult.PromiseCondition == TEXT("keep_records"));
-		TestTrue(TEXT("Event records promise outcome"), Engine.GetState().EventLog.Last().bPromiseRecorded);
+		if (PromiseResult.bCommitted && !Engine.GetState().EventLog.IsEmpty())
+		{
+			TestTrue(TEXT("Event records promise outcome"), Engine.GetState().EventLog.Last().bPromiseRecorded);
+		}
 
 		FWSActionRequest Duplicate = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
 		Duplicate.DialogueAct = EWSDialogueAct::Promise;
@@ -489,6 +650,9 @@ bool FWhiteoutDialogueAndResourceChoicesTest::RunTest(const FString& Parameters)
 		FWSActionRequest Reassure = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
 		Challenge.DialogueAct = EWSDialogueAct::Challenge;
 		Reassure.DialogueAct = EWSDialogueAct::Reassure;
+		TestTrue(TEXT("Ask comparison gains context"), AskEngine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
+		TestTrue(TEXT("Challenge comparison gains context"), ChallengeEngine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
+		TestTrue(TEXT("Reassure comparison gains context"), ReassureEngine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
 		TestTrue(TEXT("Ask commits"), AskEngine.Commit(Ask).bCommitted);
 		TestTrue(TEXT("Challenge commits"), ChallengeEngine.Commit(Challenge).bCommitted);
 		TestTrue(TEXT("Reassure commits"), ReassureEngine.Commit(Reassure).bCommitted);

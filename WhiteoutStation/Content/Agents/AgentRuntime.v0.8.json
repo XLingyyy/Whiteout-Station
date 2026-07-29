@@ -1,0 +1,15 @@
+{
+  "schema_version": 3,
+  "runtime_version": "0.8.0",
+  "provider_name": "deepseek",
+  "model": "deepseek-v4-flash",
+  "endpoint": "https://api.deepseek.com/chat/completions",
+  "timeout_seconds": 8,
+  "llm_enabled": true,
+  "performance_contract": {
+    "movement_intents": ["stay", "step_closer", "step_back", "return_to_post"],
+    "reaction_actions": ["neutral", "acknowledge", "consider", "reassure", "reject", "alarmed"],
+    "movement_policy": "Dialogue-only, local collision checked, home-radius constrained, and never accepts model coordinates."
+  },
+  "notes": "DeepSeek expression and performance selection activate when WHITEOUT_LLM_API_KEY or ignored LocalConfig/WhiteoutLLM.ini provides a credential. Missing credentials, invalid output, network failure, or disallowed endpoints fail closed to the deterministic preset."
+}

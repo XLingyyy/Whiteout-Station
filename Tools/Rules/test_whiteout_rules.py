@@ -4,13 +4,22 @@ import copy
 import random
 import unittest
 
-from whiteout_rules import (
-    WhiteoutSimulator,
-    classify_rating,
-    load_rules,
-    run_route,
-    validate_rules,
-)
+try:
+    from .whiteout_rules import (
+        WhiteoutSimulator,
+        classify_rating,
+        load_rules,
+        run_route,
+        validate_rules,
+    )
+except ImportError:
+    from whiteout_rules import (
+        WhiteoutSimulator,
+        classify_rating,
+        load_rules,
+        run_route,
+        validate_rules,
+    )
 
 
 class RuleConfigTests(unittest.TestCase):
@@ -113,10 +122,9 @@ class TransactionTests(unittest.TestCase):
                     all(value >= 0 for value in sim.state["resources"].values())
                 )
                 for character in sim.state["characters"].values():
-                    for stat, value in character.items():
-                        low = -100 if stat == "trust" else 0
-                        self.assertGreaterEqual(value, low)
-                        self.assertLessEqual(value, 100)
+                    for value in character.values():
+                        self.assertGreaterEqual(value, 0)
+                        self.assertLessEqual(value, 10)
                 self.assertEqual(
                     len(sim.state["committed_transactions"]),
                     len(sim.state["event_log"]),
@@ -169,8 +177,14 @@ class FlowTests(unittest.TestCase):
         before_temp = sim.state["characters"]["player"]["temperature"]
         before_fatigue = sim.state["characters"]["player"]["fatigue"]
         sim.apply_action("calibrate_antenna")
-        self.assertEqual(before_temp - 12, sim.state["characters"]["player"]["temperature"])
-        self.assertEqual(before_fatigue - 10, sim.state["characters"]["player"]["fatigue"])
+        self.assertAlmostEqual(
+            before_temp - 1.2,
+            sim.state["characters"]["player"]["temperature"],
+        )
+        self.assertAlmostEqual(
+            before_fatigue - 1.0,
+            sim.state["characters"]["player"]["fatigue"],
+        )
 
     def test_endings_are_exclusive(self) -> None:
         sim = WhiteoutSimulator()
@@ -179,7 +193,7 @@ class FlowTests(unittest.TestCase):
         cases.append(sim.classify_ending())
         sim.state["tasks"]["signal_sent"] = True
         cases.append(sim.classify_ending())
-        sim.state["characters"]["gu_heng"]["health"] = 20
+        sim.state["characters"]["gu_heng"]["health"] = 2
         cases.append(sim.classify_ending())
         sim.state["tasks"]["signal_sent"] = False
         sim.state["tasks"]["generator_progress"] = 0
@@ -217,6 +231,7 @@ class KnowledgeAndAgentTests(unittest.TestCase):
 
     def test_promise_is_recognized_and_settled_once(self) -> None:
         sim = WhiteoutSimulator()
+        sim.apply_action("investigate_generator_log", transaction_id="records-context")
         sim.apply_action(
             "talk_gu_heng",
             {"dialogue_act": "promise", "condition": "keep_records"},
@@ -311,6 +326,7 @@ class DialogueIntentTests(unittest.TestCase):
 
     def test_duplicate_gu_heng_promise_is_rejected_atomically(self) -> None:
         sim = WhiteoutSimulator()
+        sim.apply_action("investigate_generator_log", transaction_id="records-context")
         params = {
             "dialogue_act": "promise",
             "promise_condition": "keep_records",
@@ -329,26 +345,112 @@ class DialogueIntentTests(unittest.TestCase):
         self.assertEqual("duplicate_promise", duplicate.reason_code)
         self.assertEqual(before_duplicate, sim.state)
 
+    def test_intents_unlock_from_story_context(self) -> None:
+        sim = WhiteoutSimulator()
+        self.assertTrue(sim.preview_action("talk_ye_cheng", {"dialogue_act": "ask"})["can_execute"])
+        self.assertFalse(
+            sim.preview_action("talk_ye_cheng", {"dialogue_act": "challenge"})[
+                "can_execute"
+            ]
+        )
+        self.assertFalse(
+            sim.preview_action("talk_ye_cheng", {"dialogue_act": "reassure"})[
+                "can_execute"
+            ]
+        )
+        self.assertTrue(
+            sim.preview_action("talk_gu_heng", {"dialogue_act": "reassure"})[
+                "can_execute"
+            ]
+        )
+        self.assertFalse(
+            sim.preview_action(
+                "talk_gu_heng",
+                {
+                    "dialogue_act": "promise",
+                    "promise_condition": "heat_repair_room",
+                },
+            )["can_execute"]
+        )
+
+        sim.apply_action("investigate_generator_log", transaction_id="stage-log")
+        self.assertTrue(
+            sim.preview_action("talk_gu_heng", {"dialogue_act": "challenge"})[
+                "can_execute"
+            ]
+        )
+        self.assertTrue(
+            sim.preview_action(
+                "talk_gu_heng",
+                {
+                    "dialogue_act": "promise",
+                    "promise_condition": "keep_records",
+                },
+            )["can_execute"]
+        )
+        self.assertFalse(
+            sim.preview_action(
+                "talk_gu_heng",
+                {
+                    "dialogue_act": "promise",
+                    "promise_condition": "reserve_medicine",
+                },
+            )["can_execute"]
+        )
+
+        sim = WhiteoutSimulator()
+        sim.apply_action(
+            "talk_ye_cheng",
+            {"dialogue_act": "ask"},
+            "stage-ask-ye",
+        )
+        self.assertTrue(
+            sim.preview_action("talk_ye_cheng", {"dialogue_act": "challenge"})[
+                "can_execute"
+            ]
+        )
+        for condition in ("reserve_medicine", "heat_repair_room"):
+            self.assertTrue(
+                sim.preview_action(
+                    "talk_gu_heng",
+                    {
+                        "dialogue_act": "promise",
+                        "promise_condition": condition,
+                    },
+                )["can_execute"]
+            )
+
     def test_dialogue_intents_apply_deterministic_post_base_deltas(self) -> None:
         cases = [
-            ("talk_ye_cheng", "ask", None, 14, 44, 0),
-            ("talk_ye_cheng", "challenge", None, 11, 47, 0),
-            ("talk_ye_cheng", "reassure", None, 17, 40, 0),
-            ("talk_gu_heng", "ask", None, -18, 76, 0),
-            ("talk_gu_heng", "challenge", None, -21, 79, 0),
-            ("talk_gu_heng", "reassure", None, -15, 72, 0),
+            ("talk_ye_cheng", "ask", None, 6.4, 4.4, 0),
+            ("talk_ye_cheng", "challenge", None, 6.1, 4.7, 0),
+            ("talk_ye_cheng", "reassure", None, 6.7, 4.0, 0),
+            ("talk_gu_heng", "ask", None, 3.2, 7.6, 0),
+            ("talk_gu_heng", "challenge", None, 2.9, 7.9, 0),
+            ("talk_gu_heng", "reassure", None, 3.5, 7.2, 0),
             (
                 "talk_gu_heng",
                 "promise",
                 "keep_records",
-                -16,
-                74,
+                3.4,
+                7.4,
                 1,
             ),
         ]
         for action_id, dialogue_act, condition, trust, pressure, promises in cases:
             with self.subTest(action=action_id, intent=dialogue_act):
                 sim = WhiteoutSimulator()
+                if action_id == "talk_ye_cheng" and dialogue_act == "challenge":
+                    sim.state["flags"]["heat_pack_revealed"] = True
+                elif action_id == "talk_ye_cheng" and dialogue_act == "reassure":
+                    sim.state["mid_crisis_triggered"] = True
+                elif action_id == "talk_gu_heng" and dialogue_act in {
+                    "challenge",
+                    "promise",
+                }:
+                    sim.state["player_knowledge"][
+                        "FACT_FORCED_RESTART_SUSPICION"
+                    ] = "suspected"
                 params = {"dialogue_act": dialogue_act}
                 if condition is not None:
                     params["promise_condition"] = condition
@@ -360,8 +462,8 @@ class DialogueIntentTests(unittest.TestCase):
                 character = sim.state["characters"][character_id]
 
                 self.assertTrue(result.committed)
-                self.assertEqual(trust, character["trust"])
-                self.assertEqual(pressure, character["pressure"])
+                self.assertAlmostEqual(trust, character["trust"])
+                self.assertAlmostEqual(pressure, character["pressure"])
                 self.assertEqual(promises, len(sim.state["promises"]))
 
     def test_evidence_backed_gu_heng_challenge_uses_special_modifier(self) -> None:
@@ -378,8 +480,10 @@ class DialogueIntentTests(unittest.TestCase):
             self.assertTrue(result.committed)
             results[dialogue_act] = (gu_heng["trust"], gu_heng["pressure"])
 
-        self.assertEqual((-7, 75), results["ask"])
-        self.assertEqual((-5, 77), results["challenge"])
+        self.assertAlmostEqual(4.3, results["ask"][0])
+        self.assertAlmostEqual(7.5, results["ask"][1])
+        self.assertAlmostEqual(4.5, results["challenge"][0])
+        self.assertAlmostEqual(7.7, results["challenge"][1])
 
 
 class RouteAndScoreTests(unittest.TestCase):
@@ -401,14 +505,18 @@ class RouteAndScoreTests(unittest.TestCase):
             },
             "forced_quick_repair": {
                 "ap": 2,
-                "score": 72.06,
+                "score": 68.31,
+                "ending": "cost_uncontrolled",
                 "dialogue": None,
             },
         }
         for route_id, route in rules["routes"].items():
             with self.subTest(route=route_id):
                 output = run_route(WhiteoutSimulator(rules), route_id)
-                self.assertEqual("task_success", output["ending"])
+                self.assertEqual(
+                    expected[route_id].get("ending", "task_success"),
+                    output["ending"],
+                )
                 self.assertEqual(expected[route_id]["ap"], output["steps"][-1]["ap"])
                 self.assertAlmostEqual(
                     expected[route_id]["score"],
@@ -430,6 +538,44 @@ class RouteAndScoreTests(unittest.TestCase):
                         expected[route_id]["dialogue"],
                         dialogue_steps[0]["params"],
                     )
+
+    def test_all_four_endings_are_reachable_through_committed_actions(self) -> None:
+        wait = WhiteoutSimulator()
+        self.assertEqual("survival_wait", wait.end_game()["ending"])
+
+        cost = WhiteoutSimulator()
+        cost.apply_action("investigate_generator_log")
+        self.assertTrue(cost.apply_action("forced_self_repair").committed)
+        for index in range(2):
+            result = cost.apply_action(
+                "talk_gu_heng",
+                {"dialogue_act": "challenge"},
+                f"cost-challenge-{index}",
+            )
+            self.assertTrue(result.committed)
+        self.assertEqual("cost_uncontrolled", cost.end_game()["ending"])
+
+        collapse = WhiteoutSimulator()
+        collapse.apply_action("investigate_generator_log")
+        for index in range(2):
+            collapse.apply_action(
+                "talk_gu_heng",
+                {"dialogue_act": "challenge"},
+                f"collapse-challenge-{index}",
+            )
+        collapse.apply_action("heat_medical_room")
+        collapse.apply_action("heat_repair_room")
+        collapse.apply_action("talk_ye_cheng", {"dialogue_act": "ask"})
+        collapse.apply_action(
+            "distribute_food",
+            {"player": 1, "gu_heng": 0, "ye_cheng": 0},
+        )
+        self.assertTrue(collapse.apply_action("inspect_control_cabinet").committed)
+        self.assertEqual(0, collapse.state["ap"])
+        self.assertEqual("total_collapse", collapse.end_game()["ending"])
+
+        success = run_route(WhiteoutSimulator(), "medical_cooperation")
+        self.assertEqual("task_success", success["ending"])
 
     def test_legacy_routes_receive_deterministic_dialogue_defaults(self) -> None:
         rules = load_rules()

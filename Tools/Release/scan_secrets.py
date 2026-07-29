@@ -20,10 +20,14 @@ PATTERNS = {
     "openai_style_key": re.compile(rb"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{12,}"),
     "bearer_token": re.compile(rb"(?i)authorization\s*[:=]\s*bearer\s+[A-Za-z0-9._~+/-]{12,}"),
     "private_key": re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
-    "api_key_assignment": re.compile(rb"(?i)(?:api[_ -]?key|secret[_ -]?key)\s*[:=]\s*[A-Za-z0-9_~+/-]{20,}"),
+    "api_key_assignment": re.compile(
+        rb"(?i)(?<![A-Za-z0-9_])(?:api[_ -]?key|secret[_ -]?key)"
+        rb"(?![A-Za-z0-9_])[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9_~+/-]{20,}"
+    ),
 }
 ALLOWLIST_PATHS = {
     "Tools/Release/scan_secrets.py",
+    "Tools/Release/test_scan_secrets.py",
     "WhiteoutStation/LocalConfig/WhiteoutLLM.ini.example",
 }
 SCANNABLE_SUFFIXES = {

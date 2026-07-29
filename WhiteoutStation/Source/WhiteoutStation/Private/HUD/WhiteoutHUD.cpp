@@ -98,9 +98,24 @@ void AWhiteoutHUD::SetSystemMessage(const FString& Message)
 	if (HUDWidget) HUDWidget->SetSystemMessage(Message);
 }
 
+bool AWhiteoutHUD::AdvanceOpening()
+{
+	return HUDWidget && HUDWidget->AdvanceOpening();
+}
+
+bool AWhiteoutHUD::IsOpeningVisible() const
+{
+	return HUDWidget && HUDWidget->IsOpeningVisible();
+}
+
 void AWhiteoutHUD::DismissOpening()
 {
 	if (HUDWidget) HUDWidget->DismissOpening();
+}
+
+void AWhiteoutHUD::ToggleGuide()
+{
+	if (HUDWidget) HUDWidget->ToggleGuide();
 }
 
 void AWhiteoutHUD::TogglePauseMenu()

@@ -19,6 +19,7 @@ public:
 	AWhiteoutGameMode();
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
+	void PrepareOpeningReveal();
 	void FinishOpeningPresentation();
 
 private:
@@ -52,8 +53,11 @@ private:
 	float JumpMaxZ = 0.0f;
 	bool bJumpOverlapDetected = false;
 	TArray<float> JumpHeightSamples;
+	FGuid DialogueHistoryProbeSessionId;
 
 	void RunAutomationRoute(const FString& RouteName);
+	void RunDialogueHistoryProbeStep(int32 Step);
+	void SetupInputSmokeTarget(const FString& ActionId);
 	void CompletePerformanceTest();
 	void BeginOpeningPresentation();
 	void BeginBaselineCapture();

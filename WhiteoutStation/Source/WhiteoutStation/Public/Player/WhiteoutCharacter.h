@@ -120,7 +120,9 @@ private:
 	void Settle(const FInputActionValue& Value);
 	void ContinueRun(const FInputActionValue& Value);
 	void CycleActionOption(const FInputActionValue& Value);
-	void DismissOpening();
+	void HandleJumpPressed();
+	void AdvanceOpening();
+	void ToggleGuide();
 	void TogglePauseMenu();
 	void BeginDialogue(AWSInteractableActor* Interactable);
 	void CommitDialogueChoice(EWSDialogueAct DialogueAct, FName PromiseCondition);

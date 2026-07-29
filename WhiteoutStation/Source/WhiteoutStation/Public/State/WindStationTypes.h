@@ -67,6 +67,26 @@ enum class EWSResponseType : uint8
 };
 
 UENUM(BlueprintType)
+enum class EWSNPCMovementIntent : uint8
+{
+	Stay,
+	StepCloser,
+	StepBack,
+	ReturnToPost
+};
+
+UENUM(BlueprintType)
+enum class EWSNPCReaction : uint8
+{
+	Neutral,
+	Acknowledge,
+	Consider,
+	Reassure,
+	Reject,
+	Alarmed
+};
+
+UENUM(BlueprintType)
 enum class EWSReasonCode : uint8
 {
 	Ok,
@@ -119,22 +139,22 @@ struct FWSCharacterState
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
-	float Health = 100.0f;
+	float Health = 10.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
-	float Temperature = 70.0f;
+	float Temperature = 7.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
-	float Hunger = 65.0f;
+	float Hunger = 6.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
-	float Fatigue = 65.0f;
+	float Fatigue = 6.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
-	float Pressure = 40.0f;
+	float Pressure = 4.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
-	float Trust = 0.0f;
+	float Trust = 5.0f;
 };
 
 USTRUCT(BlueprintType)
@@ -486,6 +506,12 @@ struct FWSAgentReply
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FName> ReferencedFactIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSNPCMovementIntent MovementIntent = EWSNPCMovementIntent::Stay;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSNPCReaction Reaction = EWSNPCReaction::Neutral;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bAccepted = true;

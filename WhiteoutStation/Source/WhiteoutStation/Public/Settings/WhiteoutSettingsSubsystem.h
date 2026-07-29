@@ -21,12 +21,16 @@ public:
 	float GetAmbienceVolume() const { return AmbienceVolume; }
 	float GetEffectsVolume() const { return EffectsVolume; }
 	float GetFeedbackVolume() const { return FeedbackVolume; }
+	float GetTextScale() const { return TextScale; }
+	bool IsReducedMotionEnabled() const { return bReducedMotion; }
 
 	void SetFieldOfView(float Value, UObject* WorldContextObject);
 	void SetMasterVolume(float Value, UObject* WorldContextObject);
 	void SetAmbienceVolume(float Value, UObject* WorldContextObject);
 	void SetEffectsVolume(float Value, UObject* WorldContextObject);
 	void SetFeedbackVolume(float Value, UObject* WorldContextObject);
+	void SetTextScale(float Value, UObject* WorldContextObject);
+	void SetReducedMotionEnabled(bool bEnabled);
 	void Apply(UObject* WorldContextObject);
 
 private:
@@ -38,6 +42,8 @@ private:
 	float AmbienceVolume = 1.0f;
 	float EffectsVolume = 1.0f;
 	float FeedbackVolume = 1.0f;
+	float TextScale = 1.0f;
+	bool bReducedMotion = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USoundMix> RuntimeSoundMix;

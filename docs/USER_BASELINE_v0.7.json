@@ -1,0 +1,100 @@
+{
+  "schema": "whiteout.v0.7.user-baseline.v1",
+  "captured_utc": "2026-07-28T03:38:00Z",
+  "source_worktree": {
+    "path": "G:/Whiteout Station",
+    "branch": "main",
+    "head": "01cb35689d866cab34bb60260f6ab55483ae3420"
+  },
+  "policy": {
+    "preserve_exactly": [
+      "WhiteoutStation/Content/WindStation/World/MVP_StationMap.umap",
+      "WhiteoutStation/Content/WindStation/Art/AnimeNPC/**",
+      "WhiteoutStation/Content/WindStation/Presentation/Characters/**"
+    ],
+    "merge_compatibility_changes": [
+      "WhiteoutStation/Source/WhiteoutStation/Private/World/WSInteractableActor.cpp",
+      "WhiteoutStation/Source/WhiteoutStation/Private/World/WSLookAtSkeletalMeshComponent.cpp",
+      "WhiteoutStation/WhiteoutStation.uproject"
+    ],
+    "excluded_generated_paths": [
+      "WhiteoutStation/Plugins/VRM4U/Binaries/**",
+      "WhiteoutStation/Plugins/VRM4U/Intermediate/**"
+    ],
+    "excluded_unrelated_artifacts": [
+      "x.src).filter(Boolean)"
+    ]
+  },
+  "objects": {
+    "map": {
+      "path": "WhiteoutStation/Content/WindStation/World/MVP_StationMap.umap",
+      "kind": "file",
+      "file_count": 1,
+      "total_bytes": 250966,
+      "sha256": "595311391420418d4b7157c5b2ecf1bd2f976e2830ec23e040f2df2c82b428e7"
+    },
+    "anime_npc": {
+      "path": "WhiteoutStation/Content/WindStation/Art/AnimeNPC",
+      "kind": "tree",
+      "file_count": 245,
+      "total_bytes": 53174879,
+      "sha256": "c1145159b2ab0f59838069f16e59de6272bb02f68a3924d928dc614a5ea2371e"
+    },
+    "character_bindings": {
+      "path": "WhiteoutStation/Content/WindStation/Presentation/Characters",
+      "kind": "tree",
+      "file_count": 2,
+      "total_bytes": 6001,
+      "sha256": "64551fb06e0d0e04e7b39f894058087cadfaf012efb9d990d9259c2ced8607c5"
+    },
+    "vrm4u_plugin": {
+      "path": "WhiteoutStation/Plugins/VRM4U",
+      "kind": "tree",
+      "file_count": 922,
+      "total_bytes": 176592051,
+      "sha256": "89567ac6b6800a7cb9431cd3d3bc04a01e2e645f9277eb707d2454f5042f9070"
+    },
+    "editor_scripts": {
+      "paths": [
+        "Tools/Editor/audit_anime_npc_replacement.py",
+        "Tools/Editor/bind_anime_npcs.py",
+        "Tools/Editor/import_anime_npc_vrms.py",
+        "Tools/Editor/import_yecheng_v10.py",
+        "Tools/Editor/install_yecheng_v10.py",
+        "Tools/Editor/retarget_anime_npc_animations.py"
+      ],
+      "kind": "path_set",
+      "file_count": 6,
+      "total_bytes": 23222,
+      "sha256": "769282af1ab537a18a0abf2281fa88645b4a464b55b4ae062dfb77d95f79f426"
+    },
+    "asset_licenses": {
+      "path": "SourceAssets/ASSET_LICENSES.md",
+      "kind": "file",
+      "file_count": 1,
+      "total_bytes": 10076,
+      "sha256": "1008da12b572a4197ed1c08b380f480324da821503642aa8f92fdc56b6ca5a5f"
+    },
+    "interactable_compatibility": {
+      "path": "WhiteoutStation/Source/WhiteoutStation/Private/World/WSInteractableActor.cpp",
+      "kind": "file",
+      "file_count": 1,
+      "total_bytes": 20925,
+      "sha256": "fd9b2a74f2095457b12362d2d22b016a0969883804054f2e4783edc40e64f31f"
+    },
+    "look_at_compatibility": {
+      "path": "WhiteoutStation/Source/WhiteoutStation/Private/World/WSLookAtSkeletalMeshComponent.cpp",
+      "kind": "file",
+      "file_count": 1,
+      "total_bytes": 3104,
+      "sha256": "96a43c79cc201038cd077fc5544a23eed6ba940ed7936b79de01526aa19de0b4"
+    },
+    "uproject": {
+      "path": "WhiteoutStation/WhiteoutStation.uproject",
+      "kind": "file",
+      "file_count": 1,
+      "total_bytes": 800,
+      "sha256": "a6fbcaca8cb9971788acd3620900630d6775cc647d1fbb9a786436f6ae594c14"
+    }
+  }
+}

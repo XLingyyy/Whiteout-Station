@@ -28,7 +28,7 @@ from agent_contract import (
     make_completion_envelope,
     validate_completion,
 )
-from mock_server import MockConfig, create_server
+from mock_server import MockConfig, build_mock_content, create_server
 from probe_deepseek import (
     ACTION_ID,
     build_http_request,
@@ -43,6 +43,8 @@ def valid_content(action_id: str = ACTION_ID) -> dict[str, object]:
         "emotion": "focused",
         "used_action_id": action_id,
         "referenced_fact_ids": [],
+        "movement_intent": "stay",
+        "reaction_action": "neutral",
     }
 
 
@@ -156,6 +158,42 @@ def test_official_endpoint_requires_key_and_sets_authorization() -> None:
     assert request.get_header("Authorization") == "Bearer dummy-secret"
 
 
+@pytest.mark.parametrize(
+    "malformed_key",
+    [
+        "标签：sk-test",
+        "sk-test\nInjected: value",
+        "密钥",
+        "x" * 513,
+    ],
+)
+def test_official_endpoint_rejects_non_header_safe_keys(
+    malformed_key: str,
+) -> None:
+    with pytest.raises(ContractError) as exc_info:
+        build_http_request(
+            "https://api.deepseek.com/chat/completions",
+            malformed_key,
+        )
+    assert exc_info.value.code == "invalid_api_key_format"
+
+    opener = FakeOpener([FakeResponse(200, encoded_envelope())])
+    result = run_probe(
+        endpoint="https://api.deepseek.com/chat/completions",
+        api_key=malformed_key,
+        credential_source="environment",
+        timeout=1,
+        retry_delay=0,
+        opener=opener,
+        sleep=lambda _: None,
+    )
+    assert not result.success
+    assert result.result == "REJECTED"
+    assert result.attempts == 0
+    assert result.error_code == "invalid_api_key_format"
+    assert not opener.requests
+
+
 def test_loopback_never_receives_deepseek_key() -> None:
     request, kind = build_http_request(
         "http://127.0.0.1:8765/chat/completions",
@@ -173,6 +211,8 @@ def test_valid_completion_is_accepted() -> None:
     assert response.npc_line == "联调响应正常。"
     assert response.used_action_id == ACTION_ID
     assert response.referenced_fact_ids == ()
+    assert response.movement_intent == "stay"
+    assert response.reaction_action == "neutral"
 
 
 @pytest.mark.parametrize(
@@ -396,6 +436,42 @@ def test_both_mock_entrypoints_share_the_same_server() -> None:
     assert mock_agent_server.run_from_cli is mock_chat_proxy.run_from_cli
 
 
+@pytest.mark.parametrize(
+    ("player_said", "movement", "reaction"),
+    (
+        ("请过来一点", "step_closer", "acknowledge"),
+        ("退后，离我远点", "step_back", "reject"),
+        ("回原位去", "return_to_post", "consider"),
+        ("别怕，先冷静", "stay", "reassure"),
+        ("你一直在隐瞒什么？", "step_back", "alarmed"),
+    ),
+)
+def test_mock_selects_constrained_performance(
+    player_said: str,
+    movement: str,
+    reaction: str,
+) -> None:
+    context = {
+        "action_id": "talk_gu_heng",
+        "emotion": "focused",
+        "preset_utterance": "我听见了。",
+        "preset_movement_intent": "stay",
+        "preset_reaction_action": "neutral",
+        "player_said": player_said,
+    }
+    kind, content = build_mock_content(
+        {
+            "messages": [
+                {"role": "system", "content": "Return json dialogue."},
+                {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
+            ]
+        }
+    )
+    assert kind == "npc_line"
+    assert content["movement_intent"] == movement
+    assert content["reaction_action"] == reaction
+
+
 def test_mock_is_openai_compatible_and_drops_authorization(
     tmp_path: Path,
 ) -> None:
@@ -422,6 +498,9 @@ def test_mock_is_openai_compatible_and_drops_authorization(
     assert audit["thinking_disabled"] is True
     assert audit["stream_disabled"] is True
     assert audit["response_format_json_object"] is True
+    assert audit["message_count"] == 2
+    assert audit["role_sequence"] == ["system", "user"]
+    assert audit["history_turns"] == 0
 
 
 def test_mock_supports_empty_content_and_status_codes() -> None:

@@ -10,7 +10,11 @@ struct FWhiteoutRuleConfig
 	int32 GeneratorRequired = 2;
 	int32 AntennaRequired = 1;
 	int32 ModelCallHardLimit = 10;
-	float SafeAntennaTemperature = 55.0f;
+	float SafeAntennaTemperature = 5.5f;
+	float CriticalHealth = 3.0f;
+	float CriticalTemperature = 3.0f;
+	float CriticalFatigue = 3.0f;
+	float CriticalPressure = 8.5f;
 	FWSGameState InitialState;
 };
 
@@ -56,6 +60,7 @@ private:
 	void RecognizePromise(const FWSActionRequest& Request, TArray<FString>& OutChanges);
 	void SettlePromises();
 	bool SignalAvailable() const;
+	bool IsCritical(const FWSCharacterState& CharacterState) const;
 	bool Knows(FName FactId, EWSKnowledgeLevel Minimum = EWSKnowledgeLevel::Suspected) const;
 	void DiscoverFact(FName FactId, EWSKnowledgeLevel Level, TArray<FString>* OutChanges = nullptr);
 	void AddEvidence(FName EvidenceId, TArray<FString>* OutChanges = nullptr);

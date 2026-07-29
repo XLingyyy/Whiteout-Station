@@ -34,6 +34,7 @@
 #include "Presentation/WSPresentationText.h"
 #include "Player/WhiteoutCharacter.h"
 #include "Settings/WhiteoutSettingsSubsystem.h"
+#include "State/WhiteoutRulesEngine.h"
 #include "State/WindStationStateSubsystem.h"
 #include "Styling/CoreStyle.h"
 #include "Sound/SoundBase.h"
@@ -153,25 +154,14 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	TickPanelAnimations(InDeltaTime);
-	OpeningElapsed += InDeltaTime;
-	if (OpeningBorder && OpeningBorder->GetVisibility() == ESlateVisibility::Visible)
-	{
-		const int32 Stage = OpeningElapsed < 2.2f ? 0 : OpeningElapsed < 6.8f ? 1 : OpeningElapsed < 10.8f ? 2 : 3;
-		if (Stage != ActiveOpeningStage)
-		{
-			ApplyOpeningStage(Stage);
-		}
-		if (OpeningElapsed > 14.0f)
-		{
-			DismissOpening();
-		}
-	}
+	TickOpening(InDeltaTime);
+	const bool bReducedMotion = IsReducedMotionEnabled();
 	if (ToastRemaining > 0.0f && ToastBorder)
 	{
 		ToastRemaining = FMath::Max(0.0f, ToastRemaining - InDeltaTime);
 		const float Opacity = FMath::Clamp(ToastRemaining * 1.8f, 0.0f, 1.0f);
 		ToastBorder->SetRenderOpacity(Opacity);
-		if (TopText)
+		if (TopText && !bReducedMotion)
 		{
 			const float Pulse = 1.0f + 0.035f * FMath::Sin(ToastRemaining * 12.0f) * Opacity;
 			TopText->SetRenderScale(FVector2D(Pulse));
@@ -185,14 +175,16 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 	if (CrisisElapsed >= 0.0f && CrisisBorder)
 	{
 		CrisisElapsed += InDeltaTime;
-		const int32 Stage = CrisisElapsed < 0.55f ? 0 : CrisisElapsed < 1.45f ? 1 : 2;
+		const int32 Stage = bReducedMotion ? 2 : CrisisElapsed < 0.55f ? 0 : CrisisElapsed < 1.45f ? 1 : 2;
 		if (Stage != ActiveCrisisStage)
 		{
 			ApplyCrisisStage(Stage);
 		}
-		CrisisBorder->SetRenderOpacity(CrisisElapsed < 0.25f
-			? CrisisElapsed / 0.25f
-			: FMath::Clamp((3.8f - CrisisElapsed) / 0.55f, 0.0f, 1.0f));
+		CrisisBorder->SetRenderOpacity(bReducedMotion
+			? 1.0f
+			: CrisisElapsed < 0.25f
+				? CrisisElapsed / 0.25f
+				: FMath::Clamp((3.8f - CrisisElapsed) / 0.55f, 0.0f, 1.0f));
 		if (CrisisElapsed >= 3.8f)
 		{
 			CrisisElapsed = -1.0f;
@@ -202,10 +194,13 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 	if (EndingElapsed >= 0.0f && EndingCinematicBorder)
 	{
 		EndingElapsed += InDeltaTime;
-		EndingCinematicBorder->SetRenderOpacity(EndingElapsed < 0.5f
-			? EndingElapsed / 0.5f
-			: FMath::Clamp((4.4f - EndingElapsed) / 0.8f, 0.0f, 1.0f));
-		if (EndingElapsed >= 4.4f)
+		const float EndingDuration = bReducedMotion ? 2.2f : 4.4f;
+		EndingCinematicBorder->SetRenderOpacity(bReducedMotion
+			? 1.0f
+			: EndingElapsed < 0.5f
+				? EndingElapsed / 0.5f
+				: FMath::Clamp((EndingDuration - EndingElapsed) / 0.8f, 0.0f, 1.0f));
+		if (EndingElapsed >= EndingDuration)
 		{
 			EndingElapsed = -1.0f;
 			bEndingResultsRevealed = true;
@@ -247,6 +242,11 @@ FReply UWhiteoutHUDWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 		CloseEvidence();
 		return FReply::Handled();
 	}
+	if (InKeyEvent.GetKey() == EKeys::H)
+	{
+		ToggleGuide();
+		return FReply::Handled();
+	}
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 
@@ -259,8 +259,9 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UCanvasPanel* Canvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDRoot"));
 	WidgetTree->RootWidget = Canvas;
 
-	TopPanel = MakeGlassPanel(Canvas, TEXT("TopPanel"), FAnchors(0, 0), FMargin(20, 20, 340, 96), 12.0f, WSUITokens::Color::SurfacePanel);
+	TopPanel = MakeGlassPanel(Canvas, TEXT("TopPanel"), FAnchors(0, 0), FMargin(20, 20, 340, 124), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(TopPanel, FMargin(10, 7));
+	TopPanel->SetClipping(EWidgetClipping::ClipToBounds);
 	UVerticalBox* TopBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("TopBox"));
 	TopText = MakeText(TEXT("TopText"), 16, Body, false);
 	TopText->SetFont(UIFont(16, true));
@@ -271,11 +272,25 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	TopBox->AddChildToVerticalBox(TopConditionText)->SetPadding(FMargin(0, 2, 0, 0));
 	SetGlassPanelContent(TopPanel, TopBox);
 
-	ObjectivePanel = MakeGlassPanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 128, 300, 342), 12.0f, WSUITokens::Color::SurfacePanel);
+	ObjectivePanel = MakeGlassPanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 156, 340, 420), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(ObjectivePanel, FMargin(12));
-	ObjectiveText = MakeText(TEXT("ObjectiveText"), 13, Body, false);
+	ObjectivePanel->SetClipping(EWidgetClipping::ClipToBounds);
+	UVerticalBox* ObjectiveBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ObjectiveBox"));
+	ObjectiveText = MakeText(TEXT("ObjectiveText"), 13, Body, true);
+	ObjectiveText->SetWrapTextAt(316.0f);
 	ObjectiveText->SetLineHeightPercentage(1.25f);
-	SetGlassPanelContent(ObjectivePanel, ObjectiveText);
+	ObjectiveBox->AddChildToVerticalBox(ObjectiveText);
+	TutorialTitleText = MakeText(TEXT("TutorialTitleText"), 13, Cyan, false);
+	TutorialTitleText->SetFont(UIFont(13, true));
+	TutorialTitleText->SetText(FText::FromString(TEXT("当前建议")));
+	TutorialTitleText->SetAutoWrapText(true);
+	TutorialTitleText->SetWrapTextAt(316.0f);
+	ObjectiveBox->AddChildToVerticalBox(TutorialTitleText)->SetPadding(FMargin(0, 12, 0, 3));
+	TutorialText = MakeText(TEXT("TutorialText"), 12, WSUITokens::Color::TextCinematicWarm);
+	TutorialText->SetWrapTextAt(316.0f);
+	TutorialText->SetLineHeightPercentage(1.2f);
+	ObjectiveBox->AddChildToVerticalBox(TutorialText);
+	SetGlassPanelContent(ObjectivePanel, ObjectiveBox);
 
 	CrewPanel = MakeGlassPanel(Canvas, TEXT("CrewPanel"), FAnchors(1, 0), FMargin(-300, 20, 280, 520), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(CrewPanel, FMargin(12));
@@ -356,34 +371,38 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PromptText = MakeText(TEXT("PromptText"), 16, Amber);
 	UTextBlock* HelpText = MakeText(TEXT("HelpText"), 12, Secondary);
 	HelpText->SetText(FWSPresentationText::UI(
-		TEXT("ui_help_v04"),
-		TEXT("WASD 移动　鼠标观察　Space 跳跃　F 互动/对话　E 证据板　Enter 结束　Esc 返回/暂停")));
+		TEXT("ui_help_v06"),
+		TEXT("WASD 移动　鼠标观察　Space 跳跃　F 预览/确认　E 证据板　H 生存手册　Enter 结束　Esc 返回")));
 	BottomBox->AddChildToVerticalBox(FeedbackText)->SetPadding(FMargin(0, 0, 0, 3));
 	BottomBox->AddChildToVerticalBox(PromptText)->SetPadding(FMargin(0, 0, 0, 3));
 	BottomBox->AddChildToVerticalBox(HelpText);
 
-	CrosshairText = MakeText(TEXT("CrosshairText"), 28, Body, false);
-	CrosshairText->SetText(FText::FromString(TEXT("+")));
+	CrosshairText = MakeText(TEXT("CrosshairText"), 14, Body, false);
+	CrosshairText->SetText(FText::FromString(TEXT("○")));
 	CrosshairText->SetJustification(ETextJustify::Center);
+	CrosshairText->SetRenderTranslation(FVector2D(0.0f, -3.0f));
 	UCanvasPanelSlot* CrosshairSlot = Canvas->AddChildToCanvas(CrosshairText);
 	CrosshairSlot->SetAnchors(FAnchors(0.5f, 0.5f));
 	CrosshairSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	CrosshairSlot->SetOffsets(FMargin(-22.0f, -22.0f, 44.0f, 44.0f));
-	FocusBorder = MakePanel(Canvas, TEXT("FocusPanel"), FAnchors(0.5f, 0.5f), FMargin(-270, 42, 540, 78), FLinearColor::Transparent);
-	FocusBorder->SetPadding(FMargin(8));
+	CrosshairSlot->SetOffsets(FMargin(0.0f, 0.0f, 24.0f, 24.0f));
+	FocusBorder = MakePanel(Canvas, TEXT("FocusPanel"), FAnchors(0.5f, 0.5f), FMargin(0, 44, 460, 56), FLinearColor::Transparent);
+	if (UCanvasPanelSlot* FocusSlot = Cast<UCanvasPanelSlot>(FocusBorder->Slot))
+	{
+		FocusSlot->SetAlignment(FVector2D(0.5f, 0.0f));
+	}
+	FocusBorder->SetPadding(FMargin(0));
+	FocusBorder->SetClipping(EWidgetClipping::ClipToBounds);
 	UOverlay* FocusOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("FocusOverlay"));
 	if (InkBrushTexture)
 	{
 		UImage* FocusBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("FocusBrush"));
 		FocusBrush->SetBrushFromTexture(InkBrushTexture, true);
+		FocusBrush->SetDesiredSizeOverride(FVector2D(460.0f, 56.0f));
 		FocusBrush->SetColorAndOpacity(FLinearColor(0.015f, 0.015f, 0.015f, 0.92f));
-		FocusOverlay->AddChildToOverlay(FocusBrush);
+		UOverlaySlot* FocusBrushSlot = FocusOverlay->AddChildToOverlay(FocusBrush);
+		FocusBrushSlot->SetHorizontalAlignment(HAlign_Fill);
+		FocusBrushSlot->SetVerticalAlignment(VAlign_Fill);
 	}
-	UVerticalBox* FocusContent = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FocusContent"));
-	UTextBlock* FocusMarker = MakeText(TEXT("FocusMarker"), 11, Amber, false);
-	FocusMarker->SetText(FText::FromString(TEXT("◆")));
-	FocusMarker->SetJustification(ETextJustify::Center);
-	FocusContent->AddChildToVerticalBox(FocusMarker);
 	UHorizontalBox* FocusLine = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FocusLine"));
 	FocusText = MakeText(TEXT("FocusText"), 15, Body, false);
 	FocusText->SetJustification(ETextJustify::Center);
@@ -394,9 +413,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	FocusKeyText = MakeText(TEXT("FocusKeyText"), 15, Body, false);
 	FocusKeyText->SetJustification(ETextJustify::Center);
 	FocusLine->AddChildToHorizontalBox(FocusKeyText)->SetVerticalAlignment(VAlign_Center);
-	UVerticalBoxSlot* FocusLineSlot = FocusContent->AddChildToVerticalBox(FocusLine);
-	FocusLineSlot->SetHorizontalAlignment(HAlign_Center);
-	UOverlaySlot* FocusContentSlot = FocusOverlay->AddChildToOverlay(FocusContent);
+	UOverlaySlot* FocusContentSlot = FocusOverlay->AddChildToOverlay(FocusLine);
 	FocusContentSlot->SetHorizontalAlignment(HAlign_Center);
 	FocusContentSlot->SetVerticalAlignment(VAlign_Center);
 	FocusBorder->SetContent(FocusOverlay);
@@ -507,6 +524,57 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	SetGlassPanelContent(EvidenceBorder, EvidenceBox);
 	EvidenceBorder->SetVisibility(ESlateVisibility::Collapsed);
 
+	GuideBorder = MakePanel(
+		Canvas,
+		TEXT("GuidePanel"),
+		FAnchors(0, 0, 1, 1),
+		FMargin(0),
+		FLinearColor(0.002f, 0.004f, 0.008f, 0.92f));
+	UCanvasPanel* GuideCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("GuideCanvas"));
+	GuideBorder->SetContent(GuideCanvas);
+	UBorder* GuideCard = MakeGlassPanel(
+		GuideCanvas,
+		TEXT("GuideCard"),
+		FAnchors(0.18f, 0.08f, 0.82f, 0.92f),
+		FMargin(0),
+		18.0f,
+		WSUITokens::Color::SurfaceDeep);
+	SetGlassPanelPadding(GuideCard, FMargin(22, 18));
+	UVerticalBox* GuideBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("GuideBox"));
+	SetGlassPanelContent(GuideCard, GuideBox);
+	UTextBlock* GuideTitle = MakeText(TEXT("GuideTitle"), 25, Cyan, false);
+	GuideTitle->SetFont(UIFont(25, true));
+	GuideTitle->SetText(FText::FromString(TEXT("风雪站生存手册")));
+	GuideBox->AddChildToVerticalBox(GuideTitle)->SetPadding(FMargin(0, 0, 0, 8));
+	UTextBlock* GuideIntro = MakeText(TEXT("GuideIntro"), 14, Body);
+	GuideIntro->SetLineHeightPercentage(1.28f);
+	GuideIntro->SetText(FText::FromString(
+		TEXT("核心流程\n")
+		TEXT("修复发电机 2/2 → 前往室外校准天线 1/1 → 回控制室发送求救信号。\n")
+		TEXT("每个付费行动都会推进约 75 分钟并消耗 AP；按 F 先查看代价和条件，再按 F 确认。\n\n")
+		TEXT("人物状态（所有读数均为 0—10）\n")
+		TEXT("健康：受伤与生存状况。治疗顾衡可恢复；强修和危险作业会损失健康。\n")
+		TEXT("体温：寒冷暴露。室外天线会快速降温，低于 5.5 无法校准；供暖与保温包能改善。\n")
+		TEXT("精力：行动余力。每次行动都会下降，危险维修下降更多。\n")
+		TEXT("饱腹：食物储备效果。分配食物可提升，并会影响两名队员的信任。\n")
+		TEXT("稳定：数值越高越冷静。供暖和安抚可提升；无证据的质疑可能恶化。\n")
+		TEXT("信任：决定合作、情报与结算。询问、安抚、治疗、公平分配和兑现承诺会改变信任。\n\n")
+		TEXT("信息与交涉\n")
+		TEXT("按 E 查看证据板。对话先选意向，再自由输入；质疑和承诺只会在已有事实或可兑现条件时出现。")));
+	UScrollBox* GuideScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("GuideScroll"));
+	GuideScroll->AddChild(GuideIntro);
+	UVerticalBoxSlot* GuideScrollSlot = GuideBox->AddChildToVerticalBox(GuideScroll);
+	GuideScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	GuideContextText = MakeText(TEXT("GuideContextText"), 14, WSUITokens::Color::TextCinematicWarm);
+	GuideContextText->SetLineHeightPercentage(1.24f);
+	GuideBox->AddChildToVerticalBox(GuideContextText)->SetPadding(FMargin(0, 12, 0, 8));
+	UButton* GuideCloseButton = MakeButton(
+		GuideBox,
+		FText::FromString(TEXT("返回游戏　[H / Esc]")),
+		TEXT("GuideCloseButton"));
+	GuideCloseButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CloseGuide);
+	GuideBorder->SetVisibility(ESlateVisibility::Collapsed);
+
 	DialogueBorder = MakePanel(Canvas, TEXT("DialoguePanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor::Transparent);
 	DialogueBorder->SetPadding(FMargin(0));
 	UCanvasPanel* DialogueCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("DialogueCanvas"));
@@ -562,6 +630,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	KeepRecordsButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromiseKeepRecords);
 	PreventSelfHarmButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromisePreventSelfHarm);
 	RepairTogetherButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromiseRepairTogether);
+	DialoguePromiseButtons = {KeepRecordsButton, PreventSelfHarmButton, RepairTogetherButton};
 	DialogueBarBox->AddChildToVerticalBox(DialoguePromiseBorder);
 	DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
 
@@ -592,9 +661,9 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	DialogueReplyBorder->SetBrushColor(FLinearColor::Transparent);
 	UVerticalBox* ReplyBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueReplyBox"));
 	DialogueReplyBorder->SetContent(ReplyBox);
-	UButton* ContinueButton = MakeButton(ReplyBox, FWSPresentationText::UI(TEXT("dlg_continue_button_v04"), TEXT("继续交涉")), TEXT("DialogueContinue"));
+	DialogueContinueButton = MakeButton(ReplyBox, FWSPresentationText::UI(TEXT("dlg_continue_button_v04"), TEXT("继续交涉")), TEXT("DialogueContinue"));
 	UButton* EndDialogueButton = MakeButton(ReplyBox, FWSPresentationText::UI(TEXT("dlg_end_button_v04"), TEXT("结束对话")), TEXT("DialogueEnd"));
-	ContinueButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ContinueDialogue);
+	DialogueContinueButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ContinueDialogue);
 	EndDialogueButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CancelDialogue);
 	DialogueBarBox->AddChildToVerticalBox(DialogueReplyBorder);
 	DialogueReplyBorder->SetVisibility(ESlateVisibility::Collapsed);
@@ -759,21 +828,19 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	CrisisBorder->SetContent(CrisisText);
 	CrisisBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	OpeningBorder = MakePanel(Canvas, TEXT("OpeningPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.003f, 0.003f, 0.005f, 0.96f));
+	OpeningBorder = MakePanel(Canvas, TEXT("OpeningPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.0f, 0.0f, 0.0f, 1.0f));
 	OpeningBorder->SetPadding(FMargin(0));
 	{
 		UOverlay* OpeningOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("OpeningOverlay"));
-		if (InkBrushTexture)
-		{
-			UImage* OpeningBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("OpeningBrush"));
-			OpeningBrush->SetBrushFromTexture(InkBrushTexture, true);
-			OpeningBrush->SetColorAndOpacity(FLinearColor(0.008f, 0.008f, 0.012f, 0.55f));
-			OpeningOverlay->AddChildToOverlay(OpeningBrush);
-		}
+		USizeBox* OpeningContentSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("OpeningContentSize"));
+		OpeningContentSize->SetWidthOverride(980.0f);
 		UVerticalBox* OpeningBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("OpeningBox"));
-		OpeningText = MakeText(TEXT("OpeningTitleText"), 42, WSUITokens::Color::TextPrimary, false);
+		OpeningContentSize->SetContent(OpeningBox);
+		OpeningText = MakeText(TEXT("OpeningStoryText"), 28, FLinearColor::White, true);
+		OpeningText->SetFont(UIFont(28, false));
 		OpeningText->SetJustification(ETextJustify::Center);
-		OpeningBox->AddChildToVerticalBox(OpeningText)->SetPadding(FMargin(0, 0, 0, 10));
+		OpeningText->SetLineHeightPercentage(1.35f);
+		OpeningBox->AddChildToVerticalBox(OpeningText)->SetPadding(FMargin(0, 0, 0, 20));
 		OpeningDivider = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("OpeningDivider"));
 		OpeningDivider->SetBrushColor(WSUITokens::Color::StrokeDivider);
 		USizeBox* OpeningDividerSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("OpeningDividerSize"));
@@ -783,17 +850,31 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		UVerticalBoxSlot* OpeningDividerSlot = OpeningBox->AddChildToVerticalBox(OpeningDividerSize);
 		OpeningDividerSlot->SetHorizontalAlignment(HAlign_Center);
 		OpeningDividerSlot->SetPadding(FMargin(0, 0, 0, 14));
-		OpeningSubtitleText = MakeText(TEXT("OpeningSubtitleText"), 20, WSUITokens::Color::TextCinematicWarm);
+		OpeningDivider->SetVisibility(ESlateVisibility::Collapsed);
+		OpeningSubtitleText = MakeText(TEXT("OpeningSubtitleText"), 16, WSUITokens::Color::TextSecondary);
 		OpeningSubtitleText->SetJustification(ETextJustify::Center);
-		OpeningBox->AddChildToVerticalBox(OpeningSubtitleText)->SetPadding(FMargin(0, 0, 0, 18));
+		OpeningBox->AddChildToVerticalBox(OpeningSubtitleText)->SetPadding(FMargin(0, 0, 0, 12));
 		OpeningFooterText = MakeText(TEXT("OpeningFooterText"), 14, WSUITokens::Color::TextSecondary, false);
 		OpeningFooterText->SetJustification(ETextJustify::Center);
 		OpeningBox->AddChildToVerticalBox(OpeningFooterText);
-		UOverlaySlot* OpeningBoxSlot = OpeningOverlay->AddChildToOverlay(OpeningBox);
+		UOverlaySlot* OpeningBoxSlot = OpeningOverlay->AddChildToOverlay(OpeningContentSize);
 		OpeningBoxSlot->SetHorizontalAlignment(HAlign_Center);
 		OpeningBoxSlot->SetVerticalAlignment(VAlign_Center);
 		OpeningBorder->SetContent(OpeningOverlay);
 	}
+	OpeningLines = {
+		FText::FromString(TEXT("风雪站是高纬山区的气象与通信中继站。今天，你是三人值班组的负责人。")),
+		FText::FromString(TEXT("昨夜，暴风雪切断了外部线路；清晨八点十五分，主电源又在一次异常重启后停机。")),
+		FText::FromString(TEXT("备用电池只能撑到傍晚。届时供暖、照明和无线电会一起停止。")),
+		FText::FromString(TEXT("顾衡是站里唯一懂发电机和天线控制系统的工程师。他的右手受伤，也对停机原因有所隐瞒。")),
+		FText::FromString(TEXT("没有顾衡的判断和配合，你很难安全修好发电机、找到可用继电器并恢复天线。")),
+		FText::FromString(TEXT("叶澄是值班医生，保管仅剩的药品和保温物资。她必须决定先救谁、先给哪个房间供暖。")),
+		FText::FromString(TEXT("没有叶澄的诊断和物资分配，顾衡可能无法维修，三个人的身体状况也会迅速恶化。")),
+		FText::FromString(TEXT("两人对责任、风险和资源顺序意见不一。你需要调查现场，再用证据、帮助或承诺争取合作。")),
+		FText::FromString(TEXT("你只有 8 点行动力。修复发电机、校准室外天线、发出求救信号，救援才能找到这里。")),
+		FText::FromString(TEXT("每次行动都会推进时间并改变状态、信任与物资。风雪敲打站体——你在控制室睁开了眼。"))};
+	OpeningElapsed = 0.0f;
+	OpeningPhase = EWSOpeningPhase::FadingInLine;
 	ApplyOpeningStage(0);
 
 	PauseBorder = MakeGlassPanel(Canvas, TEXT("PausePanel"), FAnchors(0.5f, 0.5f), FMargin(-280, -350, 560, 700), 16.0f, WSUITokens::Color::SurfaceDeep);
@@ -821,20 +902,15 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PauseBox->AddChildToVerticalBox(PauseStatusText)->SetPadding(FMargin(0, 0, 0, 13));
 	UButton* ResumeButton = MakeButton(PauseBox, FWSPresentationText::UI(TEXT("ui_resume"), TEXT("继续游戏")), TEXT("ResumeButton"));
 	PauseDefaultButton = ResumeButton;
-	UButton* SaveButton = MakeButton(PauseBox, FText::FromString(TEXT("保存游戏　｜　当前版本不可用")), TEXT("SaveButton"));
-	UButton* LoadButton = MakeButton(PauseBox, FText::FromString(TEXT("读取游戏　｜　当前版本不可用")), TEXT("LoadButton"));
-	UButton* SettingsButton = MakeButton(PauseBox, FText::FromString(TEXT("设置　　　｜　视野与音量")), TEXT("SettingsButton"));
-	UButton* HelpButton = MakeButton(PauseBox, FText::FromString(TEXT("操作说明")), TEXT("HelpButton"));
+	UButton* SaveButton = MakeButton(PauseBox, FText::FromString(TEXT("保存本轮　｜　记录当前状态")), TEXT("SaveButton"));
+	LoadGameButton = MakeButton(PauseBox, FText::FromString(TEXT("读取存档　｜　恢复最近记录")), TEXT("LoadButton"));
+	UButton* SettingsButton = MakeButton(PauseBox, FText::FromString(TEXT("设置　　　｜　画面、声音与辅助")), TEXT("SettingsButton"));
+	UButton* HelpButton = MakeButton(PauseBox, FText::FromString(TEXT("生存手册　｜　目标、状态与操作")), TEXT("HelpButton"));
 	UButton* RestartButton = MakeButton(PauseBox, FWSPresentationText::UI(TEXT("ui_restart"), TEXT("重新开始")), TEXT("RestartButton"));
-	UButton* MainMenuButton = MakeButton(PauseBox, FText::FromString(TEXT("返回主菜单｜　当前版本不可用")), TEXT("MainMenuButton"));
 	UButton* QuitButton = MakeButton(PauseBox, FWSPresentationText::UI(TEXT("ui_quit"), TEXT("退出到桌面")), TEXT("QuitButton"));
-	SaveButton->SetIsEnabled(false);
-	LoadButton->SetIsEnabled(false);
-	MainMenuButton->SetIsEnabled(false);
-	SaveButton->SetColorAndOpacity(WSUITokens::Color::TextMuted);
-	LoadButton->SetColorAndOpacity(WSUITokens::Color::TextMuted);
-	MainMenuButton->SetColorAndOpacity(WSUITokens::Color::TextMuted);
 	ResumeButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ResumeGame);
+	SaveButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::SaveGame);
+	LoadGameButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::LoadGame);
 	SettingsButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::OpenSettings);
 	HelpButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ToggleControls);
 	RestartButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::RestartGame);
@@ -873,7 +949,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PauseBox->AddChildToVerticalBox(PauseHelpText)->SetPadding(FMargin(8, 12, 8, 0));
 	PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	SettingsBorder = MakeGlassPanel(Canvas, TEXT("SettingsPanel"), FAnchors(0.5f, 0.5f), FMargin(-330, -300, 660, 600), 16.0f, WSUITokens::Color::SurfaceDeep);
+	SettingsBorder = MakeGlassPanel(Canvas, TEXT("SettingsPanel"), FAnchors(0.5f, 0.5f), FMargin(-330, -340, 660, 680), 16.0f, WSUITokens::Color::SurfaceDeep);
 	SetGlassPanelPadding(SettingsBorder, FMargin(18));
 	UVerticalBox* SettingsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SettingsBox"));
 	SetGlassPanelContent(SettingsBorder, SettingsBox);
@@ -928,17 +1004,28 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UTextBlock* FeedbackValue = nullptr;
 	FeedbackVolumeSlider = AddSettingsRow(TEXT("FeedbackVolumeSlider"), TEXT("反馈音量"), FeedbackValue);
 	FeedbackVolumeValueText = FeedbackValue;
+	UTextBlock* TextScaleValue = nullptr;
+	TextScaleSlider = AddSettingsRow(TEXT("TextScaleSlider"), TEXT("界面字号"), TextScaleValue);
+	TextScaleValueText = TextScaleValue;
 	FOVSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleFOVChanged);
 	MasterVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleMasterVolumeChanged);
 	AmbienceVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleAmbienceVolumeChanged);
 	EffectsVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleEffectsVolumeChanged);
 	FeedbackVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleFeedbackVolumeChanged);
+	TextScaleSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleTextScaleChanged);
+	ReducedMotionButton = MakeButton(
+		SettingsBox,
+		FText::FromString(TEXT("减少动态效果　｜　关闭")),
+		TEXT("ReducedMotionButton"));
+	ReducedMotionButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ToggleReducedMotion);
+	ReducedMotionValueText = Cast<UTextBlock>(
+		WidgetTree->FindWidget(TEXT("ReducedMotionButtonLabel")));
 	UButton* SettingsBackButton = MakeButton(SettingsBox, FText::FromString(TEXT("返回暂停菜单")), TEXT("SettingsBackButton"));
 	SettingsBackButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CloseSettings);
 	SettingsBox->AddChildToVerticalBox(MakeText(TEXT("SettingsScope"), 12, Secondary))->SetPadding(FMargin(8, 10, 8, 0));
 	if (UTextBlock* ScopeText = Cast<UTextBlock>(SettingsBox->GetChildAt(SettingsBox->GetChildrenCount() - 1)))
 	{
-		ScopeText->SetText(FText::FromString(TEXT("效果：脚步 / 事件 / 结局音乐　反馈：界面提示")));
+		ScopeText->SetText(FText::FromString(TEXT("字号 90%–120%｜减少动态效果会保留逐句推进并缩短淡入淡出")));
 		ScopeText->SetJustification(ETextJustify::Center);
 	}
 	SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
@@ -1200,6 +1287,7 @@ void UWhiteoutHUDWidget::SetLayer(const EWSUILayer Layer)
 	CurrentLayer = Layer;
 	const bool bHideBaseHud = Layer == EWSUILayer::Evidence
 		|| Layer == EWSUILayer::Dialogue
+		|| Layer == EWSUILayer::Guide
 		|| Layer == EWSUILayer::Pause
 		|| Layer == EWSUILayer::Settings
 		|| Layer == EWSUILayer::Results;
@@ -1211,6 +1299,21 @@ void UWhiteoutHUDWidget::SetLayer(const EWSUILayer Layer)
 	if (CrosshairText)
 	{
 		CrosshairText->SetVisibility(bHideBaseHud ? ESlateVisibility::Hidden : ESlateVisibility::Visible);
+	}
+	ResetMouseToViewportCenter();
+}
+
+void UWhiteoutHUDWidget::ResetMouseToViewportCenter()
+{
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		int32 ViewportWidth = 0;
+		int32 ViewportHeight = 0;
+		PlayerController->GetViewportSize(ViewportWidth, ViewportHeight);
+		if (ViewportWidth > 0 && ViewportHeight > 0)
+		{
+			PlayerController->SetMouseLocation(ViewportWidth / 2, ViewportHeight / 2);
+		}
 	}
 }
 
@@ -1292,6 +1395,15 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 		 FWSPresentationText::UI(State.Flags.bHeatPackRevealed ? TEXT("ui_discovered") : TEXT("ui_unknown"), State.Flags.bHeatPackRevealed ? TEXT("已发现") : TEXT("未知")).ToString(),
 		 State.Evidence.Num(),
 		 FWSPresentationText::UI(State.Flags.bKitchenHeaterIntact ? TEXT("ui_intact") : TEXT("ui_dismantled"), State.Flags.bKitchenHeaterIntact ? TEXT("完好") : TEXT("已拆解")).ToString()})));
+	if (TutorialTitleText)
+	{
+		TutorialTitleText->SetText(FText::FromString(TEXT("当前建议　｜　H 查看状态与操作")));
+	}
+	if (TutorialText)
+	{
+		TutorialText->SetText(FText::FromString(BuildTutorialHint(State)));
+	}
+	UpdateGuideContext(State);
 
 	CrewText->SetText(FWSPresentationText::UI(TEXT("ui_crew_header_v03"), TEXT("值班组状态")));
 	const TArray<EWSCharacterId> CharacterIds = {EWSCharacterId::Player, EWSCharacterId::GuHeng, EWSCharacterId::YeCheng};
@@ -1314,11 +1426,11 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 				CrewCardTexts[CharacterIndex]->SetText(FText::FromString(Card));
 			}
 			const TArray<float> Ratios = {
-				Character->Health / 100.0f,
-				Character->Temperature / 100.0f,
-				Character->Fatigue / 100.0f,
-				Character->Hunger / 100.0f,
-				1.0f - Character->Pressure / 100.0f};
+				Character->Health / 10.0f,
+				Character->Temperature / 10.0f,
+				Character->Fatigue / 10.0f,
+				Character->Hunger / 10.0f,
+				1.0f - Character->Pressure / 10.0f};
 			for (int32 StatusIndex = 0; StatusIndex < Ratios.Num(); ++StatusIndex)
 			{
 				const int32 FlatIndex = CharacterIndex * Ratios.Num() + StatusIndex;
@@ -1329,7 +1441,7 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 			}
 			if (CrewTrustBars.IsValidIndex(CharacterIndex) && CrewTrustBars[CharacterIndex])
 			{
-				CrewTrustBars[CharacterIndex]->SetPercent(FMath::Clamp((Character->Trust + 100.0f) / 200.0f, 0.0f, 1.0f));
+				CrewTrustBars[CharacterIndex]->SetPercent(FMath::Clamp(Character->Trust / 10.0f, 0.0f, 1.0f));
 			}
 		}
 	}
@@ -1356,6 +1468,90 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	UpdateResults(State);
 }
 
+FString UWhiteoutHUDWidget::BuildTutorialHint(const FWSGameState& State) const
+{
+	const auto HasAction = [&State](const FName ActionId)
+	{
+		return State.ActionCounts.FindRef(ActionId) > 0;
+	};
+	const bool bKnowsRestart = State.PlayerKnowledge.Contains(TEXT("FACT_FORCED_RESTART_SUSPICION"));
+	const bool bKnowsRelay = State.PlayerKnowledge.Contains(TEXT("FACT_BURNT_RELAY"));
+
+	if (State.Phase == EWSGamePhase::Results)
+	{
+		return TEXT("本轮已经结算。查看行动回顾与评分，再决定下一轮要验证的路线。");
+	}
+	if (State.EventLog.IsEmpty())
+	{
+		return TEXT("先看现场：靠近控制室内带白色轮廓的发电机日志或维修间控制柜。按 F 预览，再按 F 确认。");
+	}
+	if (State.EventLog.Num() == 1 && !State.Evidence.IsEmpty())
+	{
+		return TEXT("刚取得的线索已进入证据板。按 E 打开，选择卡片查看事实与后续用途。");
+	}
+	if (bKnowsRestart && bKnowsRelay && !State.Flags.bGuHengCooperative)
+	{
+		return TEXT("两条技术证据已经能互相印证。与顾衡对话，“质疑”现已开放，可争取继电器方案。");
+	}
+	if (!State.Flags.bGuHengDiagnosed && !HasAction(TEXT("talk_ye_cheng")))
+	{
+		return TEXT("顾衡仍带伤。与叶澄对话并先“询问”伤情；新的意向会随她披露的信息开放。");
+	}
+	if (!State.Flags.bGuHengCooperative && !State.Flags.bGuHengTreated)
+	{
+		return TEXT("先取得顾衡的合作：可为医务室供暖后治疗他，也可补齐发电机日志与控制柜证据再交涉。");
+	}
+	if (State.Tasks.GeneratorProgress < 2)
+	{
+		return TEXT("前往维修间修复发电机。带伤硬修会恶化顾衡状态；供暖、治疗或替代继电器能提高效率。");
+	}
+	if (State.Tasks.AntennaCalibration < 1)
+	{
+		return TEXT("发电机已恢复。确认玩家体温不低于 5.5，再到室外天线区校准；该行动消耗 2 AP。");
+	}
+	if (!State.Tasks.bSignalSent)
+	{
+		return TEXT("天线已校准。返回控制室发送求救信号；发信不消耗 AP，并进入结局结算。");
+	}
+	return TEXT("求救信号已经发出。按 Enter 进入本轮结算，查看路线代价、承诺与队员状态。");
+}
+
+void UWhiteoutHUDWidget::UpdateGuideContext(const FWSGameState& State)
+{
+	if (!GuideContextText)
+	{
+		return;
+	}
+	auto CharacterLine = [&State](const EWSCharacterId CharacterId)
+	{
+		const FWSCharacterState* Character = State.Characters.Find(CharacterId);
+		if (!Character)
+		{
+			return FString();
+		}
+		FString Result = FString::Printf(
+			TEXT("%s　健康 %.1f｜体温 %.1f｜精力 %.1f｜饱腹 %.1f｜稳定 %.1f"),
+			*FWSPresentationText::CharacterName(CharacterId).ToString(),
+			Character->Health,
+			Character->Temperature,
+			Character->Fatigue,
+			Character->Hunger,
+			10.0f - Character->Pressure);
+		if (CharacterId != EWSCharacterId::Player)
+		{
+			Result += FString::Printf(TEXT("｜信任 %.1f"), Character->Trust);
+		}
+		return Result;
+	};
+	GuideContextText->SetText(FText::FromString(FString::Printf(
+		TEXT("本轮即时读数｜AP %d / 8\n%s\n%s\n%s\n\n下一步：%s"),
+		State.ActionPoints,
+		*CharacterLine(EWSCharacterId::Player),
+		*CharacterLine(EWSCharacterId::GuHeng),
+		*CharacterLine(EWSCharacterId::YeCheng),
+		*BuildTutorialHint(State))));
+}
+
 void UWhiteoutHUDWidget::UpdateDialogueCard(const FWSGameState& State)
 {
 	if (!DialogueNPCText)
@@ -1366,9 +1562,9 @@ void UWhiteoutHUDWidget::UpdateDialogueCard(const FWSGameState& State)
 	const EWSCharacterId CharacterId = bGuHeng ? EWSCharacterId::GuHeng : EWSCharacterId::YeCheng;
 	const FWSCharacterState* Character = State.Characters.Find(CharacterId);
 	const FWSCharacterState SafeState = Character ? *Character : FWSCharacterState();
-	const FString Relationship = SafeState.Trust >= 12.0f ? TEXT("信任")
-		: SafeState.Trust >= 0.0f ? TEXT("可合作")
-		: SafeState.Trust >= -8.0f ? TEXT("有所保留") : TEXT("戒备");
+	const FString Relationship = SafeState.Trust >= 6.2f ? TEXT("信任")
+		: SafeState.Trust >= 5.0f ? TEXT("可合作")
+		: SafeState.Trust >= 4.2f ? TEXT("有所保留") : TEXT("戒备");
 	FString Stance;
 	if (bGuHeng)
 	{
@@ -1387,15 +1583,15 @@ void UWhiteoutHUDWidget::UpdateDialogueCard(const FWSGameState& State)
 		? FWSPresentationText::UI(TEXT("character_gu_heng"), TEXT("顾衡｜工程师｜41 岁")).ToString()
 		: FWSPresentationText::UI(TEXT("character_ye_cheng"), TEXT("叶澄｜医生｜31 岁")).ToString();
 	DialogueNPCText->SetText(FText::FromString(FString::Printf(
-		TEXT("%s\n\n关系　%s（信任 %.0f）\n立场　%s\n\n状态概览\n健康 %.0f　体温 %.0f\n压力 %.0f　信任 %.0f"),
+		TEXT("%s\n\n关系　%s（信任 %.1f / 10）\n立场　%s\n\n状态概览\n健康 %.1f　体温 %.1f\n压力 %.1f　信任 %.1f"),
 		*Identity, *Relationship, SafeState.Trust, *Stance,
 		SafeState.Health, SafeState.Temperature, SafeState.Pressure, SafeState.Trust)));
 	if (DialogueNPCBars.Num() >= 4)
 	{
-		DialogueNPCBars[0]->SetPercent(ScoreRatio(SafeState.Health, 100.0f));
-		DialogueNPCBars[1]->SetPercent(ScoreRatio(SafeState.Temperature, 100.0f));
-		DialogueNPCBars[2]->SetPercent(ScoreRatio(SafeState.Pressure, 100.0f));
-		DialogueNPCBars[3]->SetPercent(FMath::Clamp((SafeState.Trust + 20.0f) / 40.0f, 0.0f, 1.0f));
+		DialogueNPCBars[0]->SetPercent(ScoreRatio(SafeState.Health, 10.0f));
+		DialogueNPCBars[1]->SetPercent(ScoreRatio(SafeState.Temperature, 10.0f));
+		DialogueNPCBars[2]->SetPercent(ScoreRatio(SafeState.Pressure, 10.0f));
+		DialogueNPCBars[3]->SetPercent(ScoreRatio(SafeState.Trust, 10.0f));
 	}
 }
 
@@ -1609,9 +1805,56 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 		ResultsBorder->SetVisibility(bEndingResultsRevealed ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 	bWasShowingResults = true;
+	FString RouteName = TEXT("未成型路线");
+	FString RouteCost = TEXT("行动没有形成稳定的任务链，关键资源与人员风险缺少统一取舍。");
+	FString RouteAdvice = TEXT("先锁定一条完整路径，再用剩余行动处理人员或储备。");
+	if (State.Flags.bSelfRepairUsed)
+	{
+		RouteName = TEXT("强行自修线");
+		RouteCost = TEXT("绕开协作直接抢修，节省交涉步骤，同时让玩家承担更高健康与失温风险。");
+		RouteAdvice = TEXT("先取得事故记录或顾衡协作，避免把人员状态当作隐性维修材料。");
+	}
+	else if (State.Flags.bRelayInstalled
+		|| State.ActionCounts.FindRef(TEXT("dismantle_kitchen_heater")) > 0)
+	{
+		RouteName = TEXT("证据替代线");
+		RouteCost = TEXT("利用事故证据和替代继电器推进任务，代价是拆解厨房供暖并削弱长期保温能力。");
+		RouteAdvice = TEXT("比较保留厨房供暖与消耗医疗资源的分数差异，验证信息路线的真实代价。");
+	}
+	else if (State.Flags.bGuHengTreated || State.Flags.bMedicalRoomHeated)
+	{
+		RouteName = TEXT("医疗协作线");
+		RouteCost = TEXT("投入供暖与医疗物资稳定伤员，换取较安全的维修过程与更好的人员状态。");
+		RouteAdvice = TEXT("尝试减少一次供暖或治疗开销，同时保持顾衡能够安全参与维修。");
+	}
+	else if (State.ActionCounts.FindRef(TEXT("repair_generator")) >= 2)
+	{
+		RouteName = TEXT("直接抢修线");
+		RouteCost = TEXT("跳过部分调查与交涉，用两次维修换取速度；信息责任、信任和伤情更难兼顾。");
+		RouteAdvice = TEXT("补一次关键调查或有效交涉，观察任务速度与信息、关系评分的交换。");
+	}
+
+	FString PromiseSummary = TEXT("本轮未作承诺");
+	if (!State.Promises.IsEmpty())
+	{
+		TArray<FString> PromiseLines;
+		for (const FWSPromiseRecord& Promise : State.Promises)
+		{
+			const FString PromiseLabel = Promise.ConditionId == TEXT("keep_records")
+				? TEXT("保留事故记录")
+				: Promise.ConditionId == TEXT("reserve_medicine")
+					? TEXT("保留医疗物资")
+					: TEXT("先为维修间供暖");
+			const FString PromiseState = !Promise.bSettled
+				? TEXT("待结算")
+				: Promise.bFulfilled ? TEXT("已兑现") : TEXT("已违背");
+			PromiseLines.Add(FString::Printf(TEXT("%s：%s"), *PromiseLabel, *PromiseState));
+		}
+		PromiseSummary = FString::Join(PromiseLines, TEXT("｜"));
+	}
 	const FString HeaderFormat = FWSPresentationText::UI(
-		TEXT("ui_results_header_format"),
-		TEXT("行动复盘\n{0}\n{1}\n\n总分 {2} / 100　｜　评级 {3}\n\n最终状态\n发电机 {4} / 2　天线 {5} / 1　信号 {6}　剩余行动力 {7}")).ToString();
+		TEXT("ui_results_header_format_v06"),
+		TEXT("行动复盘\n{0}\n{1}\n\n本轮路线　{8}\n关键代价　{9}\n承诺结算　{10}\n\n总分 {2} / 100　｜　评级 {3}\n\n最终状态\n发电机 {4} / 2　天线 {5} / 1　信号 {6}　剩余行动力 {7}")).ToString();
 	const FString TotalScore = FString::Printf(TEXT("%.1f"), State.Score.Total);
 	ResultsText->SetText(FText::FromString(FString::Format(
 		*HeaderFormat,
@@ -1622,7 +1865,10 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 		 State.Tasks.GeneratorProgress,
 		 State.Tasks.AntennaCalibration,
 		 FWSPresentationText::UI(State.Tasks.bSignalSent ? TEXT("ui_sent") : TEXT("ui_failed"), State.Tasks.bSignalSent ? TEXT("已发送") : TEXT("失败")).ToString(),
-		 State.ActionPoints})));
+		 State.ActionPoints,
+		 RouteName,
+		 RouteCost,
+		 PromiseSummary})));
 
 	const TArray<float> Values = {State.Score.TaskQuality, State.Score.People, State.Score.EffectiveReserves, State.Score.SocialStability, State.Score.InformationResponsibility};
 	const TArray<float> Maximums = {30.0f, 30.0f, 20.0f, 12.0f, 8.0f};
@@ -1685,9 +1931,10 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 		Timeline += FWSPresentationText::UI(TEXT("ui_timeline_empty"), TEXT("　没有已提交的行动。\n")).ToString();
 	}
 	ResultsTimelineText->SetText(FText::FromString(Timeline));
-	ResultsAdviceText->SetText(FText::Format(
-		FWSPresentationText::UI(TEXT("ui_results_advice_format"), TEXT("下一轮建议\n{0}\n\n按 R 开始新一轮　｜　Esc 打开退出菜单")),
-		FWSPresentationText::EndingAdvice(State.Ending)));
+	ResultsAdviceText->SetText(FText::FromString(FString::Printf(
+		TEXT("下一轮建议\n%s\n路线复盘：%s\n\n按 R 开始新一轮　｜　Esc 打开退出菜单"),
+		*FWSPresentationText::EndingAdvice(State.Ending).ToString(),
+		*RouteAdvice)));
 }
 
 void UWhiteoutHUDWidget::SetInteractionPrompt(const FText& Prompt)
@@ -1713,26 +1960,28 @@ void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSA
 	}
 	if (CrosshairText)
 	{
-		CrosshairText->SetText(FText::FromString(TEXT("+")));
-		CrosshairText->SetFont(UIFont(28, true));
-		CrosshairText->SetColorAndOpacity(FSlateColor(Body));
+		CrosshairText->SetText(FText::FromString(TEXT("☝")));
+		CrosshairText->SetFont(UIFont(20, true));
+		CrosshairText->SetColorAndOpacity(FSlateColor(Amber));
+		CrosshairText->SetRenderTranslation(FVector2D(0.0f, -7.0f));
+		CrosshairText->SetVisibility(ESlateVisibility::Visible);
 	}
 	if (FocusBorder && FocusText && FocusAPText && FocusKeyText)
 	{
 		FocusBorder->SetVisibility(ESlateVisibility::Visible);
 		FocusBorder->SetBrushColor(FLinearColor::Transparent);
 		FocusText->SetColorAndOpacity(FSlateColor(Body));
-		FocusText->SetText(FText::FromString(NewName + TEXT("　")));
+		FocusText->SetText(FText::FromString(NewName));
 		if (bDialogue)
 		{
 			FocusAPText->SetVisibility(ESlateVisibility::Collapsed);
-			FocusKeyText->SetText(FText::FromString(TEXT("｜　[F] 开始对话")));
+			FocusKeyText->SetText(FText::FromString(TEXT("　·　[F] 开始对话")));
 		}
 		else
 		{
 			FocusAPText->SetVisibility(ESlateVisibility::Visible);
-			FocusAPText->SetText(FText::FromString(FString::Printf(TEXT("｜　%d AP　"), Preview.APCost)));
-			FocusKeyText->SetText(FText::FromString(TEXT("｜　[F] 查看行动")));
+			FocusAPText->SetText(FText::FromString(FString::Printf(TEXT("　·　%d AP"), Preview.APCost)));
+			FocusKeyText->SetText(FText::FromString(TEXT("　·　[F] 查看行动")));
 		}
 	}
 }
@@ -1746,9 +1995,10 @@ void UWhiteoutHUDWidget::ClearInteractionFocus()
 	FocusedActionName.Reset();
 	if (CrosshairText)
 	{
-		CrosshairText->SetText(FText::FromString(TEXT("+")));
-		CrosshairText->SetFont(UIFont(28, false));
+		CrosshairText->SetText(FText::FromString(TEXT("○")));
+		CrosshairText->SetFont(UIFont(14, false));
 		CrosshairText->SetColorAndOpacity(FSlateColor(Body));
+		CrosshairText->SetRenderTranslation(FVector2D(0.0f, -3.0f));
 		CrosshairText->SetVisibility(CurrentLayer == EWSUILayer::Game || CurrentLayer == EWSUILayer::Preview
 			? ESlateVisibility::Visible
 			: ESlateVisibility::Hidden);
@@ -1917,6 +2167,7 @@ void UWhiteoutHUDWidget::ToggleEvidence()
 		InputMode.SetWidgetToFocus(TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 		SetKeyboardFocus();
 	}
 }
@@ -1930,6 +2181,7 @@ void UWhiteoutHUDWidget::CloseEvidence()
 	{
 		PlayerController->SetShowMouseCursor(false);
 		PlayerController->SetInputMode(FInputModeGameOnly());
+		ResetMouseToViewportCenter();
 	}
 }
 
@@ -1981,6 +2233,7 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bV
 		InputMode.SetWidgetToFocus(DialogueWheelPanel->TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 	}
 }
 
@@ -1996,6 +2249,17 @@ void UWhiteoutHUDWidget::ShowDialogueWheelChoices()
 
 void UWhiteoutHUDWidget::ShowDialoguePromiseChoices()
 {
+	RefreshDialogueAvailability();
+	const bool bHasPromiseChoice = DialoguePromiseButtons.ContainsByPredicate(
+		[](const UButton* Button)
+		{
+			return Button && Button->GetVisibility() == ESlateVisibility::Visible;
+		});
+	if (!bHasPromiseChoice)
+	{
+		ShowDialogueWheelChoices();
+		return;
+	}
 	DialogueStage = EWSDialogueStage::IntentPick;
 	if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Collapsed);
 	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
@@ -2131,20 +2395,54 @@ void UWhiteoutHUDWidget::SubmitDialogueFreeText()
 void UWhiteoutHUDWidget::RefreshDialogueAvailability()
 {
 	AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn());
-	if (!Character || !Character->IsDialogueActive())
+	const bool bLiveDialogue = Character && Character->IsDialogueActive();
+	if (!bLiveDialogue && !bPresentationCaptureOverride)
 	{
 		for (UButton* Button : DialogueIntentButtons)
 		{
-			if (Button) Button->SetIsEnabled(bPresentationCaptureOverride);
+			if (Button)
+			{
+				Button->SetIsEnabled(false);
+				Button->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+		for (UButton* Button : DialoguePromiseButtons)
+		{
+			if (Button)
+			{
+				Button->SetIsEnabled(false);
+				Button->SetVisibility(ESlateVisibility::Collapsed);
+			}
 		}
 		return;
 	}
+	FWhiteoutRulesEngine CaptureRules;
+	if (bPresentationCaptureOverride)
+	{
+		CaptureRules.SetState(PresentationCaptureState);
+	}
+	const auto PreviewDialogue = [
+		this,
+		Character,
+		bLiveDialogue,
+		&CaptureRules](const EWSDialogueAct Act, const FName Condition = NAME_None)
+	{
+		if (bLiveDialogue)
+		{
+			return Character->PreviewActiveDialogue(Act, Condition);
+		}
+		FWSActionRequest Request;
+		Request.ActionId = ActiveDialogueActionId;
+		Request.DialogueAct = Act;
+		Request.PromiseCondition = Condition;
+		return CaptureRules.Preview(Request);
+	};
 	const TArray<EWSDialogueAct> Acts = {
 		EWSDialogueAct::Ask,
 		EWSDialogueAct::Challenge,
 		EWSDialogueAct::Reassure,
 		EWSDialogueAct::Promise};
-	bool bAnyAvailable = false;
+	TArray<UButton*> AvailableButtons;
 	FWSActionPreview FirstPreview;
 	for (int32 Index = 0; Index < DialogueIntentButtons.Num() && Index < Acts.Num(); ++Index)
 	{
@@ -2153,26 +2451,74 @@ void UWhiteoutHUDWidget::RefreshDialogueAvailability()
 		{
 			for (const FName Condition : {FName(TEXT("keep_records")), FName(TEXT("reserve_medicine")), FName(TEXT("heat_repair_room"))})
 			{
-				const FWSActionPreview Candidate = Character->PreviewActiveDialogue(Acts[Index], Condition);
+				const FWSActionPreview Candidate = PreviewDialogue(Acts[Index], Condition);
 				if (Candidate.bCanExecute || Preview.ActionId.IsNone()) Preview = Candidate;
 				if (Candidate.bCanExecute) break;
 			}
 		}
 		else
 		{
-			Preview = Character->PreviewActiveDialogue(Acts[Index]);
+			Preview = PreviewDialogue(Acts[Index]);
 		}
 		if (Index == 0) FirstPreview = Preview;
 		DialogueIntentButtons[Index]->SetIsEnabled(Preview.bCanExecute);
-		bAnyAvailable |= Preview.bCanExecute;
+		DialogueIntentButtons[Index]->SetVisibility(
+			Preview.bCanExecute ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		if (Preview.bCanExecute)
+		{
+			AvailableButtons.Add(DialogueIntentButtons[Index]);
+		}
 	}
-	if (!bAnyAvailable && DialogueLineText)
+	const TArray<FName> PromiseConditions = {
+		TEXT("keep_records"),
+		TEXT("reserve_medicine"),
+		TEXT("heat_repair_room")};
+	for (int32 Index = 0; Index < DialoguePromiseButtons.Num() && Index < PromiseConditions.Num(); ++Index)
+	{
+		const FWSActionPreview Preview = PreviewDialogue(
+			EWSDialogueAct::Promise,
+			PromiseConditions[Index]);
+		DialoguePromiseButtons[Index]->SetIsEnabled(Preview.bCanExecute);
+		DialoguePromiseButtons[Index]->SetVisibility(
+			Preview.bCanExecute ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	ReflowDialogueIntentButtons(AvailableButtons);
+	if (DialogueStatusText)
+	{
+		DialogueStatusText->SetText(FText::FromString(FString::Printf(
+			TEXT("当前可谈 %d 项｜意向会随证据、伤情、关系和局势变化"),
+			AvailableButtons.Num())));
+		DialogueStatusText->SetColorAndOpacity(FSlateColor(Secondary));
+	}
+	if (AvailableButtons.IsEmpty() && DialogueLineText)
 	{
 		DialogueLineText->SetText(FText::Format(
 			FText::FromString(TEXT("{0} {1}")),
 			FWSPresentationText::ReasonCause(FirstPreview.ReasonCode),
 			FWSPresentationText::ReasonNextStep(FirstPreview.ReasonCode)));
 		DialogueLineText->SetColorAndOpacity(FSlateColor(Amber));
+	}
+}
+
+void UWhiteoutHUDWidget::ReflowDialogueIntentButtons(const TArray<UButton*>& AvailableButtons)
+{
+	const int32 Count = AvailableButtons.Num();
+	if (Count <= 0)
+	{
+		return;
+	}
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		UButton* Button = AvailableButtons[Index];
+		UCanvasPanelSlot* CanvasSlot = Button ? Cast<UCanvasPanelSlot>(Button->Slot) : nullptr;
+		if (!CanvasSlot)
+		{
+			continue;
+		}
+		const float CenterX = (static_cast<float>(Index) + 0.5f) / static_cast<float>(Count);
+		CanvasSlot->SetAnchors(FAnchors(CenterX, 0.5f));
+		CanvasSlot->SetAlignment(FVector2D::ZeroVector);
+		CanvasSlot->SetOffsets(FMargin(-75.0f, -24.0f, 150.0f, 48.0f));
 	}
 }
 
@@ -2183,6 +2529,7 @@ void UWhiteoutHUDWidget::ShowDialogueReplyActions()
 	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (DialogueReplyBorder) DialogueReplyBorder->SetVisibility(ESlateVisibility::Visible);
+	if (DialogueContinueButton) DialogueContinueButton->SetKeyboardFocus();
 }
 
 void UWhiteoutHUDWidget::ContinueDialogue()
@@ -2234,11 +2581,34 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 	DialogueLineText->SetColorAndOpacity(FSlateColor(Body));
 	if (DialogueStatusText)
 	{
-		const FString Status = !Reply.bFallback
+		const FString ProviderStatus = !Reply.bFallback
 			? TEXT("DeepSeek 在线表达")
 			: Reply.Provider == TEXT("preset")
 				? TEXT("本地预设")
 				: TEXT("在线失败后本地降级");
+		const TCHAR* MovementLabel = TEXT("原地");
+		switch (Reply.MovementIntent)
+		{
+		case EWSNPCMovementIntent::StepCloser: MovementLabel = TEXT("靠近"); break;
+		case EWSNPCMovementIntent::StepBack: MovementLabel = TEXT("后退"); break;
+		case EWSNPCMovementIntent::ReturnToPost: MovementLabel = TEXT("归位"); break;
+		default: break;
+		}
+		const TCHAR* ReactionLabel = TEXT("自然");
+		switch (Reply.Reaction)
+		{
+		case EWSNPCReaction::Acknowledge: ReactionLabel = TEXT("回应"); break;
+		case EWSNPCReaction::Consider: ReactionLabel = TEXT("思考"); break;
+		case EWSNPCReaction::Reassure: ReactionLabel = TEXT("安抚"); break;
+		case EWSNPCReaction::Reject: ReactionLabel = TEXT("拒绝"); break;
+		case EWSNPCReaction::Alarmed: ReactionLabel = TEXT("警觉"); break;
+		default: break;
+		}
+		const FString Status = FString::Printf(
+			TEXT("%s　｜　表演：%s · %s"),
+			*ProviderStatus,
+			MovementLabel,
+			ReactionLabel);
 		DialogueStatusText->SetText(FText::FromString(Status));
 		DialogueStatusText->SetColorAndOpacity(FSlateColor(!Reply.bFallback ? Cyan : Secondary));
 	}
@@ -2271,6 +2641,7 @@ void UWhiteoutHUDWidget::ResetPresentationCapture()
 	ResetPanelVisual(EndingCinematicBorder);
 	ResetPanelVisual(PauseBorder);
 	ResetPanelVisual(SettingsBorder);
+	ResetPanelVisual(GuideBorder);
 	if (PauseHelpText) PauseHelpText->SetVisibility(ESlateVisibility::Collapsed);
 	bEndingCinematicCapture = false;
 	bWasShowingResults = false;
@@ -2338,6 +2709,7 @@ void UWhiteoutHUDWidget::ShowSettingsForCapture()
 			InputMode.SetWidgetToFocus(PauseDefaultButton ? PauseDefaultButton->TakeWidget() : PauseBorder->TakeWidget());
 			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 			PlayerController->SetInputMode(InputMode);
+			ResetMouseToViewportCenter();
 		}
 	}
 	RefreshSettingsUI();
@@ -2353,8 +2725,13 @@ void UWhiteoutHUDWidget::SetOpeningCaptureStage(const int32 Stage)
 		return;
 	}
 	OpeningBorder->SetVisibility(ESlateVisibility::Visible);
-	OpeningElapsed = Stage == 0 ? 0.8f : Stage == 1 ? 3.6f : Stage == 2 ? 8.0f : 11.6f;
-	ApplyOpeningStage(FMath::Clamp(Stage, 0, 3));
+	OpeningBorder->SetRenderOpacity(1.0f);
+	OpeningElapsed = 0.0f;
+	OpeningPhase = EWSOpeningPhase::AwaitingAdvance;
+	ApplyOpeningStage(FMath::Clamp(Stage, 0, FMath::Max(OpeningLines.Num() - 1, 0)));
+	if (OpeningText) OpeningText->SetRenderOpacity(1.0f);
+	if (OpeningSubtitleText) OpeningSubtitleText->SetRenderOpacity(1.0f);
+	if (OpeningFooterText) OpeningFooterText->SetRenderOpacity(1.0f);
 }
 
 void UWhiteoutHUDWidget::SetCrisisCaptureStage(const int32 Stage)
@@ -2401,111 +2778,157 @@ void UWhiteoutHUDWidget::SetSystemMessage(const FString& Message)
 	SystemMessage = Message;
 }
 
+void UWhiteoutHUDWidget::TickOpening(const float DeltaTime)
+{
+	if (!IsOpeningVisible() || OpeningPhase == EWSOpeningPhase::Complete)
+	{
+		return;
+	}
+	const bool bReducedMotion = IsReducedMotionEnabled();
+	const float LineFadeInSeconds = bReducedMotion ? 0.05f : 0.70f;
+	const float LineFadeOutSeconds = bReducedMotion ? 0.05f : 0.36f;
+	const float BlackRevealSeconds = bReducedMotion ? 0.18f : 1.65f;
+	OpeningElapsed += DeltaTime;
+
+	auto SetLineOpacity = [this](const float Opacity)
+	{
+		if (OpeningText) OpeningText->SetRenderOpacity(Opacity);
+		if (OpeningSubtitleText) OpeningSubtitleText->SetRenderOpacity(Opacity);
+		if (OpeningFooterText) OpeningFooterText->SetRenderOpacity(Opacity);
+	};
+
+	switch (OpeningPhase)
+	{
+	case EWSOpeningPhase::FadingInLine:
+	{
+		const float Alpha = FMath::Clamp(OpeningElapsed / LineFadeInSeconds, 0.0f, 1.0f);
+		SetLineOpacity(FMath::InterpEaseInOut(0.0f, 1.0f, Alpha, 2.0f));
+		if (Alpha >= 1.0f)
+		{
+			OpeningPhase = EWSOpeningPhase::AwaitingAdvance;
+			OpeningElapsed = 0.0f;
+		}
+		break;
+	}
+	case EWSOpeningPhase::AwaitingAdvance:
+		if (OpeningFooterText)
+		{
+			OpeningFooterText->SetRenderOpacity(
+				bReducedMotion ? 0.8f : 0.62f + 0.18f * FMath::Sin(OpeningElapsed * 2.6f));
+		}
+		break;
+	case EWSOpeningPhase::FadingOutLine:
+	{
+		const float Alpha = FMath::Clamp(OpeningElapsed / LineFadeOutSeconds, 0.0f, 1.0f);
+		SetLineOpacity(1.0f - FMath::InterpEaseInOut(0.0f, 1.0f, Alpha, 2.0f));
+		if (Alpha >= 1.0f)
+		{
+			if (ActiveOpeningStage + 1 < OpeningLines.Num())
+			{
+				OpeningPhase = EWSOpeningPhase::FadingInLine;
+				OpeningElapsed = 0.0f;
+				ApplyOpeningStage(ActiveOpeningStage + 1);
+			}
+			else
+			{
+				if (AWhiteoutGameMode* GameMode = GetWorld()
+					? Cast<AWhiteoutGameMode>(GetWorld()->GetAuthGameMode())
+					: nullptr)
+				{
+					GameMode->PrepareOpeningReveal();
+				}
+				OpeningPhase = EWSOpeningPhase::RevealingStation;
+				OpeningElapsed = 0.0f;
+			}
+		}
+		break;
+	}
+	case EWSOpeningPhase::RevealingStation:
+	{
+		const float Alpha = FMath::Clamp(OpeningElapsed / BlackRevealSeconds, 0.0f, 1.0f);
+		if (OpeningBorder)
+		{
+			OpeningBorder->SetRenderOpacity(1.0f - FMath::InterpEaseInOut(0.0f, 1.0f, Alpha, 2.0f));
+		}
+		if (Alpha >= 1.0f)
+		{
+			DismissOpening();
+		}
+		break;
+	}
+	case EWSOpeningPhase::Complete:
+	default:
+		break;
+	}
+}
+
+bool UWhiteoutHUDWidget::AdvanceOpening()
+{
+	if (!IsOpeningVisible())
+	{
+		return false;
+	}
+	if (OpeningPhase == EWSOpeningPhase::FadingInLine)
+	{
+		OpeningPhase = EWSOpeningPhase::AwaitingAdvance;
+		OpeningElapsed = 0.0f;
+		if (OpeningText) OpeningText->SetRenderOpacity(1.0f);
+		if (OpeningSubtitleText) OpeningSubtitleText->SetRenderOpacity(1.0f);
+		if (OpeningFooterText) OpeningFooterText->SetRenderOpacity(0.8f);
+		PlayUISound(UIConfirmSound, 0.38f);
+	}
+	else if (OpeningPhase == EWSOpeningPhase::AwaitingAdvance)
+	{
+		OpeningPhase = EWSOpeningPhase::FadingOutLine;
+		OpeningElapsed = 0.0f;
+		PlayUISound(UIConfirmSound, 0.38f);
+	}
+	return true;
+}
+
+bool UWhiteoutHUDWidget::IsOpeningVisible() const
+{
+	return OpeningBorder
+		&& OpeningBorder->GetVisibility() == ESlateVisibility::Visible
+		&& OpeningPhase != EWSOpeningPhase::Complete;
+}
+
 void UWhiteoutHUDWidget::ApplyOpeningStage(const int32 Stage)
 {
 	if (!OpeningBorder || !OpeningText)
 	{
 		return;
 	}
-	ActiveOpeningStage = Stage;
-	auto SplitText = [](const FText& FullText, FText& OutTitle, FText& OutSubtitle, FText& OutFooter)
+	if (OpeningLines.IsEmpty())
 	{
-		TArray<FString> Parts;
-		FullText.ToString().ParseIntoArray(Parts, TEXT("\n\n"), false);
-		OutTitle = FText::FromString(Parts.Num() > 0 ? Parts[0].TrimStartAndEnd() : TEXT(""));
-		OutSubtitle = FText::FromString(Parts.Num() > 1 ? Parts[1].TrimStartAndEnd() : TEXT(""));
-		OutFooter = FText::FromString(Parts.Num() > 2 ? Parts[2].TrimStartAndEnd() : TEXT(""));
-	};
-	auto SetDividerVisible = [&](bool bVisible)
-	{
-		if (OpeningDivider) OpeningDivider->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	};
-	auto SetFooterVisible = [&](bool bVisible)
-	{
-		if (OpeningFooterText) OpeningFooterText->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	};
-	if (Stage == 0)
-	{
-		OpeningBorder->SetBrushColor(FLinearColor(0.002f, 0.002f, 0.004f, 0.985f));
-		OpeningText->SetFont(UIFont(42, true));
-		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
-		FText Title, Subtitle, Footer;
-		SplitText(FWSPresentationText::UI(TEXT("ui_opening_title"), TEXT("风雪站：断电前夜\n\n08:15｜海拔 4,126 米｜极夜值班")), Title, Subtitle, Footer);
-		OpeningText->SetText(Title);
-		if (OpeningSubtitleText)
-		{
-			OpeningSubtitleText->SetText(Subtitle);
-			OpeningSubtitleText->SetFont(UIFont(20, false));
-			OpeningSubtitleText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextCinematicWarm));
-		}
-		SetFooterVisible(false);
-		SetDividerVisible(true);
+		return;
 	}
-	else if (Stage == 1)
+	ActiveOpeningStage = FMath::Clamp(Stage, 0, OpeningLines.Num() - 1);
+	OpeningBorder->SetBrushColor(FLinearColor::Black);
+	OpeningBorder->SetRenderOpacity(1.0f);
+	OpeningText->SetText(OpeningLines[ActiveOpeningStage]);
+	OpeningText->SetFont(UIFont(28, false));
+	OpeningText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	OpeningText->SetRenderOpacity(0.0f);
+	if (OpeningDivider)
 	{
-		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.003f, 0.005f, 0.34f));
-		OpeningText->SetFont(UIFont(31, true));
-		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextCinematicWarm));
-		FText Title, Subtitle, Footer;
-		SplitText(FWSPresentationText::UI(TEXT("ui_opening_establishing"), TEXT("08:15｜暴雪封山\n\n备用电池正在衰减\n\n按空格跳过")), Title, Subtitle, Footer);
-		OpeningText->SetText(Title);
-		if (OpeningSubtitleText)
-		{
-			OpeningSubtitleText->SetText(Subtitle);
-			OpeningSubtitleText->SetFont(UIFont(20, false));
-			OpeningSubtitleText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextCinematicWarm));
-		}
-		if (OpeningFooterText)
-		{
-			OpeningFooterText->SetText(Footer);
-			OpeningFooterText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextSecondary));
-		}
-		SetFooterVisible(true);
-		SetDividerVisible(true);
+		OpeningDivider->SetVisibility(ESlateVisibility::Collapsed);
 	}
-	else if (Stage == 2)
+	if (OpeningSubtitleText)
 	{
-		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.003f, 0.005f, 0.88f));
-		OpeningText->SetFont(UIFont(29, true));
-		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
-		FText Title, Subtitle, Footer;
-		SplitText(FWSPresentationText::UI(TEXT("ui_opening_objective"), TEXT("08:15 → 18:15｜最后一轮抢修\n\n① 修复发电机\n② 校准室外天线\n③ 发出求救信号\n\n预算：8 点行动力\n越过中段后，备用电池将发生一次故障\n\n按空格跳过")), Title, Subtitle, Footer);
-		OpeningText->SetText(Title);
-		if (OpeningSubtitleText)
-		{
-			OpeningSubtitleText->SetText(Subtitle);
-			OpeningSubtitleText->SetFont(UIFont(20, false));
-			OpeningSubtitleText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
-		}
-		if (OpeningFooterText)
-		{
-			OpeningFooterText->SetText(Footer);
-			OpeningFooterText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextSecondary));
-		}
-		SetFooterVisible(true);
-		SetDividerVisible(true);
+		OpeningSubtitleText->SetText(FText::FromString(FString::Printf(
+			TEXT("%d / %d"),
+			ActiveOpeningStage + 1,
+			OpeningLines.Num())));
+		OpeningSubtitleText->SetColorAndOpacity(FSlateColor(FLinearColor(0.72f, 0.75f, 0.80f, 1.0f)));
+		OpeningSubtitleText->SetRenderOpacity(0.0f);
 	}
-	else
+	if (OpeningFooterText)
 	{
-		OpeningBorder->SetBrushColor(FLinearColor(0.003f, 0.003f, 0.005f, 0.91f));
-		OpeningText->SetFont(UIFont(27, true));
-		OpeningText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::AccentInfo));
-		FText Title, Subtitle, Footer;
-		SplitText(FWSPresentationText::UI(TEXT("ui_opening_controls"), TEXT("每次行动都先预览，再确认\n\nWASD 移动　鼠标观察　Space 跳跃\nF 预览 / 再按 F 确认\nE 证据板　Esc 暂停/退出\n\n控制权交还")), Title, Subtitle, Footer);
-		OpeningText->SetText(Title);
-		if (OpeningSubtitleText)
-		{
-			OpeningSubtitleText->SetText(Subtitle);
-			OpeningSubtitleText->SetFont(UIFont(20, false));
-			OpeningSubtitleText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
-		}
-		if (OpeningFooterText)
-		{
-			OpeningFooterText->SetText(Footer);
-			OpeningFooterText->SetColorAndOpacity(FSlateColor(WSUITokens::Color::AccentInfo));
-		}
-		SetFooterVisible(true);
-		SetDividerVisible(true);
+		OpeningFooterText->SetText(FText::FromString(TEXT("空格 / 点击屏幕继续")));
+		OpeningFooterText->SetColorAndOpacity(FSlateColor(FLinearColor(0.58f, 0.62f, 0.68f, 1.0f)));
+		OpeningFooterText->SetVisibility(ESlateVisibility::Visible);
+		OpeningFooterText->SetRenderOpacity(0.0f);
 	}
 }
 
@@ -2574,8 +2997,8 @@ void UWhiteoutHUDWidget::ApplyEndingCinematic(const EWSEndingType Ending)
 	}
 	else if (Ending == EWSEndingType::CostUncontrolled)
 	{
-		Key = TEXT("ui_ending_cost_cinematic");
-		Fallback = TEXT("信号已经发出\n但代价越过了安全边界");
+		Key = TEXT("ui_ending_cost_cinematic_v06");
+		Fallback = TEXT("代价越过边界\n求救与生存无法同时守住");
 		Panel = FLinearColor(0.13f, 0.018f, 0.006f, 0.95f);
 		TextColor = FLinearColor(1.0f, 0.68f, 0.42f, 1.0f);
 	}
@@ -2619,6 +3042,11 @@ void UWhiteoutHUDWidget::ShowPanelAnimated(UBorder* Panel, const bool bShow, con
 {
 	if (!Panel)
 	{
+		return;
+	}
+	if (IsReducedMotionEnabled())
+	{
+		ShowPanelInstant(Panel, bShow);
 		return;
 	}
 	CancelPanelAnimation(Panel);
@@ -2732,13 +3160,63 @@ void UWhiteoutHUDWidget::PlayHoverSound()
 
 void UWhiteoutHUDWidget::DismissOpening()
 {
+	OpeningPhase = EWSOpeningPhase::Complete;
 	if (OpeningBorder)
 	{
+		OpeningBorder->SetRenderOpacity(1.0f);
 		OpeningBorder->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	if (AWhiteoutGameMode* GameMode = GetWorld() ? Cast<AWhiteoutGameMode>(GetWorld()->GetAuthGameMode()) : nullptr)
 	{
 		GameMode->FinishOpeningPresentation();
+	}
+}
+
+void UWhiteoutHUDWidget::ToggleGuide()
+{
+	if (IsOpeningVisible())
+	{
+		return;
+	}
+	if (CurrentLayer == EWSUILayer::Guide)
+	{
+		CloseGuide();
+		return;
+	}
+	if (CurrentLayer != EWSUILayer::Game)
+	{
+		return;
+	}
+	HideActionPreview();
+	if (GuideBorder)
+	{
+		ShowPanelAnimated(GuideBorder, true, WSUITokens::Anim::Normal);
+	}
+	SetLayer(EWSUILayer::Guide);
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		PlayerController->SetShowMouseCursor(true);
+		FInputModeUIOnly InputMode;
+		InputMode.SetWidgetToFocus(TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
+		SetKeyboardFocus();
+	}
+}
+
+void UWhiteoutHUDWidget::CloseGuide()
+{
+	if (GuideBorder)
+	{
+		ShowPanelAnimated(GuideBorder, false, WSUITokens::Anim::Fast);
+	}
+	SetLayer(EWSUILayer::Game);
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		PlayerController->SetShowMouseCursor(false);
+		PlayerController->SetInputMode(FInputModeGameOnly());
+		ResetMouseToViewportCenter();
 	}
 }
 
@@ -2772,6 +3250,9 @@ void UWhiteoutHUDWidget::HandleBackRequested()
 	case EWSUILayer::Dialogue:
 		CancelDialogue();
 		break;
+	case EWSUILayer::Guide:
+		CloseGuide();
+		break;
 	case EWSUILayer::Preview:
 		HideActionPreview();
 		break;
@@ -2792,10 +3273,21 @@ void UWhiteoutHUDWidget::TogglePauseMenu()
 		ResumeGame();
 		return;
 	}
-	DismissOpening();
+	if (IsOpeningVisible())
+	{
+		return;
+	}
 	if (SettingsBorder)
 	{
 		ShowPanelAnimated(SettingsBorder, false, WSUITokens::Anim::Fast);
+	}
+	if (LoadGameButton && GetGameInstance())
+	{
+		if (const UWindStationStateSubsystem* StateSubsystem =
+			GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			LoadGameButton->SetIsEnabled(StateSubsystem->HasSnapshot());
+		}
 	}
 	ShowPanelAnimated(PauseBorder, true, WSUITokens::Anim::Normal);
 	SetLayer(EWSUILayer::Pause);
@@ -2807,6 +3299,7 @@ void UWhiteoutHUDWidget::TogglePauseMenu()
 		InputMode.SetWidgetToFocus(PauseDefaultButton ? PauseDefaultButton->TakeWidget() : PauseBorder->TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 	}
 }
 
@@ -2827,6 +3320,49 @@ void UWhiteoutHUDWidget::ResumeGame()
 		PlayerController->SetPause(false);
 		PlayerController->bShowMouseCursor = false;
 		PlayerController->SetInputMode(FInputModeGameOnly());
+		ResetMouseToViewportCenter();
+	}
+}
+
+void UWhiteoutHUDWidget::SaveGame()
+{
+	if (!GetGameInstance())
+	{
+		return;
+	}
+	if (UWindStationStateSubsystem* StateSubsystem =
+		GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	{
+		const bool bSaved = StateSubsystem->SaveSnapshot();
+		SystemMessage = bSaved
+			? TEXT("本轮状态已保存。")
+			: TEXT("保存失败，请检查存储权限。");
+		PlayUISound(bSaved ? UIConfirmSound : UIRejectSound, 0.68f);
+		if (bSaved)
+		{
+			ResumeGame();
+		}
+	}
+}
+
+void UWhiteoutHUDWidget::LoadGame()
+{
+	if (!GetGameInstance())
+	{
+		return;
+	}
+	if (UWindStationStateSubsystem* StateSubsystem =
+		GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	{
+		const bool bLoaded = StateSubsystem->LoadSnapshot();
+		SystemMessage = bLoaded
+			? TEXT("已恢复最近保存的本轮状态。")
+			: TEXT("没有可读取的 v0.8 或兼容旧版存档。");
+		PlayUISound(bLoaded ? UIConfirmSound : UIRejectSound, 0.68f);
+		if (bLoaded)
+		{
+			ResumeGame();
+		}
 	}
 }
 
@@ -2848,6 +3384,7 @@ void UWhiteoutHUDWidget::OpenSettings()
 		InputMode.SetWidgetToFocus(FOVSlider ? FOVSlider->TakeWidget() : SettingsBorder->TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 	}
 	PlayUISound(UIConfirmSound, 0.62f);
 }
@@ -2869,6 +3406,7 @@ void UWhiteoutHUDWidget::CloseSettings()
 		InputMode.SetWidgetToFocus(PauseDefaultButton ? PauseDefaultButton->TakeWidget() : PauseBorder->TakeWidget());
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
+		ResetMouseToViewportCenter();
 	}
 	PlayUISound(UIHoverSound, 0.48f);
 }
@@ -2890,11 +3428,19 @@ void UWhiteoutHUDWidget::RefreshSettingsUI()
 	if (AmbienceVolumeSlider) AmbienceVolumeSlider->SetValue(Settings->GetAmbienceVolume());
 	if (EffectsVolumeSlider) EffectsVolumeSlider->SetValue(Settings->GetEffectsVolume());
 	if (FeedbackVolumeSlider) FeedbackVolumeSlider->SetValue(Settings->GetFeedbackVolume());
+	if (TextScaleSlider) TextScaleSlider->SetValue((Settings->GetTextScale() - 0.9f) / 0.3f);
 	if (FOVValueText) FOVValueText->SetText(FText::FromString(FString::Printf(TEXT("%d°"), FMath::RoundToInt(Settings->GetFieldOfView()))));
 	if (MasterVolumeValueText) MasterVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetMasterVolume() * 100.0f))));
 	if (AmbienceVolumeValueText) AmbienceVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetAmbienceVolume() * 100.0f))));
 	if (EffectsVolumeValueText) EffectsVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetEffectsVolume() * 100.0f))));
 	if (FeedbackVolumeValueText) FeedbackVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetFeedbackVolume() * 100.0f))));
+	if (TextScaleValueText) TextScaleValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetTextScale() * 100.0f))));
+	if (ReducedMotionValueText)
+	{
+		ReducedMotionValueText->SetText(FText::FromString(FString::Printf(
+			TEXT("减少动态效果　｜　%s"),
+			Settings->IsReducedMotionEnabled() ? TEXT("开启") : TEXT("关闭"))));
+	}
 	bUpdatingSettings = false;
 }
 
@@ -2948,15 +3494,55 @@ void UWhiteoutHUDWidget::HandleFeedbackVolumeChanged(const float Value)
 	}
 }
 
-void UWhiteoutHUDWidget::ToggleControls()
+void UWhiteoutHUDWidget::HandleTextScaleChanged(const float Value)
 {
-	if (!PauseHelpText)
+	if (bUpdatingSettings || !GetGameInstance()) return;
+	if (UWhiteoutSettingsSubsystem* Settings =
+		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->SetTextScale(0.9f + FMath::Clamp(Value, 0.0f, 1.0f) * 0.3f, this);
+		if (TextScaleValueText)
+		{
+			TextScaleValueText->SetText(FText::FromString(FString::Printf(
+				TEXT("%d%%"),
+				FMath::RoundToInt(Settings->GetTextScale() * 100.0f))));
+		}
+	}
+}
+
+void UWhiteoutHUDWidget::ToggleReducedMotion()
+{
+	if (!GetGameInstance())
 	{
 		return;
 	}
-	const bool bShow = PauseHelpText->GetVisibility() != ESlateVisibility::Visible;
-	PauseHelpText->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	PlayUISound(bShow ? UIConfirmSound : UIHoverSound, 0.55f);
+	if (UWhiteoutSettingsSubsystem* Settings =
+		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->SetReducedMotionEnabled(!Settings->IsReducedMotionEnabled());
+		RefreshSettingsUI();
+		PlayUISound(UIConfirmSound, 0.55f);
+	}
+}
+
+bool UWhiteoutHUDWidget::IsReducedMotionEnabled() const
+{
+	if (!GetGameInstance())
+	{
+		return false;
+	}
+	if (const UWhiteoutSettingsSubsystem* Settings =
+		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		return Settings->IsReducedMotionEnabled();
+	}
+	return false;
+}
+
+void UWhiteoutHUDWidget::ToggleControls()
+{
+	ResumeGame();
+	ToggleGuide();
 }
 
 void UWhiteoutHUDWidget::RestartGame()

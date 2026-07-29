@@ -88,6 +88,23 @@ def load_settings(
     return endpoint, "", "none"
 
 
+def validate_api_key_format(api_key: str) -> str:
+    """Return a header-safe key without exposing malformed credential text."""
+
+    clean_key = api_key.strip()
+    if not clean_key:
+        raise ContractError("missing_api_key")
+    if len(clean_key) > 512:
+        raise ContractError("invalid_api_key_format")
+    try:
+        clean_key.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ContractError("invalid_api_key_format") from exc
+    if any(character.isspace() or ord(character) < 33 for character in clean_key):
+        raise ContractError("invalid_api_key_format")
+    return clean_key
+
+
 def build_http_request(
     endpoint: str,
     api_key: str,
@@ -95,12 +112,10 @@ def build_http_request(
     action_id: str = ACTION_ID,
 ) -> tuple[urllib.request.Request, EndpointKind]:
     policy = classify_endpoint(endpoint)
-    clean_key = api_key.strip()
-    if policy.requires_api_key and not clean_key:
-        raise ContractError("missing_api_key")
 
     headers = {"Content-Type": "application/json; charset=utf-8"}
     if policy.kind is EndpointKind.OFFICIAL:
+        clean_key = validate_api_key_format(api_key)
         headers["Authorization"] = f"Bearer {clean_key}"
     body = build_request_payload(action_id)
     request = urllib.request.Request(
@@ -169,6 +184,15 @@ def run_probe(
             credential_source=credential_source,
             endpoint_kind=policy.kind.value,
         )
+    if policy.requires_api_key:
+        try:
+            validate_api_key_format(api_key)
+        except ContractError as exc:
+            return _configuration_failure(
+                code=exc.code,
+                credential_source=credential_source,
+                endpoint_kind=policy.kind.value,
+            )
     endpoint_kind = policy.kind
 
     known_sources = frozenset({"environment", "local_ini", "none"})
