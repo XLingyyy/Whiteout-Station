@@ -966,7 +966,7 @@ void AWhiteoutGameMode::FinishOpeningPresentation()
 	{
 		SetupInputSmokeTarget(InputSmokeTarget);
 	}
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.9: opening handed control to player"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v1.0: opening handed control to player"));
 }
 
 void AWhiteoutGameMode::BeginPresentationCapture()
@@ -1114,21 +1114,26 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 			TEXT("scene_07_after_repair_grounding"),
 			TEXT("scene_08_after_medical_layout")};
 	}
-	else if (PresentationCaptureMode.Equals(TEXT("v09characters"), ESearchCase::IgnoreCase))
+	else if (PresentationCaptureMode.Equals(TEXT("v10ux"), ESearchCase::IgnoreCase))
 	{
 		PresentationCaptureNames = {
-			TEXT("character_gu_v09_face"), TEXT("character_gu_v09_side"),
-			TEXT("character_gu_v09_idle"), TEXT("character_gu_v09_walk"),
-			TEXT("character_gu_v09_acknowledge"), TEXT("character_gu_v09_consider"),
-			TEXT("character_gu_v09_reassure"), TEXT("character_gu_v09_reject"),
-			TEXT("character_gu_v09_alarmed"),
-			TEXT("character_ye_v09_face"), TEXT("character_ye_v09_side"),
-			TEXT("character_ye_v09_idle"), TEXT("character_ye_v09_walk"),
-			TEXT("character_ye_v09_acknowledge"), TEXT("character_ye_v09_consider"),
-			TEXT("character_ye_v09_reassure"), TEXT("character_ye_v09_reject"),
-			TEXT("character_ye_v09_alarmed")};
+			TEXT("hud"), TEXT("guide"), TEXT("evidence_all"), TEXT("evidence_detail")};
 	}
-	else if (PresentationCaptureMode.Equals(TEXT("v09lookat"), ESearchCase::IgnoreCase))
+	else if (PresentationCaptureMode.Equals(TEXT("v10characters"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {
+			TEXT("character_gu_v10_face"), TEXT("character_gu_v10_side"),
+			TEXT("character_gu_v10_idle"), TEXT("character_gu_v10_walk"),
+			TEXT("character_gu_v10_acknowledge"), TEXT("character_gu_v10_consider"),
+			TEXT("character_gu_v10_reassure"), TEXT("character_gu_v10_reject"),
+			TEXT("character_gu_v10_alarmed"),
+			TEXT("character_ye_v10_face"), TEXT("character_ye_v10_side"),
+			TEXT("character_ye_v10_idle"), TEXT("character_ye_v10_walk"),
+			TEXT("character_ye_v10_acknowledge"), TEXT("character_ye_v10_consider"),
+			TEXT("character_ye_v10_reassure"), TEXT("character_ye_v10_reject"),
+			TEXT("character_ye_v10_alarmed")};
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("v10lookat"), ESearchCase::IgnoreCase))
 	{
 		PresentationCaptureNames = {
 			TEXT("lookat_near"), TEXT("lookat_side"), TEXT("lookat_far")};
@@ -1145,7 +1150,7 @@ void AWhiteoutGameMode::StagePresentationCapture()
 {
 	if (!PresentationCaptureNames.IsValidIndex(PresentationCaptureIndex))
 	{
-		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.9: presentation capture completed"));
+		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v1.0: presentation capture completed"));
 		FPlatformMisc::RequestExit(false);
 		return;
 	}
@@ -1627,9 +1632,9 @@ void AWhiteoutGameMode::StagePresentationCapture()
 				It->SetActorLocation(InspectionLocation, false, nullptr, ETeleportType::TeleportPhysics);
 				It->SetActorRotation(FRotator::ZeroRotator);
 				It->SetCharacterPreviewMood(true);
-				const FString PerformanceToken = CaptureName.Contains(TEXT("_v09_"))
-					? TEXT("_v09_")
-					: TEXT("_v08_");
+				const FString PerformanceToken = CaptureName.Contains(TEXT("_v10_"))
+					? TEXT("_v10_")
+					: CaptureName.Contains(TEXT("_v09_")) ? TEXT("_v09_") : TEXT("_v08_");
 				const int32 PerformanceIndex = CaptureName.Find(PerformanceToken);
 				if (PerformanceIndex != INDEX_NONE)
 				{
@@ -1687,11 +1692,18 @@ void AWhiteoutGameMode::StagePresentationCapture()
 	else if (CaptureName.Equals(TEXT("evidence")) || CaptureName.StartsWith(TEXT("evidence_")))
 	{
 		FWSGameState EvidenceState = StateSubsystem->GetStateSnapshot();
-		EvidenceState.Evidence = {TEXT("generator_log"), TEXT("relay_burn_pattern"), TEXT("relay_compatibility")};
-		EvidenceState.PlayerKnowledge.Add(TEXT("generator_fault"), EWSKnowledgeLevel::Confirmed);
-		EvidenceState.PlayerKnowledge.Add(TEXT("relay_compatible"), EWSKnowledgeLevel::Confirmed);
-		EvidenceState.PlayerKnowledge.Add(TEXT("gu_heng_condition"), EWSKnowledgeLevel::Suspected);
-		EvidenceState.PlayerKnowledge.Add(TEXT("records_accountability"), EWSKnowledgeLevel::Claimed);
+		EvidenceState.Evidence = {
+			TEXT("EVIDENCE_DEEP_GENERATOR_LOG"),
+			TEXT("EVIDENCE_BURNT_RELAY"),
+			TEXT("EVIDENCE_ARC_MARKS"),
+			TEXT("EVIDENCE_HAND_OBSERVATION"),
+			TEXT("EVIDENCE_MEDICAL_DIAGNOSIS"),
+			TEXT("EVIDENCE_HEAT_PACK"),
+			TEXT("EVIDENCE_HEATER_SERVICE_LABEL")};
+		EvidenceState.PlayerKnowledge.Add(TEXT("FACT_GENERATOR_PROTECTION_STOP"), EWSKnowledgeLevel::Confirmed);
+		EvidenceState.PlayerKnowledge.Add(TEXT("FACT_BURNT_RELAY"), EWSKnowledgeLevel::Confirmed);
+		EvidenceState.PlayerKnowledge.Add(TEXT("FACT_HAND_INJURY"), EWSKnowledgeLevel::Suspected);
+		EvidenceState.PlayerKnowledge.Add(TEXT("FACT_FORCED_RESTART_SUSPICION"), EWSKnowledgeLevel::Claimed);
 		FWSPromiseRecord& Promise = EvidenceState.Promises.Emplace_GetRef();
 		Promise.PromiseId = TEXT("capture_promise");
 		Promise.ConditionId = TEXT("heat_repair_room");
@@ -1854,7 +1866,7 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 		}
 	}
 	if (CaptureName.StartsWith(TEXT("lookat_"))
-		&& FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV09Capture")))
+		&& FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV10Capture")))
 	{
 		const APawn* CapturePawn = UGameplayStatics::GetPlayerPawn(this, 0);
 		for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It)
@@ -1877,7 +1889,7 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 				&& FMath::Abs(HeadPitch) <= 15.01f;
 
 			const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-			Root->SetStringField(TEXT("schema"), TEXT("whiteout.v0.9.npc-facing-audit.v1"));
+			Root->SetStringField(TEXT("schema"), TEXT("whiteout.v1.0.npc-facing-audit.v1"));
 			Root->SetStringField(TEXT("capture"), CaptureName);
 			Root->SetBoolField(TEXT("passed"), bPass);
 			Root->SetNumberField(
@@ -1894,7 +1906,7 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 			if (FJsonSerializer::Serialize(Root, Writer))
 			{
 				const FString EvidenceDirectory = FPaths::ConvertRelativePathToFull(
-					FPaths::ProjectDir() / TEXT("../docs/evidence_v0.9"));
+					FPaths::ProjectDir() / TEXT("../docs/evidence_v1.0"));
 				IFileManager::Get().MakeDirectory(*EvidenceDirectory, true);
 				const FString OutputPath = EvidenceDirectory / FString::Printf(
 					TEXT("npc_facing_%s.json"),
@@ -1907,7 +1919,7 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 			UE_LOG(
 				LogTemp,
 				Display,
-				TEXT("WhiteoutStation v0.9 NPCFacingAudit capture=%s pass=%s body_error=%.2f head_yaw=%.2f head_pitch=%.2f"),
+				TEXT("WhiteoutStation v1.0 NPCFacingAudit capture=%s pass=%s body_error=%.2f head_yaw=%.2f head_pitch=%.2f"),
 				*CaptureName,
 				bPass ? TEXT("true") : TEXT("false"),
 				YawErrorDegrees,
@@ -1920,13 +1932,13 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 		? GEngine->GameViewport->Viewport->GetSizeXY()
 		: FIntPoint(0, 0);
 	const FString Directory = FPaths::ConvertRelativePathToFull(
-		FPaths::ProjectDir() / TEXT("../docs/baseline_v0.9"));
+		FPaths::ProjectDir() / TEXT("../docs/baseline_v1.0"));
 	IFileManager::Get().MakeDirectory(*Directory, true);
 	const FString ScreenshotPath = Directory / FString::Printf(
 		TEXT("UI_%s_%dx%d.png"),
 		*CaptureName, Size.X, Size.Y);
 	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false, false, FIntRect(), true);
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.9: requested presentation screenshot %s"), *ScreenshotPath);
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v1.0: requested presentation screenshot %s"), *ScreenshotPath);
 	++PresentationCaptureIndex;
 	FTimerHandle NextTimer;
 	GetWorldTimerManager().SetTimer(NextTimer, this, &AWhiteoutGameMode::StagePresentationCapture, 1.1f, false);

@@ -15,6 +15,7 @@
 #include "Components/OverlaySlot.h"
 #include "Components/ProgressBar.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/Slider.h"
 #include "Components/TextBlock.h"
@@ -506,9 +507,13 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	EvidenceScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("EvidenceScroll"));
 	EvidenceCardGrid = WidgetTree->ConstructWidget<UUniformGridPanel>(UUniformGridPanel::StaticClass(), TEXT("EvidenceCardGrid"));
 	EvidenceCardGrid->SetMinDesiredSlotWidth(300.0f);
-	EvidenceScroll->AddChild(EvidenceCardGrid);
+	if (UScrollBoxSlot* GridSlot = Cast<UScrollBoxSlot>(EvidenceScroll->AddChild(EvidenceCardGrid)))
+	{
+		GridSlot->SetHorizontalAlignment(HAlign_Left);
+	}
 	UVerticalBoxSlot* EvidenceScrollSlot = EvidenceContent->AddChildToVerticalBox(EvidenceScroll);
 	EvidenceScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	EvidenceScrollSlot->SetHorizontalAlignment(HAlign_Fill);
 	UBorder* EvidenceDetailPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("EvidenceDetailPanel"));
 	EvidenceDetailPanel->SetBrushColor(WSUITokens::Color::SurfaceFilter);
 	EvidenceDetailPanel->SetPadding(FMargin(12));
@@ -1394,9 +1399,10 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	}
 	if (TopConditionText) TopConditionText->SetText(FText::FromString(Crisis));
 
-	const FString ObjectiveFormat = FWSPresentationText::UI(
-		TEXT("ui_objective_format"),
-		TEXT("首要目标\n修复发电机　{0} / 2\n校准天线　　{1} / 1\n求救信号　　{2}\n\n现有储备\n燃料 {3}　食品 {4}　药品 {5}\n替代继电器 {6}　保温包 {7}\n证据 {8} 条　厨房供暖 {9}")).ToString();
+	const FString ObjectiveFormat = TEXT(
+		"任务：发电机 {0}/2｜天线 {1}/1｜求救 {2}\n"
+		"储备：燃料 {3}｜食品 {4}｜药品 {5}\n"
+		"继电器 {6}｜保温包 {7}｜证据 {8}｜厨房供暖 {9}");
 	ObjectiveText->SetText(FText::FromString(FString::Format(
 		*ObjectiveFormat,
 		{State.Tasks.GeneratorProgress,
@@ -1512,7 +1518,7 @@ FString UWhiteoutHUDWidget::BuildTutorialHint(const FWSGameState& State) const
 	}
 	if (State.EventLog.IsEmpty())
 	{
-		return TEXT("先看现场：靠近控制室内带白色轮廓的发电机日志或维修间控制柜。按 F 预览，再按 F 确认。");
+		return TEXT("保底开局：先与叶澄对话并选择“询问”确认顾衡伤势，再为医务室供暖并完成治疗。");
 	}
 	if (State.EventLog.Num() == 1 && !State.Evidence.IsEmpty())
 	{
@@ -1651,7 +1657,19 @@ FString UWhiteoutHUDWidget::BuildTaskGuide(
 	}
 	AddStep(TEXT("控制室：发送求救信号"), 0);
 
-	return FString::Join(Steps, TEXT("\n"));
+	const int32 VisibleStepCount = FMath::Min(3, Steps.Num());
+	TArray<FString> VisibleSteps;
+	for (int32 Index = 0; Index < VisibleStepCount; ++Index)
+	{
+		VisibleSteps.Add(Steps[Index]);
+	}
+	if (Steps.Num() > VisibleStepCount)
+	{
+		VisibleSteps.Add(FString::Printf(
+			TEXT("完成以上步骤后，左侧会继续显示剩余 %d 步。"),
+			Steps.Num() - VisibleStepCount));
+	}
+	return FString::Join(VisibleSteps, TEXT("\n"));
 }
 
 void UWhiteoutHUDWidget::UpdateGuideContext(const FWSGameState& State)
@@ -1828,13 +1846,14 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 			CardRow->AddChildToHorizontalBox(IconBox)->SetPadding(FMargin(0, 0, 10, 0));
 		}
 		UTextBlock* CardCopy = MakeText(FName(*FString::Printf(TEXT("EvidenceCopy%d"), CardIndex)), 13, Body);
+		CardCopy->SetWrapTextAt(500.0f);
 		CardCopy->SetText(FText::FromString(FString::Printf(TEXT("%s\n%s\n%s"), *Type, *Title, *Summary)));
 		UHorizontalBoxSlot* CopySlot = CardRow->AddChildToHorizontalBox(CardCopy);
 		CopySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		CopySlot->SetVerticalAlignment(VAlign_Center);
 		SetGlassPanelContent(Card, CardRow);
 		CardButton->SetContent(Card);
-		UUniformGridSlot* CardSlot = EvidenceCardGrid->AddChildToUniformGrid(CardButton, CardIndex / 2, CardIndex % 2);
+		UUniformGridSlot* CardSlot = EvidenceCardGrid->AddChildToUniformGrid(CardButton, CardIndex, 0);
 		CardSlot->SetHorizontalAlignment(HAlign_Fill);
 		CardSlot->SetVerticalAlignment(VAlign_Fill);
 		EvidenceCardButtons.Add(CardButton);
