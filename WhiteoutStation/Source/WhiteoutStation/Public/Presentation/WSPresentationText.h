@@ -15,6 +15,7 @@ public:
 	static FText ReasonNextStep(EWSReasonCode Reason);
 	static FText EvidenceLabel(FName EvidenceId);
 	static FText FactLabel(FName FactId);
+	static FText FactDescription(FName FactId);
 	static FText PromiseLabel(FName ConditionId);
 	static FText PhaseLabel(EWSGamePhase Phase);
 	static FText EndingTitle(EWSEndingType Ending);

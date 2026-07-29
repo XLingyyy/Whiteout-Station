@@ -1,11 +1,11 @@
 {
   "schema_version": 3,
-  "rules_version": "0.9.0",
+  "rules_version": "1.0.0",
   "display_name": "风雪站：断电前夜",
   "design_date": "2026-07-29",
   "gameplay": {
-    "starting_action_points": 8,
-    "mid_crisis_threshold": 4,
+    "starting_action_points": 12,
+    "mid_crisis_threshold": 6,
     "generator_required": 2,
     "antenna_required": 1,
     "model_call_soft_target": 8,

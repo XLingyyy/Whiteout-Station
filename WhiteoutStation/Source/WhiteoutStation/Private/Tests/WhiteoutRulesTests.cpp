@@ -4,6 +4,7 @@
 #include "Misc/Paths.h"
 #include "Agents/WSAgentGateway.h"
 #include "Agents/WSNPCDecisionService.h"
+#include "Presentation/WSPresentationText.h"
 #include "State/WhiteoutRulesEngine.h"
 
 namespace WhiteoutRuleTests
@@ -37,7 +38,7 @@ namespace WhiteoutRuleTests
 		Test.TestTrue(
 			TEXT("Rules JSON loads"),
 			Engine.LoadConfig(
-				FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.9.json"), Error));
+				FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v1.0.json"), Error));
 		if (!Error.IsEmpty())
 		{
 			Test.AddError(Error);
@@ -54,12 +55,14 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FWhiteoutAPFlowTest::RunTest(const FString& Parameters)
 {
 	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
+	TestEqual(TEXT("v1.0 starts with 12 AP"), Engine.GetState().ActionPoints, 12);
+	TestEqual(TEXT("v1.0 crisis threshold is 6 AP"), Engine.GetConfig().MidCrisisThreshold, 6);
 	FWSGameState& State = Engine.GetMutableStateForTesting();
-	State.ActionPoints = 5;
+	State.ActionPoints = 7;
 	State.Tasks.GeneratorProgress = 2;
 	const FWSActionResult Calibrate = Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna")));
 	TestTrue(TEXT("2 AP calibration commits"), Calibrate.bCommitted);
-	TestEqual(TEXT("5 AP crosses to 3"), Engine.GetState().ActionPoints, 3);
+	TestEqual(TEXT("7 AP crosses the 6 AP threshold to 5"), Engine.GetState().ActionPoints, 5);
 	TestTrue(TEXT("Crisis triggers once"), Calibrate.bCrisisTriggered && Engine.GetState().bMidCrisisTriggered);
 
 	Engine.Reset();
@@ -74,7 +77,7 @@ bool FWhiteoutAPFlowTest::RunTest(const FString& Parameters)
 
 	Engine.Reset();
 	TestTrue(
-		TEXT("Safe antenna temperature loads from v0.9 rules"),
+		TEXT("Safe antenna temperature loads from v1.0 rules"),
 		FMath::IsNearlyEqual(Engine.GetConfig().SafeAntennaTemperature, 5.5f));
 	FWSGameState& ColdState = Engine.GetMutableStateForTesting();
 	ColdState.Tasks.GeneratorProgress = Engine.GetConfig().GeneratorRequired;
@@ -210,7 +213,7 @@ bool FWhiteoutTransactionTest::RunTest(const FString& Parameters)
 	const FWSActionResult Duplicate = Engine.Commit(Request);
 	TestFalse(TEXT("Duplicate transaction is ignored"), Duplicate.bCommitted);
 	TestTrue(TEXT("Duplicate has explicit reason"), Duplicate.ReasonCode == EWSReasonCode::DuplicateTransaction);
-	TestEqual(TEXT("Transaction spends AP once"), Engine.GetState().ActionPoints, 7);
+	TestEqual(TEXT("Transaction spends AP once"), Engine.GetState().ActionPoints, 11);
 	TestEqual(TEXT("Transaction logs once"), Engine.GetState().EventLog.Num(), 1);
 	return true;
 }
@@ -327,7 +330,7 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 		Engine.EndGame();
 		TestTrue(TEXT("Medical route succeeds"), Engine.GetState().Ending == EWSEndingType::TaskSuccess);
 		TestTrue(TEXT("Medical score is in range"), Engine.GetState().Score.Total >= 70.0f && Engine.GetState().Score.Total <= 89.0f);
-		TestTrue(TEXT("Medical route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 76.76f, 0.02f));
+		TestTrue(TEXT("Medical route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 81.76f, 0.02f));
 	}
 
 	{
@@ -345,7 +348,7 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 		Engine.EndGame();
 		TestTrue(TEXT("Technical route succeeds"), Engine.GetState().Ending == EWSEndingType::TaskSuccess);
 		TestTrue(TEXT("Technical score is in range"), Engine.GetState().Score.Total >= 65.0f && Engine.GetState().Score.Total <= 84.0f);
-		TestTrue(TEXT("Technical route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 72.02f, 0.02f));
+		TestTrue(TEXT("Technical route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 76.94f, 0.02f));
 	}
 
 	{
@@ -363,7 +366,7 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Quick route exposes uncontrolled cost"), Engine.GetState().Ending == EWSEndingType::CostUncontrolled);
 		TestTrue(TEXT("Quick score is in range"), Engine.GetState().Score.Total >= 55.0f && Engine.GetState().Score.Total <= 79.0f);
 		TestTrue(TEXT("Quick route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 68.31f, 0.02f));
-		TestEqual(TEXT("Quick route retains two AP"), Engine.GetState().ActionPoints, 2);
+		TestEqual(TEXT("Quick route retains six AP"), Engine.GetState().ActionPoints, 6);
 	}
 
 	{
@@ -402,9 +405,14 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 		Food.FoodForPlayer = 1;
 		if (!WhiteoutRuleTests::Commit(*this, Engine, Food)) return false;
 		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet")))) return false;
-		TestEqual(TEXT("Collapse route spends all AP through legal actions"), Engine.GetState().ActionPoints, 0);
+		FWSActionRequest SecondYeTalk = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+		SecondYeTalk.DialogueAct = EWSDialogueAct::Challenge;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, SecondYeTalk)) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("dismantle_kitchen_heater")))) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("forced_self_repair")))) return false;
+		TestEqual(TEXT("Reckless route spends all AP through legal actions"), Engine.GetState().ActionPoints, 0);
 		Engine.EndGame();
-		TestTrue(TEXT("Crew collapse is reachable without state injection"), Engine.GetState().Ending == EWSEndingType::TotalCollapse);
+		TestTrue(TEXT("Reckless route reaches the uncontrolled-cost failure"), Engine.GetState().Ending == EWSEndingType::CostUncontrolled);
 	}
 	return true;
 }
@@ -710,6 +718,56 @@ bool FWhiteoutModelBudgetTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Budget reaches hard limit"), Engine.GetState().ModelCalls, 10);
 	TestFalse(TEXT("Eleventh model call is blocked"), Engine.TryRecordModelCall());
 	TestEqual(TEXT("Rejected call does not exceed budget"), Engine.GetState().ModelCalls, 10);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutEvidenceClarityTest,
+	"WhiteoutStation.Presentation.EvidenceClarity",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutEvidenceClarityTest::RunTest(const FString& Parameters)
+{
+	const TArray<FName> EvidenceIds = {
+		TEXT("EVIDENCE_DEEP_GENERATOR_LOG"),
+		TEXT("EVIDENCE_BURNT_RELAY"),
+		TEXT("EVIDENCE_ARC_MARKS"),
+		TEXT("EVIDENCE_BLOODY_BANDAGE"),
+		TEXT("EVIDENCE_HAND_OBSERVATION"),
+		TEXT("EVIDENCE_MEDICAL_DIAGNOSIS"),
+		TEXT("EVIDENCE_HEAT_PACK"),
+		TEXT("EVIDENCE_HEATER_SERVICE_LABEL")};
+	for (const FName EvidenceId : EvidenceIds)
+	{
+		const FString Copy = FWSPresentationText::EvidenceLabel(EvidenceId).ToString();
+		TestTrue(
+			FString::Printf(TEXT("%s has a concrete title and description"), *EvidenceId.ToString()),
+			Copy.Contains(TEXT("：")) && Copy.Len() >= 24);
+		TestFalse(
+			FString::Printf(TEXT("%s does not use placeholder copy"), *EvidenceId.ToString()),
+			Copy.Contains(TEXT("未命名")) || Copy.Contains(TEXT("尚未整理")));
+	}
+
+	const TArray<FName> FactIds = {
+		TEXT("FACT_GENERATOR_PROTECTION_STOP"),
+		TEXT("FACT_FORCED_RESTART_SUSPICION"),
+		TEXT("FACT_BURNT_RELAY"),
+		TEXT("FACT_HAND_INJURY"),
+		TEXT("FACT_MEDICAL_DIAGNOSIS"),
+		TEXT("FACT_HEAT_PACK"),
+		TEXT("FACT_RELAY_COMPATIBILITY"),
+		TEXT("FACT_FORCED_RESTART_CONFIRMED")};
+	for (const FName FactId : FactIds)
+	{
+		const FString Title = FWSPresentationText::FactLabel(FactId).ToString();
+		const FString Description = FWSPresentationText::FactDescription(FactId).ToString();
+		TestTrue(
+			FString::Printf(TEXT("%s has a named fact"), *FactId.ToString()),
+			!Title.IsEmpty() && !Title.Contains(TEXT("未配置")));
+		TestTrue(
+			FString::Printf(TEXT("%s explains its gameplay consequence"), *FactId.ToString()),
+			Description.Len() >= 20 && !Description.Contains(TEXT("尚未关联")));
+	}
 	return true;
 }
 

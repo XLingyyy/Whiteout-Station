@@ -5,8 +5,8 @@
 
 struct FWhiteoutRuleConfig
 {
-	int32 StartingActionPoints = 8;
-	int32 MidCrisisThreshold = 4;
+	int32 StartingActionPoints = 12;
+	int32 MidCrisisThreshold = 6;
 	int32 GeneratorRequired = 2;
 	int32 AntennaRequired = 1;
 	int32 ModelCallHardLimit = 10;

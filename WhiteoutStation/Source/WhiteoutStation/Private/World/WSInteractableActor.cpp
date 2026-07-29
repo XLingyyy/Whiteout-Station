@@ -89,7 +89,7 @@ void AWSInteractableActor::BeginPlay()
 	SetActorTickEnabled(true);
 	CaptureHomeTransform();
 	RestoreLegacyCharacterMaterials();
-	ResolveV09Animations();
+	ResolveV10Animations();
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
@@ -500,7 +500,7 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 		{
 			CaptureHomeTransform();
 			RestoreLegacyCharacterMaterials();
-			ResolveV09Animations();
+			ResolveV10Animations();
 			StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterStateChanged);
 			StateSubsystem->OnActionCommitted.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterActionCommitted);
 			StateSubsystem->OnDialogueLine.AddUniqueDynamic(this, &AWSInteractableActor::HandleDialogueLine);
@@ -510,7 +510,7 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 	}
 	CaptureHomeTransform();
 	RestoreLegacyCharacterMaterials();
-	ResolveV09Animations();
+	ResolveV10Animations();
 	PlayCharacterAnimation(IdleAnimation);
 }
 
@@ -554,7 +554,7 @@ void AWSInteractableActor::RestoreLegacyCharacterMaterials()
 			UE_LOG(
 				LogTemp,
 				Display,
-				TEXT("WhiteoutStation v0.9: restored imported character material action=%s slot=%d material=%s"),
+				TEXT("WhiteoutStation v1.0: restored imported character material action=%s slot=%d material=%s"),
 				*ActionId.ToString(),
 				Index,
 				*ImportedMaterial->GetPathName());
@@ -587,7 +587,7 @@ FRotator AWSInteractableActor::MakeActorRotationFacing(
 		0.0f);
 }
 
-void AWSInteractableActor::ResolveV09Animations()
+void AWSInteractableActor::ResolveV10Animations()
 {
 	if (!bCharacterPresentation)
 	{
@@ -595,8 +595,8 @@ void AWSInteractableActor::ResolveV09Animations()
 	}
 	const bool bGuHeng = ActionId == TEXT("talk_gu_heng");
 	const FString Root = bGuHeng
-		? TEXT("/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV09")
-		: TEXT("/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV09");
+		? TEXT("/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV10")
+		: TEXT("/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV10");
 	const FString Prefix = bGuHeng ? TEXT("AN_GuHeng") : TEXT("AN_YeCheng_V10");
 	const auto LoadAnimation = [&Root, &Prefix](const TCHAR* Suffix)
 	{
@@ -625,7 +625,7 @@ void AWSInteractableActor::ResolveV09Animations()
 		UE_LOG(
 			LogTemp,
 			Error,
-			TEXT("WhiteoutStation v0.9: exact-skeleton animation set is incomplete for %s"),
+			TEXT("WhiteoutStation v1.0: exact-skeleton animation set is incomplete for %s"),
 			*ActionId.ToString());
 	}
 }

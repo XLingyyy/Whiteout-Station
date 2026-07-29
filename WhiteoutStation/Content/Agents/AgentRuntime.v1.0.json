@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "runtime_version": "0.9.0",
+  "runtime_version": "1.0.0",
   "provider_name": "deepseek",
   "model": "deepseek-v4-flash",
   "endpoint": "https://api.deepseek.com/chat/completions",
@@ -11,5 +11,5 @@
     "reaction_actions": ["neutral", "acknowledge", "consider", "reassure", "reject", "alarmed"],
     "movement_policy": "Dialogue-only, local collision checked, home-radius constrained, and never accepts model coordinates."
   },
-  "notes": "DeepSeek expression and performance selection activate when WHITEOUT_LLM_API_KEY or ignored LocalConfig/WhiteoutLLM.ini provides a credential. Missing credentials, invalid output, network failure, or disallowed endpoints fail closed to the deterministic preset. v0.9 keeps model-selected movement local and constrained while the runtime owns whole-body facing, bounded head tracking, collision, and home-radius enforcement."
+  "notes": "DeepSeek expression and performance selection activate when WHITEOUT_LLM_API_KEY or ignored LocalConfig/WhiteoutLLM.ini provides a credential. Missing credentials, invalid output, network failure, or disallowed endpoints fail closed to the deterministic preset. v1.0 keeps model-selected movement local and constrained while the runtime owns whole-body facing, bounded head tracking, collision, and home-radius enforcement."
 }

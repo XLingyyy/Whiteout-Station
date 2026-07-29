@@ -49,7 +49,7 @@ class TransactionTests(unittest.TestCase):
         self.assertTrue(first.committed)
         self.assertFalse(second.committed)
         self.assertEqual("duplicate_transaction", second.reason_code)
-        self.assertEqual(7, sim.state["ap"])
+        self.assertEqual(11, sim.state["ap"])
         self.assertEqual(1, len(sim.state["event_log"]))
 
     def test_resources_never_go_negative(self) -> None:
@@ -117,7 +117,7 @@ class TransactionTests(unittest.TestCase):
                 if not result.committed:
                     self.assertEqual(before, sim.state)
                 self.assertGreaterEqual(sim.state["ap"], 0)
-                self.assertLessEqual(sim.state["ap"], 8)
+                self.assertLessEqual(sim.state["ap"], 12)
                 self.assertTrue(
                     all(value >= 0 for value in sim.state["resources"].values())
                 )
@@ -151,12 +151,12 @@ class FlowTests(unittest.TestCase):
 
     def test_two_ap_action_crosses_crisis_threshold_once(self) -> None:
         sim = WhiteoutSimulator()
-        sim.state["ap"] = 5
+        sim.state["ap"] = 7
         sim.state["tasks"]["generator_progress"] = 2
         result = sim.apply_action("calibrate_antenna", transaction_id="cross")
         self.assertTrue(result.committed)
         self.assertTrue(result.crisis_triggered)
-        self.assertEqual(3, sim.state["ap"])
+        self.assertEqual(5, sim.state["ap"])
         self.assertTrue(sim.state["mid_crisis_triggered"])
 
     def test_ap_zero_keeps_signal_window(self) -> None:
@@ -491,20 +491,20 @@ class RouteAndScoreTests(unittest.TestCase):
         rules = load_rules()
         expected = {
             "medical_cooperation": {
-                "ap": 0,
-                "score": 76.76,
+                "ap": 4,
+                "score": 81.76,
                 "dialogue": {
                     "dialogue_act": "promise",
                     "promise_condition": "heat_repair_room",
                 },
             },
             "technical_replacement": {
-                "ap": 0,
-                "score": 72.02,
+                "ap": 4,
+                "score": 76.94,
                 "dialogue": {"dialogue_act": "challenge"},
             },
             "forced_quick_repair": {
-                "ap": 2,
+                "ap": 6,
                 "score": 68.31,
                 "ending": "cost_uncontrolled",
                 "dialogue": None,
@@ -571,7 +571,7 @@ class RouteAndScoreTests(unittest.TestCase):
             {"player": 1, "gu_heng": 0, "ye_cheng": 0},
         )
         self.assertTrue(collapse.apply_action("inspect_control_cabinet").committed)
-        self.assertEqual(0, collapse.state["ap"])
+        self.assertEqual(4, collapse.state["ap"])
         self.assertEqual("total_collapse", collapse.end_game()["ending"])
 
         success = run_route(WhiteoutSimulator(), "medical_cooperation")

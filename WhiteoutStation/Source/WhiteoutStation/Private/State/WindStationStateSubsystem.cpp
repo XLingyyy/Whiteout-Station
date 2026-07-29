@@ -28,7 +28,8 @@ namespace
 	}
 }
 
-const FString UWindStationStateSubsystem::SaveSlot(TEXT("WhiteoutStation_Autosave_v0_9"));
+const FString UWindStationStateSubsystem::SaveSlot(TEXT("WhiteoutStation_Autosave_v1_0"));
+const FString UWindStationStateSubsystem::LegacyV09SaveSlot(TEXT("WhiteoutStation_Autosave_v0_9"));
 const FString UWindStationStateSubsystem::LegacyV08SaveSlot(TEXT("WhiteoutStation_Autosave_v0_8"));
 const FString UWindStationStateSubsystem::LegacyV07SaveSlot(TEXT("WhiteoutStation_Autosave_v0_7"));
 const FString UWindStationStateSubsystem::LegacyV06SaveSlot(TEXT("WhiteoutStation_Autosave_v0_6"));
@@ -37,7 +38,7 @@ void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection
 {
 	Super::Initialize(Collection);
 	FString Error;
-	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v0.9.json");
+	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v1.0.json");
 	if (!RulesEngine.LoadConfig(ConfigPath, Error))
 	{
 		UE_LOG(LogTemp, Error, TEXT("Whiteout rules config fallback: %s"), *Error);
@@ -126,7 +127,13 @@ bool UWindStationStateSubsystem::SaveSnapshot()
 bool UWindStationStateSubsystem::LoadSnapshot()
 {
 	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlot, 0));
+	bool bMigratingV09 = false;
 	bool bMigratingLegacyScale = false;
+	if (!Save)
+	{
+		Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(LegacyV09SaveSlot, 0));
+		bMigratingV09 = Save != nullptr;
+	}
 	if (!Save)
 	{
 		Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(LegacyV08SaveSlot, 0));
@@ -141,7 +148,8 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 		Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(LegacyV06SaveSlot, 0));
 		bMigratingLegacyScale = Save != nullptr;
 	}
-	if (!Save || (Save->SaveVersion != TEXT("0.9.0")
+	if (!Save || (Save->SaveVersion != TEXT("1.0.0")
+		&& Save->SaveVersion != TEXT("0.9.0")
 		&& Save->SaveVersion != TEXT("0.8.0")
 		&& Save->SaveVersion != TEXT("0.7.0")
 		&& Save->SaveVersion != TEXT("0.6.0")))
@@ -157,9 +165,13 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	{
 		MigrateLegacyCharacterScale(LoadedState);
 	}
+	if (bMigratingV09)
+	{
+		LoadedState.ActionPoints = FMath::Min(12, LoadedState.ActionPoints + 4);
+	}
 	RulesEngine.SetState(LoadedState);
 	LatestDialogue = FWSAgentReply();
-	if (Save->SaveVersion != TEXT("0.9.0"))
+	if (Save->SaveVersion != TEXT("1.0.0"))
 	{
 		SaveSnapshot();
 	}
@@ -170,6 +182,7 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 bool UWindStationStateSubsystem::HasSnapshot() const
 {
 	return UGameplayStatics::DoesSaveGameExist(SaveSlot, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacyV09SaveSlot, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacyV08SaveSlot, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacyV07SaveSlot, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacyV06SaveSlot, 0);

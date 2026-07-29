@@ -1,4 +1,4 @@
-"""Fail-closed structural and pose-safety audit for v0.9 NPC animations."""
+"""Fail-closed structural and anatomical-side audit for v1.0 NPC animations."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ CHARACTERS = (
     {
         "name": "GuHeng",
         "mesh": "/Game/WindStation/Art/AnimeNPC/GuHeng/SK_Male_AvatarSample_C",
-        "root": "/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV09",
+        "root": "/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV10",
         "token": "GuHeng",
     },
     {
@@ -32,7 +32,7 @@ CHARACTERS = (
             "SK_YeCheng_NoanoaHair_RefinedFace_v10"
         ),
         "root": (
-            "/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV09"
+            "/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV10"
         ),
         "token": "YeCheng_V10",
     },
@@ -46,6 +46,12 @@ NECK = "J_Bip_C_Neck"
 HEAD = "J_Bip_C_Head"
 L_HAND = "J_Bip_L_Hand"
 R_HAND = "J_Bip_R_Hand"
+L_SHOULDER = "J_Bip_L_Shoulder"
+R_SHOULDER = "J_Bip_R_Shoulder"
+L_UPPER_ARM = "J_Bip_L_UpperArm"
+R_UPPER_ARM = "J_Bip_R_UpperArm"
+L_LOWER_ARM = "J_Bip_L_LowerArm"
+R_LOWER_ARM = "J_Bip_R_LowerArm"
 ALLOWED_TRACKS = {
     HIPS,
     SPINE,
@@ -53,12 +59,12 @@ ALLOWED_TRACKS = {
     UPPER_CHEST,
     NECK,
     HEAD,
-    "J_Bip_L_Shoulder",
-    "J_Bip_R_Shoulder",
-    "J_Bip_L_UpperArm",
-    "J_Bip_R_UpperArm",
-    "J_Bip_L_LowerArm",
-    "J_Bip_R_LowerArm",
+    L_SHOULDER,
+    R_SHOULDER,
+    L_UPPER_ARM,
+    R_UPPER_ARM,
+    L_LOWER_ARM,
+    R_LOWER_ARM,
     L_HAND,
     R_HAND,
     "J_Bip_L_UpperLeg",
@@ -131,6 +137,33 @@ def main() -> None:
             continue
         skeleton = mesh.get_editor_property("skeleton")
         reference_pose = skeleton.get_reference_pose()
+        reference_chest = reference_pose.get_ref_bone_pose(
+            CHEST,
+            unreal.AnimPoseSpaces.WORLD,
+        ).translation
+        reference_left_hand = reference_pose.get_ref_bone_pose(
+            L_HAND,
+            unreal.AnimPoseSpaces.WORLD,
+        ).translation
+        reference_right_hand = reference_pose.get_ref_bone_pose(
+            R_HAND,
+            unreal.AnimPoseSpaces.WORLD,
+        ).translation
+        reference_left_offset = reference_left_hand.x - reference_chest.x
+        reference_right_offset = reference_right_hand.x - reference_chest.x
+        if reference_left_offset * reference_right_offset >= 0.0:
+            failures.append(
+                f"{character['name']}: reference hands do not define "
+                "opposite anatomical sides"
+            )
+            continue
+        left_side_sign = 1.0 if reference_left_offset > 0.0 else -1.0
+        right_side_sign = 1.0 if reference_right_offset > 0.0 else -1.0
+        reference_order_sign = (
+            1.0
+            if reference_left_hand.x > reference_right_hand.x
+            else -1.0
+        )
         for suffix, expected_duration in EXPECTED.items():
             asset_path = (
                 f"{character['root']}/AN_{character['token']}_{suffix}"
@@ -215,16 +248,37 @@ def main() -> None:
 
             minimum_hand_separation = float("inf")
             minimum_lateral_separation = float("inf")
+            minimum_left_side_distance = float("inf")
+            minimum_right_side_distance = float("inf")
+            minimum_left_wrist_outward = float("inf")
+            minimum_right_wrist_outward = float("inf")
             maximum_torso_deviation = {
                 bone_name: 0.0 for bone_name in TORSO_LIMITS
             }
             for sample_index in range(SAMPLE_COUNT):
                 sample_time = duration * sample_index / (SAMPLE_COUNT - 1)
                 pose = evaluated_pose(animation, mesh, sample_time)
+                chest = world_location(pose, CHEST)
                 left_hand = world_location(pose, L_HAND)
                 right_hand = world_location(pose, R_HAND)
+                left_shoulder = world_location(pose, L_SHOULDER)
+                right_shoulder = world_location(pose, R_SHOULDER)
+                left_lower_arm = world_location(pose, L_LOWER_ARM)
+                right_lower_arm = world_location(pose, R_LOWER_ARM)
                 hand_separation = (right_hand - left_hand).length()
-                lateral_separation = right_hand.x - left_hand.x
+                lateral_separation = abs(right_hand.x - left_hand.x)
+                left_side_distance = (
+                    left_hand.x - chest.x
+                ) * left_side_sign
+                right_side_distance = (
+                    right_hand.x - chest.x
+                ) * right_side_sign
+                left_wrist_outward = (
+                    left_hand.x - left_shoulder.x
+                ) * left_side_sign
+                right_wrist_outward = (
+                    right_hand.x - right_shoulder.x
+                ) * right_side_sign
                 minimum_hand_separation = min(
                     minimum_hand_separation,
                     hand_separation,
@@ -233,18 +287,59 @@ def main() -> None:
                     minimum_lateral_separation,
                     lateral_separation,
                 )
-                if hand_separation < 44.0 or lateral_separation < 43.0:
+                minimum_left_side_distance = min(
+                    minimum_left_side_distance,
+                    left_side_distance,
+                )
+                minimum_right_side_distance = min(
+                    minimum_right_side_distance,
+                    right_side_distance,
+                )
+                minimum_left_wrist_outward = min(
+                    minimum_left_wrist_outward,
+                    left_wrist_outward,
+                )
+                minimum_right_wrist_outward = min(
+                    minimum_right_wrist_outward,
+                    right_wrist_outward,
+                )
+                if hand_separation < 42.0 or lateral_separation < 42.0:
                     failures.append(
-                        f"{label}:sample={sample_index}: unsafe hand "
+                        f"{label}:sample={sample_index}: hands too close "
                         f"separation total={hand_separation:.2f} "
                         f"lateral={lateral_separation:.2f}"
                     )
                     break
-                if left_hand.x >= -18.0 or right_hand.x <= 18.0:
+                if (
+                    (left_hand.x - right_hand.x) * reference_order_sign
+                    <= 0.0
+                ):
                     failures.append(
-                        f"{label}:sample={sample_index}: hand entered torso "
-                        f"corridor left={left_hand.x:.2f} "
-                        f"right={right_hand.x:.2f}"
+                        f"{label}:sample={sample_index}: named hands swapped "
+                        "relative to the reference skeleton"
+                    )
+                    break
+                if left_side_distance < 18.0 or right_side_distance < 18.0:
+                    failures.append(
+                        f"{label}:sample={sample_index}: wrist crossed the "
+                        f"body corridor left={left_side_distance:.2f} "
+                        f"right={right_side_distance:.2f}"
+                    )
+                    break
+                if left_wrist_outward < 12.0 or right_wrist_outward < 12.0:
+                    failures.append(
+                        f"{label}:sample={sample_index}: wrist crossed its "
+                        f"shoulder chain left={left_wrist_outward:.2f} "
+                        f"right={right_wrist_outward:.2f}"
+                    )
+                    break
+                if (
+                    (left_lower_arm.x - chest.x) * left_side_sign < 7.0
+                    or (right_lower_arm.x - chest.x) * right_side_sign < 7.0
+                ):
+                    failures.append(
+                        f"{label}:sample={sample_index}: elbow entered the "
+                        "opposite anatomical side"
                     )
                     break
                 for bone_name, limit in TORSO_LIMITS.items():
@@ -284,13 +379,27 @@ def main() -> None:
                     "minimum_lateral_hand_separation_cm": (
                         minimum_lateral_separation
                     ),
+                    "reference_left_side_sign": left_side_sign,
+                    "reference_right_side_sign": right_side_sign,
+                    "minimum_left_wrist_side_distance_cm": (
+                        minimum_left_side_distance
+                    ),
+                    "minimum_right_wrist_side_distance_cm": (
+                        minimum_right_side_distance
+                    ),
+                    "minimum_left_wrist_outward_from_shoulder_cm": (
+                        minimum_left_wrist_outward
+                    ),
+                    "minimum_right_wrist_outward_from_shoulder_cm": (
+                        minimum_right_wrist_outward
+                    ),
                     "maximum_torso_deviation_degrees": (
                         maximum_torso_deviation
                     ),
                 }
             )
             unreal.log(
-                f"WS_V09_ANIMATION_AUDIT character={character['name']} "
+                f"WS_V10_ANIMATION_AUDIT character={character['name']} "
                 f"animation={suffix} min_hands="
                 f"{minimum_hand_separation:.2f} min_lateral="
                 f"{minimum_lateral_separation:.2f}"
@@ -302,7 +411,7 @@ def main() -> None:
             f"asset count {audited}, expected {expected_assets}"
         )
     report = {
-        "schema": "whiteout.v0.9.npc-animation-audit.v1",
+        "schema": "whiteout.v1.0.npc-animation-audit.v1",
         "engine_version": unreal.SystemLibrary.get_engine_version(),
         "passed": not failures,
         "audited_assets": audited,
@@ -317,7 +426,7 @@ def main() -> None:
             )
         ).parent
         / "docs"
-        / "evidence_v0.9"
+        / "evidence_v1.0"
         / "npc_animation_audit.json"
     )
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -327,12 +436,12 @@ def main() -> None:
     )
     if failures:
         for failure in failures:
-            unreal.log_error(f"WS_V09_ANIMATION_AUDIT_ERROR {failure}")
+            unreal.log_error(f"WS_V10_ANIMATION_AUDIT_ERROR {failure}")
         raise RuntimeError(
-            f"v0.9 NPC animation audit failed: {len(failures)}"
+            f"v1.0 NPC animation audit failed: {len(failures)}"
         )
     unreal.log(
-        f"WS_V09_ANIMATION_AUDIT_COMPLETE result=PASS "
+        f"WS_V10_ANIMATION_AUDIT_COMPLETE result=PASS "
         f"assets={audited} report={output}"
     )
 

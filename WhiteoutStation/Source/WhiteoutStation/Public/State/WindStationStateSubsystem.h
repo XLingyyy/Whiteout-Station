@@ -69,6 +69,7 @@ public:
 
 private:
 	static const FString SaveSlot;
+	static const FString LegacyV09SaveSlot;
 	static const FString LegacyV08SaveSlot;
 	static const FString LegacyV07SaveSlot;
 	static const FString LegacyV06SaveSlot;

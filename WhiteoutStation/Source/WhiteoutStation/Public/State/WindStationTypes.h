@@ -328,7 +328,7 @@ struct FWSGameState
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
-	int32 ActionPoints = 8;
+	int32 ActionPoints = 12;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	EWSGamePhase Phase = EWSGamePhase::ActionPhase;

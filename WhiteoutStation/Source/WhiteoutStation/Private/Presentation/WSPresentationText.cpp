@@ -148,6 +148,38 @@ FText FWSPresentationText::ReasonNextStep(const EWSReasonCode Reason)
 
 FText FWSPresentationText::EvidenceLabel(const FName EvidenceId)
 {
+	if (EvidenceId == TEXT("EVIDENCE_DEEP_GENERATOR_LOG"))
+	{
+		return Text(TEXT("发电机深层日志：08:07 保护系统因输出电压异常自动停机；08:11 有人执行手动旁路重启。日志证明异常重启发生在故障之后。"));
+	}
+	if (EvidenceId == TEXT("EVIDENCE_BURNT_RELAY"))
+	{
+		return Text(TEXT("烧毁的主继电器：控制柜触点已经熔毁，发电机无法稳定向天线供电；维修前必须恢复继电器功能。"));
+	}
+	if (EvidenceId == TEXT("EVIDENCE_ARC_MARKS"))
+	{
+		return Text(TEXT("控制柜电弧痕迹：电弧由手动旁路端指向主继电器，与日志中的 08:11 强制重启记录吻合。"));
+	}
+	if (EvidenceId == TEXT("EVIDENCE_BLOODY_BANDAGE"))
+	{
+		return Text(TEXT("带血绷带：纤维和血迹来自新近处理的手部撕裂伤，说明伤者在事故后接受过临时包扎。"));
+	}
+	if (EvidenceId == TEXT("EVIDENCE_HAND_OBSERVATION"))
+	{
+		return Text(TEXT("控制柜边缘的伤手痕迹：带血指印和绷带纤维表明，受伤人员曾在事故时操作控制柜。"));
+	}
+	if (EvidenceId == TEXT("EVIDENCE_MEDICAL_DIAGNOSIS"))
+	{
+		return Text(TEXT("叶澄的诊断记录：顾衡右手撕裂并伴随失温，继续带伤维修会恶化；医务室供暖后可用药品或保温包治疗。"));
+	}
+	if (EvidenceId == TEXT("EVIDENCE_HEAT_PACK"))
+	{
+		return Text(TEXT("应急保温包位置：医务柜后方存有一只保温包，可替代药品稳定顾衡一次。"));
+	}
+	if (EvidenceId == TEXT("EVIDENCE_HEATER_SERVICE_LABEL"))
+	{
+		return Text(TEXT("厨房加热器维护标牌：内部继电器规格与发电机控制柜一致，可拆作替代件；拆除后厨房会永久失去供暖。"));
+	}
 	if (EvidenceId == TEXT("generator_log")) return TableText(TEXT("evidence_generator_log"), TEXT("发电机运行记录：电压波动始于继电器损坏之后。"));
 	if (EvidenceId == TEXT("relay_burn_pattern")) return TableText(TEXT("evidence_relay_burn_pattern"), TEXT("控制柜烧蚀痕迹：旧继电器已经失效。"));
 	if (EvidenceId == TEXT("relay_compatibility")) return TableText(TEXT("evidence_relay_compatibility"), TEXT("替代继电器标牌：规格可以匹配发电机。"));
@@ -155,18 +187,69 @@ FText FWSPresentationText::EvidenceLabel(const FName EvidenceId)
 	if (EvidenceId == TEXT("hidden_heat_pack")) return TableText(TEXT("evidence_heat_pack"), TEXT("隐藏物资：医务柜后方留有一只保温包。"));
 	if (EvidenceId == TEXT("antenna_ice")) return TableText(TEXT("evidence_antenna_ice"), TEXT("天线结冰：方位机构需要现场重新校准。"));
 	if (EvidenceId == TEXT("records_preserved")) return TableText(TEXT("evidence_records_preserved"), TEXT("维修记录已保存，可追溯故障与责任。"));
-	return TableText(TEXT("evidence_default"), TEXT("尚未整理的现场证据。"));
+	return FText::FromString(FString::Printf(
+		TEXT("未配置证据 %s：该记录尚未写入内容说明。"),
+		*EvidenceId.ToString()));
 }
 
 FText FWSPresentationText::FactLabel(const FName FactId)
 {
+	if (FactId == TEXT("FACT_GENERATOR_PROTECTION_STOP")) return Text(TEXT("发电机因电压异常触发保护停机"));
+	if (FactId == TEXT("FACT_FORCED_RESTART_SUSPICION")) return Text(TEXT("保护停机后发生过手动旁路重启"));
+	if (FactId == TEXT("FACT_BURNT_RELAY")) return Text(TEXT("控制柜主继电器已经烧毁"));
+	if (FactId == TEXT("FACT_HAND_INJURY")) return Text(TEXT("顾衡的伤手与控制柜现场痕迹吻合"));
+	if (FactId == TEXT("FACT_MEDICAL_DIAGNOSIS")) return Text(TEXT("顾衡需要治疗后再参与稳定维修"));
+	if (FactId == TEXT("FACT_HEAT_PACK")) return Text(TEXT("医务室藏有可用于治疗的应急保温包"));
+	if (FactId == TEXT("FACT_RELAY_COMPATIBILITY")) return Text(TEXT("厨房加热器继电器可替代发电机损坏件"));
+	if (FactId == TEXT("FACT_FORCED_RESTART_CONFIRMED")) return Text(TEXT("日志与电弧痕迹共同确认了强制重启"));
 	if (FactId == TEXT("generator_fault")) return TableText(TEXT("fact_generator_fault"), TEXT("发电机故障与继电器损坏有关"));
 	if (FactId == TEXT("relay_compatible")) return TableText(TEXT("fact_relay_compatible"), TEXT("厨房加热器中的继电器可以替代"));
 	if (FactId == TEXT("gu_heng_condition")) return TableText(TEXT("fact_gu_condition"), TEXT("顾衡需要治疗后才能稳定工作"));
 	if (FactId == TEXT("heat_pack_location")) return TableText(TEXT("fact_heat_pack_location"), TEXT("医务室藏有应急保温包"));
 	if (FactId == TEXT("antenna_requires_calibration")) return TableText(TEXT("fact_antenna_calibration"), TEXT("天线必须在室外重新校准"));
 	if (FactId == TEXT("records_accountability")) return TableText(TEXT("fact_records_accountability"), TEXT("保留维修记录会影响信息责任"));
-	return TableText(TEXT("fact_default"), TEXT("未命名事实"));
+	return FText::FromString(FString::Printf(
+		TEXT("未配置事实：%s"),
+		*FactId.ToString()));
+}
+
+FText FWSPresentationText::FactDescription(const FName FactId)
+{
+	if (FactId == TEXT("FACT_GENERATOR_PROTECTION_STOP"))
+	{
+		return Text(TEXT("深层日志确认保护系统先于人工操作停机；读取记录后可判断故障顺序并保留事故资料。"));
+	}
+	if (FactId == TEXT("FACT_FORCED_RESTART_SUSPICION"))
+	{
+		return Text(TEXT("08:11 的手动旁路记录异常，但仍需控制柜痕迹或顾衡说明才能确认责任链。"));
+	}
+	if (FactId == TEXT("FACT_BURNT_RELAY"))
+	{
+		return Text(TEXT("现场检查确认主继电器失效；这条事实允许拆取厨房加热器中的兼容继电器。"));
+	}
+	if (FactId == TEXT("FACT_HAND_INJURY"))
+	{
+		return Text(TEXT("现场血迹、绷带纤维与叶澄诊断相互印证；顾衡带伤维修会继续损害健康。"));
+	}
+	if (FactId == TEXT("FACT_MEDICAL_DIAGNOSIS"))
+	{
+		return Text(TEXT("医务室恢复供暖后，可消耗 1 份药品或已发现的保温包治疗顾衡，并获得稳定维修条件。"));
+	}
+	if (FactId == TEXT("FACT_HEAT_PACK"))
+	{
+		return Text(TEXT("医务柜后的保温包可替代药品完成一次治疗，适合保留药品或资源不足的路线。"));
+	}
+	if (FactId == TEXT("FACT_RELAY_COMPATIBILITY"))
+	{
+		return Text(TEXT("维护标牌确认两处继电器规格一致；拆取替代件会永久牺牲厨房供暖。"));
+	}
+	if (FactId == TEXT("FACT_FORCED_RESTART_CONFIRMED"))
+	{
+		return Text(TEXT("发电机日志与控制柜电弧方向形成完整证据链，可确认有人在保护停机后强制重启。"));
+	}
+	return FText::FromString(FString::Printf(
+		TEXT("事实 %s 尚未关联到具体行动，请检查规则配置。"),
+		*FactId.ToString()));
 }
 
 FText FWSPresentationText::PromiseLabel(const FName ConditionId)

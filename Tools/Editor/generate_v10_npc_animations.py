@@ -1,10 +1,9 @@
-"""Generate v0.9 NPC performances on each character's exact skeleton.
+"""Generate v1.0 NPC performances on each character's exact skeleton.
 
-The v0.8 clips inherited a legacy idle whose spine and chest were already bent
-15-32 degrees and whose hands sat only 29-32 cm apart.  These clips use the
-imported reference rotations for the torso/head, retain only the useful
-same-skeleton limb setup, and open the relaxed arm silhouette enough for the
-characters' wide sleeves to clear the body.
+Every keyed bone starts from the imported reference pose. The upper arms are
+then lowered while preserving the reference skeleton's anatomical side:
+J_Bip_L remains on the positive component-X side and J_Bip_R on the negative
+side. No legacy idle rotations are inherited.
 """
 
 from __future__ import annotations
@@ -20,10 +19,7 @@ CHARACTERS = (
     {
         "name": "GuHeng",
         "mesh": "/Game/WindStation/Art/AnimeNPC/GuHeng/SK_Male_AvatarSample_C",
-        "legacy_idle": (
-            "/Game/WindStation/Art/AnimeNPC/GuHeng/Animations/AN_GuHeng_Idle"
-        ),
-        "root": "/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV09",
+        "root": "/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV10",
         "token": "GuHeng",
     },
     {
@@ -32,12 +28,8 @@ CHARACTERS = (
             "/Game/WindStation/Art/AnimeNPC/YeChengV10/"
             "SK_YeCheng_NoanoaHair_RefinedFace_v10"
         ),
-        "legacy_idle": (
-            "/Game/WindStation/Art/AnimeNPC/YeChengV10/Animations/"
-            "AN_YeCheng_V10_Idle"
-        ),
         "root": (
-            "/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV09"
+            "/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV10"
         ),
         "token": "YeCheng_V10",
     },
@@ -64,25 +56,8 @@ R_LOWER_LEG = "J_Bip_R_LowerLeg"
 L_FOOT = "J_Bip_L_Foot"
 R_FOOT = "J_Bip_R_Foot"
 
-LEGACY_BASE_BONES = {
-    L_SHOULDER,
-    R_SHOULDER,
-    L_UPPER_ARM,
-    R_UPPER_ARM,
-    L_LOWER_ARM,
-    R_LOWER_ARM,
-    L_HAND,
-    R_HAND,
-    L_UPPER_LEG,
-    R_UPPER_LEG,
-    L_LOWER_LEG,
-    R_LOWER_LEG,
-    L_FOOT,
-    R_FOOT,
-}
-
-# Rotator triples are (roll, pitch, yaw). These mirrored offsets move both
-# forearms beside the torso while avoiding axial upper-arm twist.
+# Rotator triples are (roll, pitch, yaw). The mirrored pitch offsets lower the
+# reference T-pose while keeping each complete arm chain on its anatomical side.
 NEUTRAL = {
     HIPS: (0.0, 0.0, 0.0),
     SPINE: (0.0, 0.0, 0.0),
@@ -90,12 +65,12 @@ NEUTRAL = {
     UPPER_CHEST: (0.0, 0.0, 0.0),
     NECK: (0.0, 0.0, 0.0),
     HEAD: (0.0, 0.0, 0.0),
-    L_SHOULDER: (0.0, -7.0, 0.0),
-    R_SHOULDER: (0.0, 7.0, 0.0),
-    L_UPPER_ARM: (0.0, -7.0, -7.0),
-    R_UPPER_ARM: (0.0, 7.0, 7.0),
-    L_LOWER_ARM: (0.0, 5.0, 0.0),
-    R_LOWER_ARM: (0.0, -5.0, 0.0),
+    L_SHOULDER: (0.0, 0.0, 0.0),
+    R_SHOULDER: (0.0, 0.0, 0.0),
+    L_UPPER_ARM: (0.0, -70.0, 0.0),
+    R_UPPER_ARM: (0.0, 70.0, 0.0),
+    L_LOWER_ARM: (0.0, 0.0, 0.0),
+    R_LOWER_ARM: (0.0, 0.0, 0.0),
     L_HAND: (0.0, 0.0, 0.0),
     R_HAND: (0.0, 0.0, 0.0),
 }
@@ -145,8 +120,8 @@ def walk(t: float) -> dict[str, tuple[float, float, float]]:
             HIPS: (0.0, 0.0, 1.0 * wave(t, 2.0)),
             SPINE: (0.0, 0.0, -0.8 * stride),
             CHEST: (0.0, 0.0, 0.6 * stride),
-            L_UPPER_ARM: (0.0, -7.0, -7.0 + 3.0 * stride),
-            R_UPPER_ARM: (0.0, 7.0, 7.0 + 3.0 * stride),
+            L_UPPER_ARM: (0.0, -70.0 + 4.0 * stride, 0.0),
+            R_UPPER_ARM: (0.0, 70.0 + 4.0 * stride, 0.0),
             L_UPPER_LEG: (12.0 * stride, 0.0, 0.0),
             R_UPPER_LEG: (-12.0 * stride, 0.0, 0.0),
             L_LOWER_LEG: (-14.0 * lift_left, 0.0, 0.0),
@@ -176,8 +151,8 @@ def consider(t: float) -> dict[str, tuple[float, float, float]]:
             HEAD: (1.5 * amount, 0.0, 5.0 * amount),
             NECK: (0.0, 0.0, 1.5 * amount),
             UPPER_CHEST: (0.0, 0.0, -0.8 * amount),
-            R_SHOULDER: (0.0, 5.5 * amount + 7.0, 0.0),
-            R_UPPER_ARM: (0.0, 7.0 + 2.5 * amount, 7.0),
+            R_SHOULDER: (0.0, -2.0 * amount, 0.0),
+            R_UPPER_ARM: (0.0, 70.0 - 5.0 * amount, 0.0),
         }
     )
 
@@ -188,10 +163,10 @@ def reassure(t: float) -> dict[str, tuple[float, float, float]]:
         **{
             HEAD: (-1.5 * amount, 0.0, 0.0),
             UPPER_CHEST: (-0.8 * amount, 0.0, 0.0),
-            L_SHOULDER: (0.0, -7.0 - 3.0 * amount, 0.0),
-            R_SHOULDER: (0.0, 7.0 + 3.0 * amount, 0.0),
-            L_UPPER_ARM: (0.0, -7.0 - 3.0 * amount, -7.0),
-            R_UPPER_ARM: (0.0, 7.0 + 3.0 * amount, 7.0),
+            L_SHOULDER: (0.0, 2.0 * amount, 0.0),
+            R_SHOULDER: (0.0, -2.0 * amount, 0.0),
+            L_UPPER_ARM: (0.0, -70.0 + 4.0 * amount, 0.0),
+            R_UPPER_ARM: (0.0, 70.0 - 4.0 * amount, 0.0),
         }
     )
 
@@ -203,8 +178,8 @@ def reject(t: float) -> dict[str, tuple[float, float, float]]:
         **{
             HEAD: (0.0, 0.0, 5.5 * shake),
             NECK: (0.0, 0.0, 1.5 * shake),
-            L_UPPER_ARM: (0.0, -7.0 - 1.5 * brace, -7.0),
-            R_UPPER_ARM: (0.0, 7.0 + 1.5 * brace, 7.0),
+            L_UPPER_ARM: (0.0, -70.0 - 2.0 * brace, 0.0),
+            R_UPPER_ARM: (0.0, 70.0 + 2.0 * brace, 0.0),
         }
     )
 
@@ -218,10 +193,10 @@ def alarmed(t: float) -> dict[str, tuple[float, float, float]]:
             HEAD: (-3.0 * amount, 0.0, 0.0),
             NECK: (-1.5 * amount, 0.0, 0.0),
             UPPER_CHEST: (-1.5 * amount, 0.0, 0.0),
-            L_SHOULDER: (0.0, -7.0 + 2.0 * amount, 0.0),
-            R_SHOULDER: (0.0, 7.0 - 2.0 * amount, 0.0),
-            L_UPPER_ARM: (0.0, -7.0 - 2.0 * amount, -7.0),
-            R_UPPER_ARM: (0.0, 7.0 + 2.0 * amount, 7.0),
+            L_SHOULDER: (0.0, 1.0 * amount, 0.0),
+            R_SHOULDER: (0.0, -1.0 * amount, 0.0),
+            L_UPPER_ARM: (0.0, -70.0 + 2.0 * amount, 0.0),
+            R_UPPER_ARM: (0.0, 70.0 - 2.0 * amount, 0.0),
         }
     )
 
@@ -257,7 +232,6 @@ def author_animation(
     mesh,
     skeleton,
     reference_pose,
-    legacy_idle,
     suffix: str,
     performance: Performance,
 ) -> None:
@@ -301,17 +275,6 @@ def author_animation(
                 bone_name,
                 unreal.AnimPoseSpaces.LOCAL,
             )
-            legacy = unreal.AnimationLibrary.get_bone_pose_for_time(
-                legacy_idle,
-                bone_name,
-                0.0,
-                False,
-            )
-            base_rotation = (
-                legacy.rotation
-                if bone_name in LEGACY_BASE_BONES
-                else reference.rotation
-            )
             controller.add_bone_track(bone_name, False)
             translations = [
                 unreal.Vector(
@@ -322,7 +285,7 @@ def author_animation(
                 for _sample in samples
             ]
             rotations = [
-                base_rotation
+                reference.rotation
                 * euler_quaternion(sample.get(bone_name, (0.0, 0.0, 0.0)))
                 for sample in samples
             ]
@@ -354,7 +317,7 @@ def author_animation(
     ):
         raise RuntimeError(f"Unable to save generated animation: {asset_path}")
     unreal.log(
-        f"WS_V09_ANIMATION_GENERATED character={character['name']} "
+        f"WS_V10_ANIMATION_GENERATED character={character['name']} "
         f"animation={suffix} frames={frame_count} tracks={len(bone_names)}"
     )
 
@@ -365,12 +328,6 @@ def main() -> None:
         skeleton = mesh.get_editor_property("skeleton")
         if skeleton is None:
             raise RuntimeError(f"Missing skeleton for {character['name']}")
-        legacy_idle = require_asset(character["legacy_idle"])
-        if legacy_idle.get_editor_property("skeleton") != skeleton:
-            raise RuntimeError(
-                f"Legacy limb source uses the wrong skeleton for "
-                f"{character['name']}"
-            )
         reference_pose = skeleton.get_reference_pose()
         for suffix, performance in PERFORMANCES.items():
             author_animation(
@@ -378,7 +335,6 @@ def main() -> None:
                 mesh,
                 skeleton,
                 reference_pose,
-                legacy_idle,
                 suffix,
                 performance,
             )
@@ -388,7 +344,7 @@ def main() -> None:
             recursive=True,
         )
     unreal.log(
-        f"WS_V09_ANIMATION_GENERATION_COMPLETE assets="
+        f"WS_V10_ANIMATION_GENERATION_COMPLETE assets="
         f"{len(CHARACTERS) * len(PERFORMANCES)}"
     )
 

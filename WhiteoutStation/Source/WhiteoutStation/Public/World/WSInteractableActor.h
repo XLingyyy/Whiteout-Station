@@ -102,27 +102,27 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Interaction|Character")
 	TObjectPtr<UAnimSequence> WorkAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.9")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v1.0")
 	TObjectPtr<UAnimSequence> WalkAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.9")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v1.0")
 	TObjectPtr<UAnimSequence> AcknowledgeAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.9")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v1.0")
 	TObjectPtr<UAnimSequence> ConsiderAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.9")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v1.0")
 	TObjectPtr<UAnimSequence> ReassureAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.9")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v1.0")
 	TObjectPtr<UAnimSequence> RejectAnimation;
 
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.9")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v1.0")
 	TObjectPtr<UAnimSequence> AlarmedAnimation;
 
 	// Current VRM imports visually face local +Y. Keep this editable so a
 	// future model with a different forward axis needs no runtime code change.
-	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v0.9")
+	UPROPERTY(EditAnywhere, Category = "Interaction|Character|v1.0")
 	float VisualFacingYawOffsetDegrees = 90.0f;
 
 	UPROPERTY()
@@ -147,7 +147,7 @@ private:
 	void ConfigureCharacterPresentation();
 	void CaptureHomeTransform();
 	void RestoreLegacyCharacterMaterials();
-	void ResolveV09Animations();
+	void ResolveV10Animations();
 	float GetVisualFacingYaw() const;
 	FRotator MakeActorRotationFacing(const FVector& WorldDirection) const;
 	void PlayCharacterAnimation(UAnimSequence* Animation, bool bLoop = true);

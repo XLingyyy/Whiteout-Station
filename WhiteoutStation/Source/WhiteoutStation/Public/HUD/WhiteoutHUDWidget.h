@@ -18,7 +18,6 @@ class UTextBlock;
 class UUniformGridPanel;
 class UVerticalBox;
 class UFont;
-class USoundBase;
 class UTexture2D;
 
 enum class EWSUILayer : uint8
@@ -416,18 +415,6 @@ private:
 	TObjectPtr<UObject> UIStringTableAsset;
 
 	UPROPERTY(Transient)
-	TObjectPtr<USoundBase> UIHoverSound;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USoundBase> UIConfirmSound;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USoundBase> UIRejectSound;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USoundBase> UIPromiseSound;
-
-	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> InkBrushTexture;
 
 	UPROPERTY(Transient)
@@ -493,11 +480,11 @@ private:
 	void TickOpening(float DeltaTime);
 	void ApplyOpeningStage(int32 Stage);
 	FString BuildTutorialHint(const FWSGameState& State) const;
+	FString BuildTaskGuide(const FWSGameState& State, int32& OutMinimumAP) const;
 	void UpdateGuideContext(const FWSGameState& State);
 	void ApplyCrisisStage(int32 Stage);
 	void BeginEndingCinematic(EWSEndingType Ending);
 	void ApplyEndingCinematic(EWSEndingType Ending);
-	void PlayUISound(USoundBase* Sound, float Volume = 1.0f);
 	void ShowPanelAnimated(UBorder* Panel, bool bShow, float Duration = 0.28f, bool bScaleWithFade = true);
 	void TickPanelAnimations(float DeltaTime);
 	void CancelPanelAnimation(UBorder* Panel);
@@ -508,6 +495,7 @@ private:
 		const FMargin& Offsets, float BlurStrength, const FLinearColor& Tint, bool bHairline = true);
 	void SetGlassPanelContent(UBorder* Panel, UWidget* Content);
 	void SetGlassPanelPadding(UBorder* Panel, const FMargin& ContentPadding);
+	static void SilenceButton(UButton* Button);
 	UButton* MakeButton(UVerticalBox* Box, const FText& Label, const FName Name);
 	UButton* MakeDialogueChoiceButton(
 		UCanvasPanel* Canvas,
@@ -572,9 +560,6 @@ private:
 
 	UFUNCTION()
 	void CloseGuide();
-
-	UFUNCTION()
-	void PlayHoverSound();
 
 	UFUNCTION()
 	void FilterEvidenceAll();

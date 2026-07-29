@@ -69,7 +69,7 @@ namespace WhiteoutRules
 
 FWhiteoutRulesEngine::FWhiteoutRulesEngine()
 {
-	Config.InitialState.ActionPoints = 8;
+	Config.InitialState.ActionPoints = 12;
 	Config.InitialState.Phase = EWSGamePhase::ActionPhase;
 	Config.InitialState.Characters.Add(
 		EWSCharacterId::Player,
@@ -148,9 +148,9 @@ bool FWhiteoutRulesEngine::LoadConfig(const FString& ConfigPath, FString& OutErr
 	WhiteoutRules::ParseCharacter(Characters, TEXT("gu_heng"), EWSCharacterId::GuHeng, Parsed);
 	WhiteoutRules::ParseCharacter(Characters, TEXT("ye_cheng"), EWSCharacterId::YeCheng, Parsed);
 
-	if (Config.StartingActionPoints != 8 || Config.MidCrisisThreshold != 4)
+	if (Config.StartingActionPoints != 12 || Config.MidCrisisThreshold != 6)
 	{
-		OutError = TEXT("v0.9 requires 8 starting AP and a 4 AP crisis threshold");
+		OutError = TEXT("v1.0 requires 12 starting AP and a 6 AP crisis threshold");
 		return false;
 	}
 	for (const TPair<EWSCharacterId, FWSCharacterState>& Pair : Parsed.Characters)
@@ -163,7 +163,7 @@ bool FWhiteoutRulesEngine::LoadConfig(const FString& ConfigPath, FString& OutErr
 			|| CharacterState.Pressure < 0.0f || CharacterState.Pressure > 10.0f
 			|| CharacterState.Trust < 0.0f || CharacterState.Trust > 10.0f)
 		{
-			OutError = TEXT("v0.9 character attributes must remain within 0..10");
+			OutError = TEXT("v1.0 character attributes must remain within 0..10");
 			return false;
 		}
 	}

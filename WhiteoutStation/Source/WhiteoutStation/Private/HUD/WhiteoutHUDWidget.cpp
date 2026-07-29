@@ -37,10 +37,15 @@
 #include "State/WhiteoutRulesEngine.h"
 #include "State/WindStationStateSubsystem.h"
 #include "Styling/CoreStyle.h"
-#include "Sound/SoundBase.h"
 
 namespace
 {
+	constexpr int32 InitialActionPoints = 12;
+	constexpr int32 MidCrisisActionPoints = 6;
+	constexpr int32 MinutesPerActionPoint = 50;
+	constexpr int32 CollectableEvidenceCount = 7;
+	constexpr int32 DiscoverableFactCount = 8;
+
 	// 颜色别名 —— 全部来自 WSUITokens 单一可信来源
 	const FLinearColor& PanelColor = WSUITokens::Color::SurfacePanel;
 	const FLinearColor& DeepPanel = WSUITokens::Color::SurfaceDeep;
@@ -81,10 +86,6 @@ void UWhiteoutHUDWidget::NativeOnInitialized()
 		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation v0.2: Chinese StringTable asset is missing"));
 	}
 	InitializeUIFontFamily();
-	UIHoverSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/WindStation/Audio/UI/S_UIHover_Original.S_UIHover_Original"));
-	UIConfirmSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/WindStation/Audio/UI/S_UIConfirm_Original.S_UIConfirm_Original"));
-	UIRejectSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/WindStation/Audio/UI/S_UIReject_Original.S_UIReject_Original"));
-	UIPromiseSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/WindStation/Audio/UI/S_UIPromise_Original.S_UIPromise_Original"));
 	InkBrushTexture = LoadObject<UTexture2D>(nullptr, TEXT("/Game/WindStation/UI/v03/Textures/T_UI_InkBrush.T_UI_InkBrush"));
 	PlayerPortraitTexture = LoadObject<UTexture2D>(nullptr, TEXT("/Game/WindStation/UI/v03/Portraits/P_PlayerSilhouette.P_PlayerSilhouette"));
 	GuHengPortraitTexture = LoadObject<UTexture2D>(nullptr, TEXT("/Game/WindStation/UI/v03/Portraits/P_GuHeng.P_GuHeng"));
@@ -440,11 +441,11 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	EvidenceTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	EvidenceTitleSlot->SetVerticalAlignment(VAlign_Center);
 	UButton* EvidenceCloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("EvidenceCloseButton"));
+	SilenceButton(EvidenceCloseButton);
 	EvidenceCloseButton->SetBackgroundColor(WSUITokens::Color::ButtonNormal);
 	UTextBlock* EvidenceCloseText = MakeText(TEXT("EvidenceCloseText"), 13, Secondary, false);
 	EvidenceCloseText->SetText(FText::FromString(TEXT("✕ 关闭")));
 	EvidenceCloseButton->SetContent(EvidenceCloseText);
-	EvidenceCloseButton->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
 	EvidenceCloseButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CloseEvidence);
 	EvidenceTitleRow->AddChildToHorizontalBox(EvidenceCloseButton)->SetVerticalAlignment(VAlign_Center);
 	EvidenceBox->AddChildToVerticalBox(EvidenceTitleRow)->SetPadding(FMargin(0, 0, 0, 12));
@@ -466,8 +467,8 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	for (int32 FilterIndex = 0; FilterIndex < FilterLabels.Num(); ++FilterIndex)
 	{
 		UButton* FilterButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), FName(*FString::Printf(TEXT("EvidenceFilterButton%d"), FilterIndex)));
+		SilenceButton(FilterButton);
 		FilterButton->SetBackgroundColor(FLinearColor::Transparent);
-		FilterButton->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
 		switch (FilterIndex)
 		{
 		case 0: FilterButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::FilterEvidenceAll); break;
@@ -551,7 +552,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	GuideIntro->SetText(FText::FromString(
 		TEXT("核心流程\n")
 		TEXT("修复发电机 2/2 → 前往室外校准天线 1/1 → 回控制室发送求救信号。\n")
-		TEXT("每个付费行动都会推进约 75 分钟并消耗 AP；按 F 先查看代价和条件，再按 F 确认。\n\n")
+		TEXT("本轮共有 12 AP；每消耗 1 AP 会推进约 50 分钟。按 F 先查看代价和条件，再按 F 确认。\n\n")
 		TEXT("人物状态（所有读数均为 0—10）\n")
 		TEXT("健康：受伤与生存状况。治疗顾衡可恢复；强修和危险作业会损失健康。\n")
 		TEXT("体温：寒冷暴露。室外天线会快速降温，低于 5.5 无法校准；供暖与保温包能改善。\n")
@@ -889,11 +890,11 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PauseTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	PauseTitleSlot->SetVerticalAlignment(VAlign_Center);
 	UButton* PauseCloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("PauseCloseButton"));
+	SilenceButton(PauseCloseButton);
 	PauseCloseButton->SetBackgroundColor(WSUITokens::Color::ButtonNormal);
 	UTextBlock* PauseCloseText = MakeText(TEXT("PauseCloseText"), 13, Secondary, false);
 	PauseCloseText->SetText(FText::FromString(TEXT("✕ 关闭")));
 	PauseCloseButton->SetContent(PauseCloseText);
-	PauseCloseButton->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
 	PauseCloseButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ResumeGame);
 	PauseTitleRow->AddChildToHorizontalBox(PauseCloseButton)->SetVerticalAlignment(VAlign_Center);
 	PauseBox->AddChildToVerticalBox(PauseTitleRow)->SetPadding(FMargin(0, 0, 0, 7));
@@ -1135,6 +1136,18 @@ void UWhiteoutHUDWidget::SetGlassPanelPadding(UBorder* Panel, const FMargin& Con
 	}
 }
 
+void UWhiteoutHUDWidget::SilenceButton(UButton* Button)
+{
+	if (!Button)
+	{
+		return;
+	}
+	FButtonStyle ButtonStyle = Button->GetStyle();
+	ButtonStyle.HoveredSlateSound = FSlateSound();
+	ButtonStyle.PressedSlateSound = FSlateSound();
+	Button->SetStyle(ButtonStyle);
+}
+
 UButton* UWhiteoutHUDWidget::MakeButton(UVerticalBox* Box, const FText& Label, const FName Name)
 {
 	UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
@@ -1147,6 +1160,7 @@ UButton* UWhiteoutHUDWidget::MakeButton(UVerticalBox* Box, const FText& Label, c
 	ButtonStyle.PressedForeground = FSlateColor(WSUITokens::Color::TextPrimary);
 	ButtonStyle.DisabledForeground = FSlateColor(WSUITokens::Color::TextMuted);
 	Button->SetStyle(ButtonStyle);
+	SilenceButton(Button);
 	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*(Name.ToString() + TEXT("Row"))));
 	const FString IconName = ButtonIconName(Name);
 	if (!IconName.IsEmpty())
@@ -1170,7 +1184,6 @@ UButton* UWhiteoutHUDWidget::MakeButton(UVerticalBox* Box, const FText& Label, c
 	LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	LabelSlot->SetVerticalAlignment(VAlign_Center);
 	Button->SetContent(Row);
-	Button->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
 	UVerticalBoxSlot* ButtonSlot = Box->AddChildToVerticalBox(Button);
 	ButtonSlot->SetPadding(FMargin(14, 3));
 	ButtonSlot->SetHorizontalAlignment(HAlign_Fill);
@@ -1194,6 +1207,7 @@ UButton* UWhiteoutHUDWidget::MakeDialogueChoiceButton(
 	ButtonStyle.HoveredForeground = FSlateColor(WSUITokens::Color::TextPrimary);
 	ButtonStyle.PressedForeground = FSlateColor(WSUITokens::Color::TextPrimary);
 	Button->SetStyle(ButtonStyle);
+	SilenceButton(Button);
 	Button->SetBackgroundColor(WSUITokens::Color::DialogueChoiceNormal);
 	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*(Name.ToString() + TEXT("Row"))));
 	if (!IconName.IsEmpty())
@@ -1218,7 +1232,6 @@ UButton* UWhiteoutHUDWidget::MakeDialogueChoiceButton(
 	LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	LabelSlot->SetVerticalAlignment(VAlign_Center);
 	Button->SetContent(Row);
-	Button->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
 	UCanvasPanelSlot* CanvasButtonSlot = Canvas->AddChildToCanvas(Button);
 	CanvasButtonSlot->SetAnchors(Anchors);
 	CanvasButtonSlot->SetOffsets(Offsets);
@@ -1254,7 +1267,7 @@ UProgressBar* UWhiteoutHUDWidget::MakeProgressBar(const FName Name, const FLinea
 FString UWhiteoutHUDWidget::APCells(const int32 Remaining)
 {
 	FString Cells;
-	for (int32 Index = 0; Index < 8; ++Index)
+	for (int32 Index = 0; Index < InitialActionPoints; ++Index)
 	{
 		Cells += Index < Remaining ? TEXT("■ ") : TEXT("□ ");
 	}
@@ -1263,7 +1276,9 @@ FString UWhiteoutHUDWidget::APCells(const int32 Remaining)
 
 FString UWhiteoutHUDWidget::ClockForAP(const int32 Remaining)
 {
-	const int32 ElapsedMinutes = (8 - FMath::Clamp(Remaining, 0, 8)) * 75;
+	const int32 ElapsedMinutes = (
+		InitialActionPoints - FMath::Clamp(Remaining, 0, InitialActionPoints))
+		* MinutesPerActionPoint;
 	const int32 TotalMinutes = 8 * 60 + 15 + ElapsedMinutes;
 	return FString::Printf(TEXT("%02d:%02d"), (TotalMinutes / 60) % 24, TotalMinutes % 60);
 }
@@ -1357,7 +1372,6 @@ void UWhiteoutHUDWidget::ShowHoveredEvidenceDetail()
 		if (Button && (Button->IsHovered() || Button->HasKeyboardFocus()) && EvidenceCardDetailCopies.IsValidIndex(Index))
 		{
 			ShowEvidenceDetail(EvidenceCardDetailCopies[Index]);
-			PlayUISound(UIConfirmSound, 0.52f);
 			return;
 		}
 	}
@@ -1372,11 +1386,11 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	if (TopStatusText)
 	{
 		TopStatusText->SetText(FText::Format(
-			FWSPresentationText::UI(TEXT("ui_top_l2_v04"), TEXT("{0} ｜ AP {1} / 8 ｜ {2}")),
+			FText::FromString(TEXT("{0} ｜ AP {1} / 12 ｜ {2}")),
 			FText::FromString(ClockForAP(State.ActionPoints)),
 			FText::AsNumber(State.ActionPoints),
 			FWSPresentationText::PhaseLabel(State.Phase)));
-		TopStatusText->SetColorAndOpacity(FSlateColor(State.ActionPoints <= 4 ? Danger : Body));
+		TopStatusText->SetColorAndOpacity(FSlateColor(State.ActionPoints <= MidCrisisActionPoints ? Danger : Body));
 	}
 	if (TopConditionText) TopConditionText->SetText(FText::FromString(Crisis));
 
@@ -1397,11 +1411,26 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 		 FWSPresentationText::UI(State.Flags.bKitchenHeaterIntact ? TEXT("ui_intact") : TEXT("ui_dismantled"), State.Flags.bKitchenHeaterIntact ? TEXT("完好") : TEXT("已拆解")).ToString()})));
 	if (TutorialTitleText)
 	{
-		TutorialTitleText->SetText(FText::FromString(TEXT("当前建议　｜　H 查看状态与操作")));
-	}
-	if (TutorialText)
-	{
-		TutorialText->SetText(FText::FromString(BuildTutorialHint(State)));
+		int32 MinimumAP = 0;
+		const FString TaskGuide = BuildTaskGuide(State, MinimumAP);
+		const int32 Buffer = State.ActionPoints - MinimumAP;
+		const FString GuideTitle = Buffer >= 0
+			? FString::Printf(
+				TEXT("通关指引｜最低保留 %d AP｜余量 %d"),
+				MinimumAP,
+				Buffer)
+			: FString::Printf(
+				TEXT("行动力警报｜还需 %d AP｜缺口 %d"),
+				MinimumAP,
+				FMath::Abs(Buffer));
+		TutorialTitleText->SetText(FText::FromString(GuideTitle));
+		if (TutorialText)
+		{
+			TutorialText->SetColorAndOpacity(FSlateColor(Buffer >= 0
+				? WSUITokens::Color::TextCinematicWarm
+				: Danger));
+			TutorialText->SetText(FText::FromString(TaskGuide));
+		}
 	}
 	UpdateGuideContext(State);
 
@@ -1447,7 +1476,7 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	}
 	if (PauseStatusText)
 	{
-		PauseStatusText->SetText(FText::FromString(FString::Printf(TEXT("%s　｜　AP %d / 8　｜　%s"),
+		PauseStatusText->SetText(FText::FromString(FString::Printf(TEXT("%s　｜　AP %d / 12　｜　%s"),
 			*ClockForAP(State.ActionPoints), State.ActionPoints, *FWSPresentationText::PhaseLabel(State.Phase).ToString())));
 	}
 	if (PauseSituationText)
@@ -1456,7 +1485,7 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	}
 	if (PauseSituationValues.Num() >= 5)
 	{
-		PauseSituationValues[0]->SetText(FText::FromString(FString::Printf(TEXT("%d / 8"), State.ActionPoints)));
+		PauseSituationValues[0]->SetText(FText::FromString(FString::Printf(TEXT("%d / 12"), State.ActionPoints)));
 		PauseSituationValues[1]->SetText(FText::FromString(ClockForAP(0)));
 		PauseSituationValues[2]->SetText(FText::FromString(FString::Printf(TEXT("%d / 2"), State.Tasks.GeneratorProgress)));
 		PauseSituationValues[3]->SetText(FText::FromString(FString::Printf(TEXT("%d / 1"), State.Tasks.AntennaCalibration)));
@@ -1516,6 +1545,115 @@ FString UWhiteoutHUDWidget::BuildTutorialHint(const FWSGameState& State) const
 	return TEXT("求救信号已经发出。按 Enter 进入本轮结算，查看路线代价、承诺与队员状态。");
 }
 
+FString UWhiteoutHUDWidget::BuildTaskGuide(
+	const FWSGameState& State,
+	int32& OutMinimumAP) const
+{
+	OutMinimumAP = 0;
+	if (State.Phase == EWSGamePhase::Results)
+	{
+		return TEXT("本轮已结算。查看复盘后按 R 开始新一轮。");
+	}
+	if (State.Tasks.bSignalSent)
+	{
+		return TEXT("求救信号已发送。按 Enter 进入结局复盘。");
+	}
+
+	TArray<FString> Steps;
+	const auto AddStep = [&Steps, &OutMinimumAP](const FString& Label, const int32 Cost)
+	{
+		OutMinimumAP += Cost;
+		Steps.Add(FString::Printf(
+			TEXT("%d. %s（%d AP）"),
+			Steps.Num() + 1,
+			*Label,
+			Cost));
+	};
+	const auto Knows = [&State](const FName FactId)
+	{
+		const EWSKnowledgeLevel* Level = State.PlayerKnowledge.Find(FactId);
+		return Level && *Level != EWSKnowledgeLevel::Unknown;
+	};
+
+	if (State.Tasks.GeneratorProgress < 2)
+	{
+		const bool bTreatmentResourceReachable =
+			State.Resources.Medicine > 0
+			|| (State.Resources.HeatPack > 0
+				&& (State.Flags.bHeatPackRevealed || !State.Flags.bGuHengDiagnosed));
+		if (State.Flags.bGuHengTreated)
+		{
+			AddStep(TEXT("维修间：修复发电机"), 1);
+		}
+		else if (bTreatmentResourceReachable)
+		{
+			if (!State.Flags.bGuHengDiagnosed)
+			{
+				AddStep(TEXT("叶澄：选择“询问”确认顾衡伤势"), 1);
+			}
+			if (!State.Flags.bMedicalRoomHeated)
+			{
+				AddStep(TEXT("医务室：恢复供暖"), 1);
+			}
+			AddStep(
+				State.Resources.Medicine > 0
+					? TEXT("医务室：使用药品治疗顾衡")
+					: TEXT("医务室：使用保温包稳定顾衡"),
+				1);
+			AddStep(TEXT("维修间：修复发电机"), 1);
+		}
+		else
+		{
+			const bool bKnowsRestart = Knows(TEXT("FACT_FORCED_RESTART_SUSPICION"));
+			const bool bKnowsBurntRelay = Knows(TEXT("FACT_BURNT_RELAY"));
+			if (!bKnowsRestart)
+			{
+				AddStep(TEXT("控制室：读取发电机深层日志"), 1);
+			}
+			if (!bKnowsBurntRelay)
+			{
+				AddStep(TEXT("维修间：检查烧毁的控制柜"), 1);
+			}
+			if (!State.Flags.bGuHengCooperative)
+			{
+				AddStep(TEXT("顾衡：用两条技术证据争取合作"), 1);
+			}
+
+			const bool bCanRecoverRelay =
+				State.Resources.ReplacementRelay > 0
+				|| State.Flags.bKitchenHeaterIntact;
+			if (State.Resources.ReplacementRelay <= 0
+				&& State.Flags.bKitchenHeaterIntact)
+			{
+				AddStep(TEXT("厨房：拆取兼容继电器"), 1);
+			}
+			const bool bCanCreateStableRepair =
+				bCanRecoverRelay
+				&& (State.Flags.bRepairRoomHeated || State.Resources.Fuel > 0);
+			if (bCanRecoverRelay
+				&& !State.Flags.bRepairRoomHeated
+				&& State.Resources.Fuel > 0)
+			{
+				AddStep(TEXT("维修间：恢复供暖"), 1);
+			}
+			const int32 RepairActions = bCanCreateStableRepair
+				? 1
+				: FMath::Max(1, 2 - State.Tasks.GeneratorProgress);
+			for (int32 Index = 0; Index < RepairActions; ++Index)
+			{
+				AddStep(TEXT("维修间：修复发电机"), 1);
+			}
+		}
+	}
+	if (State.Tasks.AntennaCalibration < 1)
+	{
+		AddStep(TEXT("室外天线：完成校准"), 2);
+	}
+	AddStep(TEXT("控制室：发送求救信号"), 0);
+
+	return FString::Join(Steps, TEXT("\n"));
+}
+
 void UWhiteoutHUDWidget::UpdateGuideContext(const FWSGameState& State)
 {
 	if (!GuideContextText)
@@ -1544,7 +1682,7 @@ void UWhiteoutHUDWidget::UpdateGuideContext(const FWSGameState& State)
 		return Result;
 	};
 	GuideContextText->SetText(FText::FromString(FString::Printf(
-		TEXT("本轮即时读数｜AP %d / 8\n%s\n%s\n%s\n\n下一步：%s"),
+		TEXT("本轮即时读数｜AP %d / 12\n%s\n%s\n%s\n\n下一步：%s"),
 		State.ActionPoints,
 		*CharacterLine(EWSCharacterId::Player),
 		*CharacterLine(EWSCharacterId::GuHeng),
@@ -1647,8 +1785,12 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 		}
 	}
 	EvidenceProgressText->SetText(FText::FromString(FString::Printf(
-		TEXT("重要性　● 关键　　● 重要　　● 普通　　　　　　　　　　　　　　收集进度 %02d / 18"),
-		FMath::Clamp(State.Evidence.Num(), 0, 18))));
+		TEXT("现场证据 %02d / %02d　｜　已确认事实 %02d / %02d　｜　待核验 %02d"),
+		FMath::Clamp(State.Evidence.Num(), 0, CollectableEvidenceCount),
+		CollectableEvidenceCount,
+		FMath::Clamp(ConfirmedCount, 0, DiscoverableFactCount),
+		DiscoverableFactCount,
+		ClaimCount)));
 
 	EvidenceCardGrid->ClearChildren();
 	EvidenceCardButtons.Reset();
@@ -1658,8 +1800,7 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 		const FString& Title,
 		const FString& Type,
 		const FString& Summary,
-		const FLinearColor& Importance,
-		const FString& ImportanceLabel,
+		const FLinearColor& TypeColor,
 		const TCHAR* IconName,
 		const int32 Category)
 	{
@@ -1668,8 +1809,8 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 			return;
 		}
 		UButton* CardButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), FName(*FString::Printf(TEXT("EvidenceCardButton%d"), CardIndex)));
+		SilenceButton(CardButton);
 		CardButton->SetBackgroundColor(FLinearColor::Transparent);
-		CardButton->OnHovered.AddDynamic(this, &UWhiteoutHUDWidget::PlayHoverSound);
 		CardButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ShowHoveredEvidenceDetail);
 		UBorder* Card = MakeGlassPanel(nullptr, FName(*FString::Printf(TEXT("EvidenceCard%d"), CardIndex)), FAnchors(), FMargin(), 12.0f, WSUITokens::Color::SurfacePanel);
 		SetGlassPanelPadding(Card, FMargin(12));
@@ -1682,12 +1823,12 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 			IconBox->SetHeightOverride(38.0f);
 			UImage* Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), FName(*FString::Printf(TEXT("EvidenceIcon%d"), CardIndex)));
 			Icon->SetBrushFromTexture(IconTexture, true);
-			Icon->SetColorAndOpacity(Importance);
+			Icon->SetColorAndOpacity(TypeColor);
 			IconBox->SetContent(Icon);
 			CardRow->AddChildToHorizontalBox(IconBox)->SetPadding(FMargin(0, 0, 10, 0));
 		}
 		UTextBlock* CardCopy = MakeText(FName(*FString::Printf(TEXT("EvidenceCopy%d"), CardIndex)), 13, Body);
-		CardCopy->SetText(FText::FromString(FString::Printf(TEXT("%s　●\n%s\n%s"), *Type, *Title, *Summary)));
+		CardCopy->SetText(FText::FromString(FString::Printf(TEXT("%s\n%s\n%s"), *Type, *Title, *Summary)));
 		UHorizontalBoxSlot* CopySlot = CardRow->AddChildToHorizontalBox(CardCopy);
 		CopySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		CopySlot->SetVerticalAlignment(VAlign_Center);
@@ -1697,7 +1838,7 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 		CardSlot->SetHorizontalAlignment(HAlign_Fill);
 		CardSlot->SetVerticalAlignment(VAlign_Fill);
 		EvidenceCardButtons.Add(CardButton);
-		EvidenceCardDetailCopies.Add(FString::Printf(TEXT("%s｜%s｜%s\n%s"), *Title, *Type, *ImportanceLabel, *Summary));
+		EvidenceCardDetailCopies.Add(FString::Printf(TEXT("%s｜%s\n%s"), *Title, *Type, *Summary));
 		++CardIndex;
 	};
 
@@ -1716,7 +1857,6 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 			bFile ? TEXT("文件记录") : bWitness ? TEXT("目击信息") : TEXT("物品证据"),
 			Summary,
 			bFile ? Amber : bWitness ? Danger : Body,
-			bWitness ? TEXT("关键") : bFile ? TEXT("重要") : TEXT("普通"),
 			bFile ? TEXT("I_Evidence_File") : bWitness ? TEXT("I_Evidence_Witness") : TEXT("I_Evidence_Item"),
 			bFile ? 1 : bWitness ? 3 : 2);
 	}
@@ -1727,9 +1867,11 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 			AddCard(
 				FWSPresentationText::FactLabel(Pair.Key).ToString(),
 				TEXT("对话记录"),
-				TEXT("待交叉核验｜") + FWSPresentationText::KnowledgeLevel(Pair.Value).ToString(),
+				FString::Printf(
+					TEXT("核验状态：%s。%s"),
+					*FWSPresentationText::KnowledgeLevel(Pair.Value).ToString(),
+					*FWSPresentationText::FactDescription(Pair.Key).ToString()),
 				Amber,
-				TEXT("重要"),
 				TEXT("I_Evidence_Dialogue"),
 				4);
 		}
@@ -1741,9 +1883,10 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 			AddCard(
 				FWSPresentationText::FactLabel(Pair.Key).ToString(),
 				TEXT("目击信息"),
-				TEXT("交叉核验完成，可用于行动判断。"),
+				FString::Printf(
+					TEXT("已确认。%s"),
+					*FWSPresentationText::FactDescription(Pair.Key).ToString()),
 				Danger,
-				TEXT("关键"),
 				TEXT("I_Evidence_Witness"),
 				3);
 		}
@@ -1755,16 +1898,15 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 		AddCard(
 			FWSPresentationText::PromiseLabel(Promise.ConditionId).ToString(),
 			TEXT("对话记录"),
-			TEXT("承诺状态｜") + FWSPresentationText::UI(StatusKey, StatusFallback).ToString(),
+			TEXT("玩家向顾衡作出的可核验承诺。当前状态：") + FWSPresentationText::UI(StatusKey, StatusFallback).ToString(),
 			Promise.bSettled && !Promise.bFulfilled ? Danger : Amber,
-			Promise.bSettled && !Promise.bFulfilled ? TEXT("关键") : TEXT("重要"),
 			TEXT("I_Evidence_Dialogue"),
 			4);
 	}
 	if (CardIndex == 0)
 	{
 		const int32 EmptyCategory = EvidenceFilterIndex == 0 ? 0 : EvidenceFilterIndex;
-		AddCard(TEXT("尚未取得证据"), TEXT("系统"), TEXT("调查设备、现场物品或与队员交谈。"), Body, TEXT("普通"), TEXT("I_Evidence_File"), EmptyCategory);
+		AddCard(TEXT("尚未取得证据"), TEXT("系统"), TEXT("调查发电机日志、控制柜，或与顾衡、叶澄交谈。"), Body, TEXT("I_Evidence_File"), EmptyCategory);
 	}
 	const bool bEvidenceAnimating = ActivePanelAnimations.ContainsByPredicate(
 		[this](const FPanelAnimation& A) { return A.Panel.Get() == EvidenceBorder; });
@@ -1956,7 +2098,6 @@ void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSA
 	if (FocusedActionName != NewName)
 	{
 		FocusedActionName = NewName;
-		PlayUISound(UIHoverSound, 0.42f);
 	}
 	if (CrosshairText)
 	{
@@ -2067,7 +2208,6 @@ void UWhiteoutHUDWidget::ShowActionPreview(
 	}
 	else
 	{
-		PlayUISound(UIRejectSound, 0.72f);
 		PreviewTitleText->SetColorAndOpacity(FSlateColor(Danger));
 		const FString RejectionFormat = FWSPresentationText::UI(TEXT("ui_rejection_format"), TEXT("现在不能执行\n{0}\n\n怎样改变条件\n{1}")).ToString();
 		FString Rejection = FString::Format(
@@ -2106,7 +2246,6 @@ void UWhiteoutHUDWidget::SetActionFeedback(
 	HideActionPreview();
 	if (Result.bCommitted)
 	{
-		PlayUISound(bPromiseCreated ? UIPromiseSound.Get() : UIConfirmSound.Get(), 0.84f);
 		const FString CommittedFormat = FWSPresentationText::UI(TEXT("ui_feedback_committed"), TEXT("已执行：{0}　｜　行动力 {1} → {2}")).ToString();
 		SystemMessage = FString::Format(*CommittedFormat, {ActionName.ToString(), Result.APBefore, Result.APAfter});
 		if (bPromiseCreated)
@@ -2128,7 +2267,6 @@ void UWhiteoutHUDWidget::SetActionFeedback(
 	}
 	else
 	{
-		PlayUISound(UIRejectSound, 0.80f);
 		const FString RejectedFormat = FWSPresentationText::UI(TEXT("ui_feedback_rejected"), TEXT("未执行：{0}　｜　{1}　｜　{2}")).ToString();
 		SystemMessage = FString::Format(
 			*RejectedFormat,
@@ -2875,13 +3013,11 @@ bool UWhiteoutHUDWidget::AdvanceOpening()
 		if (OpeningText) OpeningText->SetRenderOpacity(1.0f);
 		if (OpeningSubtitleText) OpeningSubtitleText->SetRenderOpacity(1.0f);
 		if (OpeningFooterText) OpeningFooterText->SetRenderOpacity(0.8f);
-		PlayUISound(UIConfirmSound, 0.38f);
 	}
 	else if (OpeningPhase == EWSOpeningPhase::AwaitingAdvance)
 	{
 		OpeningPhase = EWSOpeningPhase::FadingOutLine;
 		OpeningElapsed = 0.0f;
-		PlayUISound(UIConfirmSound, 0.38f);
 	}
 	return true;
 }
@@ -3030,14 +3166,6 @@ void UWhiteoutHUDWidget::ApplyEndingCinematic(const EWSEndingType Ending)
 	}
 }
 
-void UWhiteoutHUDWidget::PlayUISound(USoundBase* Sound, const float Volume)
-{
-	if (Sound)
-	{
-		UGameplayStatics::PlaySound2D(this, Sound, Volume);
-	}
-}
-
 void UWhiteoutHUDWidget::ShowPanelAnimated(UBorder* Panel, const bool bShow, const float Duration, const bool bScaleWithFade)
 {
 	if (!Panel)
@@ -3151,11 +3279,6 @@ void UWhiteoutHUDWidget::ShowPanelInstant(UBorder* Panel, const bool bShow)
 	Panel->SetRenderOpacity(1.0f);
 	Panel->SetRenderScale(FVector2D(1.0f));
 	Panel->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-}
-
-void UWhiteoutHUDWidget::PlayHoverSound()
-{
-	PlayUISound(UIHoverSound, 0.48f);
 }
 
 void UWhiteoutHUDWidget::DismissOpening()
@@ -3337,7 +3460,6 @@ void UWhiteoutHUDWidget::SaveGame()
 		SystemMessage = bSaved
 			? TEXT("本轮状态已保存。")
 			: TEXT("保存失败，请检查存储权限。");
-		PlayUISound(bSaved ? UIConfirmSound : UIRejectSound, 0.68f);
 		if (bSaved)
 		{
 			ResumeGame();
@@ -3357,8 +3479,7 @@ void UWhiteoutHUDWidget::LoadGame()
 		const bool bLoaded = StateSubsystem->LoadSnapshot();
 		SystemMessage = bLoaded
 			? TEXT("已恢复最近保存的本轮状态。")
-			: TEXT("没有可读取的 v0.9 或兼容旧版存档。");
-		PlayUISound(bLoaded ? UIConfirmSound : UIRejectSound, 0.68f);
+			: TEXT("没有可读取的 v1.0 或兼容旧版存档。");
 		if (bLoaded)
 		{
 			ResumeGame();
@@ -3386,7 +3507,6 @@ void UWhiteoutHUDWidget::OpenSettings()
 		PlayerController->SetInputMode(InputMode);
 		ResetMouseToViewportCenter();
 	}
-	PlayUISound(UIConfirmSound, 0.62f);
 }
 
 void UWhiteoutHUDWidget::CloseSettings()
@@ -3408,7 +3528,6 @@ void UWhiteoutHUDWidget::CloseSettings()
 		PlayerController->SetInputMode(InputMode);
 		ResetMouseToViewportCenter();
 	}
-	PlayUISound(UIHoverSound, 0.48f);
 }
 
 void UWhiteoutHUDWidget::RefreshSettingsUI()
@@ -3521,7 +3640,6 @@ void UWhiteoutHUDWidget::ToggleReducedMotion()
 	{
 		Settings->SetReducedMotionEnabled(!Settings->IsReducedMotionEnabled());
 		RefreshSettingsUI();
-		PlayUISound(UIConfirmSound, 0.55f);
 	}
 }
 
