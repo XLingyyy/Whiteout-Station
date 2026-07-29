@@ -1171,7 +1171,7 @@ void UWSAgentGateway::LoadConfig()
 	bLLMEnabled = false;
 
 	FString JsonText;
-	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v0.8.json");
+	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v0.9.json");
 	if (FFileHelper::LoadFileToString(JsonText, *ConfigPath))
 	{
 		TSharedPtr<FJsonObject> Root;

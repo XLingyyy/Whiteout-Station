@@ -1,0 +1,11 @@
+{
+	"schema": "whiteout.v0.9.npc-facing-audit.v1",
+	"capture": "lookat_side",
+	"passed": true,
+	"distance_cm": 271.89152248645047,
+	"body_alignment_dot": 0.99999982118606567,
+	"body_yaw_error_degrees": 0.034264020621776581,
+	"head_yaw_degrees": 0.47764468193054199,
+	"head_pitch_degrees": 2.8982288837432861,
+	"actor_yaw_degrees": -147.80810350992488
+}

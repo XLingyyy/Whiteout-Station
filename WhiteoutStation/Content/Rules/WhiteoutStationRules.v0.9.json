@@ -1,0 +1,473 @@
+{
+  "schema_version": 3,
+  "rules_version": "0.9.0",
+  "display_name": "风雪站：断电前夜",
+  "design_date": "2026-07-29",
+  "gameplay": {
+    "starting_action_points": 8,
+    "mid_crisis_threshold": 4,
+    "generator_required": 2,
+    "antenna_required": 1,
+    "model_call_soft_target": 8,
+    "model_call_hard_limit": 10
+  },
+  "initial_state": {
+    "resources": {
+      "fuel": 4,
+      "food": 2,
+      "medicine": 1,
+      "heat_pack": 1,
+      "replacement_relay": 0
+    },
+    "flags": {
+      "kitchen_heater_intact": true,
+      "heat_pack_revealed": false,
+      "repair_room_heated": false,
+      "medical_room_heated": false,
+      "gu_heng_diagnosed": false,
+      "gu_heng_treated": false,
+      "gu_heng_fed": false,
+      "gu_heng_cooperative": false,
+      "relay_compatibility_known": false,
+      "relay_installed": false,
+      "self_repair_used": false,
+      "records_preserved": false
+    },
+    "tasks": {
+      "generator_progress": 0,
+      "antenna_calibration": 0,
+      "signal_sent": false
+    },
+    "characters": {
+      "player": {
+        "health": 10.0,
+        "temperature": 7.2,
+        "hunger": 6.5,
+        "fatigue": 6.5,
+        "pressure": 4.0,
+        "trust": 5.0
+      },
+      "gu_heng": {
+        "health": 6.2,
+        "temperature": 6.6,
+        "hunger": 5.5,
+        "fatigue": 5.0,
+        "pressure": 7.2,
+        "trust": 3.5
+      },
+      "ye_cheng": {
+        "health": 9.2,
+        "temperature": 7.0,
+        "hunger": 6.8,
+        "fatigue": 5.5,
+        "pressure": 4.8,
+        "trust": 6.0
+      }
+    }
+  },
+  "balance": {
+    "per_ap": {
+      "temperature": -0.1,
+      "hunger": -0.1,
+      "fatigue": -0.1
+    },
+    "outdoor_per_ap": {
+      "player_temperature": -0.5,
+      "player_fatigue": -0.4
+    },
+    "actions": {
+      "talk_ye_cheng": {
+        "ye_trust": 0.4,
+        "ye_pressure": -0.4
+      },
+      "talk_gu_heng_treated": {
+        "gu_trust": 1.2,
+        "gu_pressure": -0.8
+      },
+      "talk_gu_heng_evidence": {
+        "gu_trust": 0.8,
+        "gu_pressure": 0.3
+      },
+      "talk_gu_heng_unprepared": {
+        "gu_trust": -0.3,
+        "gu_pressure": 0.4
+      },
+      "dialogue_challenge": {
+        "trust": -0.3,
+        "pressure": 0.3
+      },
+      "dialogue_challenge_with_gu_evidence": {
+        "trust": 0.2,
+        "pressure": 0.2
+      },
+      "dialogue_reassure": {
+        "trust": 0.3,
+        "pressure": -0.4
+      },
+      "dialogue_promise": {
+        "trust": 0.2,
+        "pressure": -0.2
+      },
+      "heat_repair_room": {
+        "fuel": -1,
+        "gu_temperature": 0.6,
+        "gu_pressure": -0.4
+      },
+      "heat_medical_room": {
+        "fuel": -1,
+        "gu_temperature": 0.4,
+        "ye_temperature": 0.3,
+        "ye_pressure": -0.3
+      },
+      "food_unit": {
+        "hunger": 2.0
+      },
+      "food_fair_gu_trust": 1.2,
+      "food_unfair_gu_trust": -0.6,
+      "food_fair_ye_trust": 0.5,
+      "food_unfair_ye_trust": -0.5,
+      "treat_with_medicine": {
+        "gu_health": 2.2,
+        "gu_temperature": 0.5,
+        "gu_fatigue": 0.8,
+        "gu_pressure": -1.6,
+        "gu_trust": 0.8
+      },
+      "treat_with_heat_pack": {
+        "gu_health": 1.2,
+        "gu_temperature": 1.0,
+        "gu_fatigue": 0.5,
+        "gu_pressure": -1.0,
+        "gu_trust": 0.5
+      },
+      "dismantle_cooperative": {
+        "gu_health": -0.2,
+        "gu_pressure": -0.3
+      },
+      "dismantle_solo": {
+        "player_health": -0.4,
+        "player_fatigue": -0.5,
+        "gu_trust": -0.3
+      },
+      "injured_repair": {
+        "gu_health": -0.6,
+        "gu_temperature": -0.2,
+        "gu_fatigue": -0.6,
+        "gu_pressure": 0.7
+      },
+      "stable_repair": {
+        "gu_fatigue": -0.4,
+        "gu_pressure": -0.4
+      },
+      "forced_self_repair": {
+        "player_health": -1.0,
+        "player_temperature": -0.4,
+        "player_fatigue": -1.5,
+        "player_pressure": 0.8
+      },
+      "mid_crisis_generator_idle_pressure": 0.3,
+      "mid_crisis_injured_worker_health": -0.2,
+      "mid_crisis_injured_worker_pressure": 0.4
+    },
+    "thresholds": {
+      "critical_health": 3.0,
+      "critical_temperature": 3.0,
+      "critical_fatigue": 3.0,
+      "critical_pressure": 8.5,
+      "safe_antenna_temperature": 5.5,
+      "heated_repair_temperature": 4.5,
+      "gu_food_cooperation_trust": 4.2,
+      "ye_heat_pack_disclosure_trust": 6.0
+    }
+  },
+  "facts": [
+    {
+      "id": "FACT_GENERATOR_PROTECTION_STOP",
+      "truth": true,
+      "initially_known_by": ["gu_heng"],
+      "evidence_ids": ["EVIDENCE_DEEP_GENERATOR_LOG"],
+      "disclosure": "investigate_generator_log",
+      "unlocks": ["FACT_FORCED_RESTART_SUSPICION"]
+    },
+    {
+      "id": "FACT_FORCED_RESTART_SUSPICION",
+      "truth": true,
+      "initially_known_by": [],
+      "evidence_ids": ["EVIDENCE_DEEP_GENERATOR_LOG"],
+      "disclosure": "investigate_generator_log",
+      "unlocks": ["talk_gu_heng:evidence"]
+    },
+    {
+      "id": "FACT_BURNT_RELAY",
+      "truth": true,
+      "initially_known_by": ["gu_heng"],
+      "evidence_ids": ["EVIDENCE_BURNT_RELAY", "EVIDENCE_ARC_MARKS"],
+      "disclosure": "inspect_control_cabinet",
+      "unlocks": ["dismantle_kitchen_heater"]
+    },
+    {
+      "id": "FACT_HAND_INJURY",
+      "truth": true,
+      "initially_known_by": ["gu_heng", "ye_cheng"],
+      "evidence_ids": ["EVIDENCE_BLOODY_BANDAGE", "EVIDENCE_HAND_OBSERVATION"],
+      "disclosure": "inspect_control_cabinet|talk_ye_cheng",
+      "unlocks": ["treat_gu_heng"]
+    },
+    {
+      "id": "FACT_MEDICAL_DIAGNOSIS",
+      "truth": true,
+      "initially_known_by": ["ye_cheng"],
+      "evidence_ids": ["EVIDENCE_MEDICAL_DIAGNOSIS"],
+      "disclosure": "talk_ye_cheng",
+      "unlocks": ["treat_gu_heng"]
+    },
+    {
+      "id": "FACT_HEAT_PACK",
+      "truth": true,
+      "initially_known_by": ["ye_cheng"],
+      "evidence_ids": ["EVIDENCE_HEAT_PACK"],
+      "disclosure": "talk_ye_cheng|mid_crisis",
+      "unlocks": ["treat_gu_heng:heat_pack"]
+    },
+    {
+      "id": "FACT_RELAY_COMPATIBILITY",
+      "truth": true,
+      "initially_known_by": ["gu_heng"],
+      "evidence_ids": ["EVIDENCE_HEATER_SERVICE_LABEL"],
+      "disclosure": "talk_gu_heng:evidence",
+      "unlocks": ["dismantle_kitchen_heater:safe"]
+    },
+    {
+      "id": "FACT_FORCED_RESTART_CONFIRMED",
+      "truth": true,
+      "initially_known_by": ["gu_heng"],
+      "evidence_ids": ["EVIDENCE_DEEP_GENERATOR_LOG", "EVIDENCE_ARC_MARKS"],
+      "disclosure": "talk_gu_heng:evidence",
+      "unlocks": ["ending:responsibility"]
+    }
+  ],
+  "actions": [
+    {
+      "id": "investigate_generator_log",
+      "display_name": "读取深层发电机日志",
+      "location": "control_room",
+      "executor": "player",
+      "ap_cost": 1,
+      "repeatable": false,
+      "requires_ai_expression": false,
+      "preview": "读取保护系统与手动旁路记录。",
+      "risk": "占用一个行动窗口，但会保留关键记录。",
+      "unlocks": ["talk_gu_heng:evidence", "forced_self_repair"]
+    },
+    {
+      "id": "inspect_control_cabinet",
+      "display_name": "检查控制柜",
+      "location": "repair_room",
+      "executor": "player",
+      "ap_cost": 1,
+      "repeatable": false,
+      "requires_ai_expression": false,
+      "preview": "检查烧毁继电器、电弧痕迹与伤手线索。",
+      "risk": "顾衡可能干预解释。",
+      "unlocks": ["talk_gu_heng:evidence", "dismantle_kitchen_heater"]
+    },
+    {
+      "id": "talk_gu_heng",
+      "display_name": "私下询问顾衡",
+      "location": "any_safe_zone",
+      "executor": "player+gu_heng",
+      "ap_cost": 1,
+      "repeatable": true,
+      "max_uses": 2,
+      "requires_ai_expression": true,
+      "preview": "询问、质疑或交换维修条件。",
+      "risk": "没有证据或实际帮助时会降低信任。",
+      "unlocks": ["gu_heng_cooperation", "relay_compatibility"]
+    },
+    {
+      "id": "talk_ye_cheng",
+      "display_name": "私下询问叶澄",
+      "location": "any_safe_zone",
+      "executor": "player+ye_cheng",
+      "ap_cost": 1,
+      "repeatable": true,
+      "max_uses": 2,
+      "requires_ai_expression": true,
+      "preview": "获取顾衡伤势与暴雪风险判断。",
+      "risk": "保温包只会在规则允许时披露。",
+      "unlocks": ["treat_gu_heng", "heat_pack"]
+    },
+    {
+      "id": "heat_repair_room",
+      "display_name": "为维修间供暖",
+      "location": "repair_room",
+      "executor": "player",
+      "ap_cost": 1,
+      "repeatable": false,
+      "requires_ai_expression": false,
+      "preview": "消耗1燃料，提高维修效率并保护顾衡。",
+      "risk": "燃料低于夜间建议储备。",
+      "unlocks": ["repair_generator:heated"]
+    },
+    {
+      "id": "heat_medical_room",
+      "display_name": "为医务室供暖",
+      "location": "medical_room",
+      "executor": "player",
+      "ap_cost": 1,
+      "repeatable": false,
+      "requires_ai_expression": false,
+      "preview": "消耗1燃料，允许完整诊断与治疗。",
+      "risk": "延迟维修并消耗夜间燃料。",
+      "unlocks": ["treat_gu_heng:full"]
+    },
+    {
+      "id": "distribute_food",
+      "display_name": "准备并分配食物",
+      "location": "kitchen",
+      "executor": "player",
+      "ap_cost": 1,
+      "repeatable": false,
+      "requires_ai_expression": false,
+      "preview": "一次性分配最多2份食物。",
+      "risk": "分配公平性会改变信任。",
+      "parameters": ["player", "gu_heng", "ye_cheng"],
+      "unlocks": ["gu_heng_cooperation:fed"]
+    },
+    {
+      "id": "treat_gu_heng",
+      "display_name": "治疗顾衡",
+      "location": "medical_room",
+      "executor": "ye_cheng+gu_heng",
+      "ap_cost": 1,
+      "repeatable": false,
+      "requires_ai_expression": false,
+      "preview": "消耗药品或已披露的保温包，改善伤手。",
+      "risk": "医务室未供暖时无法完成有效治疗。",
+      "parameters": ["resource"],
+      "unlocks": ["repair_generator:stable", "gu_heng_cooperation"]
+    },
+    {
+      "id": "dismantle_kitchen_heater",
+      "display_name": "拆除厨房加热器",
+      "location": "kitchen",
+      "executor": "player|gu_heng",
+      "ap_cost": 1,
+      "repeatable": false,
+      "requires_ai_expression": false,
+      "preview": "取得替代继电器。",
+      "risk": "破坏夜间供暖能力；独自拆解会受轻伤。",
+      "unlocks": ["repair_generator:relay"]
+    },
+    {
+      "id": "repair_generator",
+      "display_name": "维修发电机",
+      "location": "repair_room",
+      "executor": "gu_heng+player",
+      "ap_cost": 1,
+      "repeatable": true,
+      "max_uses": 2,
+      "requires_ai_expression": false,
+      "preview": "根据治疗、供暖与继电器状态产生1—2点进度。",
+      "risk": "顾衡带伤维修会继续恶化。",
+      "unlocks": ["calibrate_antenna"]
+    },
+    {
+      "id": "forced_self_repair",
+      "display_name": "强行自行维修",
+      "location": "repair_room",
+      "executor": "player",
+      "ap_cost": 2,
+      "repeatable": false,
+      "requires_ai_expression": false,
+      "preview": "不依赖顾衡，2AP只获得1点进度。",
+      "risk": "玩家受伤并大幅疲劳；只能使用一次。",
+      "unlocks": ["repair_generator:partial"]
+    },
+    {
+      "id": "calibrate_antenna",
+      "display_name": "校准室外天线",
+      "location": "outdoor_antenna",
+      "executor": "player",
+      "ap_cost": 2,
+      "repeatable": false,
+      "requires_ai_expression": false,
+      "preview": "发电机恢复后完成天线校准。",
+      "risk": "结算两次室外暴露，明显降低体温与疲劳。",
+      "unlocks": ["send_signal"]
+    },
+    {
+      "id": "send_signal",
+      "display_name": "发送求救信号",
+      "location": "control_room",
+      "executor": "player",
+      "ap_cost": 0,
+      "repeatable": false,
+      "requires_ai_expression": false,
+      "preview": "发电机2/2且天线1/1时立即发信。",
+      "risk": "无。",
+      "unlocks": ["ending_choice"]
+    }
+  ],
+  "routes": {
+    "medical_cooperation": {
+      "display_name": "医疗协作",
+      "expected_ap_spent": 8,
+      "expected_score_range": [70, 89],
+      "steps": [
+        {"action": "talk_ye_cheng", "params": {"dialogue_act": "ask"}},
+        {"action": "heat_medical_room"},
+        {"action": "treat_gu_heng", "params": {"resource": "medicine"}},
+        {"action": "talk_gu_heng", "params": {"dialogue_act": "promise", "promise_condition": "heat_repair_room"}},
+        {"action": "heat_repair_room"},
+        {"action": "repair_generator"},
+        {"action": "calibrate_antenna"},
+        {"action": "send_signal"}
+      ]
+    },
+    "technical_replacement": {
+      "display_name": "技术替代",
+      "expected_ap_spent": 8,
+      "expected_score_range": [65, 84],
+      "steps": [
+        {"action": "investigate_generator_log"},
+        {"action": "inspect_control_cabinet"},
+        {"action": "talk_gu_heng", "params": {"dialogue_act": "challenge"}},
+        {"action": "dismantle_kitchen_heater"},
+        {"action": "heat_repair_room"},
+        {"action": "repair_generator"},
+        {"action": "calibrate_antenna"},
+        {"action": "send_signal"}
+      ]
+    },
+    "forced_quick_repair": {
+      "display_name": "强行快修",
+      "expected_ap_spent": 6,
+      "expected_score_range": [55, 79],
+      "steps": [
+        {"action": "heat_repair_room"},
+        {"action": "distribute_food", "params": {"player": 1, "gu_heng": 1, "ye_cheng": 0}},
+        {"action": "repair_generator"},
+        {"action": "repair_generator"},
+        {"action": "calibrate_antenna"},
+        {"action": "send_signal"}
+      ]
+    }
+  },
+  "score": {
+    "weights": {
+      "task_quality": 30,
+      "people": 30,
+      "effective_reserves": 20,
+      "social_stability": 12,
+      "information_responsibility": 8
+    },
+    "ratings": {
+      "S": [90, 100],
+      "A": [80, 89],
+      "B": [70, 79],
+      "C": [60, 69],
+      "D": [0, 59]
+    }
+  }
+}

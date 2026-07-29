@@ -3357,7 +3357,7 @@ void UWhiteoutHUDWidget::LoadGame()
 		const bool bLoaded = StateSubsystem->LoadSnapshot();
 		SystemMessage = bLoaded
 			? TEXT("已恢复最近保存的本轮状态。")
-			: TEXT("没有可读取的 v0.8 或兼容旧版存档。");
+			: TEXT("没有可读取的 v0.9 或兼容旧版存档。");
 		PlayUISound(bLoaded ? UIConfirmSound : UIRejectSound, 0.68f);
 		if (bLoaded)
 		{

@@ -5,8 +5,8 @@
 
 void UWSLookAtSkeletalMeshComponent::SetLookAtAngles(const float InYawDegrees, const float InPitchDegrees)
 {
-	LookAtYawDegrees = FMath::Clamp(InYawDegrees, -55.0f, 55.0f);
-	LookAtPitchDegrees = FMath::Clamp(InPitchDegrees, -20.0f, 25.0f);
+	LookAtYawDegrees = FMath::Clamp(InYawDegrees, -20.0f, 20.0f);
+	LookAtPitchDegrees = FMath::Clamp(InPitchDegrees, -12.0f, 15.0f);
 }
 
 int32 UWSLookAtSkeletalMeshComponent::ResolveHeadBoneIndex()
@@ -47,10 +47,11 @@ void UWSLookAtSkeletalMeshComponent::FinalizeBoneTransform()
 	{
 		const FReferenceSkeleton& Skeleton = MeshAsset->GetRefSkeleton();
 		const FTransform OldHead = ComponentTransforms[HeadIndex];
-		const AActor* OwnerActor = GetOwner();
-		const FVector WorldRight = OwnerActor ? OwnerActor->GetActorRightVector() : FVector::RightVector;
+		// Imported VRM characters visually face component-local +Y, making
+		// component-local -X their visual right axis.
+		const FVector WorldVisualRight = -GetForwardVector();
 		const FQuat WorldYaw(FVector::UpVector, FMath::DegreesToRadians(LookAtYawDegrees));
-		const FQuat WorldPitch(WorldRight, FMath::DegreesToRadians(-LookAtPitchDegrees));
+		const FQuat WorldPitch(WorldVisualRight, FMath::DegreesToRadians(-LookAtPitchDegrees));
 		const FQuat MeshComponentToWorld = GetComponentTransform().GetRotation();
 		const FQuat ComponentDelta = MeshComponentToWorld.Inverse() * (WorldPitch * WorldYaw) * MeshComponentToWorld;
 		FTransform NewHead = OldHead;

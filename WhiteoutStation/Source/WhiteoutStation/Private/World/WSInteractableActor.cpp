@@ -89,7 +89,7 @@ void AWSInteractableActor::BeginPlay()
 	SetActorTickEnabled(true);
 	CaptureHomeTransform();
 	RestoreLegacyCharacterMaterials();
-	ResolveV08Animations();
+	ResolveV09Animations();
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
@@ -126,14 +126,28 @@ void AWSInteractableActor::Tick(const float DeltaSeconds)
 		return;
 	}
 
+	const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	const FVector PlayerOffset = PlayerPawn
+		? PlayerPawn->GetActorLocation() - GetActorLocation()
+		: FVector::ZeroVector;
+	const bool bPlayerInRange = PlayerPawn
+		&& !PlayerOffset.IsNearlyZero()
+		&& PlayerOffset.SizeSquared2D() <= FMath::Square(
+			bDialogueLookAtActive ? 1300.0f : 850.0f);
+
 	if (bMovementActive)
 	{
 		const FVector CurrentLocation = GetActorLocation();
 		const FVector NextLocation = FMath::VInterpConstantTo(CurrentLocation, MovementTarget, DeltaSeconds, 82.0f);
 		const FVector TravelDirection = (MovementTarget - CurrentLocation).GetSafeNormal2D();
-		if (!TravelDirection.IsNearlyZero())
+		const FVector FacingDirection =
+			ActiveMovementIntent == EWSNPCMovementIntent::StepBack
+				&& bPlayerInRange
+			? PlayerOffset.GetSafeNormal2D()
+			: TravelDirection;
+		if (!FacingDirection.IsNearlyZero())
 		{
-			const FRotator DesiredRotation(0.0f, TravelDirection.Rotation().Yaw, 0.0f);
+			const FRotator DesiredRotation = MakeActorRotationFacing(FacingDirection);
 			SetActorRotation(FMath::RInterpTo(GetActorRotation(), DesiredRotation, DeltaSeconds, 7.0f));
 		}
 		if (!IsMovementPathClear(CurrentLocation, NextLocation))
@@ -150,6 +164,17 @@ void AWSInteractableActor::Tick(const float DeltaSeconds)
 			}
 		}
 	}
+	else
+	{
+		const FRotator DesiredRotation = bPlayerInRange
+			? MakeActorRotationFacing(PlayerOffset)
+			: HomeRotation;
+		SetActorRotation(FMath::RInterpTo(
+			GetActorRotation(),
+			DesiredRotation,
+			DeltaSeconds,
+			bPlayerInRange ? 6.5f : 2.4f));
+	}
 
 	if (bReactionActive && GetWorld()->GetTimeSeconds() >= ReactionUntilTime)
 	{
@@ -160,9 +185,6 @@ void AWSInteractableActor::Tick(const float DeltaSeconds)
 		}
 	}
 
-	const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
-	const bool bPlayerInRange = PlayerPawn
-		&& FVector::DistSquared2D(PlayerPawn->GetActorLocation(), GetActorLocation()) <= FMath::Square(bDialogueLookAtActive ? 1300.0f : 850.0f);
 	float TargetYaw = 0.0f;
 	float TargetPitch = 0.0f;
 	if (bPlayerInRange)
@@ -173,8 +195,13 @@ void AWSInteractableActor::Tick(const float DeltaSeconds)
 		const FVector HeadLocation = CharacterMesh->GetBoneLocation(HeadBone, EBoneSpaces::WorldSpace);
 		const FVector ToPlayer = PlayerPawn->GetPawnViewLocation() - HeadLocation;
 		const FRotator TargetRotation = ToPlayer.Rotation();
-		TargetYaw = FMath::Clamp(FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, TargetRotation.Yaw), -55.0f, 55.0f);
-		TargetPitch = FMath::Clamp(TargetRotation.Pitch, -20.0f, 25.0f);
+		TargetYaw = FMath::Clamp(
+			FMath::FindDeltaAngleDegrees(
+				GetVisualFacingYaw(),
+				TargetRotation.Yaw),
+			-20.0f,
+			20.0f);
+		TargetPitch = FMath::Clamp(TargetRotation.Pitch, -12.0f, 15.0f);
 	}
 	CurrentLookAtYaw = FMath::FInterpTo(CurrentLookAtYaw, TargetYaw, DeltaSeconds, bPlayerInRange ? 4.8f : 3.2f);
 	CurrentLookAtPitch = FMath::FInterpTo(CurrentLookAtPitch, TargetPitch, DeltaSeconds, bPlayerInRange ? 4.8f : 3.2f);
@@ -473,7 +500,7 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 		{
 			CaptureHomeTransform();
 			RestoreLegacyCharacterMaterials();
-			ResolveV08Animations();
+			ResolveV09Animations();
 			StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterStateChanged);
 			StateSubsystem->OnActionCommitted.AddUniqueDynamic(this, &AWSInteractableActor::HandleCharacterActionCommitted);
 			StateSubsystem->OnDialogueLine.AddUniqueDynamic(this, &AWSInteractableActor::HandleDialogueLine);
@@ -483,7 +510,7 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 	}
 	CaptureHomeTransform();
 	RestoreLegacyCharacterMaterials();
-	ResolveV08Animations();
+	ResolveV09Animations();
 	PlayCharacterAnimation(IdleAnimation);
 }
 
@@ -527,7 +554,7 @@ void AWSInteractableActor::RestoreLegacyCharacterMaterials()
 			UE_LOG(
 				LogTemp,
 				Display,
-				TEXT("WhiteoutStation v0.8: restored imported character material action=%s slot=%d material=%s"),
+				TEXT("WhiteoutStation v0.9: restored imported character material action=%s slot=%d material=%s"),
 				*ActionId.ToString(),
 				Index,
 				*ImportedMaterial->GetPathName());
@@ -535,7 +562,32 @@ void AWSInteractableActor::RestoreLegacyCharacterMaterials()
 	}
 }
 
-void AWSInteractableActor::ResolveV08Animations()
+float AWSInteractableActor::GetVisualFacingYaw() const
+{
+	const float MeshYaw = CharacterMesh
+		? CharacterMesh->GetRelativeRotation().Yaw
+		: 0.0f;
+	return FRotator::NormalizeAxis(
+		GetActorRotation().Yaw + MeshYaw + VisualFacingYawOffsetDegrees);
+}
+
+FRotator AWSInteractableActor::MakeActorRotationFacing(
+	const FVector& WorldDirection) const
+{
+	if (WorldDirection.IsNearlyZero())
+	{
+		return GetActorRotation();
+	}
+	const float MeshYaw = CharacterMesh
+		? CharacterMesh->GetRelativeRotation().Yaw
+		: 0.0f;
+	return FRotator(
+		0.0f,
+		WorldDirection.Rotation().Yaw - MeshYaw - VisualFacingYawOffsetDegrees,
+		0.0f);
+}
+
+void AWSInteractableActor::ResolveV09Animations()
 {
 	if (!bCharacterPresentation)
 	{
@@ -543,8 +595,8 @@ void AWSInteractableActor::ResolveV08Animations()
 	}
 	const bool bGuHeng = ActionId == TEXT("talk_gu_heng");
 	const FString Root = bGuHeng
-		? TEXT("/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV08")
-		: TEXT("/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV08");
+		? TEXT("/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV09")
+		: TEXT("/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV09");
 	const FString Prefix = bGuHeng ? TEXT("AN_GuHeng") : TEXT("AN_YeCheng_V10");
 	const auto LoadAnimation = [&Root, &Prefix](const TCHAR* Suffix)
 	{
@@ -573,7 +625,7 @@ void AWSInteractableActor::ResolveV08Animations()
 		UE_LOG(
 			LogTemp,
 			Error,
-			TEXT("WhiteoutStation v0.8: exact-skeleton animation set is incomplete for %s"),
+			TEXT("WhiteoutStation v0.9: exact-skeleton animation set is incomplete for %s"),
 			*ActionId.ToString());
 	}
 }
@@ -610,6 +662,7 @@ UAnimSequence* AWSInteractableActor::AnimationForReaction(const EWSNPCReaction R
 void AWSInteractableActor::PlayReaction(const EWSNPCReaction Reaction)
 {
 	bMovementActive = false;
+	ActiveMovementIntent = EWSNPCMovementIntent::Stay;
 	PendingReaction = EWSNPCReaction::Neutral;
 	UAnimSequence* Animation = AnimationForReaction(Reaction);
 	if (!Animation)
@@ -697,6 +750,7 @@ bool AWSInteractableActor::TryStartMovement(
 	MovementStart = CurrentLocation;
 	MovementTarget = Candidate;
 	PendingReaction = FollowupReaction;
+	ActiveMovementIntent = Intent;
 	bMovementActive = true;
 	bReactionActive = false;
 	NextMovementAllowedTime = Now + 5.5f;
@@ -741,10 +795,7 @@ void AWSInteractableActor::FinishMovement()
 		return;
 	}
 	bMovementActive = false;
-	if (FVector::DistSquared2D(GetActorLocation(), HomeLocation) <= FMath::Square(4.0f))
-	{
-		SetActorRotation(HomeRotation);
-	}
+	ActiveMovementIntent = EWSNPCMovementIntent::Stay;
 	const EWSNPCReaction Reaction = PendingReaction;
 	PendingReaction = EWSNPCReaction::Neutral;
 	UE_LOG(
@@ -786,6 +837,7 @@ void AWSInteractableActor::HandleCharacterActionCommitted(const FWSActionResult&
 	}
 	bMovementActive = false;
 	bReactionActive = false;
+	ActiveMovementIntent = EWSNPCMovementIntent::Stay;
 	PendingReaction = EWSNPCReaction::Neutral;
 	PlayCharacterAnimation(IdleAnimation);
 }
@@ -818,7 +870,11 @@ void AWSInteractableActor::SetCharacterPreviewMood(const bool bHighTrust)
 	static_cast<void>(bHighTrust);
 	bMovementActive = false;
 	bReactionActive = false;
+	ActiveMovementIntent = EWSNPCMovementIntent::Stay;
 	PendingReaction = EWSNPCReaction::Neutral;
+	CurrentLookAtYaw = 0.0f;
+	CurrentLookAtPitch = 0.0f;
+	CharacterMesh->SetLookAtAngles(0.0f, 0.0f);
 	PlayCharacterAnimation(IdleAnimation);
 }
 
@@ -830,7 +886,11 @@ void AWSInteractableActor::SetCharacterPreviewPerformance(const FName Performanc
 	}
 	bMovementActive = false;
 	bReactionActive = false;
+	ActiveMovementIntent = EWSNPCMovementIntent::Stay;
 	PendingReaction = EWSNPCReaction::Neutral;
+	CurrentLookAtYaw = 0.0f;
+	CurrentLookAtPitch = 0.0f;
+	CharacterMesh->SetLookAtAngles(0.0f, 0.0f);
 	if (PerformanceName == TEXT("walk"))
 	{
 		PlayCharacterAnimation(WalkAnimation ? WalkAnimation.Get() : IdleAnimation.Get(), true);

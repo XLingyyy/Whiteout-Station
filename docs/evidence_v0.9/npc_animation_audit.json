@@ -1,0 +1,234 @@
+{
+  "schema": "whiteout.v0.9.npc-animation-audit.v1",
+  "engine_version": "5.8.1-56057345+++UE5+Release-5.8",
+  "passed": true,
+  "audited_assets": 14,
+  "expected_assets": 14,
+  "failures": [],
+  "records": [
+    {
+      "character": "GuHeng",
+      "animation": "Idle",
+      "duration_seconds": 2.4000000953674316,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 49.343779887334954,
+      "minimum_lateral_hand_separation_cm": 49.30689519120219,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.30000001191354236,
+        "J_Bip_C_Chest": 0.19999998807510705,
+        "J_Bip_C_UpperChest": 0.2500000000006049,
+        "J_Bip_C_Neck": 0.0,
+        "J_Bip_C_Head": 0.18000000715235204
+      }
+    },
+    {
+      "character": "GuHeng",
+      "animation": "Walk",
+      "duration_seconds": 1.0,
+      "track_count": 20,
+      "minimum_hand_separation_cm": 49.343779887334954,
+      "minimum_lateral_hand_separation_cm": 49.15131956004947,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.9836555719363215,
+        "J_Bip_C_Spine": 0.7956175208091463,
+        "J_Bip_C_Chest": 0.5967131257035824,
+        "J_Bip_C_UpperChest": 0.0,
+        "J_Bip_C_Neck": 0.0,
+        "J_Bip_C_Head": 0.0
+      }
+    },
+    {
+      "character": "GuHeng",
+      "animation": "Acknowledge",
+      "duration_seconds": 1.3333333730697632,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 49.34377988733493,
+      "minimum_lateral_hand_separation_cm": 49.30689519120217,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.0,
+        "J_Bip_C_Chest": 0.0,
+        "J_Bip_C_UpperChest": 0.6859999299044268,
+        "J_Bip_C_Neck": 1.4700000286090853,
+        "J_Bip_C_Head": 4.900002479552894
+      }
+    },
+    {
+      "character": "GuHeng",
+      "animation": "Consider",
+      "duration_seconds": 1.6666666269302368,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 49.343779887334954,
+      "minimum_lateral_hand_separation_cm": 49.30689519120219,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.0,
+        "J_Bip_C_Chest": 0.0,
+        "J_Bip_C_UpperChest": 0.7578946948047331,
+        "J_Bip_C_Neck": 1.421052575110001,
+        "J_Bip_C_Head": 4.945293900007335
+      }
+    },
+    {
+      "character": "GuHeng",
+      "animation": "Reassure",
+      "duration_seconds": 1.5333333015441895,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 49.343779887334954,
+      "minimum_lateral_hand_separation_cm": 49.30689519120219,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.0,
+        "J_Bip_C_Chest": 0.0,
+        "J_Bip_C_UpperChest": 0.800000011920675,
+        "J_Bip_C_Neck": 0.0,
+        "J_Bip_C_Head": 1.499999999998336
+      }
+    },
+    {
+      "character": "GuHeng",
+      "animation": "Reject",
+      "duration_seconds": 1.2666666507720947,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 49.343779887334954,
+      "minimum_lateral_hand_separation_cm": 49.30689519120219,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.0,
+        "J_Bip_C_Chest": 0.0,
+        "J_Bip_C_UpperChest": 0.0,
+        "J_Bip_C_Neck": 1.370554566381764,
+        "J_Bip_C_Head": 5.025369167327478
+      }
+    },
+    {
+      "character": "GuHeng",
+      "animation": "Alarmed",
+      "duration_seconds": 1.1333333253860474,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 48.77447971867135,
+      "minimum_lateral_hand_separation_cm": 48.737430388847415,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.0,
+        "J_Bip_C_Chest": 0.0,
+        "J_Bip_C_UpperChest": 1.3846926689133907,
+        "J_Bip_C_Neck": 1.3846926689133907,
+        "J_Bip_C_Head": 2.769385576247325
+      }
+    },
+    {
+      "character": "YeCheng",
+      "animation": "Idle",
+      "duration_seconds": 2.4000000953674316,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 50.00449629795675,
+      "minimum_lateral_hand_separation_cm": 49.97239764832746,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.30000001191354236,
+        "J_Bip_C_Chest": 0.19999998807510705,
+        "J_Bip_C_UpperChest": 0.2500000000006049,
+        "J_Bip_C_Neck": 0.0,
+        "J_Bip_C_Head": 0.18000000715235204
+      }
+    },
+    {
+      "character": "YeCheng",
+      "animation": "Walk",
+      "duration_seconds": 1.0,
+      "track_count": 20,
+      "minimum_hand_separation_cm": 50.00449629795675,
+      "minimum_lateral_hand_separation_cm": 49.79927792590063,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.9836555719363215,
+        "J_Bip_C_Spine": 0.7956175208091463,
+        "J_Bip_C_Chest": 0.5967131257035824,
+        "J_Bip_C_UpperChest": 0.0,
+        "J_Bip_C_Neck": 0.0,
+        "J_Bip_C_Head": 0.0
+      }
+    },
+    {
+      "character": "YeCheng",
+      "animation": "Acknowledge",
+      "duration_seconds": 1.3333333730697632,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 50.004496297956685,
+      "minimum_lateral_hand_separation_cm": 49.972397648327394,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.0,
+        "J_Bip_C_Chest": 0.0,
+        "J_Bip_C_UpperChest": 0.6859999299044268,
+        "J_Bip_C_Neck": 1.4700000286090853,
+        "J_Bip_C_Head": 4.900002479552894
+      }
+    },
+    {
+      "character": "YeCheng",
+      "animation": "Consider",
+      "duration_seconds": 1.6666666269302368,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 50.00449629795675,
+      "minimum_lateral_hand_separation_cm": 49.97239764832746,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.0,
+        "J_Bip_C_Chest": 0.0,
+        "J_Bip_C_UpperChest": 0.7578946948047331,
+        "J_Bip_C_Neck": 1.421052575110001,
+        "J_Bip_C_Head": 4.945293900007335
+      }
+    },
+    {
+      "character": "YeCheng",
+      "animation": "Reassure",
+      "duration_seconds": 1.5333333015441895,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 50.00449629795675,
+      "minimum_lateral_hand_separation_cm": 49.97239764832746,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.0,
+        "J_Bip_C_Chest": 0.0,
+        "J_Bip_C_UpperChest": 0.800000011920675,
+        "J_Bip_C_Neck": 0.0,
+        "J_Bip_C_Head": 1.499999999998336
+      }
+    },
+    {
+      "character": "YeCheng",
+      "animation": "Reject",
+      "duration_seconds": 1.2666666507720947,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 50.00449629795675,
+      "minimum_lateral_hand_separation_cm": 49.97239764832746,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.0,
+        "J_Bip_C_Chest": 0.0,
+        "J_Bip_C_UpperChest": 0.0,
+        "J_Bip_C_Neck": 1.370554566381764,
+        "J_Bip_C_Head": 5.025369167327478
+      }
+    },
+    {
+      "character": "YeCheng",
+      "animation": "Alarmed",
+      "duration_seconds": 1.1333333253860474,
+      "track_count": 14,
+      "minimum_hand_separation_cm": 49.696327646957386,
+      "minimum_lateral_hand_separation_cm": 49.664144273154214,
+      "maximum_torso_deviation_degrees": {
+        "J_Bip_C_Hips": 0.0,
+        "J_Bip_C_Spine": 0.0,
+        "J_Bip_C_Chest": 0.0,
+        "J_Bip_C_UpperChest": 1.3846926689133907,
+        "J_Bip_C_Neck": 1.3846926689133907,
+        "J_Bip_C_Head": 2.769385576247325
+      }
+    }
+  ]
+}

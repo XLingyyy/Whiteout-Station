@@ -1,12 +1,12 @@
 # Whiteout Station / 风雪站：断电前夜
 
-Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前版本为 v0.8。
+Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前版本为 v0.9。
 
 玩家在暴风雪抵达前管理 8 点行动力，与工程师顾衡、医生叶澄调查停电、
 分配物资、修复发电机和室外天线，并尝试发出求救信号。开场、探索、行动
 预览、分阶段对话、自由文本、结算和四类结局已形成完整闭环。
 
-## v0.8 重点
+## v0.9 重点
 
 - HUD 警报和任务面板完成裁剪与多分辨率验证；默认准心为小型空心圆，
   瞄准可交互对象后变为居中的手形。
@@ -15,8 +15,10 @@ Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前版本为 v0.8。
 - 黑幕开场扩展为 10 句手动推进文本，明确顾衡、叶澄的职责、合作价值和
   玩家目标。
 - 修复叶澄眼部黑框、顾衡眼睛异常材质；保留用户替换的人物模型和地图摆放。
-- 为两个当前模型的精确骨架分别生成待机、行走和五类反应动画，避免旧比例
-  重定向造成的穿体与扭曲。
+- 为两个当前模型的精确骨架重新生成待机、行走和五类反应动画；躯干使用
+  参考姿势，双手全动画采样间距不低于 48.8 cm。
+- NPC 会先平滑旋转全身正面朝向玩家，再用限制在小角度内的头部视线跟随；
+  离开交互范围后平滑返回岗位朝向。
 - DeepSeek 可选择受本地约束的移动意向和反应动作；C++ 继续独占 AP、资源、
   事实、承诺、任务、评分和结局。
 - 墙面与地面升级为项目内生成的 v0.8 材质，用户自定义材质覆盖不被替换。
@@ -36,13 +38,13 @@ Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前版本为 v0.8。
 - `Enter` 结算，`C` 读取最近自动存档，`R` 开始新一轮。
 
 构建、Shipping、验收和 AI 配置见
-[`docs/BUILD_AND_PLAY_v0.8.md`](docs/BUILD_AND_PLAY_v0.8.md)；关卡对象的编辑器
+[`docs/BUILD_AND_PLAY_v0.9.md`](docs/BUILD_AND_PLAY_v0.9.md)；关卡对象的编辑器
 拖动与替换方法见 [`docs/LEVEL_EDITING.md`](docs/LEVEL_EDITING.md)。
 
 ## DeepSeek 接入
 
 运行配置位于
-`WhiteoutStation/Content/Agents/AgentRuntime.v0.8.json`。当前使用
+`WhiteoutStation/Content/Agents/AgentRuntime.v0.9.json`。当前使用
 `deepseek-v4-flash`、官方 Chat Completions 端点、非思考模式、非流式输出和
 JSON Object 响应。
 
@@ -61,9 +63,8 @@ $env:WHITEOUT_LLM_API_KEY = '<your-key>'
 ```powershell
 python -X utf8 -m pytest Tools/Agents -q
 python -X utf8 -m pytest Tools/Rules -q
-python -X utf8 -m pytest Tools/Release/test_v08_release_gates.py -q
-python -X utf8 Tools/Capture/audit_v08_ui.py
-python -X utf8 Tools/Release/validate_source_v08.py --repo-root . --final
+python -X utf8 -m pytest Tools/Release/test_v09_release_gates.py -q
+python -X utf8 Tools/Release/validate_source_v09.py --repo-root . --final
 ```
 
 UE 自动化覆盖对话边界、模型预算、AP、资源选择、阶段意向、知识权限、路线与

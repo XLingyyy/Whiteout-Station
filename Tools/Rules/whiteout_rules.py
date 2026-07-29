@@ -10,7 +10,7 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 RULES_DIRECTORY = ROOT / "WhiteoutStation" / "Content" / "Rules"
-DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.8.json"
+DEFAULT_RULES_PATH = RULES_DIRECTORY / "WhiteoutStationRules.v0.9.json"
 
 PROMISE_CONDITIONS = frozenset(
     {"reserve_medicine", "keep_records", "heat_repair_room"}
@@ -71,9 +71,9 @@ def validate_rules(rules: dict[str, Any]) -> list[str]:
     if sum(rules.get("score", {}).get("weights", {}).values()) != 100:
         errors.append("Score weights must total 100")
     if rules.get("gameplay", {}).get("starting_action_points") != 8:
-        errors.append("v0.8 requires exactly 8 starting AP")
+        errors.append("v0.9 requires exactly 8 starting AP")
     if rules.get("gameplay", {}).get("mid_crisis_threshold") != 4:
-        errors.append("v0.8 mid-crisis threshold must be 4 AP")
+        errors.append("v0.9 mid-crisis threshold must be 4 AP")
     for character_id, character in (
         rules.get("initial_state", {}).get("characters", {}).items()
     ):
@@ -125,7 +125,7 @@ def classify_rating(total: float, ratings: dict[str, list[float]]) -> str:
 
 
 class WhiteoutSimulator:
-    """Deterministic, transaction-safe implementation of the v0.8 rules."""
+    """Deterministic, transaction-safe implementation of the v0.9 rules."""
 
     KNOWLEDGE_ORDER = {"unknown": 0, "claimed": 1, "suspected": 2, "confirmed": 3}
 
