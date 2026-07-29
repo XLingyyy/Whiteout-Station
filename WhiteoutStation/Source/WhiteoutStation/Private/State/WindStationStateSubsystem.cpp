@@ -218,7 +218,7 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 	}
 
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetStringField(TEXT("rules_version"), TEXT("0.9.0"));
+	Root->SetStringField(TEXT("rules_version"), TEXT("1.0.0"));
 	Root->SetArrayField(TEXT("events"), Events);
 	const FWSGameState& Snapshot = RulesEngine.GetState();
 	Root->SetNumberField(TEXT("remaining_ap"), Snapshot.ActionPoints);

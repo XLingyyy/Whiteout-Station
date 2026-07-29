@@ -75,7 +75,7 @@ namespace
 		const float AppliedDistance)
 	{
 		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-		Root->SetStringField(TEXT("schema"), TEXT("whiteout.v0.9.performance-probe.v1"));
+		Root->SetStringField(TEXT("schema"), TEXT("whiteout.v1.0.performance-probe.v1"));
 		Root->SetStringField(TEXT("action_id"), ActionId.ToString());
 		Root->SetStringField(TEXT("provider"), Reply.Provider);
 		Root->SetBoolField(TEXT("fallback"), Reply.bFallback);
@@ -224,7 +224,7 @@ AWhiteoutGameMode::AWhiteoutGameMode()
 void AWhiteoutGameMode::BeginPlay()
 {
 	Super::BeginPlay();
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v0.9 flow"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v1.0 flow"));
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		const bool bContinueRequested = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutContinue"));
@@ -485,7 +485,7 @@ void AWhiteoutGameMode::BeginPlay()
 								const FString EvidenceDirectory = bCaptureToSaved
 									? FPaths::ProjectSavedDir() / TEXT("PerformanceProbe")
 									: FPaths::ConvertRelativePathToFull(
-										FPaths::ProjectDir() / TEXT("../docs/evidence_v0.9"));
+										FPaths::ProjectDir() / TEXT("../docs/evidence_v1.0"));
 								IFileManager::Get().MakeDirectory(*EvidenceDirectory, true);
 								const FString EvidenceToken =
 									ExpressionProbeActor.IsValid()
@@ -925,7 +925,7 @@ void AWhiteoutGameMode::BeginOpeningPresentation()
 	PlayerController->SetIgnoreMoveInput(true);
 	PlayerController->SetIgnoreLookInput(true);
 	PlayerController->SetViewTargetWithBlend(OpeningCamera, 0.75f, EViewTargetBlendFunction::VTBlend_Cubic);
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.9: manual opening presentation started"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v1.0: manual opening presentation started"));
 }
 
 void AWhiteoutGameMode::PrepareOpeningReveal()

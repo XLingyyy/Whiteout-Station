@@ -539,7 +539,12 @@ def load_event_log(
         or event_log.get("ending") != "SurvivalWait"
         or event_log.get("signal_sent") is not False
     ):
-        raise SmokeError(f"{scenario_id}: settlement mismatch")
+        raise SmokeError(
+            f"{scenario_id}: settlement mismatch "
+            f"rules={event_log.get('rules_version')!r} "
+            f"ending={event_log.get('ending')!r} "
+            f"signal_sent={event_log.get('signal_sent')!r}"
+        )
     return {
         "file": f"{scenario_id}_EventLog.json",
         "actions": action_ids,

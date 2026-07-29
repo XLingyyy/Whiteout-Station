@@ -624,6 +624,17 @@ def validate_v10_feature_contract(repo_root: Path) -> GateReport:
             "FMath::Clamp(CharacterState.Health, 0.0f, 10.0f)",
             "FMath::Clamp(CharacterState.Trust, 0.0f, 10.0f)",
         ),
+        "WhiteoutStation/Source/WhiteoutStation/Private/State/"
+        "WindStationStateSubsystem.cpp": (
+            'Root->SetStringField(TEXT("rules_version"), TEXT("1.0.0"))',
+            "LegacyV09SaveSlot",
+        ),
+        "WhiteoutStation/Source/WhiteoutStation/Private/Flow/"
+        "WhiteoutGameMode.cpp": (
+            "whiteout.v1.0.performance-probe.v1",
+            "../docs/evidence_v1.0",
+            "starting playable v1.0 flow",
+        ),
         "WhiteoutStation/Source/WhiteoutStation/Private/World/"
         "WSInteractableActor.cpp": (
             "RestoreLegacyCharacterMaterials",
@@ -682,6 +693,22 @@ def validate_v10_feature_contract(repo_root: Path) -> GateReport:
                     f"v1.0 forbidden UI sound/importance marker remains in "
                     f"{relative_path}: {forbidden}"
                 )
+
+    try:
+        game_mode_text = _read_utf8_text(
+            repo_root
+            / "WhiteoutStation/Source/WhiteoutStation/Private/Flow/WhiteoutGameMode.cpp"
+        )
+    except GateError as exc:
+        report.error(str(exc))
+    else:
+        for forbidden in (
+            "whiteout.v0.9.performance-probe.v1",
+            "../docs/evidence_v0.9",
+            "starting playable v0.9 flow",
+        ):
+            if forbidden in game_mode_text:
+                report.error(f"v1.0 stale runtime marker remains: {forbidden}")
 
     if not report.errors:
         report.detail(
