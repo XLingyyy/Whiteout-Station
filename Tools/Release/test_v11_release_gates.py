@@ -9,6 +9,10 @@ import pytest
 
 try:
     from .create_release_manifest_v11 import create_manifest
+    from .run_v11_input_smoke import (
+        _validate_antenna_event_log,
+        _validate_antenna_log,
+    )
     from .v11_gate_common import (
         AGENT_RUNTIME_REL,
         DISTRIBUTION_CLASS,
@@ -32,6 +36,10 @@ try:
     )
 except ImportError:
     from create_release_manifest_v11 import create_manifest
+    from run_v11_input_smoke import (
+        _validate_antenna_event_log,
+        _validate_antenna_log,
+    )
     from v11_gate_common import (
         AGENT_RUNTIME_REL,
         DISTRIBUTION_CLASS,
@@ -270,6 +278,34 @@ def create_valid_manifest(
         source_ref="HEAD",
         build_timestamp_utc=BUILD_TIMESTAMP,
     )
+
+
+def test_shipping_antenna_evidence_uses_committed_event_without_log(
+    tmp_path: Path,
+) -> None:
+    missing_log = tmp_path / "Shipping.log"
+    assert _validate_antenna_log(missing_log) == {"shipping_log_available": False}
+    event_log = tmp_path / "WhiteoutStation_EventLog.json"
+    event_log.write_text(
+        json.dumps(
+            {
+                "rules_version": PROJECT_VERSION,
+                "events": [
+                    {
+                        "action_id": "calibrate_antenna",
+                        "reason_code": "Committed",
+                        "ap_before": 4,
+                        "ap_after": 2,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    evidence = _validate_antenna_event_log(event_log)
+    assert evidence["reason_code"] == "Committed"
+    assert evidence["ap_before"] == 4
+    assert evidence["ap_after"] == 2
 
 
 def test_valid_v11_source_and_manifest_contract_passes(tmp_path: Path) -> None:

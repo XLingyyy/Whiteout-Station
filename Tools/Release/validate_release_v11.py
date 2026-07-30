@@ -871,7 +871,7 @@ def _validate_input_smoke(
         if (
             not isinstance(calibration, dict)
             or calibration.get("action_id") != "calibrate_antenna"
-            or calibration.get("reason_code") != "Ok"
+            or calibration.get("reason_code") != "Committed"
             or not isinstance(
                 calibration.get("ap_before"),
                 (int, float),
@@ -890,6 +890,11 @@ def _validate_input_smoke(
             not isinstance(game_log, dict)
             or game_log.get("antenna_prep_ready") is not True
             or game_log.get("input_target_ready") is not True
+            or game_log.get("readiness_source")
+            not in {
+                "shipping_log",
+                "prepared_autosave_and_calibration_event",
+            }
         ):
             report.error("v1.1 antenna smoke lacks ready/final-target game log proof")
         antenna_capture_names = _capture_names(antenna)
