@@ -1,0 +1,664 @@
+{
+  "schema_version": 4,
+  "rules_version": "1.1.0",
+  "display_name": "风雪站：断电前夜",
+  "design_date": "2026-07-30",
+  "gameplay": {
+    "phases": [
+      "morning",
+      "afternoon",
+      "dusk"
+    ],
+    "action_points_per_phase": 4,
+    "generator_required": 2,
+    "antenna_required": 1,
+    "action_cost_minimum": 1,
+    "action_cost_maximum": 4,
+    "signal_action_cost": 0,
+    "safe_wait_fuel": 1
+  },
+  "heating": {
+    "zones": [
+      "repair_room",
+      "medical_room",
+      "kitchen",
+      "control_room"
+    ],
+    "fuel_per_phase": 1,
+    "heated_temperature_delta": 0.5,
+    "unheated_temperature_delta": {
+      "morning": -0.8,
+      "afternoon": -1.0,
+      "dusk": -1.2
+    }
+  },
+  "thresholds": {
+    "temperature": {
+      "warm": 6.0,
+      "hypothermic": 3.5
+    },
+    "pressure": {
+      "tense": 6.5,
+      "breaking": 9.0
+    },
+    "trust": {
+      "cooperative": 5.5,
+      "guarded": 4.0
+    }
+  },
+  "initial_state": {
+    "resources": {
+      "fuel": 4,
+      "food": 2,
+      "medicine": 1,
+      "heat_pack": 1,
+      "replacement_relay": 0
+    },
+    "characters": {
+      "player": {
+        "temperature": 7.2,
+        "stamina": 2,
+        "injuries": [],
+        "injury_worsening_marks": 0,
+        "bandage_protection": 0,
+        "pressure": 4.0,
+        "location": "control_room"
+      },
+      "gu_heng": {
+        "temperature": 6.6,
+        "stamina": 1,
+        "injuries": [
+          "right_hand_restricted"
+        ],
+        "injury_worsening_marks": 0,
+        "bandage_protection": 0,
+        "pressure": 7.2,
+        "trust": 3.5,
+        "location": "repair_room"
+      },
+      "ye_cheng": {
+        "temperature": 7.0,
+        "stamina": 1,
+        "injuries": [],
+        "injury_worsening_marks": 0,
+        "bandage_protection": 0,
+        "pressure": 4.8,
+        "trust": 6.0,
+        "location": "medical_room"
+      }
+    },
+    "tasks": {
+      "generator_progress": 0,
+      "antenna_calibration": 0,
+      "signal_sent": false,
+      "generator_stable": false
+    }
+  },
+  "actions": [
+    {
+      "id": "investigate_generator_log",
+      "display_name": "读取深层发电机日志",
+      "base_ap": 1,
+      "primary_executor": "player",
+      "location": "control_room",
+      "tags": [
+        "investigation"
+      ],
+      "repeatable": false
+    },
+    {
+      "id": "inspect_control_cabinet",
+      "display_name": "检查控制柜",
+      "base_ap": 1,
+      "primary_executor": "player",
+      "location": "repair_room",
+      "tags": [
+        "investigation",
+        "fine_motor"
+      ],
+      "repeatable": false,
+      "collaborators": [
+        "gu_heng"
+      ]
+    },
+    {
+      "id": "talk_gu_heng",
+      "display_name": "与顾衡私聊",
+      "base_ap": 1,
+      "primary_executor": "player",
+      "location": "any_safe_zone",
+      "tags": [
+        "social"
+      ],
+      "repeatable": true,
+      "max_uses": 3,
+      "requires_ai_expression": true
+    },
+    {
+      "id": "talk_ye_cheng",
+      "display_name": "与叶澄私聊",
+      "base_ap": 1,
+      "primary_executor": "player",
+      "location": "any_safe_zone",
+      "tags": [
+        "social"
+      ],
+      "repeatable": true,
+      "max_uses": 3,
+      "requires_ai_expression": true
+    },
+    {
+      "id": "distribute_food",
+      "display_name": "准备并分配食物",
+      "base_ap": 1,
+      "primary_executor": "player",
+      "location": "kitchen",
+      "tags": [
+        "physical"
+      ],
+      "repeatable": true,
+      "max_uses": 2,
+      "consumes_stamina": true
+    },
+    {
+      "id": "rest",
+      "display_name": "休整 / 等待",
+      "base_ap": 1,
+      "primary_executor": "player",
+      "location": "selected",
+      "tags": [
+        "recovery"
+      ],
+      "repeatable": true
+    },
+    {
+      "id": "treat_character",
+      "display_name": "诊断 / 治疗角色",
+      "base_ap": 1,
+      "primary_executor": "ye_cheng",
+      "location": "medical_room",
+      "tags": [
+        "medical",
+        "fine_motor"
+      ],
+      "repeatable": true,
+      "max_uses": 3,
+      "consumes_stamina": true,
+      "collaborators": [
+        "player",
+        "gu_heng"
+      ]
+    },
+    {
+      "id": "dismantle_kitchen_heater",
+      "display_name": "拆除厨房加热器",
+      "base_ap": 1,
+      "primary_executor": "gu_heng",
+      "location": "kitchen",
+      "tags": [
+        "physical",
+        "fine_motor",
+        "facility"
+      ],
+      "repeatable": false,
+      "consumes_stamina": true,
+      "collaborators": [
+        "player"
+      ]
+    },
+    {
+      "id": "repair_generator",
+      "display_name": "维修发电机",
+      "base_ap": 1,
+      "primary_executor": "gu_heng",
+      "location": "repair_room",
+      "tags": [
+        "physical",
+        "fine_motor"
+      ],
+      "repeatable": true,
+      "max_uses": 2,
+      "consumes_stamina": true,
+      "collaborators": [
+        "player"
+      ]
+    },
+    {
+      "id": "forced_self_repair",
+      "display_name": "强行自行维修",
+      "base_ap": 2,
+      "primary_executor": "player",
+      "location": "repair_room",
+      "tags": [
+        "physical",
+        "fine_motor"
+      ],
+      "repeatable": false,
+      "consumes_stamina": true,
+      "force_allowed": true
+    },
+    {
+      "id": "calibrate_antenna",
+      "display_name": "校准室外天线",
+      "base_ap": 2,
+      "primary_executor": "player",
+      "location": "outdoor_antenna",
+      "tags": [
+        "outdoor",
+        "physical",
+        "fine_motor"
+      ],
+      "repeatable": false,
+      "consumes_stamina": true,
+      "force_allowed": true,
+      "collaborators": [
+        "ye_cheng"
+      ]
+    },
+    {
+      "id": "send_signal",
+      "display_name": "发送求救信号",
+      "base_ap": 0,
+      "primary_executor": "player",
+      "location": "control_room",
+      "tags": [
+        "system"
+      ],
+      "repeatable": false
+    }
+  ],
+  "facts": [
+    {
+      "id": "FACT_GENERATOR_PROTECTION_STOP",
+      "initially_known_by": [
+        "gu_heng"
+      ]
+    },
+    {
+      "id": "FACT_FORCED_RESTART_SUSPICION",
+      "initially_known_by": []
+    },
+    {
+      "id": "FACT_BURNT_RELAY",
+      "initially_known_by": [
+        "gu_heng"
+      ]
+    },
+    {
+      "id": "FACT_HAND_INJURY",
+      "initially_known_by": [
+        "gu_heng",
+        "ye_cheng"
+      ]
+    },
+    {
+      "id": "FACT_MEDICAL_DIAGNOSIS",
+      "initially_known_by": [
+        "ye_cheng"
+      ]
+    },
+    {
+      "id": "FACT_HEAT_PACK",
+      "initially_known_by": [
+        "ye_cheng"
+      ]
+    },
+    {
+      "id": "FACT_RELAY_COMPATIBILITY",
+      "initially_known_by": [
+        "gu_heng"
+      ]
+    },
+    {
+      "id": "FACT_FORCED_RESTART_CONFIRMED",
+      "initially_known_by": [
+        "gu_heng"
+      ]
+    }
+  ],
+  "score": {
+    "weights": {
+      "task_quality": 30,
+      "people": 30,
+      "effective_reserves": 15,
+      "social_stability": 15,
+      "information_responsibility": 10
+    },
+    "ratings": {
+      "S": [
+        90,
+        100
+      ],
+      "A": [
+        80,
+        89.99
+      ],
+      "B": [
+        70,
+        79.99
+      ],
+      "C": [
+        60,
+        69.99
+      ],
+      "D": [
+        0,
+        59.99
+      ]
+    }
+  },
+  "routes": {
+    "medical_cooperation": {
+      "display_name": "医疗协作",
+      "expected_success": true,
+      "expected_ending": "stable_rescue",
+      "expected_paid_ap": 10,
+      "phases": [
+        {
+          "phase": "morning",
+          "heating_zone": "medical_room",
+          "actions": [
+            {
+              "action": "talk_ye_cheng",
+              "params": {
+                "dialogue_act": "ask"
+              }
+            },
+            {
+              "action": "treat_character",
+              "params": {
+                "target": "gu_heng",
+                "method": "full",
+                "collaborator": "gu_heng"
+              }
+            },
+            {
+              "action": "distribute_food",
+              "params": {
+                "recipients": [
+                  "player",
+                  "gu_heng"
+                ],
+                "meal_type": "cold"
+              }
+            },
+            {
+              "action": "talk_gu_heng",
+              "params": {
+                "dialogue_act": "promise",
+                "promise_condition": "heat_repair_room"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "afternoon",
+          "heating_zone": "repair_room",
+          "actions": [
+            {
+              "action": "repair_generator",
+              "params": {
+                "collaborator": "player"
+              }
+            },
+            {
+              "action": "inspect_control_cabinet"
+            },
+            {
+              "action": "talk_gu_heng",
+              "params": {
+                "dialogue_act": "challenge"
+              }
+            },
+            {
+              "action": "rest",
+              "params": {
+                "target": "player",
+                "location": "repair_room"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "dusk",
+          "heating_zone": "control_room",
+          "actions": [
+            {
+              "action": "calibrate_antenna"
+            },
+            {
+              "action": "send_signal"
+            }
+          ]
+        }
+      ]
+    },
+    "technical_savings": {
+      "display_name": "技术节约",
+      "expected_success": true,
+      "expected_ending": "stable_rescue",
+      "expected_paid_ap": 9,
+      "phases": [
+        {
+          "phase": "morning",
+          "heating_zone": "kitchen",
+          "actions": [
+            {
+              "action": "investigate_generator_log"
+            },
+            {
+              "action": "inspect_control_cabinet"
+            },
+            {
+              "action": "distribute_food",
+              "params": {
+                "recipients": [
+                  "player",
+                  "gu_heng"
+                ],
+                "meal_type": "hot"
+              }
+            },
+            {
+              "action": "talk_gu_heng",
+              "params": {
+                "dialogue_act": "challenge"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "afternoon",
+          "heating_zone": "repair_room",
+          "actions": [
+            {
+              "action": "dismantle_kitchen_heater",
+              "params": {
+                "collaborator": "player"
+              }
+            },
+            {
+              "action": "repair_generator",
+              "params": {
+                "collaborator": "player",
+                "use_relay": true
+              }
+            },
+            {
+              "action": "talk_ye_cheng",
+              "params": {
+                "dialogue_act": "ask"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "dusk",
+          "heating_zone": "control_room",
+          "actions": [
+            {
+              "action": "calibrate_antenna"
+            },
+            {
+              "action": "send_signal"
+            }
+          ]
+        }
+      ]
+    },
+    "risk_push": {
+      "display_name": "风险推进",
+      "expected_success": true,
+      "expected_ending": "signal_sent_cost_uncontrolled",
+      "expected_paid_ap": 8,
+      "phases": [
+        {
+          "phase": "morning",
+          "heating_zone": "repair_room",
+          "actions": [
+            {
+              "action": "distribute_food",
+              "params": {
+                "recipients": [
+                  "player",
+                  "gu_heng"
+                ],
+                "meal_type": "cold"
+              }
+            },
+            {
+              "action": "repair_generator",
+              "params": {
+                "collaborator": "player",
+                "force": true
+              }
+            },
+            {
+              "action": "inspect_control_cabinet"
+            },
+            {
+              "action": "talk_gu_heng",
+              "params": {
+                "dialogue_act": "command"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "afternoon",
+          "heating_zone": "repair_room",
+          "actions": [
+            {
+              "action": "repair_generator",
+              "params": {
+                "collaborator": "player",
+                "force": true
+              }
+            }
+          ]
+        },
+        {
+          "phase": "dusk",
+          "heating_zone": "control_room",
+          "actions": [
+            {
+              "action": "calibrate_antenna"
+            },
+            {
+              "action": "send_signal"
+            }
+          ]
+        }
+      ]
+    },
+    "warm_wait_failure": {
+      "display_name": "保温等待失败",
+      "expected_success": false,
+      "expected_ending": "warm_wait_unknown",
+      "phases": [
+        {
+          "phase": "morning",
+          "heating_zone": "kitchen",
+          "actions": [
+            {
+              "action": "distribute_food",
+              "params": {
+                "recipients": [
+                  "player",
+                  "gu_heng"
+                ],
+                "meal_type": "hot"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "afternoon",
+          "heating_zone": "medical_room",
+          "actions": [
+            {
+              "action": "rest",
+              "params": {
+                "target": "ye_cheng",
+                "location": "medical_room"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "dusk",
+          "heating_zone": "control_room",
+          "actions": []
+        }
+      ]
+    },
+    "dual_collapse_failure": {
+      "display_name": "系统与人员双重失控",
+      "expected_success": false,
+      "expected_ending": "dual_collapse",
+      "phases": [
+        {
+          "phase": "morning",
+          "heating_zone": "repair_room",
+          "actions": [
+            {
+              "action": "distribute_food",
+              "params": {
+                "recipients": [
+                  "player",
+                  "gu_heng"
+                ],
+                "meal_type": "cold"
+              }
+            },
+            {
+              "action": "repair_generator",
+              "params": {
+                "collaborator": "player",
+                "force": true
+              }
+            }
+          ]
+        },
+        {
+          "phase": "afternoon",
+          "heating_zone": "repair_room",
+          "actions": [
+            {
+              "action": "repair_generator",
+              "params": {
+                "collaborator": "player",
+                "force": true
+              }
+            }
+          ]
+        },
+        {
+          "phase": "dusk",
+          "heating_zone": "control_room",
+          "actions": []
+        }
+      ]
+    }
+  }
+}
