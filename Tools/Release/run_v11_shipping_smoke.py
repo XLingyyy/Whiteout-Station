@@ -812,7 +812,7 @@ def run_performance_probe(
     expected_fields = {
         "schema": "whiteout.v1.0.performance-probe.v1",
         "action_id": action_id,
-        "provider": "command-line-provider",
+        "provider": "loopback",
         "fallback": False,
         "validation_reason": "ok",
         "movement_intent": "step_closer",
