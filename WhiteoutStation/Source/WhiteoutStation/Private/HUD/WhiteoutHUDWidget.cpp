@@ -7,6 +7,7 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -42,7 +43,7 @@
 namespace
 {
 	constexpr int32 InitialActionPoints = 12;
-	constexpr int32 MidCrisisActionPoints = 6;
+	constexpr int32 PhaseActionPoints = 4;
 	constexpr int32 MinutesPerActionPoint = 50;
 	constexpr int32 CollectableEvidenceCount = 7;
 	constexpr int32 DiscoverableFactCount = 8;
@@ -55,6 +56,126 @@ namespace
 	const FLinearColor& Danger = WSUITokens::Color::AccentWarning;
 	const FLinearColor& Body = WSUITokens::Color::TextPrimary;
 	const FLinearColor& Secondary = WSUITokens::Color::TextSecondary;
+
+	FString DayPhaseLabel(const EWSDayPhase DayPhase)
+	{
+		switch (DayPhase)
+		{
+		case EWSDayPhase::Morning:
+			return TEXT("早晨");
+		case EWSDayPhase::Afternoon:
+			return TEXT("午后");
+		case EWSDayPhase::Dusk:
+			return TEXT("黄昏");
+		default:
+			return TEXT("夜间");
+		}
+	}
+
+	FString HeatingZoneLabel(const EWSHeatingZone HeatingZone)
+	{
+		switch (HeatingZone)
+		{
+		case EWSHeatingZone::RepairRoom:
+			return TEXT("维修间");
+		case EWSHeatingZone::MedicalRoom:
+			return TEXT("医务室");
+		case EWSHeatingZone::Kitchen:
+			return TEXT("厨房");
+		case EWSHeatingZone::ControlRoom:
+			return TEXT("控制室");
+		default:
+			return TEXT("待选择");
+		}
+	}
+
+	FString InjuryLabel(const EWSInjurySeverity Severity)
+	{
+		switch (Severity)
+		{
+		case EWSInjurySeverity::Restricted:
+			return TEXT("受限");
+		case EWSInjurySeverity::Critical:
+			return TEXT("危重");
+		default:
+			return TEXT("正常");
+		}
+	}
+
+	FString CharacterShortLabel(const EWSCharacterId CharacterId)
+	{
+		switch (CharacterId)
+		{
+		case EWSCharacterId::GuHeng:
+			return TEXT("顾衡");
+		case EWSCharacterId::YeCheng:
+			return TEXT("叶澄");
+		default:
+			return TEXT("玩家");
+		}
+	}
+
+	FString CharacterLocationLabel(const EWSCharacterLocation Location)
+	{
+		switch (Location)
+		{
+		case EWSCharacterLocation::RepairRoom:
+			return TEXT("维修间");
+		case EWSCharacterLocation::MedicalRoom:
+			return TEXT("医务室");
+		case EWSCharacterLocation::Kitchen:
+			return TEXT("厨房");
+		case EWSCharacterLocation::OutdoorAntenna:
+			return TEXT("室外天线");
+		default:
+			return TEXT("控制室");
+		}
+	}
+
+	FString LLMProviderDisplayName(const FString& ProviderId)
+	{
+		for (const FWSLLMProviderPreset& Preset :
+			UWSAgentGateway::GetProviderPresets())
+		{
+			if (Preset.ProviderId.Equals(
+					ProviderId,
+					ESearchCase::IgnoreCase))
+			{
+				return Preset.DisplayName;
+			}
+		}
+		return ProviderId.IsEmpty() ? TEXT("未知厂商") : ProviderId;
+	}
+
+	FString LLMFallbackReasonLabel(const FString& Reason)
+	{
+		if (Reason == TEXT("provider_authentication_failed"))
+		{
+			return TEXT("API Key 验证失败");
+		}
+		if (Reason == TEXT("provider_insufficient_balance"))
+		{
+			return TEXT("账户余额不足");
+		}
+		if (Reason == TEXT("provider_rate_limited"))
+		{
+			return TEXT("请求频率受限");
+		}
+		if (Reason == TEXT("provider_overloaded"))
+		{
+			return TEXT("厂商服务繁忙");
+		}
+		if (Reason == TEXT("transport_error"))
+		{
+			return TEXT("网络连接失败");
+		}
+		if (Reason == TEXT("request_not_started")
+			|| Reason == TEXT("retry_manager_unavailable"))
+		{
+			return TEXT("请求未能启动");
+		}
+		return TEXT("响应未通过安全校验");
+	}
 
 	FString ButtonIconName(const FName ButtonName)
 	{
@@ -330,7 +451,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		CardInfo->AddChildToVerticalBox(CardText)->SetPadding(FMargin(0, 0, 0, 4));
 		CrewCardTexts.Add(CardText);
 		UTextBlock* StatusLegend = MakeText(FName(*FString::Printf(TEXT("CrewLegend%d"), CharacterIndex)), 10, WSUITokens::Color::TextSecondary, false);
-		StatusLegend->SetText(FText::FromString(TEXT("健　温　精　饱　稳")));
+		StatusLegend->SetText(FText::FromString(TEXT("温　体　伤　压　备")));
 		CardInfo->AddChildToVerticalBox(StatusLegend)->SetPadding(FMargin(0, 0, 0, 2));
 		UHorizontalBox* StatusRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*FString::Printf(TEXT("CrewBars%d"), CharacterIndex)));
 		for (int32 StatusIndex = 0; StatusIndex < 5; ++StatusIndex)
@@ -555,16 +676,17 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UTextBlock* GuideIntro = MakeText(TEXT("GuideIntro"), 14, Body);
 	GuideIntro->SetLineHeightPercentage(1.28f);
 	GuideIntro->SetText(FText::FromString(
-		TEXT("核心流程\n")
-		TEXT("修复发电机 2/2 → 前往室外校准天线 1/1 → 回控制室发送求救信号。\n")
-		TEXT("本轮共有 12 AP；每消耗 1 AP 会推进约 50 分钟。按 F 先查看代价和条件，再按 F 确认。\n\n")
-		TEXT("人物状态（所有读数均为 0—10）\n")
-		TEXT("健康：受伤与生存状况。治疗顾衡可恢复；强修和危险作业会损失健康。\n")
-		TEXT("体温：寒冷暴露。室外天线会快速降温，低于 5.5 无法校准；供暖与保温包能改善。\n")
-		TEXT("精力：行动余力。每次行动都会下降，危险维修下降更多。\n")
-		TEXT("饱腹：食物储备效果。分配食物可提升，并会影响两名队员的信任。\n")
-		TEXT("稳定：数值越高越冷静。供暖和安抚可提升；无证据的质疑可能恶化。\n")
-		TEXT("信任：决定合作、情报与结算。询问、安抚、治疗、公平分配和兑现承诺会改变信任。\n\n")
+		TEXT("阶段与选择\n")
+		TEXT("早晨、午后、黄昏各有 4 AP，未使用的 AP 在阶段结算时丢弃。每阶段开始先消耗 1 燃料锁定一个供暖区。\n")
+		TEXT("修复发电机并发送信号可以结束本轮；也可保留燃料、照护队员并等待风暴过去。信号质量、人员状态与剩余储备会导向不同结局。\n")
+		TEXT("按 F 查看动态 AP、执行者和风险，再按 F 确认；带有多个方案的行动可按 Q 切换。\n\n")
+		TEXT("人物状态\n")
+		TEXT("体温：6.0 以上温暖，3.5—5.9 寒冷，低于 3.5 失温。\n")
+		TEXT("体能：2 充足、1 疲惫、0 耗尽；食物和供暖区休整可以恢复。\n")
+		TEXT("伤势：正常、受限、危重。包扎只阻止下一次恶化，完整治疗可移除伤势。\n")
+		TEXT("压力：越低越稳定；寒冷、强迫行动和失衡分配会推高压力。\n")
+		TEXT("准备度：综合体温、体能、伤势与压力；预览中的动态 AP 会反映这些因素。\n")
+		TEXT("信任：影响合作、情报和结算。公平分配、照护和兑现承诺会改变信任。\n\n")
 		TEXT("信息与交涉\n")
 		TEXT("按 E 查看证据板。对话先选意向，再自由输入；质疑和承诺只会在已有事实或可兑现条件时出现。")));
 	UScrollBox* GuideScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("GuideScroll"));
@@ -877,7 +999,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		FText::FromString(TEXT("叶澄是值班医生，保管仅剩的药品和保温物资。她必须决定先救谁、先给哪个房间供暖。")),
 		FText::FromString(TEXT("没有叶澄的诊断和物资分配，顾衡可能无法维修，三个人的身体状况也会迅速恶化。")),
 		FText::FromString(TEXT("两人对责任、风险和资源顺序意见不一。你需要调查现场，再用证据、帮助或承诺争取合作。")),
-		FText::FromString(TEXT("你只有 8 点行动力。修复发电机、校准室外天线、发出求救信号，救援才能找到这里。")),
+		FText::FromString(TEXT("今天共有 12 点行动力，分为早晨、午后、黄昏三个阶段，每阶段 4 点。未使用的行动力不会结转。")),
 		FText::FromString(TEXT("每次行动都会推进时间并改变状态、信任与物资。风雪敲打站体——你在控制室睁开了眼。"))};
 	OpeningElapsed = 0.0f;
 	OpeningPhase = EWSOpeningPhase::FadingInLine;
@@ -949,13 +1071,13 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	}
 	PauseBox->AddChildToVerticalBox(SituationRow)->SetPadding(FMargin(0, 0, 0, 4));
 	PauseHelpText = MakeText(TEXT("PauseHelp"), 13, Secondary);
-	PauseHelpText->SetText(FText::FromString(TEXT("WASD 移动　鼠标观察　Space 跳跃\nF 互动 / 对话　E 证据板　Enter 结束当日　Esc 返回")));
+	PauseHelpText->SetText(FText::FromString(TEXT("WASD 移动　鼠标观察　Space 跳跃\nF 互动 / 对话　E 证据板　Enter 结算阶段　Esc 返回")));
 	PauseHelpText->SetJustification(ETextJustify::Center);
 	PauseHelpText->SetVisibility(ESlateVisibility::Collapsed);
 	PauseBox->AddChildToVerticalBox(PauseHelpText)->SetPadding(FMargin(8, 12, 8, 0));
 	PauseBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	SettingsBorder = MakeGlassPanel(Canvas, TEXT("SettingsPanel"), FAnchors(0.5f, 0.5f), FMargin(-330, -340, 660, 680), 16.0f, WSUITokens::Color::SurfaceDeep);
+	SettingsBorder = MakeGlassPanel(Canvas, TEXT("SettingsPanel"), FAnchors(0.5f, 0.5f), FMargin(-370, -330, 740, 660), 16.0f, WSUITokens::Color::SurfaceDeep);
 	SetGlassPanelPadding(SettingsBorder, FMargin(18));
 	UVerticalBox* SettingsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SettingsBox"));
 	SetGlassPanelContent(SettingsBorder, SettingsBox);
@@ -964,10 +1086,18 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	SettingsTitle->SetJustification(ETextJustify::Center);
 	SettingsBox->AddChildToVerticalBox(SettingsTitle)->SetPadding(FMargin(0, 0, 0, 8));
 	UTextBlock* SettingsHint = MakeText(TEXT("SettingsHint"), 13, Secondary);
-	SettingsHint->SetText(FText::FromString(TEXT("更改会实时生效，并保存在本机。")));
+	SettingsHint->SetText(FText::FromString(TEXT("显示与音频实时保存；API Key 只保留到本次运行结束。")));
 	SettingsHint->SetJustification(ETextJustify::Center);
-	SettingsBox->AddChildToVerticalBox(SettingsHint)->SetPadding(FMargin(0, 0, 0, 18));
-	auto AddSettingsRow = [this, SettingsBox](const FName Name, const FString& Label, UTextBlock*& OutValueText)
+	SettingsBox->AddChildToVerticalBox(SettingsHint)->SetPadding(FMargin(0, 0, 0, 10));
+	USizeBox* SettingsScrollSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("SettingsScrollSize"));
+	SettingsScrollSize->SetHeightOverride(495.0f);
+	SettingsScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("SettingsScroll"));
+	SettingsScroll->SetScrollBarVisibility(ESlateVisibility::Visible);
+	UVerticalBox* SettingsContent = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SettingsContent"));
+	SettingsScroll->AddChild(SettingsContent);
+	SettingsScrollSize->SetContent(SettingsScroll);
+	SettingsBox->AddChildToVerticalBox(SettingsScrollSize);
+	auto AddSettingsRow = [this, SettingsContent](const FName Name, const FString& Label, UTextBlock*& OutValueText)
 	{
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*(Name.ToString() + TEXT("Row"))));
 		USizeBox* LabelBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*(Name.ToString() + TEXT("LabelBox"))));
@@ -992,7 +1122,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		OutValueText->SetJustification(ETextJustify::Right);
 		ValueBox->SetContent(OutValueText);
 		Row->AddChildToHorizontalBox(ValueBox)->SetVerticalAlignment(VAlign_Center);
-		SettingsBox->AddChildToVerticalBox(Row)->SetPadding(FMargin(8, 7));
+		SettingsContent->AddChildToVerticalBox(Row)->SetPadding(FMargin(8, 7));
 		return Slider;
 	};
 	UTextBlock* FOVValue = nullptr;
@@ -1020,20 +1150,124 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	FeedbackVolumeSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleFeedbackVolumeChanged);
 	TextScaleSlider->OnValueChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleTextScaleChanged);
 	ReducedMotionButton = MakeButton(
-		SettingsBox,
+		SettingsContent,
 		FText::FromString(TEXT("减少动态效果　｜　关闭")),
 		TEXT("ReducedMotionButton"));
 	ReducedMotionButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ToggleReducedMotion);
 	ReducedMotionValueText = Cast<UTextBlock>(
 		WidgetTree->FindWidget(TEXT("ReducedMotionButtonLabel")));
-	UButton* SettingsBackButton = MakeButton(SettingsBox, FText::FromString(TEXT("返回暂停菜单")), TEXT("SettingsBackButton"));
-	SettingsBackButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CloseSettings);
-	SettingsBox->AddChildToVerticalBox(MakeText(TEXT("SettingsScope"), 12, Secondary))->SetPadding(FMargin(8, 10, 8, 0));
-	if (UTextBlock* ScopeText = Cast<UTextBlock>(SettingsBox->GetChildAt(SettingsBox->GetChildrenCount() - 1)))
+	SettingsContent->AddChildToVerticalBox(MakeText(TEXT("SettingsScope"), 12, Secondary))->SetPadding(FMargin(8, 10, 8, 14));
+	if (UTextBlock* ScopeText = Cast<UTextBlock>(SettingsContent->GetChildAt(SettingsContent->GetChildrenCount() - 1)))
 	{
 		ScopeText->SetText(FText::FromString(TEXT("字号 90%–120%｜减少动态效果会保留逐句推进并缩短淡入淡出")));
 		ScopeText->SetJustification(ETextJustify::Center);
 	}
+
+	UTextBlock* LLMTitle = MakeText(TEXT("LLMSettingsTitle"), 20, Cyan, false);
+	LLMTitle->SetFont(UIFont(20, true));
+	LLMTitle->SetText(FText::FromString(TEXT("语言模型（可选）")));
+	SettingsContent->AddChildToVerticalBox(LLMTitle)->SetPadding(FMargin(8, 8, 8, 4));
+	UTextBlock* LLMIntro = MakeText(TEXT("LLMSettingsIntro"), 12, Secondary);
+	LLMIntro->SetText(FText::FromString(TEXT("模型只理解自由文本并组织 NPC 表达；规则、行动点和结局仍由本地系统决定。")));
+	SettingsContent->AddChildToVerticalBox(LLMIntro)->SetPadding(FMargin(8, 0, 8, 10));
+
+	auto AddLLMControlRow = [this, SettingsContent](const FName Name, const FString& Label, UWidget* Control)
+	{
+		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
+			UHorizontalBox::StaticClass(),
+			FName(*(Name.ToString() + TEXT("Row"))));
+		USizeBox* LabelBox = WidgetTree->ConstructWidget<USizeBox>(
+			USizeBox::StaticClass(),
+			FName(*(Name.ToString() + TEXT("LabelBox"))));
+		LabelBox->SetWidthOverride(150.0f);
+		UTextBlock* LabelText = MakeText(FName(*(Name.ToString() + TEXT("Label"))), 15, Body, false);
+		LabelText->SetText(FText::FromString(Label));
+		LabelBox->SetContent(LabelText);
+		Row->AddChildToHorizontalBox(LabelBox)->SetVerticalAlignment(VAlign_Center);
+		USizeBox* ControlBox = WidgetTree->ConstructWidget<USizeBox>(
+			USizeBox::StaticClass(),
+			FName(*(Name.ToString() + TEXT("ControlBox"))));
+		ControlBox->SetWidthOverride(510.0f);
+		ControlBox->SetMinDesiredHeight(34.0f);
+		ControlBox->SetContent(Control);
+		Row->AddChildToHorizontalBox(ControlBox)->SetVerticalAlignment(VAlign_Center);
+		SettingsContent->AddChildToVerticalBox(Row)->SetPadding(FMargin(8, 5));
+	};
+	auto ConfigureLLMTextInput = [this](UEditableTextBox* Input)
+	{
+		FEditableTextBoxStyle InputStyle = Input->GetWidgetStyle();
+		InputStyle.SetFont(UIFont(14));
+		InputStyle.TextStyle.SetColorAndOpacity(FSlateColor(WSUITokens::Color::TextPrimary));
+		InputStyle.BackgroundImageNormal.TintColor = FSlateColor(WSUITokens::Color::SurfaceInput);
+		InputStyle.BackgroundImageHovered.TintColor = FSlateColor(WSUITokens::Color::SurfaceInputFocused);
+		InputStyle.BackgroundImageFocused.TintColor = FSlateColor(WSUITokens::Color::SurfaceInputFocused);
+		InputStyle.ForegroundColor = FSlateColor(WSUITokens::Color::TextPrimary);
+		InputStyle.FocusedForegroundColor = FSlateColor(WSUITokens::Color::TextPrimary);
+		InputStyle.ReadOnlyForegroundColor = FSlateColor(WSUITokens::Color::TextSecondary);
+		InputStyle.BackgroundColor = FSlateColor(WSUITokens::Color::SurfaceInput);
+		Input->SetWidgetStyle(InputStyle);
+		Input->SetForegroundColor(WSUITokens::Color::TextPrimary);
+	};
+
+	LLMProviderCombo = WidgetTree->ConstructWidget<UComboBoxString>(
+		UComboBoxString::StaticClass(),
+		TEXT("LLMProviderCombo"));
+	for (const FWSLLMProviderPreset& Preset : UWSAgentGateway::GetProviderPresets())
+	{
+		LLMProviderCombo->AddOption(Preset.DisplayName);
+	}
+	LLMProviderCombo->OnSelectionChanged.AddDynamic(this, &UWhiteoutHUDWidget::HandleLLMProviderChanged);
+	AddLLMControlRow(TEXT("LLMProvider"), TEXT("厂商"), LLMProviderCombo);
+
+	LLMBaseUrlInput = WidgetTree->ConstructWidget<UEditableTextBox>(
+		UEditableTextBox::StaticClass(),
+		TEXT("LLMBaseUrlInput"));
+	ConfigureLLMTextInput(LLMBaseUrlInput);
+	LLMBaseUrlInput->SetHintText(FText::FromString(TEXT("官方 BaseURL")));
+	AddLLMControlRow(TEXT("LLMBaseUrl"), TEXT("BaseURL"), LLMBaseUrlInput);
+
+	LLMApiKeyInput = WidgetTree->ConstructWidget<UEditableTextBox>(
+		UEditableTextBox::StaticClass(),
+		TEXT("LLMApiKeyInput"));
+	ConfigureLLMTextInput(LLMApiKeyInput);
+	LLMApiKeyInput->SetIsPassword(true);
+	LLMApiKeyInput->SetHintText(FText::FromString(TEXT("仅保存在当前进程内存")));
+	AddLLMControlRow(TEXT("LLMApiKey"), TEXT("API Key"), LLMApiKeyInput);
+
+	LLMModelCandidateCombo = WidgetTree->ConstructWidget<UComboBoxString>(
+		UComboBoxString::StaticClass(),
+		TEXT("LLMModelCandidateCombo"));
+	LLMModelCandidateCombo->OnSelectionChanged.AddDynamic(
+		this,
+		&UWhiteoutHUDWidget::HandleLLMModelCandidateChanged);
+	AddLLMControlRow(TEXT("LLMModelCandidate"), TEXT("常用模型"), LLMModelCandidateCombo);
+
+	LLMModelInput = WidgetTree->ConstructWidget<UEditableTextBox>(
+		UEditableTextBox::StaticClass(),
+		TEXT("LLMModelInput"));
+	ConfigureLLMTextInput(LLMModelInput);
+	LLMModelInput->SetHintText(FText::FromString(TEXT("可直接填写厂商支持的模型 ID")));
+	AddLLMControlRow(TEXT("LLMModel"), TEXT("模型 ID"), LLMModelInput);
+	LLMModelHintText = MakeText(TEXT("LLMModelHint"), 11, Secondary);
+	SettingsContent->AddChildToVerticalBox(LLMModelHintText)->SetPadding(FMargin(158, 0, 8, 6));
+
+	LLMEnabledButton = MakeButton(
+		SettingsContent,
+		FText::FromString(TEXT("模型调用　｜　关闭")),
+		TEXT("LLMEnabledButton"));
+	LLMEnabledButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ToggleLLMEnabled);
+	LLMEnabledValueText = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("LLMEnabledButtonLabel")));
+	LLMApplyButton = MakeButton(
+		SettingsContent,
+		FText::FromString(TEXT("应用模型设置")),
+		TEXT("LLMApplyButton"));
+	LLMApplyButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ApplyLLMSettings);
+	LLMStatusText = MakeText(TEXT("LLMStatus"), 12, Secondary);
+	LLMStatusText->SetJustification(ETextJustify::Center);
+	SettingsContent->AddChildToVerticalBox(LLMStatusText)->SetPadding(FMargin(8, 8, 8, 12));
+
+	UButton* SettingsBackButton = MakeButton(SettingsBox, FText::FromString(TEXT("返回暂停菜单")), TEXT("SettingsBackButton"));
+	SettingsBackButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CloseSettings);
 	SettingsBorder->SetVisibility(ESlateVisibility::Collapsed);
 	RefreshSettingsUI();
 }
@@ -1279,10 +1513,29 @@ FString UWhiteoutHUDWidget::APCells(const int32 Remaining)
 	return Cells;
 }
 
-FString UWhiteoutHUDWidget::ClockForAP(const int32 Remaining)
+FString UWhiteoutHUDWidget::ClockForProgress(
+	const EWSDayPhase DayPhase,
+	const int32 Remaining)
 {
-	const int32 ElapsedMinutes = (
-		InitialActionPoints - FMath::Clamp(Remaining, 0, InitialActionPoints))
+	int32 PhaseIndex = 3;
+	if (DayPhase == EWSDayPhase::Morning)
+	{
+		PhaseIndex = 0;
+	}
+	else if (DayPhase == EWSDayPhase::Afternoon)
+	{
+		PhaseIndex = 1;
+	}
+	else if (DayPhase == EWSDayPhase::Dusk)
+	{
+		PhaseIndex = 2;
+	}
+	const int32 UsedInPhase = PhaseIndex < 3
+		? PhaseActionPoints
+			- FMath::Clamp(Remaining, 0, PhaseActionPoints)
+		: 0;
+	const int32 ElapsedMinutes =
+		(PhaseIndex * PhaseActionPoints + UsedInPhase)
 		* MinutesPerActionPoint;
 	const int32 TotalMinutes = 8 * 60 + 15 + ElapsedMinutes;
 	return FString::Printf(TEXT("%02d:%02d"), (TotalMinutes / 60) % 24, TotalMinutes % 60);
@@ -1384,28 +1637,39 @@ void UWhiteoutHUDWidget::ShowHoveredEvidenceDetail()
 
 void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 {
-	const FString Crisis = State.bMidCrisisTriggered
-		? FWSPresentationText::UI(TEXT("ui_top_l3_crisis_v04"), TEXT("备用电池故障 ｜ 仅保留应急负载")).ToString()
-		: FWSPresentationText::UI(TEXT("ui_top_l3_v04"), TEXT("暴风雪逼近 ｜ 电力正在衰减")).ToString();
+	const FString PhaseCondition = !State.bDayPhaseStarted
+		? TEXT("阶段待开始 ｜ 选择一个供暖区")
+		: FString::Printf(
+			TEXT("本阶段供暖：%s ｜ Enter 结算阶段"),
+			*HeatingZoneLabel(State.Heating.CurrentZone));
 	if (TopText) TopText->SetText(FWSPresentationText::UI(TEXT("title"), TEXT("风雪站：断电前夜")));
 	if (TopStatusText)
 	{
 		TopStatusText->SetText(FText::Format(
-			FText::FromString(TEXT("{0} ｜ AP {1} / 12 ｜ {2}")),
-			FText::FromString(ClockForAP(State.ActionPoints)),
+			FText::FromString(TEXT("{0} ｜ {1} AP {2} / 4 ｜ {3}")),
+			FText::FromString(
+				ClockForProgress(State.DayPhase, State.ActionPoints)),
+			FText::FromString(DayPhaseLabel(State.DayPhase)),
 			FText::AsNumber(State.ActionPoints),
 			FWSPresentationText::PhaseLabel(State.Phase)));
-		TopStatusText->SetColorAndOpacity(FSlateColor(State.ActionPoints <= MidCrisisActionPoints ? Danger : Body));
+		TopStatusText->SetColorAndOpacity(FSlateColor(
+			State.ActionPoints <= 1 ? Danger : Body));
 	}
-	if (TopConditionText) TopConditionText->SetText(FText::FromString(Crisis));
+	if (TopConditionText)
+	{
+		TopConditionText->SetText(FText::FromString(PhaseCondition));
+	}
 
 	const FString ObjectiveFormat = TEXT(
-		"任务：发电机 {0}/2｜天线 {1}/1｜求救 {2}\n"
-		"储备：燃料 {3}｜食品 {4}｜药品 {5}\n"
-		"继电器 {6}｜保温包 {7}｜证据 {8}｜厨房供暖 {9}");
+		"阶段：{0}｜供暖 {1}\n"
+		"任务：发电机 {2}/2｜天线 {3}/1｜求救 {4}\n"
+		"储备：燃料 {5}｜食品 {6}｜药品 {7}\n"
+		"继电器 {8}｜保温包 {9}｜证据 {10}｜厨房设施 {11}");
 	ObjectiveText->SetText(FText::FromString(FString::Format(
 		*ObjectiveFormat,
-		{State.Tasks.GeneratorProgress,
+		{DayPhaseLabel(State.DayPhase),
+		 HeatingZoneLabel(State.Heating.CurrentZone),
+		 State.Tasks.GeneratorProgress,
 		 State.Tasks.AntennaCalibration,
 		 FWSPresentationText::UI(State.Tasks.bSignalSent ? TEXT("ui_sent") : TEXT("ui_not_sent"), State.Tasks.bSignalSent ? TEXT("已发送") : TEXT("未发送")).ToString(),
 		 State.Resources.Fuel,
@@ -1419,22 +1683,16 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	{
 		int32 MinimumAP = 0;
 		const FString TaskGuide = BuildTaskGuide(State, MinimumAP);
-		const int32 Buffer = State.ActionPoints - MinimumAP;
-		const FString GuideTitle = Buffer >= 0
+		const FString GuideTitle = State.bDayPhaseStarted
 			? FString::Printf(
-				TEXT("通关指引｜最低保留 %d AP｜余量 %d"),
-				MinimumAP,
-				Buffer)
-			: FString::Printf(
-				TEXT("行动力警报｜还需 %d AP｜缺口 %d"),
-				MinimumAP,
-				FMath::Abs(Buffer));
+				TEXT("可选下一步｜本阶段 %d / 4 AP"),
+				State.ActionPoints)
+			: TEXT("阶段准备｜四个供暖区任选其一");
 		TutorialTitleText->SetText(FText::FromString(GuideTitle));
 		if (TutorialText)
 		{
-			TutorialText->SetColorAndOpacity(FSlateColor(Buffer >= 0
-				? WSUITokens::Color::TextCinematicWarm
-				: Danger));
+			TutorialText->SetColorAndOpacity(
+				FSlateColor(WSUITokens::Color::TextCinematicWarm));
 			TutorialText->SetText(FText::FromString(TaskGuide));
 		}
 	}
@@ -1451,21 +1709,47 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 			{
 				FString Card = FWSPresentationText::CharacterName(CharacterId).ToString();
 				Card += TEXT("\n");
-				Card += FString::Printf(TEXT("健康 %s　体温 %s"),
-					*FWSPresentationText::ConditionLevel(Character->Health).ToString(),
-					*FWSPresentationText::ConditionLevel(Character->Temperature).ToString());
+				Card += FString::Printf(
+					TEXT("体温 %.1f　体能 %d\n伤势 %s　压力 %.1f"),
+					Character->Temperature,
+					Character->Stamina,
+					*InjuryLabel(Character->InjurySeverity),
+					Character->Pressure);
 				if (CharacterId != EWSCharacterId::Player)
 				{
 					Card += TEXT("\n信任 ") + FWSPresentationText::TrustLevel(Character->Trust).ToString();
 				}
 				CrewCardTexts[CharacterIndex]->SetText(FText::FromString(Card));
 			}
+			const float InjuryRatio =
+				Character->InjurySeverity == EWSInjurySeverity::Normal
+				? 1.0f
+				: Character->InjurySeverity
+					== EWSInjurySeverity::Restricted
+				? 0.5f
+				: 0.0f;
+			const float ReadinessRatio = FMath::Min(
+				FMath::Min(
+					FMath::Clamp(
+						Character->Temperature / 6.0f,
+						0.0f,
+						1.0f),
+					FMath::Clamp(
+						static_cast<float>(Character->Stamina) / 2.0f,
+						0.0f,
+						1.0f)),
+				FMath::Min(
+					InjuryRatio,
+					FMath::Clamp(
+						1.0f - Character->Pressure / 10.0f,
+						0.0f,
+						1.0f)));
 			const TArray<float> Ratios = {
-				Character->Health / 10.0f,
 				Character->Temperature / 10.0f,
-				Character->Fatigue / 10.0f,
-				Character->Hunger / 10.0f,
-				1.0f - Character->Pressure / 10.0f};
+				static_cast<float>(Character->Stamina) / 2.0f,
+				InjuryRatio,
+				1.0f - Character->Pressure / 10.0f,
+				ReadinessRatio};
 			for (int32 StatusIndex = 0; StatusIndex < Ratios.Num(); ++StatusIndex)
 			{
 				const int32 FlatIndex = CharacterIndex * Ratios.Num() + StatusIndex;
@@ -1482,8 +1766,12 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	}
 	if (PauseStatusText)
 	{
-		PauseStatusText->SetText(FText::FromString(FString::Printf(TEXT("%s　｜　AP %d / 12　｜　%s"),
-			*ClockForAP(State.ActionPoints), State.ActionPoints, *FWSPresentationText::PhaseLabel(State.Phase).ToString())));
+		PauseStatusText->SetText(FText::FromString(FString::Printf(
+			TEXT("%s　｜　%s AP %d / 4　｜　%s"),
+			*ClockForProgress(State.DayPhase, State.ActionPoints),
+			*DayPhaseLabel(State.DayPhase),
+			State.ActionPoints,
+			*FWSPresentationText::PhaseLabel(State.Phase).ToString())));
 	}
 	if (PauseSituationText)
 	{
@@ -1491,8 +1779,9 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	}
 	if (PauseSituationValues.Num() >= 5)
 	{
-		PauseSituationValues[0]->SetText(FText::FromString(FString::Printf(TEXT("%d / 12"), State.ActionPoints)));
-		PauseSituationValues[1]->SetText(FText::FromString(ClockForAP(0)));
+		PauseSituationValues[0]->SetText(FText::FromString(FString::Printf(TEXT("%d / 4"), State.ActionPoints)));
+		PauseSituationValues[1]->SetText(FText::FromString(
+			ClockForProgress(EWSDayPhase::Complete, 0)));
 		PauseSituationValues[2]->SetText(FText::FromString(FString::Printf(TEXT("%d / 2"), State.Tasks.GeneratorProgress)));
 		PauseSituationValues[3]->SetText(FText::FromString(FString::Printf(TEXT("%d / 1"), State.Tasks.AntennaCalibration)));
 		PauseSituationValues[4]->SetText(FText::FromString(State.Tasks.bSignalSent ? TEXT("已发送") : TEXT("未发送")));
@@ -1505,50 +1794,27 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 
 FString UWhiteoutHUDWidget::BuildTutorialHint(const FWSGameState& State) const
 {
-	const auto HasAction = [&State](const FName ActionId)
-	{
-		return State.ActionCounts.FindRef(ActionId) > 0;
-	};
-	const bool bKnowsRestart = State.PlayerKnowledge.Contains(TEXT("FACT_FORCED_RESTART_SUSPICION"));
-	const bool bKnowsRelay = State.PlayerKnowledge.Contains(TEXT("FACT_BURNT_RELAY"));
-
 	if (State.Phase == EWSGamePhase::Results)
 	{
-		return TEXT("本轮已经结算。查看行动回顾与评分，再决定下一轮要验证的路线。");
+		return TEXT("本轮已经结算。复盘会列出结局、人员、储备与信息责任的实际代价。");
 	}
-	if (State.EventLog.IsEmpty())
+	if (State.Tasks.bSignalSent)
 	{
-		return TEXT("保底开局：先与叶澄对话并选择“询问”确认顾衡伤势，再为医务室供暖并完成治疗。");
+		return TEXT("信号已发送。按 Enter 立即结算，也可先查看当前人员与储备状态。");
 	}
-	if (State.EventLog.Num() == 1 && !State.Evidence.IsEmpty())
+	if (!State.bDayPhaseStarted)
 	{
-		return TEXT("刚取得的线索已进入证据板。按 E 打开，选择卡片查看事实与后续用途。");
-	}
-	if (bKnowsRestart && bKnowsRelay && !State.Flags.bGuHengCooperative)
-	{
-		return TEXT("两条技术证据已经能互相印证。与顾衡对话，“质疑”现已开放，可争取继电器方案。");
-	}
-	if (!State.Flags.bGuHengDiagnosed && !HasAction(TEXT("talk_ye_cheng")))
-	{
-		return TEXT("顾衡仍带伤。与叶澄对话并先“询问”伤情；新的意向会随她披露的信息开放。");
-	}
-	if (!State.Flags.bGuHengCooperative && !State.Flags.bGuHengTreated)
-	{
-		return TEXT("先取得顾衡的合作：可为医务室供暖后治疗他，也可补齐发电机日志与控制柜证据再交涉。");
+		return TEXT("比较四个供暖区：维修、医疗、热餐和记录保护分别支持不同策略。");
 	}
 	if (State.Tasks.GeneratorProgress < 2)
 	{
-		return TEXT("前往维修间修复发电机。带伤硬修会恶化顾衡状态；供暖、治疗或替代继电器能提高效率。");
+		return TEXT("可调查事故、照护队员、补给休整或直接推进维修；按 Q 查看行动的替代方案。");
 	}
 	if (State.Tasks.AntennaCalibration < 1)
 	{
-		return TEXT("发电机已恢复。确认玩家体温不低于 5.5，再到室外天线区校准；该行动消耗 2 AP。");
+		return TEXT("可立刻校准天线，也可先恢复体能、降低风险或让叶澄协助。");
 	}
-	if (!State.Tasks.bSignalSent)
-	{
-		return TEXT("天线已校准。返回控制室发送求救信号；发信不消耗 AP，并进入结局结算。");
-	}
-	return TEXT("求救信号已经发出。按 Enter 进入本轮结算，查看路线代价、承诺与队员状态。");
+	return TEXT("可现在发送信号结束本轮，也可用剩余阶段改善人员与储备，或保温等待。");
 }
 
 FString UWhiteoutHUDWidget::BuildTaskGuide(
@@ -1564,112 +1830,44 @@ FString UWhiteoutHUDWidget::BuildTaskGuide(
 	{
 		return TEXT("求救信号已发送。按 Enter 进入结局复盘。");
 	}
-
-	TArray<FString> Steps;
-	const auto AddStep = [&Steps, &OutMinimumAP](const FString& Label, const int32 Cost)
+	if (!State.bDayPhaseStarted)
 	{
-		OutMinimumAP += Cost;
-		Steps.Add(FString::Printf(
-			TEXT("%d. %s（%d AP）"),
-			Steps.Num() + 1,
-			*Label,
-			Cost));
-	};
-	const auto Knows = [&State](const FName FactId)
-	{
-		const EWSKnowledgeLevel* Level = State.PlayerKnowledge.Find(FactId);
-		return Level && *Level != EWSKnowledgeLevel::Unknown;
-	};
+		return FString::Printf(
+			TEXT(
+				"• 维修间：降低精细维修的寒冷代价\n"
+				"• 医务室：开放完整治疗\n"
+				"• 厨房：可准备热餐并恢复体能\n"
+				"• 控制室：保护记录并稳定信息链\n"
+				"当前燃料 %d；选择后本阶段锁定。"),
+			State.Resources.Fuel);
+	}
 
+	TArray<FString> Options;
 	if (State.Tasks.GeneratorProgress < 2)
 	{
-		const bool bTreatmentResourceReachable =
-			State.Resources.Medicine > 0
-			|| (State.Resources.HeatPack > 0
-				&& (State.Flags.bHeatPackRevealed || !State.Flags.bGuHengDiagnosed));
-		if (State.Flags.bGuHengTreated)
-		{
-			AddStep(TEXT("维修间：修复发电机"), 1);
-		}
-		else if (bTreatmentResourceReachable)
-		{
-			if (!State.Flags.bGuHengDiagnosed)
-			{
-				AddStep(TEXT("叶澄：选择“询问”确认顾衡伤势"), 1);
-			}
-			if (!State.Flags.bMedicalRoomHeated)
-			{
-				AddStep(TEXT("医务室：恢复供暖"), 1);
-			}
-			AddStep(
-				State.Resources.Medicine > 0
-					? TEXT("医务室：使用药品治疗顾衡")
-					: TEXT("医务室：使用保温包稳定顾衡"),
-				1);
-			AddStep(TEXT("维修间：修复发电机"), 1);
-		}
-		else
-		{
-			const bool bKnowsRestart = Knows(TEXT("FACT_FORCED_RESTART_SUSPICION"));
-			const bool bKnowsBurntRelay = Knows(TEXT("FACT_BURNT_RELAY"));
-			if (!bKnowsRestart)
-			{
-				AddStep(TEXT("控制室：读取发电机深层日志"), 1);
-			}
-			if (!bKnowsBurntRelay)
-			{
-				AddStep(TEXT("维修间：检查烧毁的控制柜"), 1);
-			}
-			if (!State.Flags.bGuHengCooperative)
-			{
-				AddStep(TEXT("顾衡：用两条技术证据争取合作"), 1);
-			}
-
-			const bool bCanRecoverRelay =
-				State.Resources.ReplacementRelay > 0
-				|| State.Flags.bKitchenHeaterIntact;
-			if (State.Resources.ReplacementRelay <= 0
-				&& State.Flags.bKitchenHeaterIntact)
-			{
-				AddStep(TEXT("厨房：拆取兼容继电器"), 1);
-			}
-			const bool bCanCreateStableRepair =
-				bCanRecoverRelay
-				&& (State.Flags.bRepairRoomHeated || State.Resources.Fuel > 0);
-			if (bCanRecoverRelay
-				&& !State.Flags.bRepairRoomHeated
-				&& State.Resources.Fuel > 0)
-			{
-				AddStep(TEXT("维修间：恢复供暖"), 1);
-			}
-			const int32 RepairActions = bCanCreateStableRepair
-				? 1
-				: FMath::Max(1, 2 - State.Tasks.GeneratorProgress);
-			for (int32 Index = 0; Index < RepairActions; ++Index)
-			{
-				AddStep(TEXT("维修间：修复发电机"), 1);
-			}
-		}
+		Options.Add(TEXT("• 调查：日志或控制柜，换取证据与继电器信息"));
+		Options.Add(TEXT("• 人员：分配食物、休整、包扎或完整治疗"));
+		Options.Add(TEXT("• 工程：维修发电机；按 Q 切换协作、继电器或强行方案"));
 	}
-	if (State.Tasks.AntennaCalibration < 1)
+	else if (State.Tasks.AntennaCalibration < 1)
 	{
-		AddStep(TEXT("室外天线：完成校准"), 2);
+		Options.Add(TEXT("• 室外：校准天线；按 Q 切换单独、叶澄协助或强行"));
+		Options.Add(TEXT("• 准备：食物、治疗或休整，降低室外行动风险"));
+		Options.Add(TEXT("• 保留：提前 Enter 结算，留下资源进入下一阶段"));
 	}
-	AddStep(TEXT("控制室：发送求救信号"), 0);
-
-	const int32 VisibleStepCount = FMath::Min(3, Steps.Num());
-	TArray<FString> VisibleSteps;
-	for (int32 Index = 0; Index < VisibleStepCount; ++Index)
+	else
 	{
-		VisibleSteps.Add(Steps[Index]);
+		Options.Add(TEXT("• 发信：回控制室立即发送求救信号"));
+		Options.Add(TEXT("• 整备：先恢复体能、治疗伤势或平衡食物分配"));
+		Options.Add(TEXT("• 等待：保留燃料并推进阶段，接受未知救援结果"));
 	}
-	if (Steps.Num() > VisibleStepCount)
+	if (State.ActionPoints > 0)
 	{
-		VisibleSteps.Add(FString::Printf(
-			TEXT("完成以上步骤后，左侧会继续显示剩余 %d 步。"),
-			Steps.Num() - VisibleStepCount));
+		Options.Add(FString::Printf(
+			TEXT("• 结束阶段：Enter 放弃剩余 %d AP，进入下一阶段"),
+			State.ActionPoints));
 	}
-	return FString::Join(VisibleSteps, TEXT("\n"));
+	return FString::Join(Options, TEXT("\n"));
 }
 
 void UWhiteoutHUDWidget::UpdateGuideContext(const FWSGameState& State)
@@ -1686,13 +1884,13 @@ void UWhiteoutHUDWidget::UpdateGuideContext(const FWSGameState& State)
 			return FString();
 		}
 		FString Result = FString::Printf(
-			TEXT("%s　健康 %.1f｜体温 %.1f｜精力 %.1f｜饱腹 %.1f｜稳定 %.1f"),
+			TEXT("%s　体温 %.1f｜体能 %d｜伤势 %s｜压力 %.1f｜位置 %s"),
 			*FWSPresentationText::CharacterName(CharacterId).ToString(),
-			Character->Health,
 			Character->Temperature,
-			Character->Fatigue,
-			Character->Hunger,
-			10.0f - Character->Pressure);
+			Character->Stamina,
+			*InjuryLabel(Character->InjurySeverity),
+			Character->Pressure,
+			*CharacterLocationLabel(Character->Location));
 		if (CharacterId != EWSCharacterId::Player)
 		{
 			Result += FString::Printf(TEXT("｜信任 %.1f"), Character->Trust);
@@ -1700,8 +1898,10 @@ void UWhiteoutHUDWidget::UpdateGuideContext(const FWSGameState& State)
 		return Result;
 	};
 	GuideContextText->SetText(FText::FromString(FString::Printf(
-		TEXT("本轮即时读数｜AP %d / 12\n%s\n%s\n%s\n\n下一步：%s"),
+		TEXT("%s即时读数｜AP %d / 4｜供暖 %s\n%s\n%s\n%s\n\n选择提示：%s"),
+		*DayPhaseLabel(State.DayPhase),
 		State.ActionPoints,
+		*HeatingZoneLabel(State.Heating.CurrentZone),
 		*CharacterLine(EWSCharacterId::Player),
 		*CharacterLine(EWSCharacterId::GuHeng),
 		*CharacterLine(EWSCharacterId::YeCheng),
@@ -2081,7 +2281,7 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 		Timeline += FString::Printf(
 			TEXT("%02d　%s　%s　行动力 %d → %d%s\n"),
 			Event.Index,
-			*ClockForAP(Event.APAfter),
+			*ClockForProgress(Event.DayPhase, Event.APAfter),
 			*FWSPresentationText::ActionLabel(Event.ActionId).ToString(),
 			Event.APBefore,
 			Event.APAfter,
@@ -2178,19 +2378,80 @@ void UWhiteoutHUDWidget::ShowActionPreview(
 	ShowPanelAnimated(PreviewBorder, true, WSUITokens::Anim::Fast, false);
 	PreviewTitleText->SetText(ActionName);
 	FString Selection;
+	bool bCanCycleOption = false;
 	if (Request.ActionId == TEXT("distribute_food"))
 	{
 		Selection = FString::Printf(
-			TEXT("当前方案：玩家 ×%d　顾衡 ×%d　叶澄 ×%d"),
+			TEXT("当前方案：%s｜玩家 ×%d　顾衡 ×%d　叶澄 ×%d"),
+			Request.bHotMeal ? TEXT("热餐") : TEXT("冷口粮"),
 			Request.FoodForPlayer,
 			Request.FoodForGuHeng,
 			Request.FoodForYeCheng);
+		bCanCycleOption = true;
 	}
-	else if (Request.ActionId == TEXT("treat_gu_heng"))
+	else if (
+		Request.ActionId == TEXT("treat_gu_heng")
+		|| Request.ActionId == TEXT("treat_character"))
 	{
-		Selection = Request.TreatmentResource == EWSResourceType::HeatPack
-			? TEXT("当前方案：保温包 ×1")
-			: TEXT("当前方案：药品 ×1");
+		const FString Method =
+			Request.TreatmentMethod == EWSTreatmentMethod::Bandage
+			? TEXT("简单包扎")
+			: Request.TreatmentMethod == EWSTreatmentMethod::HeatPack
+			? TEXT("保温包临时支撑")
+			: TEXT("完整治疗（药品 ×1）");
+		Selection = FString::Printf(
+			TEXT("当前方案：%s｜目标 %s"),
+			*Method,
+			*CharacterShortLabel(Request.TreatmentTarget));
+		bCanCycleOption = true;
+	}
+	else if (Request.ActionId == TEXT("rest"))
+	{
+		Selection = FString::Printf(
+			TEXT("当前方案：%s在%s休整"),
+			*CharacterShortLabel(Request.RestTarget),
+			*CharacterLocationLabel(Request.RestLocation));
+		bCanCycleOption = true;
+	}
+	else if (
+		Request.ActionId == TEXT("inspect_control_cabinet")
+		|| Request.ActionId == TEXT("dismantle_kitchen_heater"))
+	{
+		Selection = Request.bHasCollaborator
+			? FString::Printf(
+				TEXT("当前方案：%s协作"),
+				*CharacterShortLabel(Request.Collaborator))
+			: TEXT("当前方案：单独执行");
+		bCanCycleOption = true;
+	}
+	else if (Request.ActionId == TEXT("repair_generator"))
+	{
+		Selection = Request.bForce
+			? TEXT("当前方案：强迫推进（关系与伤势风险）")
+			: Request.bUseRelay
+			? TEXT("当前方案：安装替代继电器")
+			: Request.bHasCollaborator
+			? TEXT("当前方案：玩家协助顾衡")
+			: TEXT("当前方案：顾衡常规维修");
+		bCanCycleOption = true;
+	}
+	else if (Request.ActionId == TEXT("calibrate_antenna"))
+	{
+		Selection = Request.bForce
+			? TEXT("当前方案：强行校准")
+			: Request.bHasCollaborator
+			? TEXT("当前方案：叶澄协助")
+			: TEXT("当前方案：玩家单独校准");
+		bCanCycleOption = true;
+	}
+	else if (
+		Request.ActionId == TEXT("heat_control_room")
+		|| Request.ActionId == TEXT("heat_repair_room")
+		|| Request.ActionId == TEXT("heat_medical_room")
+		|| Request.ActionId == TEXT("heat_kitchen"))
+	{
+		Selection =
+			TEXT("阶段选择：燃料 ×1；确认后本阶段不可更改");
 	}
 	const bool bHasSelectableOption = !Selection.IsEmpty();
 	if (Preview.bCanExecute)
@@ -2221,7 +2482,7 @@ void UWhiteoutHUDWidget::ShowActionPreview(
 			 Risk,
 			 Expected})));
 		PreviewFooterText->SetText(FText::FromString(
-			bHasSelectableOption
+			bCanCycleOption
 				? TEXT("[Q] 切换方案　｜　再次按 F 确认执行　｜　移开视线取消")
 				: FWSPresentationText::UI(TEXT("ui_preview_footer"), TEXT("再次按 F 确认执行　｜　移开视线取消")).ToString()));
 	}
@@ -2739,10 +3000,15 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 	if (DialogueStatusText)
 	{
 		const FString ProviderStatus = !Reply.bFallback
-			? TEXT("DeepSeek 在线表达")
+			? FString::Printf(
+				TEXT("%s 在线表达"),
+				*LLMProviderDisplayName(Reply.Provider))
 			: Reply.Provider == TEXT("preset")
 				? TEXT("本地预设")
-				: TEXT("在线失败后本地降级");
+				: FString::Printf(
+					TEXT("%s 失败，本地降级：%s"),
+					*LLMProviderDisplayName(Reply.Provider),
+					*LLMFallbackReasonLabel(Reply.ValidationReason));
 		const TCHAR* MovementLabel = TEXT("原地");
 		switch (Reply.MovementIntent)
 		{
@@ -2873,6 +3139,15 @@ void UWhiteoutHUDWidget::ShowSettingsForCapture()
 	ShowPanelInstant(PauseBorder, false);
 	ShowPanelInstant(SettingsBorder, true);
 	SetLayer(EWSUILayer::Settings);
+}
+
+void UWhiteoutHUDWidget::ShowLLMSettingsForCapture()
+{
+	ShowSettingsForCapture();
+	if (SettingsScroll)
+	{
+		SettingsScroll->SetScrollOffset(10000.0f);
+	}
 }
 
 void UWhiteoutHUDWidget::SetOpeningCaptureStage(const int32 Stage)
@@ -3498,7 +3773,7 @@ void UWhiteoutHUDWidget::LoadGame()
 		const bool bLoaded = StateSubsystem->LoadSnapshot();
 		SystemMessage = bLoaded
 			? TEXT("已恢复最近保存的本轮状态。")
-			: TEXT("没有可读取的 v1.0 或兼容旧版存档。");
+			: TEXT("没有可读取的 v1.1 本轮存档。");
 		if (bLoaded)
 		{
 			ResumeGame();
@@ -3549,6 +3824,156 @@ void UWhiteoutHUDWidget::CloseSettings()
 	}
 }
 
+void UWhiteoutHUDWidget::RefreshLLMProviderFields(const FString& ProviderId, const bool bReplaceModel)
+{
+	if (!LLMModelCandidateCombo)
+	{
+		return;
+	}
+	const TArray<FString> Candidates = UWSAgentGateway::GetModelCandidates(ProviderId);
+	LLMModelCandidateCombo->ClearOptions();
+	for (const FString& Candidate : Candidates)
+	{
+		LLMModelCandidateCombo->AddOption(Candidate);
+	}
+	if (!Candidates.IsEmpty())
+	{
+		LLMModelCandidateCombo->SetSelectedOption(Candidates[0]);
+		if (bReplaceModel && LLMModelInput)
+		{
+			LLMModelInput->SetText(FText::FromString(Candidates[0]));
+		}
+	}
+	if (LLMModelHintText)
+	{
+		LLMModelHintText->SetText(FText::FromString(
+			Candidates.IsEmpty()
+				? TEXT("直接填写厂商支持的模型 ID。")
+				: FString::Printf(TEXT("候选：%s｜也可手动输入"), *FString::Join(Candidates, TEXT("、")))));
+	}
+}
+
+void UWhiteoutHUDWidget::HandleLLMProviderChanged(
+	const FString SelectedItem,
+	const ESelectInfo::Type SelectionType)
+{
+	if (bUpdatingSettings || SelectionType == ESelectInfo::Direct)
+	{
+		return;
+	}
+	for (const FWSLLMProviderPreset& Preset : UWSAgentGateway::GetProviderPresets())
+	{
+		if (Preset.DisplayName != SelectedItem)
+		{
+			continue;
+		}
+		bUpdatingSettings = true;
+		if (LLMBaseUrlInput)
+		{
+			LLMBaseUrlInput->SetText(FText::FromString(Preset.BaseUrl));
+		}
+		if (LLMApiKeyInput)
+		{
+			LLMApiKeyInput->SetText(FText::GetEmpty());
+			LLMApiKeyInput->SetHintText(FText::FromString(
+				TEXT("厂商已切换，请填写对应的 API Key")));
+		}
+		RefreshLLMProviderFields(Preset.ProviderId, true);
+		bUpdatingSettings = false;
+		return;
+	}
+}
+
+void UWhiteoutHUDWidget::HandleLLMModelCandidateChanged(
+	const FString SelectedItem,
+	const ESelectInfo::Type SelectionType)
+{
+	if (bUpdatingSettings || SelectionType == ESelectInfo::Direct || !LLMModelInput)
+	{
+		return;
+	}
+	LLMModelInput->SetText(FText::FromString(SelectedItem));
+}
+
+void UWhiteoutHUDWidget::ToggleLLMEnabled()
+{
+	bPendingLLMEnabled = !bPendingLLMEnabled;
+	if (LLMEnabledValueText)
+	{
+		LLMEnabledValueText->SetText(FText::FromString(FString::Printf(
+			TEXT("模型调用　｜　%s"),
+			bPendingLLMEnabled ? TEXT("开启") : TEXT("关闭"))));
+	}
+	if (LLMStatusText)
+	{
+		LLMStatusText->SetText(FText::FromString(TEXT("尚未应用。")));
+		LLMStatusText->SetColorAndOpacity(FSlateColor(Amber));
+	}
+}
+
+void UWhiteoutHUDWidget::ApplyLLMSettings()
+{
+	if (!GetGameInstance() || !LLMProviderCombo || !LLMBaseUrlInput || !LLMModelInput)
+	{
+		return;
+	}
+	UWhiteoutSettingsSubsystem* Settings =
+		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>();
+	if (!Settings)
+	{
+		return;
+	}
+	FString ProviderId;
+	const FString SelectedProvider = LLMProviderCombo->GetSelectedOption();
+	for (const FWSLLMProviderPreset& Preset : UWSAgentGateway::GetProviderPresets())
+	{
+		if (Preset.DisplayName == SelectedProvider)
+		{
+			ProviderId = Preset.ProviderId;
+			break;
+		}
+	}
+	FString ApiKey = LLMApiKeyInput ? LLMApiKeyInput->GetText().ToString() : FString();
+	if (ApiKey.TrimStartAndEnd().IsEmpty() && Settings->HasSessionLLMApiKey())
+	{
+		ApiKey = Settings->GetSessionLLMApiKey();
+	}
+	FString Error;
+	if (!Settings->SetLLMConfiguration(
+		ProviderId,
+		LLMBaseUrlInput->GetText().ToString(),
+		ApiKey,
+		LLMModelInput->GetText().ToString(),
+		bPendingLLMEnabled,
+		Error))
+	{
+		if (LLMStatusText)
+		{
+			LLMStatusText->SetText(FText::FromString(FString::Printf(TEXT("未应用｜%s"), *Error)));
+			LLMStatusText->SetColorAndOpacity(FSlateColor(Danger));
+		}
+		return;
+	}
+	if (LLMApiKeyInput)
+	{
+		LLMApiKeyInput->SetText(FText::GetEmpty());
+		LLMApiKeyInput->SetHintText(FText::FromString(
+			Settings->HasSessionLLMApiKey()
+				? TEXT("本次运行已设置；留空会继续使用")
+				: TEXT("仅保存在当前进程内存")));
+	}
+	if (const UWindStationStateSubsystem* State =
+		GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	{
+		if (LLMStatusText)
+		{
+			LLMStatusText->SetText(FText::FromString(State->GetLLMRuntimeStatus()));
+			LLMStatusText->SetColorAndOpacity(
+				FSlateColor(State->HasLiveLLMProvider() ? Cyan : Amber));
+		}
+	}
+}
+
 void UWhiteoutHUDWidget::RefreshSettingsUI()
 {
 	if (!GetGameInstance())
@@ -3578,6 +4003,56 @@ void UWhiteoutHUDWidget::RefreshSettingsUI()
 		ReducedMotionValueText->SetText(FText::FromString(FString::Printf(
 			TEXT("减少动态效果　｜　%s"),
 			Settings->IsReducedMotionEnabled() ? TEXT("开启") : TEXT("关闭"))));
+	}
+	bPendingLLMEnabled = Settings->IsLLMEnabled();
+	if (LLMProviderCombo)
+	{
+		for (const FWSLLMProviderPreset& Preset : UWSAgentGateway::GetProviderPresets())
+		{
+			if (Preset.ProviderId == Settings->GetLLMProviderId())
+			{
+				LLMProviderCombo->SetSelectedOption(Preset.DisplayName);
+				break;
+			}
+		}
+	}
+	RefreshLLMProviderFields(Settings->GetLLMProviderId(), false);
+	if (LLMBaseUrlInput)
+	{
+		LLMBaseUrlInput->SetText(FText::FromString(Settings->GetLLMBaseUrl()));
+	}
+	if (LLMModelInput)
+	{
+		LLMModelInput->SetText(FText::FromString(Settings->GetLLMModelId()));
+	}
+	if (LLMModelCandidateCombo
+		&& LLMModelCandidateCombo->FindOptionIndex(Settings->GetLLMModelId()) != INDEX_NONE)
+	{
+		LLMModelCandidateCombo->SetSelectedOption(Settings->GetLLMModelId());
+	}
+	if (LLMApiKeyInput)
+	{
+		LLMApiKeyInput->SetText(FText::GetEmpty());
+		LLMApiKeyInput->SetHintText(FText::FromString(
+			Settings->HasSessionLLMApiKey()
+				? TEXT("本次运行已设置；留空会继续使用")
+				: TEXT("仅保存在当前进程内存")));
+	}
+	if (LLMEnabledValueText)
+	{
+		LLMEnabledValueText->SetText(FText::FromString(FString::Printf(
+			TEXT("模型调用　｜　%s"),
+			bPendingLLMEnabled ? TEXT("开启") : TEXT("关闭"))));
+	}
+	if (const UWindStationStateSubsystem* State =
+		GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	{
+		if (LLMStatusText)
+		{
+			LLMStatusText->SetText(FText::FromString(State->GetLLMRuntimeStatus()));
+			LLMStatusText->SetColorAndOpacity(
+				FSlateColor(State->HasLiveLLMProvider() ? Cyan : Amber));
+		}
 	}
 	bUpdatingSettings = false;
 }

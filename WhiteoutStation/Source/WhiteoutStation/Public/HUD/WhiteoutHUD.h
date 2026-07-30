@@ -45,6 +45,7 @@ public:
 	void ShowEvidenceForCapture(int32 FilterIndex = 0, bool bShowFirstDetail = false);
 	void ShowComponentGalleryForCapture();
 	void ShowSettingsForCapture();
+	void ShowLLMSettingsForCapture();
 	void SetOpeningCaptureStage(int32 Stage);
 	void SetCrisisCaptureStage(int32 Stage);
 	void SetEndingCaptureStage(EWSEndingType Ending, bool bShowResults);

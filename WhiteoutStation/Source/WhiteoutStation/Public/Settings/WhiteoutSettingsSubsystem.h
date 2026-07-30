@@ -7,6 +7,8 @@
 class USoundClass;
 class USoundMix;
 
+DECLARE_MULTICAST_DELEGATE(FWSLLMSettingsChanged);
+
 /** Local-only presentation settings stored in the platform GameUserSettings ini. */
 UCLASS()
 class WHITEOUTSTATION_API UWhiteoutSettingsSubsystem : public UGameInstanceSubsystem
@@ -23,6 +25,18 @@ public:
 	float GetFeedbackVolume() const { return FeedbackVolume; }
 	float GetTextScale() const { return TextScale; }
 	bool IsReducedMotionEnabled() const { return bReducedMotion; }
+	const FString& GetLLMProviderId() const { return LLMProviderId; }
+	const FString& GetLLMBaseUrl() const { return LLMBaseUrl; }
+	const FString& GetLLMModelId() const { return LLMModelId; }
+	const FString& GetSessionLLMApiKey() const { return SessionLLMApiKey; }
+	const FString& GetSessionLLMApiKeyProviderId() const { return SessionLLMApiKeyProviderId; }
+	bool IsLLMEnabled() const { return bLLMEnabled; }
+	bool HasSessionLLMApiKey() const
+	{
+		return !SessionLLMApiKey.IsEmpty()
+			&& SessionLLMApiKeyProviderId == LLMProviderId;
+	}
+	bool HasSavedLLMConfiguration() const { return bHasSavedLLMConfiguration; }
 
 	void SetFieldOfView(float Value, UObject* WorldContextObject);
 	void SetMasterVolume(float Value, UObject* WorldContextObject);
@@ -31,7 +45,16 @@ public:
 	void SetFeedbackVolume(float Value, UObject* WorldContextObject);
 	void SetTextScale(float Value, UObject* WorldContextObject);
 	void SetReducedMotionEnabled(bool bEnabled);
+	bool SetLLMConfiguration(
+		const FString& ProviderId,
+		const FString& BaseUrl,
+		const FString& ApiKey,
+		const FString& ModelId,
+		bool bEnabled,
+		FString& OutError);
 	void Apply(UObject* WorldContextObject);
+
+	FWSLLMSettingsChanged OnLLMSettingsChanged;
 
 private:
 	static constexpr float MinFieldOfView = 75.0f;
@@ -44,6 +67,13 @@ private:
 	float FeedbackVolume = 1.0f;
 	float TextScale = 1.0f;
 	bool bReducedMotion = false;
+	FString LLMProviderId = TEXT("deepseek");
+	FString LLMBaseUrl = TEXT("https://api.deepseek.com");
+	FString LLMModelId = TEXT("deepseek-v4-flash");
+	FString SessionLLMApiKey;
+	FString SessionLLMApiKeyProviderId;
+	bool bLLMEnabled = false;
+	bool bHasSavedLLMConfiguration = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USoundMix> RuntimeSoundMix;

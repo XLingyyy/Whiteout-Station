@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "State/WindStationTypes.h"
 #include "WhiteoutHUDWidget.generated.h"
@@ -106,6 +107,7 @@ public:
 	void ShowEvidenceForCapture(int32 FilterIndex = 0, bool bShowFirstDetail = false);
 	void ShowComponentGalleryForCapture();
 	void ShowSettingsForCapture();
+	void ShowLLMSettingsForCapture();
 	void SetOpeningCaptureStage(int32 Stage);
 	void SetCrisisCaptureStage(int32 Stage);
 	void SetEndingCaptureStage(EWSEndingType Ending, bool bShowResults);
@@ -385,6 +387,39 @@ private:
 	TObjectPtr<UButton> ReducedMotionButton;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UScrollBox> SettingsScroll;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UComboBoxString> LLMProviderCombo;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UEditableTextBox> LLMBaseUrlInput;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UEditableTextBox> LLMApiKeyInput;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UComboBoxString> LLMModelCandidateCombo;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UEditableTextBox> LLMModelInput;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> LLMEnabledButton;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> LLMApplyButton;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> LLMEnabledValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> LLMModelHintText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> LLMStatusText;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> FOVValueText;
 
 	UPROPERTY(Transient)
@@ -447,6 +482,7 @@ private:
 	bool bEvidenceVisible = false;
 	bool bDialogueVisible = false;
 	bool bUpdatingSettings = false;
+	bool bPendingLLMEnabled = false;
 	int32 EvidenceFilterIndex = 0;
 	EWSUILayer CurrentLayer = EWSUILayer::Game;
 	EWSDialogueStage DialogueStage = EWSDialogueStage::Opening;
@@ -507,7 +543,9 @@ private:
 	UProgressBar* MakeProgressBar(const FName Name, const FLinearColor& FillColor, float Height = 7.0f);
 	FSlateFontInfo UIFont(int32 Size, bool bBold = false) const;
 	static FString APCells(int32 Remaining);
-	static FString ClockForAP(int32 Remaining);
+	static FString ClockForProgress(
+		EWSDayPhase DayPhase,
+		int32 Remaining);
 	static float ScoreRatio(float Value, float Maximum);
 
 	UFUNCTION()
@@ -552,7 +590,20 @@ private:
 	UFUNCTION()
 	void ToggleReducedMotion();
 
+	UFUNCTION()
+	void HandleLLMProviderChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION()
+	void HandleLLMModelCandidateChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION()
+	void ToggleLLMEnabled();
+
+	UFUNCTION()
+	void ApplyLLMSettings();
+
 	void RefreshSettingsUI();
+	void RefreshLLMProviderFields(const FString& ProviderId, bool bReplaceModel);
 	bool IsReducedMotionEnabled() const;
 
 	UFUNCTION()

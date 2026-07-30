@@ -2,7 +2,9 @@
 
 #include "Agents/WSAgentGateway.h"
 #include "Camera/CameraComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Engine/World.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -273,13 +275,148 @@ void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
 		PreviewActionRequest.FoodForPlayer = FoodOptions[NextIndex][0];
 		PreviewActionRequest.FoodForGuHeng = FoodOptions[NextIndex][1];
 		PreviewActionRequest.FoodForYeCheng = FoodOptions[NextIndex][2];
+		if (NextIndex == 0)
+		{
+			PreviewActionRequest.bHotMeal =
+				!PreviewActionRequest.bHotMeal;
+		}
 	}
-	else if (PreviewActionRequest.ActionId == TEXT("treat_gu_heng"))
+	else if (
+		PreviewActionRequest.ActionId == TEXT("treat_gu_heng")
+		|| PreviewActionRequest.ActionId == TEXT("treat_character"))
 	{
+		static const EWSCharacterId Targets[] = {
+			EWSCharacterId::Player,
+			EWSCharacterId::GuHeng,
+			EWSCharacterId::YeCheng};
+		static const EWSTreatmentMethod Methods[] = {
+			EWSTreatmentMethod::Bandage,
+			EWSTreatmentMethod::Full,
+			EWSTreatmentMethod::HeatPack};
+		int32 TargetIndex = 0;
+		int32 MethodIndex = 0;
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Targets); ++Index)
+		{
+			if (PreviewActionRequest.TreatmentTarget == Targets[Index])
+			{
+				TargetIndex = Index;
+				break;
+			}
+		}
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Methods); ++Index)
+		{
+			if (PreviewActionRequest.TreatmentMethod == Methods[Index])
+			{
+				MethodIndex = Index;
+				break;
+			}
+		}
+		MethodIndex =
+			(MethodIndex + 1) % UE_ARRAY_COUNT(Methods);
+		if (MethodIndex == 0)
+		{
+			TargetIndex =
+				(TargetIndex + 1) % UE_ARRAY_COUNT(Targets);
+		}
+		PreviewActionRequest.TreatmentTarget = Targets[TargetIndex];
+		PreviewActionRequest.TreatmentMethod = Methods[MethodIndex];
 		PreviewActionRequest.TreatmentResource =
-			PreviewActionRequest.TreatmentResource == EWSResourceType::Medicine
+			PreviewActionRequest.TreatmentMethod
+				== EWSTreatmentMethod::HeatPack
 			? EWSResourceType::HeatPack
 			: EWSResourceType::Medicine;
+	}
+	else if (PreviewActionRequest.ActionId == TEXT("rest"))
+	{
+		static const EWSCharacterId Targets[] = {
+			EWSCharacterId::Player,
+			EWSCharacterId::GuHeng,
+			EWSCharacterId::YeCheng};
+		static const EWSCharacterLocation Locations[] = {
+			EWSCharacterLocation::ControlRoom,
+			EWSCharacterLocation::RepairRoom,
+			EWSCharacterLocation::MedicalRoom,
+			EWSCharacterLocation::Kitchen};
+		int32 TargetIndex = 0;
+		int32 LocationIndex = 0;
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Targets); ++Index)
+		{
+			if (PreviewActionRequest.RestTarget == Targets[Index])
+			{
+				TargetIndex = Index;
+				break;
+			}
+		}
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Locations); ++Index)
+		{
+			if (PreviewActionRequest.RestLocation == Locations[Index])
+			{
+				LocationIndex = Index;
+				break;
+			}
+		}
+		LocationIndex =
+			(LocationIndex + 1) % UE_ARRAY_COUNT(Locations);
+		if (LocationIndex == 0)
+		{
+			TargetIndex =
+				(TargetIndex + 1) % UE_ARRAY_COUNT(Targets);
+		}
+		PreviewActionRequest.RestTarget = Targets[TargetIndex];
+		PreviewActionRequest.RestLocation = Locations[LocationIndex];
+	}
+	else if (
+		PreviewActionRequest.ActionId
+			== TEXT("inspect_control_cabinet"))
+	{
+		PreviewActionRequest.bHasCollaborator =
+			!PreviewActionRequest.bHasCollaborator;
+		PreviewActionRequest.Collaborator =
+			EWSCharacterId::GuHeng;
+	}
+	else if (
+		PreviewActionRequest.ActionId
+			== TEXT("dismantle_kitchen_heater"))
+	{
+		PreviewActionRequest.bHasCollaborator =
+			!PreviewActionRequest.bHasCollaborator;
+		PreviewActionRequest.Collaborator =
+			EWSCharacterId::Player;
+	}
+	else if (
+		PreviewActionRequest.ActionId == TEXT("repair_generator"))
+	{
+		int32 Mode = 0;
+		if (PreviewActionRequest.bForce)
+		{
+			Mode = 3;
+		}
+		else if (PreviewActionRequest.bUseRelay)
+		{
+			Mode = 2;
+		}
+		else if (PreviewActionRequest.bHasCollaborator)
+		{
+			Mode = 1;
+		}
+		Mode = (Mode + 1) % 4;
+		PreviewActionRequest.bHasCollaborator = Mode == 1;
+		PreviewActionRequest.Collaborator =
+			EWSCharacterId::Player;
+		PreviewActionRequest.bUseRelay = Mode == 2;
+		PreviewActionRequest.bForce = Mode == 3;
+	}
+	else if (
+		PreviewActionRequest.ActionId == TEXT("calibrate_antenna"))
+	{
+		int32 Mode = PreviewActionRequest.bForce
+			? 2
+			: PreviewActionRequest.bHasCollaborator ? 1 : 0;
+		Mode = (Mode + 1) % 3;
+		PreviewActionRequest.bHasCollaborator = Mode == 1;
+		PreviewActionRequest.Collaborator =
+			EWSCharacterId::YeCheng;
+		PreviewActionRequest.bForce = Mode == 2;
 	}
 	else
 	{
@@ -587,6 +724,127 @@ void AWhiteoutCharacter::Settle(const FInputActionValue& Value)
 		return;
 	}
 	const FWSGameState Before = StateSubsystem->GetStateSnapshot();
+	const auto FinishRun = [this, StateSubsystem]()
+	{
+		const FWSGameState Results = StateSubsystem->EndGame();
+		FString EventLogPath;
+		StateSubsystem->ExportEventLog(EventLogPath);
+		if (APlayerController* PlayerController =
+				Cast<APlayerController>(Controller))
+		{
+			if (AWhiteoutHUD* HUD =
+					Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+			{
+				HUD->SetSystemMessage(FString::Printf(
+					TEXT("本轮已结束：总分 %.1f，评级 %s。按 R 重新开始。"),
+					Results.Score.Total,
+					*Results.Score.Rating));
+			}
+		}
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("WhiteoutStation InputSettle: ending=%s score=%.2f log=%s"),
+			*StaticEnum<EWSEndingType>()->GetNameStringByValue(
+				static_cast<int64>(Results.Ending)),
+			Results.Score.Total,
+			*EventLogPath);
+	};
+	if (StateSubsystem->GetRulesEngine().IsV11())
+	{
+		if (Before.Phase == EWSGamePhase::Results)
+		{
+			return;
+		}
+		if (Before.Tasks.bSignalSent
+			|| Before.bDayWindowClosed
+			|| Before.DayPhase == EWSDayPhase::Complete)
+		{
+			bEarlySettleConfirmationPending = false;
+			FinishRun();
+			return;
+		}
+		if (!Before.bDayPhaseStarted)
+		{
+			if (APlayerController* PlayerController =
+					Cast<APlayerController>(Controller))
+			{
+				if (AWhiteoutHUD* HUD =
+						Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+				{
+					HUD->SetSystemMessage(
+						TEXT("本阶段尚未开始。请先在控制室、维修间、医务室或厨房选择一个供暖区。"));
+				}
+			}
+			return;
+		}
+		if (Before.ActionPoints > 0)
+		{
+			const bool bSameStateWasConfirmed =
+				bEarlySettleConfirmationPending
+				&& EarlySettleConfirmationAP == Before.ActionPoints
+				&& EarlySettleConfirmationTransactionCount
+					== Before.CommittedTransactions.Num();
+			if (!bSameStateWasConfirmed)
+			{
+				bEarlySettleConfirmationPending = true;
+				EarlySettleConfirmationAP = Before.ActionPoints;
+				EarlySettleConfirmationTransactionCount =
+					Before.CommittedTransactions.Num();
+				if (APlayerController* PlayerController =
+						Cast<APlayerController>(Controller))
+				{
+					if (AWhiteoutHUD* HUD =
+							Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+					{
+						HUD->SetSystemMessage(FString::Printf(
+							TEXT("本阶段仍有 %d AP；再次按 Enter 将结束阶段，未使用的行动力不会结转。"),
+							Before.ActionPoints));
+					}
+				}
+				return;
+			}
+		}
+		bEarlySettleConfirmationPending = false;
+		EWSReasonCode Reason = EWSReasonCode::PhaseLocked;
+		FWSPhaseSummary Summary;
+		if (!StateSubsystem->SettleCurrentDayPhase(Reason, Summary))
+		{
+			if (APlayerController* PlayerController =
+					Cast<APlayerController>(Controller))
+			{
+				if (AWhiteoutHUD* HUD =
+						Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+				{
+					HUD->SetSystemMessage(
+						FWSPresentationText::ReasonCause(Reason).ToString());
+				}
+			}
+			return;
+		}
+		const FWSGameState After = StateSubsystem->GetStateSnapshot();
+		if (After.DayPhase == EWSDayPhase::Complete)
+		{
+			FinishRun();
+			return;
+		}
+		if (APlayerController* PlayerController =
+				Cast<APlayerController>(Controller))
+		{
+			if (AWhiteoutHUD* HUD =
+					Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+			{
+				const FString CausalChanges = Summary.Changes.IsEmpty()
+					? TEXT("人物状态无额外变化")
+					: FString::Join(Summary.Changes, TEXT("；"));
+				HUD->SetSystemMessage(FString::Printf(
+					TEXT("阶段结算：%s。放弃 %d AP；下一阶段请重新选择供暖区。"),
+					*CausalChanges,
+					Summary.UnusedAPDiscarded));
+			}
+		}
+		return;
+	}
 	if (!Before.Tasks.bSignalSent && Before.ActionPoints > 0 && Before.Phase != EWSGamePhase::Ending)
 	{
 		const bool bSameStateWasConfirmed = bEarlySettleConfirmationPending
@@ -615,24 +873,7 @@ void AWhiteoutCharacter::Settle(const FInputActionValue& Value)
 	{
 		bEarlySettleConfirmationPending = false;
 	}
-	const FWSGameState Results = StateSubsystem->EndGame();
-	FString EventLogPath;
-	StateSubsystem->ExportEventLog(EventLogPath);
-	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
-	{
-		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
-		{
-			HUD->SetSystemMessage(FString::Printf(TEXT("本轮已结束：总分 %.1f，评级 %s。按 R 重新开始。"), Results.Score.Total, *Results.Score.Rating));
-		}
-	}
-	UE_LOG(
-		LogTemp,
-		Display,
-		TEXT("WhiteoutStation InputSettle: ending=%s score=%.2f log=%s"),
-		*StaticEnum<EWSEndingType>()->GetNameStringByValue(
-			static_cast<int64>(Results.Ending)),
-		Results.Score.Total,
-		*EventLogPath);
+	FinishRun();
 }
 
 AWSInteractableActor* AWhiteoutCharacter::FindLookedAtInteractable() const
@@ -641,15 +882,128 @@ AWSInteractableActor* AWhiteoutCharacter::FindLookedAtInteractable() const
 	{
 		return nullptr;
 	}
-	const FVector Start = FirstPersonCamera->GetComponentLocation();
-	const FVector End = Start + FirstPersonCamera->GetForwardVector() * 425.0f;
-	FHitResult Hit;
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(WhiteoutInteraction), false, this);
-	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	return FindInteractableFromView(
+		GetWorld(),
+		FirstPersonCamera->GetComponentLocation(),
+		FirstPersonCamera->GetForwardVector(),
+		this);
+}
+
+AWSInteractableActor* AWhiteoutCharacter::FindInteractableFromView(
+	UWorld* World,
+	const FVector& ViewLocation,
+	const FVector& ViewDirection,
+	const AActor* Viewer,
+	const float MaxDistance)
+{
+	if (!World || ViewDirection.IsNearlyZero() || MaxDistance <= 0.0f)
 	{
-		return Cast<AWSInteractableActor>(Hit.GetActor());
+		return nullptr;
 	}
-	return nullptr;
+
+	constexpr float InteractionSweepRadius = 22.0f;
+	const FVector Forward = ViewDirection.GetSafeNormal();
+	const FVector SweepEnd = ViewLocation + Forward * MaxDistance;
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+	FCollisionQueryParams CandidateParams(
+		SCENE_QUERY_STAT(WhiteoutInteractionCandidates),
+		false,
+		Viewer);
+	TArray<FHitResult> CandidateHits;
+	World->SweepMultiByChannel(
+		CandidateHits,
+		ViewLocation,
+		SweepEnd,
+		FQuat::Identity,
+		ECC_Visibility,
+		FCollisionShape::MakeSphere(InteractionSweepRadius),
+		CandidateParams);
+	TArray<FHitResult> DynamicCandidateHits;
+	World->SweepMultiByObjectType(
+			DynamicCandidateHits,
+			ViewLocation,
+			SweepEnd,
+			FQuat::Identity,
+			ObjectParams,
+			FCollisionShape::MakeSphere(InteractionSweepRadius),
+			CandidateParams);
+	CandidateHits.Append(DynamicCandidateHits);
+	if (CandidateHits.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	AWSInteractableActor* BestCandidate = nullptr;
+	float BestAngularError = TNumericLimits<float>::Max();
+	float BestDistance = TNumericLimits<float>::Max();
+	TSet<AWSInteractableActor*> EvaluatedCandidates;
+	for (const FHitResult& CandidateHit : CandidateHits)
+	{
+		AWSInteractableActor* Candidate =
+			Cast<AWSInteractableActor>(CandidateHit.GetActor());
+		if (!Candidate || EvaluatedCandidates.Contains(Candidate))
+		{
+			continue;
+		}
+		EvaluatedCandidates.Add(Candidate);
+
+		FVector AimPoint = CandidateHit.ImpactPoint;
+		if (AimPoint.IsNearlyZero())
+		{
+			AimPoint = CandidateHit.Location;
+		}
+		if (AimPoint.IsNearlyZero())
+		{
+			AimPoint = Candidate->InteractionCollision
+				? Candidate->InteractionCollision->Bounds.Origin
+				: Candidate->GetActorLocation();
+		}
+		const FVector ToCandidate = AimPoint - ViewLocation;
+		const float CandidateDistance = ToCandidate.Size();
+		if (CandidateDistance <= KINDA_SMALL_NUMBER
+			|| CandidateDistance > MaxDistance + InteractionSweepRadius)
+		{
+			continue;
+		}
+		const float ForwardDistance = FVector::DotProduct(ToCandidate, Forward);
+		if (ForwardDistance <= 0.0f)
+		{
+			continue;
+		}
+
+		FCollisionQueryParams SightParams(
+			SCENE_QUERY_STAT(WhiteoutInteractionSight),
+			false,
+			Viewer);
+		FHitResult SightHit;
+		const FVector SightEnd =
+			AimPoint + ToCandidate.GetSafeNormal() * 2.0f;
+		const bool bSightBlocked = World->LineTraceSingleByChannel(
+			SightHit,
+			ViewLocation,
+			SightEnd,
+			ECC_Visibility,
+			SightParams);
+		if (bSightBlocked && SightHit.GetActor() != Candidate)
+		{
+			continue;
+		}
+
+		const float Alignment = FVector::DotProduct(
+			ToCandidate / CandidateDistance,
+			Forward);
+		const float AngularError = 1.0f - Alignment;
+		if (AngularError < BestAngularError - KINDA_SMALL_NUMBER
+			|| (FMath::IsNearlyEqual(AngularError, BestAngularError)
+				&& CandidateDistance < BestDistance))
+		{
+			BestCandidate = Candidate;
+			BestAngularError = AngularError;
+			BestDistance = CandidateDistance;
+		}
+	}
+	return BestCandidate;
 }
 
 void AWhiteoutCharacter::UpdateFootsteps()

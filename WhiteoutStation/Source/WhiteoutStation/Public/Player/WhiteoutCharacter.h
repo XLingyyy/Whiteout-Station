@@ -12,6 +12,7 @@ class UInputMappingContext;
 class AWSInteractableActor;
 class UWSAgentGateway;
 class USoundBase;
+class UWorld;
 
 UCLASS()
 class WHITEOUTSTATION_API AWhiteoutCharacter : public ACharacter
@@ -26,6 +27,13 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
+
+	static AWSInteractableActor* FindInteractableFromView(
+		UWorld* World,
+		const FVector& ViewLocation,
+		const FVector& ViewDirection,
+		const AActor* Viewer = nullptr,
+		float MaxDistance = 425.0f);
 
 	void ChooseDialogueAct(EWSDialogueAct DialogueAct);
 	void ChooseDialoguePromise(FName PromiseCondition);

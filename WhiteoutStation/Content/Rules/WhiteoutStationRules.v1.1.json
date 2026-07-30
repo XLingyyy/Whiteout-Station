@@ -369,7 +369,7 @@
               "params": {
                 "target": "gu_heng",
                 "method": "full",
-                "collaborator": "gu_heng"
+            "collaborator": "player"
               }
             },
             {

@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "runtime_version": "1.1.0",
+  "provider_name": "deepseek",
+  "model": "deepseek-v4-flash",
+  "endpoint": "https://api.deepseek.com",
+  "timeout_seconds": 8,
+  "llm_enabled": false,
+  "transport": "openai_chat_completions",
+  "credential_policy": "Settings UI credentials are process-memory only. Environment and ignored LocalConfig credentials remain supported for development.",
+  "fallback_policy": "Invalid configuration, missing credentials, transport errors, non-2xx responses, malformed output, or validation failures always return the deterministic local decision.",
+  "notes": "Provider, BaseURL, model, and enabled state may be saved locally. API keys entered in the game are never written to ini, logs, saves, or this file."
+}

@@ -10,35 +10,49 @@
 #include "Save/WindStationSaveGame.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Settings/WhiteoutSettingsSubsystem.h"
 
 namespace
 {
-	void MigrateLegacyCharacterScale(FWSGameState& State)
+	bool HeatingZoneForAction(
+		const FName ActionId,
+		EWSHeatingZone& OutHeatingZone)
 	{
-		for (TPair<EWSCharacterId, FWSCharacterState>& Pair : State.Characters)
+		if (ActionId == TEXT("heat_repair_room"))
 		{
-			FWSCharacterState& Character = Pair.Value;
-			Character.Health = FMath::Clamp(Character.Health / 10.0f, 0.0f, 10.0f);
-			Character.Temperature = FMath::Clamp(Character.Temperature / 10.0f, 0.0f, 10.0f);
-			Character.Hunger = FMath::Clamp(Character.Hunger / 10.0f, 0.0f, 10.0f);
-			Character.Fatigue = FMath::Clamp(Character.Fatigue / 10.0f, 0.0f, 10.0f);
-			Character.Pressure = FMath::Clamp(Character.Pressure / 10.0f, 0.0f, 10.0f);
-			Character.Trust = FMath::Clamp(Character.Trust / 10.0f + 5.0f, 0.0f, 10.0f);
+			OutHeatingZone = EWSHeatingZone::RepairRoom;
+			return true;
 		}
+		if (ActionId == TEXT("heat_medical_room"))
+		{
+			OutHeatingZone = EWSHeatingZone::MedicalRoom;
+			return true;
+		}
+		if (ActionId == TEXT("heat_kitchen"))
+		{
+			OutHeatingZone = EWSHeatingZone::Kitchen;
+			return true;
+		}
+		if (ActionId == TEXT("heat_control_room"))
+		{
+			OutHeatingZone = EWSHeatingZone::ControlRoom;
+			return true;
+		}
+		return false;
 	}
 }
 
-const FString UWindStationStateSubsystem::SaveSlot(TEXT("WhiteoutStation_Autosave_v1_0"));
-const FString UWindStationStateSubsystem::LegacyV09SaveSlot(TEXT("WhiteoutStation_Autosave_v0_9"));
-const FString UWindStationStateSubsystem::LegacyV08SaveSlot(TEXT("WhiteoutStation_Autosave_v0_8"));
-const FString UWindStationStateSubsystem::LegacyV07SaveSlot(TEXT("WhiteoutStation_Autosave_v0_7"));
-const FString UWindStationStateSubsystem::LegacyV06SaveSlot(TEXT("WhiteoutStation_Autosave_v0_6"));
+const FString UWindStationStateSubsystem::SaveSlot(
+	TEXT("WhiteoutStation_Autosave_v1_1"));
 
 void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	Collection.InitializeDependency<UWhiteoutSettingsSubsystem>();
 	FString Error;
-	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v1.0.json");
+	const FString ConfigPath =
+		FPaths::ProjectContentDir()
+		/ TEXT("Rules/WhiteoutStationRules.v1.1.json");
 	if (!RulesEngine.LoadConfig(ConfigPath, Error))
 	{
 		UE_LOG(LogTemp, Error, TEXT("Whiteout rules config fallback: %s"), *Error);
@@ -47,10 +61,23 @@ void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	ActionResolver->Initialize(this);
 	AgentGateway = NewObject<UWSAgentGateway>(this);
 	AgentGateway->Initialize();
+	if (UWhiteoutSettingsSubsystem* Settings =
+		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		LLMSettingsChangedHandle = Settings->OnLLMSettingsChanged.AddUObject(
+			this,
+			&UWindStationStateSubsystem::HandleLLMSettingsChanged);
+	}
 }
 
 void UWindStationStateSubsystem::Deinitialize()
 {
+	if (UWhiteoutSettingsSubsystem* Settings =
+		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+	{
+		Settings->OnLLMSettingsChanged.Remove(LLMSettingsChangedHandle);
+	}
+	LLMSettingsChangedHandle.Reset();
 	if (AgentGateway)
 	{
 		AgentGateway->ResetSession();
@@ -58,6 +85,64 @@ void UWindStationStateSubsystem::Deinitialize()
 	ActionResolver = nullptr;
 	AgentGateway = nullptr;
 	Super::Deinitialize();
+}
+
+bool UWindStationStateSubsystem::ApplyLLMRuntimeConfiguration(FString& OutError)
+{
+	UWhiteoutSettingsSubsystem* Settings =
+		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>();
+	if (!Settings || !AgentGateway)
+	{
+		OutError = TEXT("模型运行时尚未初始化。");
+		LLMConfigurationError = OutError;
+		return false;
+	}
+	const FString TargetProvider =
+		Settings->GetLLMProviderId().TrimStartAndEnd().ToLower();
+	const FString ExistingCredentialSource = AgentGateway->GetCredentialSource();
+	const bool bPreserveLegacyCredential =
+		!Settings->HasSessionLLMApiKey()
+		&& (ExistingCredentialSource == TEXT("environment")
+			|| ExistingCredentialSource == TEXT("local_ini"))
+		&& AgentGateway->GetCredentialProviderId() == TargetProvider;
+	const FString SessionApiKey = Settings->HasSessionLLMApiKey()
+		? Settings->GetSessionLLMApiKey()
+		: FString();
+	const bool bConfigured = AgentGateway->ConfigureRuntime(
+		TargetProvider,
+		Settings->GetLLMBaseUrl(),
+		SessionApiKey,
+		Settings->GetLLMModelId(),
+		Settings->IsLLMEnabled(),
+		bPreserveLegacyCredential,
+		Settings->HasSessionLLMApiKey() ? TEXT("session_ui") : TEXT("none"),
+		OutError);
+	LLMConfigurationError = bConfigured ? FString() : OutError;
+	return bConfigured;
+}
+
+FString UWindStationStateSubsystem::GetLLMRuntimeStatus() const
+{
+	if (!LLMConfigurationError.IsEmpty())
+	{
+		return FString::Printf(TEXT("确定性回退｜%s"), *LLMConfigurationError);
+	}
+	return AgentGateway
+		? AgentGateway->GetRuntimeStatus()
+		: TEXT("确定性回退｜模型运行时尚未初始化");
+}
+
+bool UWindStationStateSubsystem::HasLiveLLMProvider() const
+{
+	return LLMConfigurationError.IsEmpty()
+		&& AgentGateway
+		&& AgentGateway->HasLiveProvider();
+}
+
+void UWindStationStateSubsystem::HandleLLMSettingsChanged()
+{
+	FString Error;
+	ApplyLLMRuntimeConfiguration(Error);
 }
 
 void UWindStationStateSubsystem::NewGame()
@@ -86,11 +171,70 @@ void UWindStationStateSubsystem::CancelPendingDialogue()
 
 FWSActionPreview UWindStationStateSubsystem::PreviewAction(const FWSActionRequest& Request) const
 {
+	EWSHeatingZone HeatingZone = EWSHeatingZone::None;
+	if (RulesEngine.IsV11()
+		&& HeatingZoneForAction(Request.ActionId, HeatingZone))
+	{
+		const FWSGameState& State = RulesEngine.GetState();
+		FWSActionPreview Preview;
+		Preview.ActionId = Request.ActionId;
+		Preview.BaseAP = 0;
+		Preview.RawAP = 0;
+		Preview.APCost = 0;
+		Preview.WorkReadiness = EWSWorkReadiness::Ready;
+		Preview.PreviewText = FText::FromString(
+			TEXT("锁定本阶段供暖区，消耗 1 单位燃料；本阶段内不可更改。"));
+		if (State.bDayWindowClosed)
+		{
+			Preview.ReasonCode = EWSReasonCode::WindowClosed;
+		}
+		else if (State.bDayPhaseStarted || State.Heating.bLocked)
+		{
+			Preview.ReasonCode = EWSReasonCode::HeatingLocked;
+		}
+		else if (State.Resources.Fuel < 1)
+		{
+			Preview.ReasonCode = EWSReasonCode::NeedsFuel;
+		}
+		else
+		{
+			Preview.bCanExecute = true;
+			Preview.ReasonCode = EWSReasonCode::Ok;
+		}
+		return Preview;
+	}
 	return RulesEngine.Preview(Request);
 }
 
 FWSActionResult UWindStationStateSubsystem::CommitAction(const FWSActionRequest& Request)
 {
+	EWSHeatingZone HeatingZone = EWSHeatingZone::None;
+	if (RulesEngine.IsV11()
+		&& HeatingZoneForAction(Request.ActionId, HeatingZone))
+	{
+		FWSActionResult Result;
+		Result.ActionId = Request.ActionId;
+		Result.TransactionId = Request.TransactionId.IsValid()
+			? Request.TransactionId
+			: FGuid::NewGuid();
+		Result.APBefore = RulesEngine.GetState().ActionPoints;
+		Result.APAfter = Result.APBefore;
+		Result.BaseAP = 0;
+		Result.ActualAP = 0;
+		Result.WorkReadiness = EWSWorkReadiness::Ready;
+		Result.bCommitted = RulesEngine.BeginDayPhase(
+			HeatingZone,
+			Result.ReasonCode,
+			Result.Changes);
+		if (Result.bCommitted)
+		{
+			Result.APAfter = RulesEngine.GetState().ActionPoints;
+			SaveSnapshot();
+			OnActionCommitted.Broadcast(Result);
+			BroadcastState();
+		}
+		return Result;
+	}
 	FWSActionResult Result = RulesEngine.Commit(Request);
 	if (Result.bCommitted)
 	{
@@ -102,6 +246,35 @@ FWSActionResult UWindStationStateSubsystem::CommitAction(const FWSActionRequest&
 		RequestActionExpression(CommittedRequest);
 	}
 	return Result;
+}
+
+bool UWindStationStateSubsystem::BeginDayPhase(
+	const EWSHeatingZone HeatingZone,
+	EWSReasonCode& OutReason,
+	TArray<FString>& OutChanges)
+{
+	const bool bStarted =
+		RulesEngine.BeginDayPhase(HeatingZone, OutReason, OutChanges);
+	if (bStarted)
+	{
+		SaveSnapshot();
+		BroadcastState();
+	}
+	return bStarted;
+}
+
+bool UWindStationStateSubsystem::SettleCurrentDayPhase(
+	EWSReasonCode& OutReason,
+	FWSPhaseSummary& OutSummary)
+{
+	const bool bSettled =
+		RulesEngine.SettleDayPhase(OutReason, OutSummary);
+	if (bSettled)
+	{
+		SaveSnapshot();
+		BroadcastState();
+	}
+	return bSettled;
 }
 
 FWSGameState UWindStationStateSubsystem::EndGame()
@@ -127,32 +300,7 @@ bool UWindStationStateSubsystem::SaveSnapshot()
 bool UWindStationStateSubsystem::LoadSnapshot()
 {
 	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlot, 0));
-	bool bMigratingV09 = false;
-	bool bMigratingLegacyScale = false;
-	if (!Save)
-	{
-		Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(LegacyV09SaveSlot, 0));
-		bMigratingV09 = Save != nullptr;
-	}
-	if (!Save)
-	{
-		Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(LegacyV08SaveSlot, 0));
-	}
-	if (!Save)
-	{
-		Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(LegacyV07SaveSlot, 0));
-		bMigratingLegacyScale = Save != nullptr;
-	}
-	if (!Save)
-	{
-		Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(LegacyV06SaveSlot, 0));
-		bMigratingLegacyScale = Save != nullptr;
-	}
-	if (!Save || (Save->SaveVersion != TEXT("1.0.0")
-		&& Save->SaveVersion != TEXT("0.9.0")
-		&& Save->SaveVersion != TEXT("0.8.0")
-		&& Save->SaveVersion != TEXT("0.7.0")
-		&& Save->SaveVersion != TEXT("0.6.0")))
+	if (!Save || Save->SaveVersion != TEXT("1.1.0"))
 	{
 		return false;
 	}
@@ -160,32 +308,15 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	{
 		AgentGateway->ResetSession();
 	}
-	FWSGameState LoadedState = Save->State;
-	if (bMigratingLegacyScale)
-	{
-		MigrateLegacyCharacterScale(LoadedState);
-	}
-	if (bMigratingV09)
-	{
-		LoadedState.ActionPoints = FMath::Min(12, LoadedState.ActionPoints + 4);
-	}
-	RulesEngine.SetState(LoadedState);
+	RulesEngine.SetState(Save->State);
 	LatestDialogue = FWSAgentReply();
-	if (Save->SaveVersion != TEXT("1.0.0"))
-	{
-		SaveSnapshot();
-	}
 	BroadcastState();
 	return true;
 }
 
 bool UWindStationStateSubsystem::HasSnapshot() const
 {
-	return UGameplayStatics::DoesSaveGameExist(SaveSlot, 0)
-		|| UGameplayStatics::DoesSaveGameExist(LegacyV09SaveSlot, 0)
-		|| UGameplayStatics::DoesSaveGameExist(LegacyV08SaveSlot, 0)
-		|| UGameplayStatics::DoesSaveGameExist(LegacyV07SaveSlot, 0)
-		|| UGameplayStatics::DoesSaveGameExist(LegacyV06SaveSlot, 0);
+	return UGameplayStatics::DoesSaveGameExist(SaveSlot, 0);
 }
 
 bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
@@ -218,15 +349,57 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 	}
 
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetStringField(TEXT("rules_version"), TEXT("1.0.0"));
-	Root->SetArrayField(TEXT("events"), Events);
 	const FWSGameState& Snapshot = RulesEngine.GetState();
+	Root->SetStringField(TEXT("rules_version"), Snapshot.RulesVersion);
+	Root->SetArrayField(TEXT("events"), Events);
 	Root->SetNumberField(TEXT("remaining_ap"), Snapshot.ActionPoints);
+	Root->SetStringField(
+		TEXT("day_phase"),
+		StaticEnum<EWSDayPhase>()->GetNameStringByValue(
+			static_cast<int64>(Snapshot.DayPhase)));
+	Root->SetBoolField(
+		TEXT("day_phase_started"),
+		Snapshot.bDayPhaseStarted);
 	Root->SetBoolField(TEXT("signal_sent"), Snapshot.Tasks.bSignalSent);
 	Root->SetStringField(TEXT("ending"), StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(Snapshot.Ending)));
 	Root->SetNumberField(TEXT("score"), Snapshot.Score.Total);
 	Root->SetStringField(TEXT("rating"), Snapshot.Score.Rating);
 	Root->SetNumberField(TEXT("model_calls"), Snapshot.ModelCalls);
+	TArray<TSharedPtr<FJsonValue>> PhaseSummaries;
+	for (const FWSPhaseSummary& Summary : Snapshot.PhaseSummaries)
+	{
+		TSharedRef<FJsonObject> SummaryObject =
+			MakeShared<FJsonObject>();
+		SummaryObject->SetStringField(
+			TEXT("phase"),
+			StaticEnum<EWSDayPhase>()->GetNameStringByValue(
+				static_cast<int64>(Summary.Phase)));
+		SummaryObject->SetStringField(
+			TEXT("heating_zone"),
+			StaticEnum<EWSHeatingZone>()->GetNameStringByValue(
+				static_cast<int64>(Summary.HeatingZone)));
+		SummaryObject->SetNumberField(
+			TEXT("unused_ap_discarded"),
+			Summary.UnusedAPDiscarded);
+		TArray<TSharedPtr<FJsonValue>> SummaryChanges;
+		for (const FString& Change : Summary.Changes)
+		{
+			SummaryChanges.Add(MakeShared<FJsonValueString>(Change));
+		}
+		SummaryObject->SetArrayField(TEXT("changes"), SummaryChanges);
+		SummaryObject->SetStringField(
+			TEXT("phase_event"),
+			Summary.PhaseEvent.IsNone()
+				? TEXT("none")
+				: Summary.PhaseEvent.ToString());
+		SummaryObject->SetStringField(
+			TEXT("npc_reaction"),
+			Summary.NPCReaction.IsNone()
+				? TEXT("none")
+				: Summary.NPCReaction.ToString());
+		PhaseSummaries.Add(MakeShared<FJsonValueObject>(SummaryObject));
+	}
+	Root->SetArrayField(TEXT("phase_summaries"), PhaseSummaries);
 	TArray<TSharedPtr<FJsonValue>> Promises;
 	for (const FWSPromiseRecord& Promise : Snapshot.Promises)
 	{
@@ -261,7 +434,10 @@ void UWindStationStateSubsystem::RequestActionExpression(const FWSActionRequest&
 		return;
 	}
 
-	const bool bUseLiveProvider = AgentGateway->HasLiveProvider() && RulesEngine.TryRecordModelCall();
+	const bool bUseLiveProvider =
+		LLMConfigurationError.IsEmpty()
+		&& AgentGateway->HasLiveProvider()
+		&& RulesEngine.TryRecordModelCall();
 	if (bUseLiveProvider)
 	{
 		SaveSnapshot();

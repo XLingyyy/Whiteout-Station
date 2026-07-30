@@ -39,6 +39,27 @@ struct FWSDialogueIntentResult
 
 DECLARE_DELEGATE_OneParam(FWSDialogueIntentCallback, const FWSDialogueIntentResult&);
 
+USTRUCT(BlueprintType)
+struct FWSLLMProviderPreset
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
+	FString ProviderId;
+
+	UPROPERTY(BlueprintReadOnly)
+	FString DisplayName;
+
+	UPROPERTY(BlueprintReadOnly)
+	FString BaseUrl;
+
+	UPROPERTY(BlueprintReadOnly)
+	TArray<FString> ModelCandidates;
+
+	UPROPERTY(BlueprintReadOnly)
+	bool bRequiresApiKey = true;
+};
+
 struct FWSAgentDialogueTurn
 {
 	FString UserContextJson;
@@ -55,6 +76,15 @@ public:
 	void ResetSession();
 	virtual void BeginDestroy() override;
 	bool HasLiveProvider() const;
+	bool ConfigureRuntime(
+		const FString& InProviderId,
+		const FString& InBaseUrlOrEndpoint,
+		const FString& InApiKey,
+		const FString& InModelId,
+		bool bInEnabled,
+		bool bPreserveExistingCredentialIfEmpty,
+		const FString& InCredentialSource,
+		FString& OutError);
 	void RequestExpression(
 		const FWSActionRequest& ActionRequest,
 		const FWSGameState& State,
@@ -77,6 +107,14 @@ public:
 	static bool IsLoopbackEndpoint(const FString& CandidateEndpoint);
 	static bool IsAllowedEndpoint(const FString& CandidateEndpoint);
 	static bool ShouldAttachApiKeyToEndpoint(const FString& CandidateEndpoint);
+	static bool NormalizeEndpointForProvider(
+		const FString& ProviderId,
+		const FString& CandidateBaseUrlOrEndpoint,
+		FString& OutEndpoint,
+		FString& OutReason);
+	static FString ProviderForEndpoint(const FString& CandidateEndpoint);
+	static TArray<FWSLLMProviderPreset> GetProviderPresets();
+	static TArray<FString> GetModelCandidates(const FString& ProviderId);
 	static bool ValidateIntentPayload(
 		const FString& Payload,
 		const FString& UserText,
@@ -99,11 +137,16 @@ public:
 	FString GetProviderName() const { return ProviderName; }
 	FString GetModelName() const { return ModelName; }
 	FString GetCredentialSource() const { return CredentialSource; }
+	FString GetCredentialProviderId() const { return CredentialProviderId; }
+	FString GetEndpoint() const { return Endpoint; }
+	FString GetRuntimeStatus() const;
+	FString BuildIntentRequestJson(const FString& UserText) const;
 
 private:
 	FString Endpoint;
 	FString ApiKey;
 	FString CredentialSource = TEXT("none");
+	FString CredentialProviderId;
 	FString ProviderName = TEXT("preset");
 	FString ModelName = TEXT("deepseek-v4-flash");
 	float TimeoutSeconds = 4.0f;
@@ -127,7 +170,6 @@ private:
 		const TArray<FName>& AllowedFactIds,
 		const FWSGameState& State,
 		const FWSActionRequest& ActionRequest) const;
-	FString BuildIntentRequestJson(const FString& UserText) const;
 	static FString BuildHistoryAssistantJson(const FWSAgentReply& Reply);
 	void RecordDialogueTurn(
 		const FWSActionRequest& ActionRequest,

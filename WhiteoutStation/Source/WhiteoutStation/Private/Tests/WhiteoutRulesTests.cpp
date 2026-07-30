@@ -45,6 +45,83 @@ namespace WhiteoutRuleTests
 		}
 		return Engine;
 	}
+
+	FWhiteoutRulesEngine LoadedV11Engine(FAutomationTestBase& Test)
+	{
+		FWhiteoutRulesEngine Engine;
+		FString Error;
+		Test.TestTrue(
+			TEXT("v1.1 rules JSON loads"),
+			Engine.LoadConfig(
+				FPaths::ProjectContentDir()
+					/ TEXT("Rules/WhiteoutStationRules.v1.1.json"),
+				Error));
+		if (!Error.IsEmpty())
+		{
+			Test.AddError(Error);
+		}
+		return Engine;
+	}
+
+	bool BeginV11(
+		FAutomationTestBase& Test,
+		FWhiteoutRulesEngine& Engine,
+		const EWSHeatingZone Zone)
+	{
+		EWSReasonCode Reason = EWSReasonCode::UnknownAction;
+		TArray<FString> Changes;
+		const bool bStarted = Engine.BeginDayPhase(Zone, Reason, Changes);
+		Test.TestTrue(TEXT("v1.1 phase starts"), bStarted);
+		if (!bStarted)
+		{
+			Test.AddError(FString::Printf(
+				TEXT("Phase start rejected with %s"),
+				*StaticEnum<EWSReasonCode>()->GetNameStringByValue(
+					static_cast<int64>(Reason))));
+		}
+		return bStarted;
+	}
+
+	bool SettleV11(
+		FAutomationTestBase& Test,
+		FWhiteoutRulesEngine& Engine)
+	{
+		EWSReasonCode Reason = EWSReasonCode::UnknownAction;
+		FWSPhaseSummary Summary;
+		const bool bSettled = Engine.SettleDayPhase(Reason, Summary);
+		Test.TestTrue(TEXT("v1.1 phase settles"), bSettled);
+		if (!bSettled)
+		{
+			Test.AddError(FString::Printf(
+				TEXT("Phase settlement rejected with %s"),
+				*StaticEnum<EWSReasonCode>()->GetNameStringByValue(
+					static_cast<int64>(Reason))));
+		}
+		return bSettled;
+	}
+
+	bool CommitV11(
+		FAutomationTestBase& Test,
+		FWhiteoutRulesEngine& Engine,
+		FWSActionRequest Request,
+		int32& InOutPaidAP)
+	{
+		const FWSActionResult Result = Engine.Commit(MoveTemp(Request));
+		Test.TestTrue(
+			FString::Printf(TEXT("v1.1 %s commits"), *Result.ActionId.ToString()),
+			Result.bCommitted);
+		if (!Result.bCommitted)
+		{
+			Test.AddError(FString::Printf(
+				TEXT("v1.1 action %s rejected with %s"),
+				*Result.ActionId.ToString(),
+				*StaticEnum<EWSReasonCode>()->GetNameStringByValue(
+					static_cast<int64>(Result.ReasonCode))));
+			return false;
+		}
+		InOutPaidAP += Result.ActualAP;
+		return true;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -768,6 +845,520 @@ bool FWhiteoutEvidenceClarityTest::RunTest(const FString& Parameters)
 			FString::Printf(TEXT("%s explains its gameplay consequence"), *FactId.ToString()),
 			Description.Len() >= 20 && !Description.Contains(TEXT("尚未关联")));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV11ConfigAndPhaseTest,
+	"WhiteoutStation.RulesV11.ConfigAndPhases",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV11ConfigAndPhaseTest::RunTest(const FString& Parameters)
+{
+	FWhiteoutRulesEngine Legacy = WhiteoutRuleTests::LoadedEngine(*this);
+	TestEqual(TEXT("v1.0 remains schema 3"), Legacy.GetConfig().SchemaVersion, 3);
+	TestEqual(TEXT("v1.0 still starts at 12 AP"), Legacy.GetState().ActionPoints, 12);
+
+	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	TestTrue(TEXT("v1.1 schema branch is active"), Engine.IsV11());
+	TestEqual(TEXT("v1.1 schema is 4"), Engine.GetConfig().SchemaVersion, 4);
+	TestEqual(TEXT("v1.1 rules version loads"), Engine.GetConfig().RulesVersion, FString(TEXT("1.1.0")));
+	TestEqual(TEXT("Morning starts with four AP"), Engine.GetState().PhaseActionPoints, 4);
+
+	const FWSGameState BeforeStart = Engine.GetState();
+	const FWSActionResult TooEarly =
+		Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")));
+	TestFalse(TEXT("Actions require a selected heating zone"), TooEarly.bCommitted);
+	TestTrue(
+		TEXT("Pre-phase rejection is explicit"),
+		TooEarly.ReasonCode == EWSReasonCode::PhaseNotStarted);
+	TestEqual(TEXT("Rejected action does not spend AP"), Engine.GetState().ActionPoints, BeforeStart.ActionPoints);
+
+	TestTrue(
+		TEXT("Morning heating starts"),
+		WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::MedicalRoom));
+	TestEqual(TEXT("Heating costs one fuel"), Engine.GetState().Resources.Fuel, 3);
+	TestEqual(TEXT("Heating history records one selection"), Engine.GetState().Heating.History.Num(), 1);
+
+	EWSReasonCode LockedReason = EWSReasonCode::Ok;
+	TArray<FString> LockedChanges;
+	TestFalse(
+		TEXT("Heating cannot switch during a phase"),
+		Engine.BeginDayPhase(EWSHeatingZone::RepairRoom, LockedReason, LockedChanges));
+	TestTrue(
+		TEXT("Heating lock has an explicit reason"),
+		LockedReason == EWSReasonCode::HeatingLocked);
+	TestEqual(TEXT("Rejected switch consumes no fuel"), Engine.GetState().Resources.Fuel, 3);
+
+	int32 PaidAP = 0;
+	TestTrue(
+		TEXT("One morning action commits"),
+		WhiteoutRuleTests::CommitV11(
+			*this,
+			Engine,
+			WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")),
+			PaidAP));
+	TestTrue(TEXT("Morning settles"), WhiteoutRuleTests::SettleV11(*this, Engine));
+	TestEqual(TEXT("Three unused AP are discarded"), Engine.GetState().PhaseSummaries[0].UnusedAPDiscarded, 3);
+	TestEqual(TEXT("Afternoon receives exactly four new AP"), Engine.GetState().PhaseActionPoints, 4);
+	TestTrue(TEXT("Phase advances to afternoon"), Engine.GetState().DayPhase == EWSDayPhase::Afternoon);
+	TestFalse(TEXT("Afternoon heating must be selected again"), Engine.GetState().bDayPhaseStarted);
+	TestEqual(TEXT("Settlement follows seven ordered stages"), Engine.GetState().PhaseSummaries[0].OrderedSteps.Num(), 7);
+	TestTrue(
+		TEXT("Settlement records concrete causal changes"),
+		Engine.GetState().PhaseSummaries[0].Changes.ContainsByPredicate(
+			[](const FString& Change)
+			{
+				return Change.Contains(TEXT("体温"))
+					&& Change.Contains(TEXT("→"));
+			}));
+
+	EWSReasonCode DuplicateSettleReason = EWSReasonCode::Ok;
+	FWSPhaseSummary DuplicateSummary;
+	TestFalse(
+		TEXT("A phase event cannot settle twice"),
+		Engine.SettleDayPhase(DuplicateSettleReason, DuplicateSummary));
+	TestTrue(
+		TEXT("Duplicate settlement is rejected before next phase starts"),
+		DuplicateSettleReason == EWSReasonCode::PhaseNotStarted);
+	TestEqual(TEXT("Only one phase summary is recorded"), Engine.GetState().PhaseSummaries.Num(), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV11DynamicCostAndInjuryTest,
+	"WhiteoutStation.RulesV11.DynamicCostAndInjury",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV11DynamicCostAndInjuryTest::RunTest(const FString& Parameters)
+{
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom)) return false;
+		FWSGameState& State = Engine.GetMutableStateForTesting();
+		State.Tasks.GeneratorProgress = 2;
+		FWSCharacterState& Player = State.Characters.FindChecked(EWSCharacterId::Player);
+		Player.Stamina = 1;
+		Player.Temperature = 5.0f;
+		Player.InjurySeverity = EWSInjurySeverity::Restricted;
+		Player.InjuryId = TEXT("right_hand_restricted");
+		const FWSActionPreview Preview =
+			Engine.Preview(WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna")));
+		TestTrue(TEXT("Risky antenna remains executable"), Preview.bCanExecute);
+		TestEqual(TEXT("Raw cost exposes all three penalties"), Preview.RawAP, 5);
+		TestEqual(TEXT("Actual cost is capped at four AP"), Preview.APCost, 4);
+		TestEqual(TEXT("All cost sources are exposed"), Preview.CostModifiers.Num(), 3);
+		TestTrue(TEXT("Multiple penalties produce high-risk readiness"), Preview.WorkReadiness == EWSWorkReadiness::HighRisk);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::RepairRoom)) return false;
+		Engine.GetMutableStateForTesting().Characters.FindChecked(EWSCharacterId::Player).Temperature = 5.0f;
+		const FWSActionPreview Preview =
+			Engine.Preview(WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet")));
+		TestTrue(TEXT("Heated fine-motor action remains available"), Preview.bCanExecute);
+		TestEqual(TEXT("Heated room cancels cold AP penalty"), Preview.APCost, 1);
+		TestTrue(
+			TEXT("Cancellation is visible in cost detail"),
+			Preview.CostModifiers.ContainsByPredicate(
+				[](const FWSActionCostModifier& Modifier)
+				{
+					return Modifier.Source == TEXT("heated_room_cancels_cold");
+				}));
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom)) return false;
+		Engine.GetMutableStateForTesting().Tasks.GeneratorProgress = 2;
+		FWSActionRequest Assisted =
+			WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna"));
+		Assisted.bHasCollaborator = true;
+		Assisted.Collaborator = EWSCharacterId::YeCheng;
+		const FWSActionPreview Preview = Engine.Preview(Assisted);
+		TestEqual(TEXT("Suitable collaborator reduces antenna to one AP"), Preview.APCost, 1);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::RepairRoom)) return false;
+		Engine.GetMutableStateForTesting().Characters.FindChecked(EWSCharacterId::GuHeng).Stamina = 2;
+		int32 PaidAP = 0;
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			FWSActionRequest Repair =
+				WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+			Repair.bForce = true;
+			Repair.bHasCollaborator = true;
+			Repair.Collaborator = EWSCharacterId::Player;
+			if (!WhiteoutRuleTests::CommitV11(*this, Engine, Repair, PaidAP)) return false;
+		}
+		const FWSCharacterState& GuHeng =
+			Engine.GetState().Characters.FindChecked(EWSCharacterId::GuHeng);
+		TestTrue(TEXT("Second untreated injured repair becomes critical"), GuHeng.InjurySeverity == EWSInjurySeverity::Critical);
+		TestEqual(TEXT("Two worsening stages are recorded"), GuHeng.InjuryWorseningMarks, 2);
+		TestEqual(TEXT("Dynamic repair costs are one then two AP"), PaidAP, 3);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV11SocialRecoveryAndForceTest,
+	"WhiteoutStation.RulesV11.SocialRecoveryAndForce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV11SocialRecoveryAndForceTest::RunTest(
+	const FString& Parameters)
+{
+	{
+		FWhiteoutRulesEngine Engine =
+			WhiteoutRuleTests::LoadedV11Engine(*this);
+		if (!WhiteoutRuleTests::BeginV11(
+				*this,
+				Engine,
+				EWSHeatingZone::ControlRoom))
+		{
+			return false;
+		}
+		FWSGameState& State = Engine.GetMutableStateForTesting();
+		State.Tasks.GeneratorProgress = 2;
+		FWSCharacterState& Player =
+			State.Characters.FindChecked(EWSCharacterId::Player);
+		Player.Stamina = 0;
+		const float PressureBefore = Player.Pressure;
+		FWSActionRequest ForcedCalibration =
+			WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna"));
+		ForcedCalibration.bForce = true;
+		const FWSActionResult Result =
+			Engine.Commit(ForcedCalibration);
+		TestTrue(TEXT("Forced calibration can bypass exhaustion"), Result.bCommitted);
+		const FWSCharacterState& After =
+			Engine.GetState().Characters.FindChecked(EWSCharacterId::Player);
+		TestEqual(
+			TEXT("Forced calibration is counted for social scoring"),
+			Engine.GetState().Flags.ForcedActionCount,
+			1);
+		TestTrue(
+			TEXT("Forced calibration increases pressure"),
+			FMath::IsNearlyEqual(After.Pressure, PressureBefore + 1.0f));
+		TestTrue(
+			TEXT("Forced calibration causes an explicit injury"),
+			After.InjurySeverity == EWSInjurySeverity::Restricted
+				&& After.InjuryId == TEXT("cold_exposure_restricted"));
+	}
+
+	{
+		FWhiteoutRulesEngine Engine =
+			WhiteoutRuleTests::LoadedV11Engine(*this);
+		if (!WhiteoutRuleTests::BeginV11(
+				*this,
+				Engine,
+				EWSHeatingZone::ControlRoom))
+		{
+			return false;
+		}
+		FWSCharacterState& Player =
+			Engine.GetMutableStateForTesting().Characters.FindChecked(
+				EWSCharacterId::Player);
+		Player.Stamina = 2;
+		Player.Pressure = 8.0f;
+		FWSActionRequest Rest =
+			WhiteoutRuleTests::MakeRequest(TEXT("rest"));
+		Rest.RestTarget = EWSCharacterId::Player;
+		Rest.RestLocation = EWSCharacterLocation::ControlRoom;
+		const FWSActionResult Result = Engine.Commit(Rest);
+		TestTrue(TEXT("Full-stamina heated rest commits"), Result.bCommitted);
+		const FWSCharacterState& After =
+			Engine.GetState().Characters.FindChecked(EWSCharacterId::Player);
+		TestEqual(TEXT("Full-stamina rest does not exceed the cap"), After.Stamina, 2);
+		TestTrue(
+			TEXT("Full-stamina heated rest lowers pressure"),
+			FMath::IsNearlyEqual(After.Pressure, 7.6f));
+	}
+
+	{
+		FWhiteoutRulesEngine Engine =
+			WhiteoutRuleTests::LoadedV11Engine(*this);
+		if (!WhiteoutRuleTests::BeginV11(
+				*this,
+				Engine,
+				EWSHeatingZone::RepairRoom))
+		{
+			return false;
+		}
+		FWSCharacterState& GuHeng =
+			Engine.GetMutableStateForTesting().Characters.FindChecked(
+				EWSCharacterId::GuHeng);
+		GuHeng.Stamina = 2;
+		GuHeng.Trust = 2.9f;
+		FWSActionRequest Repair =
+			WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+		Repair.bHasCollaborator = true;
+		Repair.Collaborator = EWSCharacterId::Player;
+		const FWSActionPreview Refused = Engine.Preview(Repair);
+		TestFalse(TEXT("Very low trust blocks unforced repair"), Refused.bCanExecute);
+		TestTrue(
+			TEXT("Low-trust refusal has a stable reason"),
+			Refused.ReasonCode == EWSReasonCode::GuHengRefused);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine =
+			WhiteoutRuleTests::LoadedV11Engine(*this);
+		FWSGameState& State = Engine.GetMutableStateForTesting();
+		State.Tasks.GeneratorProgress = 2;
+		State.Tasks.AntennaCalibration = 1;
+		State.Tasks.bSignalSent = true;
+		State.Tasks.bGeneratorStable = true;
+		State.Characters.FindChecked(EWSCharacterId::GuHeng).Trust = 2.0f;
+		State.Characters.FindChecked(EWSCharacterId::YeCheng).Trust = 2.0f;
+		Engine.EndGame();
+		TestTrue(
+			TEXT("Broken team downgrades an otherwise stable signal ending"),
+			Engine.GetState().Ending == EWSEndingType::CostUncontrolled);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine =
+			WhiteoutRuleTests::LoadedV11Engine(*this);
+		FWSActionRequest Command =
+			WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+		Command.DialogueAct = EWSDialogueAct::Command;
+		const FWSAgentReply Reply =
+			UWSNPCDecisionService::BuildDeterministicReply(
+				Command,
+				Engine.GetState());
+		TestTrue(
+			TEXT("Low-trust command produces deterministic refusal"),
+			Reply.ResponseType == EWSResponseType::Refuse);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV11RouteTest,
+	"WhiteoutStation.RulesV11.RoutesAndEndings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV11RouteTest::RunTest(const FString& Parameters)
+{
+	TSet<EWSEndingType> ReachedEndings;
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		int32 PaidAP = 0;
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::MedicalRoom)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")), PaidAP)) return false;
+		FWSActionRequest Treat = WhiteoutRuleTests::MakeRequest(TEXT("treat_character"));
+		Treat.TreatmentTarget = EWSCharacterId::GuHeng;
+		Treat.TreatmentMethod = EWSTreatmentMethod::Full;
+		Treat.bHasCollaborator = true;
+		Treat.Collaborator = EWSCharacterId::Player;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Treat, PaidAP)) return false;
+		FWSActionRequest Food = WhiteoutRuleTests::MakeRequest(TEXT("distribute_food"));
+		Food.FoodForPlayer = 1;
+		Food.FoodForGuHeng = 1;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Food, PaidAP)) return false;
+		FWSActionRequest Promise = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+		Promise.DialogueAct = EWSDialogueAct::Promise;
+		Promise.PromiseCondition = TEXT("heat_repair_room");
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Promise, PaidAP)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::RepairRoom)) return false;
+		FWSActionRequest Repair = WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+		Repair.bHasCollaborator = true;
+		Repair.Collaborator = EWSCharacterId::Player;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Repair, PaidAP)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet")), PaidAP)) return false;
+		FWSActionRequest Challenge = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+		Challenge.DialogueAct = EWSDialogueAct::Challenge;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Challenge, PaidAP)) return false;
+		FWSActionRequest Rest = WhiteoutRuleTests::MakeRequest(TEXT("rest"));
+		Rest.RestTarget = EWSCharacterId::Player;
+		Rest.RestLocation = EWSCharacterLocation::RepairRoom;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Rest, PaidAP)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna")), PaidAP)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("send_signal")), PaidAP)) return false;
+		Engine.EndGame();
+		TestEqual(TEXT("Medical cooperation spends ten AP"), PaidAP, 10);
+		TestTrue(TEXT("Medical cooperation reaches stable rescue"), Engine.GetState().Ending == EWSEndingType::TaskSuccess);
+		TestEqual(TEXT("Medical cooperation consumes medicine"), Engine.GetState().Resources.Medicine, 0);
+		TestTrue(TEXT("Medical score remains within 0..100"), Engine.GetState().Score.Total >= 0.0f && Engine.GetState().Score.Total <= 100.0f);
+		ReachedEndings.Add(Engine.GetState().Ending);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		int32 PaidAP = 0;
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::Kitchen)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log")), PaidAP)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet")), PaidAP)) return false;
+		FWSActionRequest Food = WhiteoutRuleTests::MakeRequest(TEXT("distribute_food"));
+		Food.FoodForPlayer = 1;
+		Food.FoodForGuHeng = 1;
+		Food.bHotMeal = true;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Food, PaidAP)) return false;
+		FWSActionRequest Challenge = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+		Challenge.DialogueAct = EWSDialogueAct::Challenge;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Challenge, PaidAP)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::RepairRoom)) return false;
+		FWSActionRequest Dismantle = WhiteoutRuleTests::MakeRequest(TEXT("dismantle_kitchen_heater"));
+		Dismantle.bHasCollaborator = true;
+		Dismantle.Collaborator = EWSCharacterId::Player;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Dismantle, PaidAP)) return false;
+		FWSActionRequest Repair = WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+		Repair.bHasCollaborator = true;
+		Repair.Collaborator = EWSCharacterId::Player;
+		Repair.bUseRelay = true;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Repair, PaidAP)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")), PaidAP)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna")), PaidAP)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("send_signal")), PaidAP)) return false;
+		Engine.EndGame();
+		TestEqual(TEXT("Technical savings spends nine AP"), PaidAP, 9);
+		TestTrue(TEXT("Technical savings reaches stable rescue"), Engine.GetState().Ending == EWSEndingType::TaskSuccess);
+		TestFalse(TEXT("Technical route sacrifices kitchen heater"), Engine.GetState().Flags.bKitchenHeaterIntact);
+		ReachedEndings.Add(Engine.GetState().Ending);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		int32 PaidAP = 0;
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::RepairRoom)) return false;
+		FWSActionRequest Food = WhiteoutRuleTests::MakeRequest(TEXT("distribute_food"));
+		Food.FoodForPlayer = 1;
+		Food.FoodForGuHeng = 1;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Food, PaidAP)) return false;
+		FWSActionRequest FirstRepair = WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+		FirstRepair.bForce = true;
+		FirstRepair.bHasCollaborator = true;
+		FirstRepair.Collaborator = EWSCharacterId::Player;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, FirstRepair, PaidAP)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet")), PaidAP)) return false;
+		FWSActionRequest Command = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+		Command.DialogueAct = EWSDialogueAct::Command;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Command, PaidAP)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::RepairRoom)) return false;
+		FWSActionRequest SecondRepair = WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+		SecondRepair.bForce = true;
+		SecondRepair.bHasCollaborator = true;
+		SecondRepair.Collaborator = EWSCharacterId::Player;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, SecondRepair, PaidAP)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("calibrate_antenna")), PaidAP)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("send_signal")), PaidAP)) return false;
+		Engine.EndGame();
+		TestEqual(TEXT("Risk push spends eight AP"), PaidAP, 8);
+		TestTrue(TEXT("Risk push sends signal with uncontrolled cost"), Engine.GetState().Ending == EWSEndingType::CostUncontrolled);
+		TestTrue(TEXT("Risk push leaves Gu Heng critical"), Engine.GetState().Characters.FindChecked(EWSCharacterId::GuHeng).InjurySeverity == EWSInjurySeverity::Critical);
+		TestFalse(TEXT("Critical route cannot receive S or A"), Engine.GetState().Score.Rating == TEXT("S") || Engine.GetState().Score.Rating == TEXT("A"));
+		ReachedEndings.Add(Engine.GetState().Ending);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		int32 PaidAP = 0;
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::Kitchen)) return false;
+		FWSActionRequest Food = WhiteoutRuleTests::MakeRequest(TEXT("distribute_food"));
+		Food.FoodForPlayer = 1;
+		Food.FoodForGuHeng = 1;
+		Food.bHotMeal = true;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Food, PaidAP)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::MedicalRoom)) return false;
+		FWSActionRequest Rest = WhiteoutRuleTests::MakeRequest(TEXT("rest"));
+		Rest.RestTarget = EWSCharacterId::YeCheng;
+		Rest.RestLocation = EWSCharacterLocation::MedicalRoom;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Rest, PaidAP)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+		Engine.EndGame();
+		TestTrue(TEXT("Warm waiting failure is reachable"), Engine.GetState().Ending == EWSEndingType::SurvivalWait);
+		TestFalse(TEXT("No-signal ending cannot exceed C"), Engine.GetState().Score.Rating == TEXT("S") || Engine.GetState().Score.Rating == TEXT("A") || Engine.GetState().Score.Rating == TEXT("B"));
+		ReachedEndings.Add(Engine.GetState().Ending);
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		int32 PaidAP = 0;
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::RepairRoom)) return false;
+		FWSActionRequest Food = WhiteoutRuleTests::MakeRequest(TEXT("distribute_food"));
+		Food.FoodForPlayer = 1;
+		Food.FoodForGuHeng = 1;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, Food, PaidAP)) return false;
+		FWSActionRequest FirstRepair = WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+		FirstRepair.bForce = true;
+		FirstRepair.bHasCollaborator = true;
+		FirstRepair.Collaborator = EWSCharacterId::Player;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, FirstRepair, PaidAP)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::RepairRoom)) return false;
+		FWSActionRequest SecondRepair = WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+		SecondRepair.bForce = true;
+		SecondRepair.bHasCollaborator = true;
+		SecondRepair.Collaborator = EWSCharacterId::Player;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, SecondRepair, PaidAP)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom)) return false;
+		if (!WhiteoutRuleTests::SettleV11(*this, Engine)) return false;
+		Engine.EndGame();
+		TestEqual(TEXT("Dual-collapse failure spends four AP"), PaidAP, 4);
+		TestTrue(TEXT("Dual-collapse failure is reachable"), Engine.GetState().Ending == EWSEndingType::TotalCollapse);
+		ReachedEndings.Add(Engine.GetState().Ending);
+	}
+
+	TestEqual(TEXT("All four ending classes are covered"), ReachedEndings.Num(), 4);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV11ModelBoundaryTest,
+	"WhiteoutStation.RulesV11.ModelBoundary",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV11ModelBoundaryTest::RunTest(const FString& Parameters)
+{
+	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom)) return false;
+	const FWSResourceState ResourcesBefore = Engine.GetState().Resources;
+	const FWSTaskState TasksBefore = Engine.GetState().Tasks;
+	const TMap<EWSCharacterId, FWSCharacterState> CharactersBefore =
+		Engine.GetState().Characters;
+	TestTrue(TEXT("Model telemetry call is accepted"), Engine.TryRecordModelCall());
+	TestEqual(TEXT("Model telemetry cannot change fuel"), Engine.GetState().Resources.Fuel, ResourcesBefore.Fuel);
+	TestEqual(TEXT("Model telemetry cannot change food"), Engine.GetState().Resources.Food, ResourcesBefore.Food);
+	TestEqual(TEXT("Model telemetry cannot change generator progress"), Engine.GetState().Tasks.GeneratorProgress, TasksBefore.GeneratorProgress);
+	TestEqual(TEXT("Model telemetry cannot change antenna progress"), Engine.GetState().Tasks.AntennaCalibration, TasksBefore.AntennaCalibration);
+	TestEqual(
+		TEXT("Model telemetry cannot change player stamina"),
+		Engine.GetState().Characters.FindChecked(EWSCharacterId::Player).Stamina,
+		CharactersBefore.FindChecked(EWSCharacterId::Player).Stamina);
+
+	FString Reason;
+	TestFalse(
+		TEXT("A model rule mutation remains rejected under schema 4"),
+		FWhiteoutRulesEngine::ValidateAgentResponse(
+			TEXT("我已经直接把发电机修好了。"),
+			{},
+			{},
+			true,
+			Reason));
+	TestEqual(TEXT("Rule mutation rejection reason is deterministic"), Reason, FString(TEXT("model_attempted_rule_change")));
 	return true;
 }
 

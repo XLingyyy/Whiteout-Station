@@ -43,7 +43,27 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		Reply.ResponseType = EWSResponseType::FullDisclosure;
 		Reply.Emotion = TEXT("focused");
 		Reply.ReferencedFactIds = {WhiteoutAgentFacts::HandInjury, WhiteoutAgentFacts::MedicalDiagnosis};
-		if (Request.DialogueAct == EWSDialogueAct::Challenge)
+		const FWSCharacterState YeCheng =
+			State.Characters.FindRef(EWSCharacterId::YeCheng);
+		if (
+			Request.DialogueAct == EWSDialogueAct::Command
+			&& (
+				YeCheng.Trust < 3.0f
+				|| YeCheng.Pressure >= 8.5f))
+		{
+			Reply.ResponseType = EWSResponseType::Refuse;
+			Reply.Emotion = TEXT("firm");
+			Reply.Utterance = TEXT("我不会在这种状态下照命令冒险。先处理伤员和压力，再谈下一步。");
+		}
+		else if (
+			YeCheng.Pressure >= 9.0f
+			&& Request.DialogueAct != EWSDialogueAct::Reassure)
+		{
+			Reply.ResponseType = EWSResponseType::ConditionalAccept;
+			Reply.Emotion = TEXT("strained");
+			Reply.Utterance = TEXT("我还能配合，但先给医务室升温或安排休整；继续硬推只会让情况失控。");
+		}
+		else if (Request.DialogueAct == EWSDialogueAct::Challenge)
 		{
 			Reply.ResponseType = EWSResponseType::PartialDisclosure;
 			Reply.Emotion = TEXT("firm");
@@ -79,7 +99,34 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		const bool bKnowsBurntRelay = PlayerKnows(State, WhiteoutAgentFacts::BurntRelay);
 		const bool bKnowsRelayCompatibility = State.Flags.bRelayCompatibilityKnown;
 		const bool bHasBothEvidence = bKnowsRestartSuspicion && bKnowsBurntRelay;
-		if (Request.DialogueAct == EWSDialogueAct::Promise)
+		const FWSCharacterState GuHeng =
+			State.Characters.FindRef(EWSCharacterId::GuHeng);
+		const bool bGuHengTreated =
+			State.RulesSchemaVersion >= 4
+				? GuHeng.InjurySeverity == EWSInjurySeverity::Normal
+				: State.Flags.bGuHengTreated;
+		if (
+			Request.DialogueAct == EWSDialogueAct::Command
+			&& (
+				GuHeng.Trust < 4.0f
+				|| GuHeng.Pressure >= 8.0f))
+		{
+			Reply.ResponseType = EWSResponseType::Refuse;
+			Reply.Emotion = TEXT("defiant");
+			Reply.Utterance = TEXT("我不会在伤势和条件都没解决时服从危险命令。先拿出能执行的方案。");
+		}
+		else if (
+			(
+				GuHeng.Trust < 3.0f
+				|| GuHeng.Pressure >= 9.0f)
+			&& Request.DialogueAct != EWSDialogueAct::Reassure
+			&& Request.DialogueAct != EWSDialogueAct::Promise)
+		{
+			Reply.ResponseType = EWSResponseType::Deflect;
+			Reply.Emotion = TEXT("withdrawn");
+			Reply.Utterance = TEXT("现在问什么我都不会接。先兑现一个条件，或者让我缓下来。");
+		}
+		else if (Request.DialogueAct == EWSDialogueAct::Promise)
 		{
 			Reply.ResponseType = EWSResponseType::ConditionalAccept;
 			Reply.Emotion = TEXT("measured");
@@ -126,7 +173,7 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 			Reply.Emotion = TEXT("defensive");
 			Reply.Utterance = TEXT("拿证据来再质疑。现在继续逼问，只会浪费修复窗口。");
 		}
-		else if (State.Flags.bGuHengTreated)
+		else if (bGuHengTreated)
 		{
 			Reply.ResponseType = EWSResponseType::ConditionalAccept;
 			Reply.Emotion = TEXT("controlled");
@@ -174,9 +221,10 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 	else if (Request.ActionId == TEXT("distribute_food"))
 	{
 		Reply.Speaker = EWSCharacterId::GuHeng;
-		Reply.ResponseType = State.Flags.bGuHengFed ? EWSResponseType::Reassure : EWSResponseType::Accuse;
-		Reply.Emotion = State.Flags.bGuHengFed ? TEXT("steadier") : TEXT("resentful");
-		Reply.Utterance = State.Flags.bGuHengFed
+		const bool bGuHengReceivedFood = Request.FoodForGuHeng > 0;
+		Reply.ResponseType = bGuHengReceivedFood ? EWSResponseType::Reassure : EWSResponseType::Accuse;
+		Reply.Emotion = bGuHengReceivedFood ? TEXT("steadier") : TEXT("resentful");
+		Reply.Utterance = bGuHengReceivedFood
 			? TEXT("这份够我撑到修完。接下来按你排的顺序做。")
 			: TEXT("你分得很清楚。要我带伤干活，却连一口热量都没有。");
 	}
@@ -200,7 +248,16 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 	{
 		Reply.Speaker = EWSCharacterId::GuHeng;
 		Reply.ResponseType = EWSResponseType::Accept;
-		Reply.Emotion = State.Flags.bGuHengTreated ? TEXT("focused") : TEXT("strained");
+		const FWSCharacterState GuHeng =
+			State.Characters.FindRef(EWSCharacterId::GuHeng);
+		const bool bGuHengTreated =
+			State.RulesSchemaVersion >= 4
+				? GuHeng.InjurySeverity == EWSInjurySeverity::Normal
+				: State.Flags.bGuHengTreated;
+		Reply.Emotion =
+			bGuHengTreated
+			? TEXT("focused")
+			: TEXT("strained");
 		Reply.ReferencedFactIds = {WhiteoutAgentFacts::HandInjury};
 		Reply.Utterance = State.Tasks.GeneratorProgress >= 2
 			? TEXT("转速稳住了，母线电压正在回升。现在去处理天线。")

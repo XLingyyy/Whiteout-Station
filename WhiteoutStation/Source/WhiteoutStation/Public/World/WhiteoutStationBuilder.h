@@ -70,6 +70,15 @@ private:
 	void BuildStation();
 	void ResetRuntimeActorCache();
 	bool RegisterEditableStationActors();
+	void EnsureRequiredHotspots();
+	FVector ResolveFoodHotspotLocation() const;
+	FVector ResolveAntennaControlAnchor() const;
+	void ConfigureAntennaControlProxy(AWSInteractableActor* Hotspot);
+	bool PlaceHotspotAtGroundedLocation(
+		AWSInteractableActor* Hotspot,
+		const FVector& Location) const;
+	bool IsHotspotInteractionReachable(
+		const AWSInteractableActor* Hotspot) const;
 	void ClearEditableStationLayoutInternal();
 	void MarkEditableStationActor(AActor* Actor, const TCHAR* Folder);
 	void SpawnStationAssembly();

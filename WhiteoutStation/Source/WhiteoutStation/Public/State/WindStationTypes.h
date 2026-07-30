@@ -18,6 +18,60 @@ enum class EWSGamePhase : uint8
 };
 
 UENUM(BlueprintType)
+enum class EWSDayPhase : uint8
+{
+	Morning,
+	Afternoon,
+	Dusk,
+	Complete
+};
+
+UENUM(BlueprintType)
+enum class EWSHeatingZone : uint8
+{
+	None,
+	RepairRoom,
+	MedicalRoom,
+	Kitchen,
+	ControlRoom
+};
+
+UENUM(BlueprintType)
+enum class EWSCharacterLocation : uint8
+{
+	ControlRoom,
+	RepairRoom,
+	MedicalRoom,
+	Kitchen,
+	OutdoorAntenna
+};
+
+UENUM(BlueprintType)
+enum class EWSInjurySeverity : uint8
+{
+	Normal,
+	Restricted,
+	Critical
+};
+
+UENUM(BlueprintType)
+enum class EWSWorkReadiness : uint8
+{
+	Ready,
+	Strained,
+	HighRisk,
+	Unavailable
+};
+
+UENUM(BlueprintType)
+enum class EWSTreatmentMethod : uint8
+{
+	Bandage,
+	Full,
+	HeatPack
+};
+
+UENUM(BlueprintType)
 enum class EWSCharacterId : uint8
 {
 	Player,
@@ -121,7 +175,27 @@ enum class EWSReasonCode : uint8
 	NeedsAntenna,
 	DialogueActUnavailable,
 	InvalidPromiseCondition,
-	DuplicatePromise
+	DuplicatePromise,
+	PhaseNotStarted,
+	HeatingLocked,
+	UnknownHeatingZone,
+	WindowClosed,
+	ExecutorExhausted,
+	ExecutorHypothermic,
+	RelevantInjuryCritical,
+	InvalidCollaborator,
+	CollaboratorUnavailable,
+	HotMealUnavailable,
+	InvalidMealType,
+	UnknownTarget,
+	InvalidTreatmentMethod,
+	TreatmentNotNeeded,
+	NeedsHeatedMedicalRoom,
+	YeChengExhausted,
+	NeedsRelayKnowledge,
+	GuHengRefused,
+	NeedsGuHengConditions,
+	NeedsReplacementRelay
 };
 
 UENUM(BlueprintType)
@@ -155,6 +229,30 @@ struct FWSCharacterState
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	float Trust = 5.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 Stamina = 2;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSInjurySeverity InjurySeverity = EWSInjurySeverity::Normal;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FName InjuryId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 InjuryWorseningMarks = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 BandageProtection = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 TemporarySupportUses = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSDayPhase TemporarySupportPhase = EWSDayPhase::Complete;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSCharacterLocation Location = EWSCharacterLocation::ControlRoom;
 };
 
 USTRUCT(BlueprintType)
@@ -191,6 +289,9 @@ struct FWSTaskState
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	bool bSignalSent = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bGeneratorStable = false;
 };
 
 USTRUCT(BlueprintType)
@@ -233,6 +334,96 @@ struct FWSWorldFlags
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	bool bRecordsPreserved = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bPlayerFed = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bYeChengFed = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bCabinetInspected = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bLogPenaltyActive = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 ForcedActionCount = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 RiskyRepairCount = 0;
+};
+
+USTRUCT(BlueprintType)
+struct FWSActionCostModifier
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FName Source;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 Delta = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSCharacterId Character = EWSCharacterId::Player;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FText Explanation;
+};
+
+USTRUCT(BlueprintType)
+struct FWSHeatingSelectionRecord
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSDayPhase Phase = EWSDayPhase::Morning;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSHeatingZone Zone = EWSHeatingZone::None;
+};
+
+USTRUCT(BlueprintType)
+struct FWSHeatingState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSHeatingZone CurrentZone = EWSHeatingZone::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bLocked = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FWSHeatingSelectionRecord> History;
+};
+
+USTRUCT(BlueprintType)
+struct FWSPhaseSummary
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSDayPhase Phase = EWSDayPhase::Morning;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSHeatingZone HeatingZone = EWSHeatingZone::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 UnusedAPDiscarded = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FString> OrderedSteps;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FString> Changes;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FName PhaseEvent;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FName NPCReaction;
 };
 
 USTRUCT(BlueprintType)
@@ -254,6 +445,9 @@ struct FWSPromiseRecord
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	bool bFulfilled = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 HeatingHistoryCountAtRecognition = 0;
 };
 
 USTRUCT(BlueprintType)
@@ -293,6 +487,21 @@ struct FWSEventRecord
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	bool bCrisisTriggered = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSDayPhase DayPhase = EWSDayPhase::Morning;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 BaseAP = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 ActualAP = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSWorkReadiness WorkReadiness = EWSWorkReadiness::Ready;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FWSActionCostModifier> CostModifiers;
 };
 
 USTRUCT(BlueprintType)
@@ -329,6 +538,27 @@ struct FWSGameState
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	int32 ActionPoints = 12;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 RulesSchemaVersion = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FString RulesVersion = TEXT("1.0.0");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSDayPhase DayPhase = EWSDayPhase::Morning;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	int32 PhaseActionPoints = 4;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bDayPhaseStarted = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bDayWindowClosed = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FWSHeatingState Heating;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	EWSGamePhase Phase = EWSGamePhase::ActionPhase;
@@ -370,6 +600,9 @@ struct FWSGameState
 	TArray<FWSEventRecord> EventLog;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FWSPhaseSummary> PhaseSummaries;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	int32 ModelCalls = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
@@ -403,6 +636,33 @@ struct FWSActionRequest
 	EWSResourceType TreatmentResource = EWSResourceType::Medicine;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSTreatmentMethod TreatmentMethod = EWSTreatmentMethod::Full;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSCharacterId TreatmentTarget = EWSCharacterId::GuHeng;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bHotMeal = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bForce = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bUseRelay = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bHasCollaborator = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSCharacterId Collaborator = EWSCharacterId::Player;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSCharacterId RestTarget = EWSCharacterId::Player;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSCharacterLocation RestLocation = EWSCharacterLocation::ControlRoom;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	EWSDialogueAct DialogueAct = EWSDialogueAct::Ask;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -431,6 +691,24 @@ struct FWSActionPreview
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 APCost = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 BaseAP = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 RawAP = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FWSActionCostModifier> CostModifiers;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSWorkReadiness WorkReadiness = EWSWorkReadiness::Unavailable;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 ExpectedGeneratorProgress = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bUsesTemporarySupport = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FText PreviewText;
@@ -476,6 +754,18 @@ struct FWSActionResult
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bCrisisTriggered = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 BaseAP = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 ActualAP = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FWSActionCostModifier> CostModifiers;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSWorkReadiness WorkReadiness = EWSWorkReadiness::Unavailable;
 };
 
 USTRUCT(BlueprintType)

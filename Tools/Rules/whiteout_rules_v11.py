@@ -380,22 +380,22 @@ class WhiteoutSimulatorV11:
                 "generator_required"
             ]:
                 return "generator_already_repaired"
-            stance = self.resolve_npc_stance("gu_heng", "repair_generator")
-            if stance["stance"] == "refuse" and not params.get("force", False):
-                return "gu_heng_refused"
-            if (
-                stance["stance"] == "conditional_accept"
-                and not params.get("force", False)
-                and not (
+            gu_heng = characters["gu_heng"]
+            if not params.get("force", False):
+                if gu_heng["trust"] < 3.0 or gu_heng["pressure"] >= 9.0:
+                    return "gu_heng_refused"
+                if (
+                    gu_heng["trust"] < 4.5 or gu_heng["pressure"] >= 8.0
+                ) and params.get("collaborator") != "player":
+                    return "needs_gu_heng_conditions"
+                if not (
                     self.state["heating"]["current_zone"] == "repair_room"
-                    and characters["gu_heng"]["stamina"] >= 2
-                )
-                and not (
+                    and gu_heng["stamina"] >= 2
+                ) and not (
                     params.get("use_relay", False)
                     and resources["replacement_relay"] > 0
-                )
-            ):
-                return "needs_gu_heng_conditions"
+                ):
+                    return "needs_gu_heng_conditions"
             if params.get("use_relay", False) and resources["replacement_relay"] < 1:
                 return "needs_replacement_relay"
 
@@ -709,6 +709,19 @@ class WhiteoutSimulatorV11:
         ]
         return "injury_became_critical"
 
+    def _apply_forced_work_penalty(
+        self, character_id: str, initial_injury: str
+    ) -> str:
+        character = self.state["characters"][character_id]
+        self.state["flags"]["forced_actions"] += 1
+        character["pressure"] = self._clamp(
+            float(character["pressure"]) + 1.0, 0, 10
+        )
+        if self._injury_level(character_id) == "normal":
+            character["injuries"].append(initial_injury)
+            return "forced_work_caused_restricted_injury"
+        return self._worsen_relevant_injury(character_id)
+
     def _apply_dialogue(self, action_id: str, params: dict[str, Any]) -> tuple[str, str]:
         npc_id = "gu_heng" if action_id == "talk_gu_heng" else "ye_cheng"
         npc = self.state["characters"][npc_id]
@@ -745,6 +758,9 @@ class WhiteoutSimulatorV11:
                     "condition": condition,
                     "settled": False,
                     "fulfilled": None,
+                    "heating_history_count_at_recognition": len(
+                        self.state["heating"]["history"]
+                    ),
                 }
             )
         elif act == "reassure":
@@ -835,10 +851,13 @@ class WhiteoutSimulatorV11:
             location = params.get("location", self.state["heating"]["current_zone"])
             characters[target]["location"] = location
             if location == self.state["heating"]["current_zone"]:
-                characters[target]["stamina"] = min(
-                    2, int(characters[target]["stamina"]) + 1
+                if int(characters[target]["stamina"]) < 2:
+                    characters[target]["stamina"] += 1
+                    return f"{target} 在供暖区休整", "体能恢复 1"
+                characters[target]["pressure"] = self._clamp(
+                    float(characters[target]["pressure"]) - 0.4, 0, 10
                 )
-                return f"{target} 在供暖区休整", "体能恢复 1"
+                return f"{target} 在供暖区休整", "体能已满，压力下降"
             characters[target]["pressure"] = self._clamp(
                 float(characters[target]["pressure"]) - 0.4, 0, 10
             )
@@ -951,14 +970,9 @@ class WhiteoutSimulatorV11:
                 self.rules["gameplay"]["generator_required"],
                 int(tasks["generator_progress"]) + 1,
             )
-            flags["forced_actions"] += 1
-            characters["player"]["pressure"] = self._clamp(
-                float(characters["player"]["pressure"]) + 1.0, 0, 10
+            self._apply_forced_work_penalty(
+                "player", "right_hand_restricted"
             )
-            if self._injury_level("player") == "normal":
-                characters["player"]["injuries"].append("right_hand_restricted")
-            else:
-                self._worsen_relevant_injury("player")
             return "玩家强行获得 1 点发电机进度", "玩家手伤与压力上升"
 
         if action_id == "calibrate_antenna":
@@ -968,6 +982,14 @@ class WhiteoutSimulatorV11:
             characters["player"]["temperature"] = self._clamp(
                 float(characters["player"]["temperature"]) - 1.5, 0, 10
             )
+            if params.get("force", False):
+                self._apply_forced_work_penalty(
+                    "player", "cold_exposure_restricted"
+                )
+                return (
+                    "玩家强行完成室外天线校准",
+                    "玩家体温 -1.5、压力上升并承担伤势；强行行动计入社会代价",
+                )
             return "室外天线校准完成", "玩家体温 -1.5、体能下降"
 
         if action_id == "send_signal":
@@ -1278,16 +1300,33 @@ class WhiteoutSimulatorV11:
                     "requested_conditions": [],
                     "reason": "work_unavailable",
                 }
+            if trust < 3.0 or pressure >= 9.0:
+                return {
+                    "stance": "refuse",
+                    "requested_conditions": [],
+                    "reason": "trust_or_pressure_refusal",
+                }
+            needs_collaboration = trust < 4.5 or pressure >= 8.0
+            working_conditions_met = (
+                self.state["heating"]["current_zone"] == "repair_room"
+                and npc["stamina"] >= 2
+            )
+            if needs_collaboration:
+                return {
+                    "stance": "conditional_accept",
+                    "requested_conditions": [
+                        "player_collaboration",
+                        "heat_repair_room_or_relay",
+                    ],
+                    "reason": "trust_or_pressure_requires_collaboration",
+                }
             if trust >= 6.0 and npc["stamina"] >= 2:
                 return {
                     "stance": "volunteer",
                     "requested_conditions": [],
                     "reason": "high_trust_and_ready",
                 }
-            if (
-                self.state["heating"]["current_zone"] == "repair_room"
-                and npc["stamina"] >= 2
-            ):
+            if working_conditions_met:
                 return {
                     "stance": "accept",
                     "requested_conditions": [],
@@ -1404,10 +1443,15 @@ class WhiteoutSimulatorV11:
             if promise["settled"]:
                 continue
             condition = promise["condition"]
+            heating_history_start = int(
+                promise.get("heating_history_count_at_recognition", 0)
+            )
             fulfilled = {
                 "heat_repair_room": any(
                     item["zone"] == "repair_room"
-                    for item in self.state["heating"]["history"]
+                    for item in self.state["heating"]["history"][
+                        heating_history_start:
+                    ]
                 ),
                 "preserve_records": self.state["flags"]["records_preserved"],
                 "reserve_medicine": self.state["resources"]["medicine"] > 0,
@@ -1429,14 +1473,16 @@ class WhiteoutSimulatorV11:
     def classify_ending(self) -> str:
         tasks = self.state["tasks"]
         critical = self._has_critical_person()
-        team_broken = all(
-            self.state["characters"][npc_id]["trust"] < 3.0 for npc_id in NPC_IDS
+        team_cooperating = any(
+            self.state["characters"][npc_id]["trust"] >= 3.0
+            and self.state["characters"][npc_id]["pressure"] < 9.0
+            for npc_id in NPC_IDS
         )
         if tasks["signal_sent"]:
             if (
                 not critical
                 and tasks["generator_stable"]
-                and not team_broken
+                and team_cooperating
             ):
                 return "stable_rescue"
             return "signal_sent_cost_uncontrolled"
@@ -1639,6 +1685,7 @@ def run_route(
     route = simulator.rules["routes"][route_id]
     steps: list[dict[str, Any]] = []
     paid_ap = 0
+    signal_sent = False
 
     for phase_index, phase_plan in enumerate(route["phases"]):
         if simulator.state["phase"] != phase_plan["phase"]:
@@ -1697,6 +1744,11 @@ def run_route(
                     provider_response=provider_response,
                     online=online,
                 )
+            if step["action"] == "send_signal":
+                signal_sent = True
+                break
+        if signal_sent:
+            break
         settled = simulator.settle_phase()
         if not settled["committed"]:
             raise RuleError(

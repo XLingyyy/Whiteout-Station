@@ -232,7 +232,11 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 	{
 		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_Computer.Prop_Computer");
 	}
-	else if (ActionId == TEXT("send_signal") || ActionId == TEXT("heat_repair_room") || ActionId == TEXT("heat_medical_room"))
+	else if (ActionId == TEXT("send_signal")
+		|| ActionId == TEXT("heat_control_room")
+		|| ActionId == TEXT("heat_repair_room")
+		|| ActionId == TEXT("heat_medical_room")
+		|| ActionId == TEXT("heat_kitchen"))
 	{
 		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_AccessPoint.Prop_AccessPoint");
 	}
@@ -240,9 +244,14 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 	{
 		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_Crate3.Prop_Crate3");
 	}
-	else if (ActionId == TEXT("treat_gu_heng"))
+	else if (ActionId == TEXT("treat_gu_heng")
+		|| ActionId == TEXT("treat_character"))
 	{
 		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Interior/NightStand_1.NightStand_1");
+	}
+	else if (ActionId == TEXT("rest"))
+	{
+		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Interior/Bed_Single.Bed_Single");
 	}
 	else if (ActionId == TEXT("dismantle_kitchen_heater"))
 	{
@@ -254,7 +263,7 @@ void AWSInteractableActor::Configure(const FName InActionId, const FText& InDisp
 	}
 	else if (ActionId == TEXT("calibrate_antenna"))
 	{
-		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Columns/Column_MetalSupport.Column_MetalSupport");
+		PresentationMeshPath = TEXT("/Game/WindStation/Art/Environment/Quaternius/Props/Prop_Computer.Prop_Computer");
 	}
 	if (PresentationMeshPath)
 	{
@@ -953,9 +962,12 @@ FWSActionRequest AWSInteractableActor::BuildActionRequest(
 		Request.FoodForPlayer = 1;
 		Request.FoodForGuHeng = 1;
 	}
-	if (ActionId == TEXT("treat_gu_heng"))
+	if (ActionId == TEXT("treat_gu_heng")
+		|| ActionId == TEXT("treat_character"))
 	{
 		Request.TreatmentResource = EWSResourceType::Medicine;
+		Request.TreatmentMethod = EWSTreatmentMethod::Full;
+		Request.TreatmentTarget = EWSCharacterId::GuHeng;
 	}
 	return Request;
 }

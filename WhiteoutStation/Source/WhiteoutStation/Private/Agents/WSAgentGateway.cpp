@@ -2,6 +2,8 @@
 
 #include "Agents/WSNPCDecisionService.h"
 #include "Dom/JsonObject.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformTime.h"
@@ -18,12 +20,29 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Settings/WhiteoutSettingsSubsystem.h"
 #include "State/WhiteoutRulesEngine.h"
 
 namespace
 {
 	constexpr int64 GWhiteoutMaxProviderPayloadBytes = 64 * 1024;
 	constexpr int64 GWhiteoutAuditRotateBytes = 2 * 1024 * 1024;
+
+	void AddStructuredOutputOptions(
+		const TSharedRef<FJsonObject>& Root,
+		const FString& ProviderId,
+		const int32 MaxOutputTokens)
+	{
+		Root->SetNumberField(TEXT("temperature"), 0.2);
+		Root->SetNumberField(
+			ProviderId == TEXT("openai")
+				? TEXT("max_completion_tokens")
+				: TEXT("max_tokens"),
+			MaxOutputTokens);
+		TSharedRef<FJsonObject> ResponseFormat = MakeShared<FJsonObject>();
+		ResponseFormat->SetStringField(TEXT("type"), TEXT("json_object"));
+		Root->SetObjectField(TEXT("response_format"), ResponseFormat);
+	}
 
 	bool ContainsAny(const FString& Text, const TArray<FString>& Terms)
 	{
@@ -37,13 +56,52 @@ namespace
 		return false;
 	}
 
-	bool TrySplitStrictHttpEndpoint(
+	struct FStrictEndpointParts
+	{
+		FString Scheme;
+		FString Host;
+		FString Authority;
+		FString Path;
+		int32 Port = 0;
+		bool bExplicitPort = false;
+	};
+
+	bool IsValidPort(const FString& PortText, int32& OutPort)
+	{
+		if (PortText.IsEmpty() || PortText.Len() > 5)
+		{
+			return false;
+		}
+		for (const TCHAR Character : PortText)
+		{
+			if (!FChar::IsDigit(Character))
+			{
+				return false;
+			}
+		}
+		OutPort = FCString::Atoi(*PortText);
+		return OutPort >= 1 && OutPort <= 65535;
+	}
+
+	bool HasUnsafePathSegment(const FString& Path)
+	{
+		TArray<FString> Segments;
+		Path.ParseIntoArray(Segments, TEXT("/"), true);
+		return Segments.Contains(TEXT(".")) || Segments.Contains(TEXT(".."));
+	}
+
+	bool TryParseStrictHttpEndpoint(
 		const FString& CandidateEndpoint,
-		FString& OutScheme,
-		FString& OutAuthority)
+		FStrictEndpointParts& OutParts)
 	{
 		const FString Endpoint = CandidateEndpoint.TrimStartAndEnd();
-		if (Endpoint.IsEmpty() || Endpoint.Contains(TEXT("\\")))
+		if (Endpoint.IsEmpty()
+			|| Endpoint.Len() > 768
+			|| Endpoint.Contains(TEXT("\\"))
+			|| Endpoint.Contains(TEXT("?"))
+			|| Endpoint.Contains(TEXT("#"))
+			|| Endpoint.Contains(TEXT("@"))
+			|| Endpoint.Contains(TEXT("%")))
 		{
 			return false;
 		}
@@ -60,50 +118,128 @@ namespace
 		{
 			return false;
 		}
-		OutScheme = Endpoint.Left(SchemeSeparator).ToLower();
-		const FString Remainder = Endpoint.Mid(SchemeSeparator + 3);
-		int32 AuthorityEnd = Remainder.Len();
-		for (int32 Index = 0; Index < Remainder.Len(); ++Index)
-		{
-			const TCHAR Character = Remainder[Index];
-			if (Character == TEXT('/') || Character == TEXT('?') || Character == TEXT('#'))
-			{
-				AuthorityEnd = Index;
-				break;
-			}
-		}
-		OutAuthority = Remainder.Left(AuthorityEnd).ToLower();
-		return !OutAuthority.IsEmpty()
-			&& !OutAuthority.Contains(TEXT("@"))
-			&& !OutAuthority.Contains(TEXT("%"));
-	}
-
-	bool IsValidPort(const FString& PortText)
-	{
-		if (PortText.IsEmpty() || PortText.Len() > 5)
+		OutParts.Scheme = Endpoint.Left(SchemeSeparator).ToLower();
+		if (OutParts.Scheme != TEXT("http") && OutParts.Scheme != TEXT("https"))
 		{
 			return false;
 		}
-		for (const TCHAR Character : PortText)
+		const FString Remainder = Endpoint.Mid(SchemeSeparator + 3);
+		if (Remainder.Contains(TEXT("://")))
 		{
-			if (!FChar::IsDigit(Character))
+			return false;
+		}
+		int32 AuthorityEnd = INDEX_NONE;
+		if (!Remainder.FindChar(TEXT('/'), AuthorityEnd))
+		{
+			AuthorityEnd = Remainder.Len();
+		}
+		OutParts.Authority = Remainder.Left(AuthorityEnd).ToLower();
+		OutParts.Path = AuthorityEnd < Remainder.Len() ? Remainder.Mid(AuthorityEnd) : TEXT("/");
+		if (OutParts.Authority.IsEmpty()
+			|| OutParts.Path.Len() > 384
+			|| !OutParts.Path.StartsWith(TEXT("/"))
+			|| HasUnsafePathSegment(OutParts.Path))
+		{
+			return false;
+		}
+
+		if (OutParts.Authority.StartsWith(TEXT("[")))
+		{
+			const int32 ClosingBracket = OutParts.Authority.Find(TEXT("]"), ESearchCase::CaseSensitive);
+			if (ClosingBracket <= 1)
 			{
 				return false;
 			}
+			OutParts.Host = OutParts.Authority.Mid(1, ClosingBracket - 1);
+			const FString Suffix = OutParts.Authority.Mid(ClosingBracket + 1);
+			if (!Suffix.IsEmpty())
+			{
+				if (!Suffix.StartsWith(TEXT(":"))
+					|| !IsValidPort(Suffix.Mid(1), OutParts.Port))
+				{
+					return false;
+				}
+				OutParts.bExplicitPort = true;
+			}
 		}
-		const int32 Port = FCString::Atoi(*PortText);
-		return Port >= 1 && Port <= 65535;
+		else
+		{
+			int32 ColonIndex = INDEX_NONE;
+			if (OutParts.Authority.FindChar(TEXT(':'), ColonIndex))
+			{
+				if (OutParts.Authority.Find(TEXT(":"), ESearchCase::CaseSensitive, ESearchDir::FromEnd) != ColonIndex
+					|| !IsValidPort(OutParts.Authority.Mid(ColonIndex + 1), OutParts.Port))
+				{
+					return false;
+				}
+				OutParts.Host = OutParts.Authority.Left(ColonIndex);
+				OutParts.bExplicitPort = true;
+			}
+			else
+			{
+				OutParts.Host = OutParts.Authority;
+			}
+		}
+		return !OutParts.Host.IsEmpty()
+			&& !OutParts.Host.StartsWith(TEXT("."))
+			&& !OutParts.Host.EndsWith(TEXT("."));
 	}
 
-	bool IsHostOrHostWithPort(const FString& Authority, const FString& Host)
+	FWSLLMProviderPreset MakeProviderPreset(
+		const FString& ProviderId,
+		const FString& DisplayName,
+		const FString& BaseUrl,
+		const TArray<FString>& ModelCandidates,
+		const bool bRequiresApiKey = true)
 	{
-		if (Authority == Host)
+		FWSLLMProviderPreset Preset;
+		Preset.ProviderId = ProviderId;
+		Preset.DisplayName = DisplayName;
+		Preset.BaseUrl = BaseUrl;
+		Preset.ModelCandidates = ModelCandidates;
+		Preset.bRequiresApiKey = bRequiresApiKey;
+		return Preset;
+	}
+
+	FString ExpectedRemoteHost(const FString& ProviderId)
+	{
+		if (ProviderId == TEXT("openai")) return TEXT("api.openai.com");
+		if (ProviderId == TEXT("deepseek")) return TEXT("api.deepseek.com");
+		if (ProviderId == TEXT("bailian")) return TEXT("dashscope.aliyuncs.com");
+		if (ProviderId == TEXT("zhipu")) return TEXT("open.bigmodel.cn");
+		if (ProviderId == TEXT("kimi")) return TEXT("api.moonshot.cn");
+		if (ProviderId == TEXT("siliconflow")) return TEXT("api.siliconflow.cn");
+		if (ProviderId == TEXT("openrouter")) return TEXT("openrouter.ai");
+		return FString();
+	}
+
+	FString ExpectedRemoteBasePath(const FString& ProviderId)
+	{
+		if (ProviderId == TEXT("openai")) return TEXT("/v1");
+		if (ProviderId == TEXT("deepseek")) return FString();
+		if (ProviderId == TEXT("bailian")) return TEXT("/compatible-mode/v1");
+		if (ProviderId == TEXT("zhipu")) return TEXT("/api/paas/v4");
+		if (ProviderId == TEXT("kimi")) return TEXT("/v1");
+		if (ProviderId == TEXT("siliconflow")) return TEXT("/v1");
+		if (ProviderId == TEXT("openrouter")) return TEXT("/api/v1");
+		return FString();
+	}
+
+	FString EndpointBasePath(FString Path)
+	{
+		while (Path.Len() > 1 && Path.EndsWith(TEXT("/")))
 		{
-			return true;
+			Path.LeftChopInline(1, EAllowShrinking::No);
 		}
-		const FString Prefix = Host + TEXT(":");
-		return Authority.StartsWith(Prefix, ESearchCase::CaseSensitive)
-			&& IsValidPort(Authority.Mid(Prefix.Len()));
+		if (Path.EndsWith(TEXT("/chat/completions"), ESearchCase::CaseSensitive))
+		{
+			Path.LeftChopInline(17, EAllowShrinking::No);
+		}
+		while (Path.Len() > 1 && Path.EndsWith(TEXT("/")))
+		{
+			Path.LeftChopInline(1, EAllowShrinking::No);
+		}
+		return Path == TEXT("/") ? FString() : Path;
 	}
 
 	int64 Utf8Bytes(const FString& Text)
@@ -271,39 +407,294 @@ void UWSAgentGateway::BeginDestroy()
 
 bool UWSAgentGateway::HasLiveProvider() const
 {
-	return bLLMEnabled && IsAllowedEndpoint(Endpoint) && (!bRequiresApiKey || !ApiKey.IsEmpty());
+	const bool bCredentialReady = !bRequiresApiKey
+		|| (!ApiKey.IsEmpty() && CredentialProviderId == ProviderName);
+	return bLLMEnabled && IsAllowedEndpoint(Endpoint) && bCredentialReady;
+}
+
+TArray<FWSLLMProviderPreset> UWSAgentGateway::GetProviderPresets()
+{
+	return {
+		MakeProviderPreset(
+			TEXT("openai"),
+			TEXT("OpenAI"),
+			TEXT("https://api.openai.com/v1"),
+			{TEXT("gpt-5-mini"), TEXT("gpt-4.1-mini")}),
+		MakeProviderPreset(
+			TEXT("deepseek"),
+			TEXT("DeepSeek"),
+			TEXT("https://api.deepseek.com"),
+			{TEXT("deepseek-v4-flash"), TEXT("deepseek-v4-pro")}),
+		MakeProviderPreset(
+			TEXT("bailian"),
+			TEXT("阿里百炼"),
+			TEXT("https://dashscope.aliyuncs.com/compatible-mode/v1"),
+			{TEXT("qwen3.5-plus"), TEXT("qwen-plus")}),
+		MakeProviderPreset(
+			TEXT("zhipu"),
+			TEXT("智谱"),
+			TEXT("https://open.bigmodel.cn/api/paas/v4"),
+			{TEXT("glm-4.5-flash"), TEXT("glm-4.5")}),
+		MakeProviderPreset(
+			TEXT("kimi"),
+			TEXT("Kimi"),
+			TEXT("https://api.moonshot.cn/v1"),
+			{TEXT("kimi-k2.5"), TEXT("kimi-k2-turbo-preview")}),
+		MakeProviderPreset(
+			TEXT("siliconflow"),
+			TEXT("SiliconFlow"),
+			TEXT("https://api.siliconflow.cn/v1"),
+			{TEXT("deepseek-ai/DeepSeek-V3.2"), TEXT("Qwen/Qwen3-30B-A3B-Instruct-2507")}),
+		MakeProviderPreset(
+			TEXT("openrouter"),
+			TEXT("OpenRouter"),
+			TEXT("https://openrouter.ai/api/v1"),
+			{TEXT("openai/gpt-5-mini"), TEXT("anthropic/claude-sonnet-4")}),
+		MakeProviderPreset(
+			TEXT("loopback"),
+			TEXT("本机测试"),
+			TEXT("http://127.0.0.1:11434/v1"),
+			{TEXT("local-model"), TEXT("qwen2.5:7b")},
+			false)};
+}
+
+TArray<FString> UWSAgentGateway::GetModelCandidates(const FString& ProviderId)
+{
+	const FString CleanProvider = ProviderId.TrimStartAndEnd().ToLower();
+	for (const FWSLLMProviderPreset& Preset : GetProviderPresets())
+	{
+		if (Preset.ProviderId == CleanProvider)
+		{
+			return Preset.ModelCandidates;
+		}
+	}
+	return {};
+}
+
+bool UWSAgentGateway::NormalizeEndpointForProvider(
+	const FString& ProviderId,
+	const FString& CandidateBaseUrlOrEndpoint,
+	FString& OutEndpoint,
+	FString& OutReason)
+{
+	OutEndpoint.Reset();
+	OutReason.Reset();
+	const FString CleanProvider = ProviderId.TrimStartAndEnd().ToLower();
+	FStrictEndpointParts Parts;
+	if (!TryParseStrictHttpEndpoint(CandidateBaseUrlOrEndpoint, Parts))
+	{
+		OutReason = TEXT("BaseURL 格式无效，不能包含凭据、查询参数、片段、转义主机或路径回退。");
+		return false;
+	}
+
+	const FString BasePath = EndpointBasePath(Parts.Path);
+	if (CleanProvider == TEXT("loopback"))
+	{
+		const bool bLoopbackHost = Parts.Host == TEXT("127.0.0.1")
+			|| Parts.Host == TEXT("localhost")
+			|| Parts.Host == TEXT("::1");
+		if (Parts.Scheme != TEXT("http") || !bLoopbackHost)
+		{
+			OutReason = TEXT("本机测试只允许 http://localhost、127.0.0.1 或 [::1]。");
+			return false;
+		}
+		OutEndpoint = FString::Printf(
+			TEXT("http://%s%s/chat/completions"),
+			*Parts.Authority,
+			*BasePath);
+		return true;
+	}
+
+	const FString ExpectedHost = ExpectedRemoteHost(CleanProvider);
+	const FString ExpectedBasePath = ExpectedRemoteBasePath(CleanProvider);
+	const bool bDeepSeekV1Alias = CleanProvider == TEXT("deepseek") && BasePath == TEXT("/v1");
+	if (ExpectedHost.IsEmpty())
+	{
+		OutReason = TEXT("未知的模型厂商。");
+		return false;
+	}
+	if (Parts.Scheme != TEXT("https")
+		|| Parts.Host != ExpectedHost
+		|| (Parts.bExplicitPort && Parts.Port != 443)
+		|| (BasePath != ExpectedBasePath && !bDeepSeekV1Alias))
+	{
+		OutReason = TEXT("BaseURL 与所选厂商的官方 HTTPS 地址不匹配。");
+		return false;
+	}
+	OutEndpoint = FString::Printf(
+		TEXT("https://%s%s%s/chat/completions"),
+		*ExpectedHost,
+		Parts.bExplicitPort ? TEXT(":443") : TEXT(""),
+		*BasePath);
+	return true;
+}
+
+FString UWSAgentGateway::ProviderForEndpoint(const FString& CandidateEndpoint)
+{
+	for (const FWSLLMProviderPreset& Preset : GetProviderPresets())
+	{
+		FString Normalized;
+		FString Reason;
+		if (NormalizeEndpointForProvider(
+			Preset.ProviderId,
+			CandidateEndpoint,
+			Normalized,
+			Reason))
+		{
+			return Preset.ProviderId;
+		}
+	}
+	return FString();
 }
 
 bool UWSAgentGateway::IsOfficialDeepSeekEndpoint(const FString& CandidateEndpoint)
 {
-	FString Scheme;
-	FString Authority;
-	return TrySplitStrictHttpEndpoint(CandidateEndpoint, Scheme, Authority)
-		&& Scheme == TEXT("https")
-		&& Authority == TEXT("api.deepseek.com");
+	FString Normalized;
+	FString Reason;
+	return NormalizeEndpointForProvider(TEXT("deepseek"), CandidateEndpoint, Normalized, Reason);
 }
 
 bool UWSAgentGateway::IsLoopbackEndpoint(const FString& CandidateEndpoint)
 {
-	FString Scheme;
-	FString Authority;
-	if (!TrySplitStrictHttpEndpoint(CandidateEndpoint, Scheme, Authority) || Scheme != TEXT("http"))
-	{
-		return false;
-	}
-	return IsHostOrHostWithPort(Authority, TEXT("127.0.0.1"))
-		|| IsHostOrHostWithPort(Authority, TEXT("localhost"))
-		|| IsHostOrHostWithPort(Authority, TEXT("[::1]"));
+	FString Normalized;
+	FString Reason;
+	return NormalizeEndpointForProvider(TEXT("loopback"), CandidateEndpoint, Normalized, Reason);
 }
 
 bool UWSAgentGateway::IsAllowedEndpoint(const FString& CandidateEndpoint)
 {
-	return IsOfficialDeepSeekEndpoint(CandidateEndpoint) || IsLoopbackEndpoint(CandidateEndpoint);
+	return !ProviderForEndpoint(CandidateEndpoint).IsEmpty();
 }
 
 bool UWSAgentGateway::ShouldAttachApiKeyToEndpoint(const FString& CandidateEndpoint)
 {
-	return IsOfficialDeepSeekEndpoint(CandidateEndpoint);
+	const FString ProviderId = ProviderForEndpoint(CandidateEndpoint);
+	return !ProviderId.IsEmpty() && ProviderId != TEXT("loopback");
+}
+
+bool UWSAgentGateway::ConfigureRuntime(
+	const FString& InProviderId,
+	const FString& InBaseUrlOrEndpoint,
+	const FString& InApiKey,
+	const FString& InModelId,
+	const bool bInEnabled,
+	const bool bPreserveExistingCredentialIfEmpty,
+	const FString& InCredentialSource,
+	FString& OutError)
+{
+	const FString CleanProvider = InProviderId.TrimStartAndEnd().ToLower();
+	const FString CleanModel = InModelId.TrimStartAndEnd();
+	const FString CleanApiKey = InApiKey.TrimStartAndEnd();
+	auto FailClosed = [this, &OutError](const FString& Error)
+	{
+		OutError = Error;
+		ResetSession();
+		bLLMEnabled = false;
+		ApiKey.Reset();
+		CredentialSource = TEXT("none");
+		CredentialProviderId.Reset();
+		return false;
+	};
+	FString NormalizedEndpoint;
+	if (!NormalizeEndpointForProvider(
+		CleanProvider,
+		InBaseUrlOrEndpoint,
+		NormalizedEndpoint,
+		OutError))
+	{
+		const FString ValidationError = OutError;
+		return FailClosed(ValidationError);
+	}
+	if (CleanModel.IsEmpty() || CleanModel.Len() > 160)
+	{
+		return FailClosed(TEXT("模型 ID 不能为空，且长度不能超过 160。"));
+	}
+	for (const TCHAR Character : CleanModel)
+	{
+		if (FChar::IsControl(Character))
+		{
+			return FailClosed(TEXT("模型 ID 不能包含控制字符。"));
+		}
+	}
+	bool bApiKeyContainsControl = false;
+	for (const TCHAR Character : CleanApiKey)
+	{
+		if (FChar::IsControl(Character))
+		{
+			bApiKeyContainsControl = true;
+			break;
+		}
+	}
+	if (CleanApiKey.Len() > 4096 || bApiKeyContainsControl)
+	{
+		return FailClosed(TEXT("API Key 格式无效。"));
+	}
+
+	const bool bNeedsApiKey = CleanProvider != TEXT("loopback");
+	const bool bKeepCredential = CleanApiKey.IsEmpty()
+		&& bPreserveExistingCredentialIfEmpty
+		&& !ApiKey.IsEmpty()
+		&& ProviderName == CleanProvider
+		&& CredentialProviderId == CleanProvider;
+	if (bInEnabled && bNeedsApiKey && CleanApiKey.IsEmpty() && !bKeepCredential)
+	{
+		return FailClosed(TEXT("远程模型已启用，但当前会话没有 API Key。"));
+	}
+
+	ResetSession();
+	Endpoint = NormalizedEndpoint;
+	ProviderName = CleanProvider;
+	ModelName = CleanModel;
+	bLLMEnabled = bInEnabled;
+	bRequiresApiKey = bNeedsApiKey;
+	if (bNeedsApiKey && !CleanApiKey.IsEmpty())
+	{
+		ApiKey = CleanApiKey;
+		CredentialSource = InCredentialSource.IsEmpty() ? TEXT("session") : InCredentialSource.Left(32);
+		CredentialProviderId = CleanProvider;
+	}
+	else if (!bKeepCredential)
+	{
+		ApiKey.Reset();
+		CredentialSource = TEXT("none");
+		CredentialProviderId.Reset();
+	}
+	if (RetryManager.IsValid())
+	{
+		RetryManager = MakeShared<FHttpRetrySystem::FManager, ESPMode::ThreadSafe>(
+			FHttpRetrySystem::FRetryLimitCountSetting(1u),
+			FHttpRetrySystem::FRetryTimeoutRelativeSecondsSetting(TimeoutSeconds * 2.0 + 2.0));
+	}
+	OutError.Reset();
+	return true;
+}
+
+FString UWSAgentGateway::GetRuntimeStatus() const
+{
+	if (!bLLMEnabled)
+	{
+		return FString::Printf(
+			TEXT("确定性回退｜%s / %s｜模型调用已关闭"),
+			*ProviderName,
+			*ModelName);
+	}
+	if (!IsAllowedEndpoint(Endpoint))
+	{
+		return TEXT("确定性回退｜BaseURL 未通过安全校验");
+	}
+	if (bRequiresApiKey
+		&& (ApiKey.IsEmpty() || CredentialProviderId != ProviderName))
+	{
+		return FString::Printf(
+			TEXT("确定性回退｜%s / %s｜当前会话缺少 API Key"),
+			*ProviderName,
+			*ModelName);
+	}
+	return FString::Printf(
+		TEXT("在线表达｜%s / %s｜凭据来源：%s"),
+		*ProviderName,
+		*ModelName,
+		*CredentialSource);
 }
 
 void UWSAgentGateway::RequestExpression(
@@ -382,7 +773,9 @@ void UWSAgentGateway::RequestExpression(
 	Request->SetURL(Endpoint);
 	Request->SetVerb(TEXT("POST"));
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json; charset=utf-8"));
-	if (!ApiKey.IsEmpty() && ShouldAttachApiKeyToEndpoint(Endpoint))
+	if (!ApiKey.IsEmpty()
+		&& CredentialProviderId == ProviderName
+		&& ShouldAttachApiKeyToEndpoint(Endpoint))
 	{
 		Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *ApiKey));
 	}
@@ -553,7 +946,9 @@ void UWSAgentGateway::RequestDialogueIntent(
 	Request->SetURL(Endpoint);
 	Request->SetVerb(TEXT("POST"));
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json; charset=utf-8"));
-	if (!ApiKey.IsEmpty() && ShouldAttachApiKeyToEndpoint(Endpoint))
+	if (!ApiKey.IsEmpty()
+		&& CredentialProviderId == ProviderName
+		&& ShouldAttachApiKeyToEndpoint(Endpoint))
 	{
 		Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *ApiKey));
 	}
@@ -1169,9 +1564,17 @@ void UWSAgentGateway::LoadConfig()
 	ProviderName = TEXT("deepseek");
 	ModelName = TEXT("deepseek-v4-flash");
 	bLLMEnabled = false;
+	ApiKey.Reset();
+	CredentialSource = TEXT("none");
+	CredentialProviderId.Reset();
+	TimeoutSeconds = 8.0f;
 
 	FString JsonText;
-	const FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.0.json");
+	FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.1.json");
+	if (!FPaths::FileExists(ConfigPath))
+	{
+		ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.0.json");
+	}
 	if (FFileHelper::LoadFileToString(JsonText, *ConfigPath))
 	{
 		TSharedPtr<FJsonObject> Root;
@@ -1201,6 +1604,7 @@ void UWSAgentGateway::LoadConfig()
 			bLLMEnabled = LocalEnabled.ToBool();
 		}
 		LocalConfig.GetString(TEXT("WhiteoutLLM"), TEXT("Endpoint"), Endpoint);
+		LocalConfig.GetString(TEXT("WhiteoutLLM"), TEXT("Provider"), ProviderName);
 		LocalConfig.GetString(TEXT("WhiteoutLLM"), TEXT("Model"), ModelName);
 		FString LocalTimeout;
 		if (LocalConfig.GetString(TEXT("WhiteoutLLM"), TEXT("TimeoutSeconds"), LocalTimeout))
@@ -1211,6 +1615,9 @@ void UWSAgentGateway::LoadConfig()
 		{
 			ApiKey = ApiKey.TrimStartAndEnd();
 			CredentialSource = ApiKey.IsEmpty() ? TEXT("none") : TEXT("local_ini");
+			CredentialProviderId = ApiKey.IsEmpty()
+				? FString()
+				: ProviderName.TrimStartAndEnd().ToLower();
 		}
 	}
 
@@ -1219,6 +1626,7 @@ void UWSAgentGateway::LoadConfig()
 	{
 		ApiKey = EnvironmentKey;
 		CredentialSource = TEXT("environment");
+		CredentialProviderId = ProviderName.TrimStartAndEnd().ToLower();
 	}
 	const FString EnvironmentEnabled = FPlatformMisc::GetEnvironmentVariable(TEXT("WHITEOUT_LLM_ENABLED")).TrimStartAndEnd();
 	if (!EnvironmentEnabled.IsEmpty())
@@ -1230,26 +1638,103 @@ void UWSAgentGateway::LoadConfig()
 	if (FParse::Value(FCommandLine::Get(), TEXT("WhiteoutAgentEndpoint="), CommandLineEndpoint))
 	{
 		Endpoint = CommandLineEndpoint.TrimStartAndEnd();
-		ProviderName = TEXT("command-line-provider");
 	}
 	FString CommandLineEnabled;
 	if (FParse::Value(FCommandLine::Get(), TEXT("WhiteoutLLMEnabled="), CommandLineEnabled))
 	{
 		bLLMEnabled = CommandLineEnabled.ToBool();
 	}
-	bRequiresApiKey = IsOfficialDeepSeekEndpoint(Endpoint);
-	if (!IsAllowedEndpoint(Endpoint))
+
+	UWhiteoutSettingsSubsystem* RuntimeSettings = nullptr;
+	if (UGameInstance* GameInstance = GetTypedOuter<UGameInstance>())
 	{
+		RuntimeSettings = GameInstance->GetSubsystem<UWhiteoutSettingsSubsystem>();
+	}
+	else if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* WorldGameInstance = World->GetGameInstance())
+		{
+			RuntimeSettings = WorldGameInstance->GetSubsystem<UWhiteoutSettingsSubsystem>();
+		}
+	}
+	if (RuntimeSettings && RuntimeSettings->HasSavedLLMConfiguration())
+	{
+		const FString RuntimeProvider =
+			RuntimeSettings->GetLLMProviderId().TrimStartAndEnd().ToLower();
+		ProviderName = RuntimeProvider;
+		Endpoint = RuntimeSettings->GetLLMBaseUrl();
+		ModelName = RuntimeSettings->GetLLMModelId();
+		bLLMEnabled = RuntimeSettings->IsLLMEnabled();
+		if (RuntimeSettings->HasSessionLLMApiKey())
+		{
+			ApiKey = RuntimeSettings->GetSessionLLMApiKey();
+			CredentialSource = TEXT("session_ui");
+			CredentialProviderId = RuntimeProvider;
+		}
+		else if (!ApiKey.IsEmpty() && CredentialProviderId != RuntimeProvider)
+		{
+			ApiKey.Reset();
+			CredentialSource = TEXT("none");
+			CredentialProviderId.Reset();
+		}
+	}
+
+	ProviderName = ProviderName.TrimStartAndEnd().ToLower();
+	FString NormalizedEndpoint;
+	FString ValidationError;
+	if (!NormalizeEndpointForProvider(
+		ProviderName,
+		Endpoint,
+		NormalizedEndpoint,
+		ValidationError))
+	{
+		const FString InferredProvider = ProviderForEndpoint(Endpoint);
+		if (InferredProvider.IsEmpty()
+			|| !NormalizeEndpointForProvider(
+				InferredProvider,
+				Endpoint,
+				NormalizedEndpoint,
+				ValidationError))
+		{
+			bLLMEnabled = false;
+			ProviderName = TEXT("invalid");
+		}
+		else
+		{
+			ProviderName = InferredProvider;
+		}
+	}
+	if (!NormalizedEndpoint.IsEmpty())
+	{
+		Endpoint = NormalizedEndpoint;
+	}
+	bRequiresApiKey = ProviderName != TEXT("loopback");
+	bool bCredentialContainsControl = false;
+	for (const TCHAR Character : ApiKey)
+	{
+		if (FChar::IsControl(Character))
+		{
+			bCredentialContainsControl = true;
+			break;
+		}
+	}
+	if (ProviderName == TEXT("loopback")
+		|| CredentialProviderId != ProviderName
+		|| ApiKey.Len() > 4096
+		|| bCredentialContainsControl)
+	{
+		if (ApiKey.Len() > 4096 || bCredentialContainsControl)
+		{
+			bLLMEnabled = false;
+		}
+		ApiKey.Reset();
+		CredentialSource = TEXT("none");
+		CredentialProviderId.Reset();
+	}
+	if (ModelName.TrimStartAndEnd().IsEmpty())
+	{
+		ModelName = TEXT("unset");
 		bLLMEnabled = false;
-		ProviderName = TEXT("preset");
-	}
-	else if (IsLoopbackEndpoint(Endpoint) && ProviderName == TEXT("deepseek"))
-	{
-		ProviderName = TEXT("loopback-mock");
-	}
-	if (!bLLMEnabled || (bRequiresApiKey && ApiKey.IsEmpty()))
-	{
-		ProviderName = TEXT("preset");
 	}
 }
 
@@ -1316,11 +1801,13 @@ FString UWSAgentGateway::BuildRequestJson(
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("model"), ModelName);
 	Root->SetBoolField(TEXT("stream"), false);
-	Root->SetNumberField(TEXT("temperature"), 0.0);
-	Root->SetNumberField(TEXT("max_tokens"), 320);
-	TSharedRef<FJsonObject> Thinking = MakeShared<FJsonObject>();
-	Thinking->SetStringField(TEXT("type"), TEXT("disabled"));
-	Root->SetObjectField(TEXT("thinking"), Thinking);
+	AddStructuredOutputOptions(Root, ProviderName, 320);
+	if (ProviderName == TEXT("deepseek"))
+	{
+		TSharedRef<FJsonObject> Thinking = MakeShared<FJsonObject>();
+		Thinking->SetStringField(TEXT("type"), TEXT("disabled"));
+		Root->SetObjectField(TEXT("thinking"), Thinking);
+	}
 	TArray<TSharedPtr<FJsonValue>> Messages;
 	TSharedRef<FJsonObject> SystemMessage = MakeShared<FJsonObject>();
 	SystemMessage->SetStringField(TEXT("role"), TEXT("system"));
@@ -1351,9 +1838,6 @@ FString UWSAgentGateway::BuildRequestJson(
 	UserMessage->SetStringField(TEXT("content"), ContextJson);
 	Messages.Add(MakeShared<FJsonValueObject>(UserMessage));
 	Root->SetArrayField(TEXT("messages"), Messages);
-	TSharedRef<FJsonObject> ResponseFormat = MakeShared<FJsonObject>();
-	ResponseFormat->SetStringField(TEXT("type"), TEXT("json_object"));
-	Root->SetObjectField(TEXT("response_format"), ResponseFormat);
 
 	FString Json;
 	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Json);
@@ -1412,11 +1896,13 @@ FString UWSAgentGateway::BuildIntentRequestJson(const FString& UserText) const
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("model"), ModelName);
 	Root->SetBoolField(TEXT("stream"), false);
-	Root->SetNumberField(TEXT("temperature"), 0.0);
-	Root->SetNumberField(TEXT("max_tokens"), 160);
-	TSharedRef<FJsonObject> Thinking = MakeShared<FJsonObject>();
-	Thinking->SetStringField(TEXT("type"), TEXT("disabled"));
-	Root->SetObjectField(TEXT("thinking"), Thinking);
+	AddStructuredOutputOptions(Root, ProviderName, 160);
+	if (ProviderName == TEXT("deepseek"))
+	{
+		TSharedRef<FJsonObject> Thinking = MakeShared<FJsonObject>();
+		Thinking->SetStringField(TEXT("type"), TEXT("disabled"));
+		Root->SetObjectField(TEXT("thinking"), Thinking);
+	}
 	TArray<TSharedPtr<FJsonValue>> Messages;
 	TSharedRef<FJsonObject> SystemMessage = MakeShared<FJsonObject>();
 	SystemMessage->SetStringField(TEXT("role"), TEXT("system"));
@@ -1429,9 +1915,6 @@ FString UWSAgentGateway::BuildIntentRequestJson(const FString& UserText) const
 	UserMessage->SetStringField(TEXT("content"), UserText);
 	Messages.Add(MakeShared<FJsonValueObject>(UserMessage));
 	Root->SetArrayField(TEXT("messages"), Messages);
-	TSharedRef<FJsonObject> ResponseFormat = MakeShared<FJsonObject>();
-	ResponseFormat->SetStringField(TEXT("type"), TEXT("json_object"));
-	Root->SetObjectField(TEXT("response_format"), ResponseFormat);
 	FString Json;
 	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Json);
 	FJsonSerializer::Serialize(Root, Writer);

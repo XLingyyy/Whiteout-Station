@@ -186,6 +186,91 @@ class DynamicCostTests(unittest.TestCase):
         self.assertFalse(hypothermic["can_execute"])
         self.assertEqual("executor_hypothermic", hypothermic["reason_code"])
 
+    def test_forced_antenna_calibration_has_personal_and_social_costs(self) -> None:
+        simulator = started("control_room")
+        simulator.state["tasks"]["generator_progress"] = 2
+        player = simulator.state["characters"]["player"]
+        player["stamina"] = 0
+        pressure_before = player["pressure"]
+
+        result = simulator.apply_action(
+            "calibrate_antenna",
+            {"force": True},
+            transaction_id="forced-antenna-cost",
+        )
+
+        self.assertTrue(result.committed)
+        self.assertEqual(1, simulator.state["tasks"]["antenna_calibration"])
+        self.assertEqual(1, simulator.state["flags"]["forced_actions"])
+        self.assertAlmostEqual(pressure_before + 1.0, player["pressure"])
+        self.assertIn("cold_exposure_restricted", player["injuries"])
+
+        social_with_penalty = simulator.calculate_score()["breakdown"][
+            "social_stability"
+        ]
+        simulator.state["flags"]["forced_actions"] = 0
+        social_without_penalty = simulator.calculate_score()["breakdown"][
+            "social_stability"
+        ]
+        self.assertAlmostEqual(
+            1.5,
+            social_without_penalty - social_with_penalty,
+        )
+
+    def test_unforced_repair_rejects_low_trust_or_excessive_pressure(self) -> None:
+        simulator = started("repair_room")
+        gu_heng = simulator.state["characters"]["gu_heng"]
+        gu_heng["stamina"] = 2
+
+        for trust, pressure in ((2.99, 7.0), (6.0, 9.0)):
+            with self.subTest(trust=trust, pressure=pressure):
+                gu_heng["trust"] = trust
+                gu_heng["pressure"] = pressure
+                preview = simulator.build_action_preview(
+                    "repair_generator", {"collaborator": "player"}
+                )
+                self.assertFalse(preview["can_execute"])
+                self.assertEqual("gu_heng_refused", preview["reason_code"])
+
+    def test_conditional_repair_requires_player_collaboration(self) -> None:
+        simulator = started("repair_room")
+        gu_heng = simulator.state["characters"]["gu_heng"]
+        gu_heng["stamina"] = 2
+
+        for trust, pressure in ((4.49, 7.0), (6.0, 8.0)):
+            with self.subTest(trust=trust, pressure=pressure):
+                gu_heng["trust"] = trust
+                gu_heng["pressure"] = pressure
+                solo = simulator.build_action_preview("repair_generator")
+                assisted = simulator.build_action_preview(
+                    "repair_generator", {"collaborator": "player"}
+                )
+                self.assertFalse(solo["can_execute"])
+                self.assertEqual(
+                    "needs_gu_heng_conditions", solo["reason_code"]
+                )
+                self.assertTrue(assisted["can_execute"])
+
+    def test_unforced_repair_still_requires_working_conditions_or_relay(self) -> None:
+        simulator = started("control_room")
+        gu_heng = simulator.state["characters"]["gu_heng"]
+        gu_heng.update({"stamina": 2, "trust": 4.0, "pressure": 7.0})
+
+        unsupported = simulator.build_action_preview(
+            "repair_generator", {"collaborator": "player"}
+        )
+        self.assertFalse(unsupported["can_execute"])
+        self.assertEqual(
+            "needs_gu_heng_conditions", unsupported["reason_code"]
+        )
+
+        simulator.state["resources"]["replacement_relay"] = 1
+        relay_supported = simulator.build_action_preview(
+            "repair_generator",
+            {"collaborator": "player", "use_relay": True},
+        )
+        self.assertTrue(relay_supported["can_execute"])
+
     def test_zero_ap_signal_is_the_only_cost_floor_exception(self) -> None:
         simulator = started("control_room")
         simulator.state["tasks"].update(
@@ -309,6 +394,23 @@ class FoodAndRecoveryTests(unittest.TestCase):
         self.assertEqual(1, heated.state["characters"]["player"]["stamina"])
         self.assertEqual(0, unheated.state["characters"]["player"]["stamina"])
         self.assertLess(unheated.state["characters"]["player"]["pressure"], 4.0)
+
+    def test_heated_rest_reduces_pressure_when_stamina_is_full(self) -> None:
+        simulator = started("control_room")
+        player = simulator.state["characters"]["player"]
+        player["stamina"] = 2
+        player["pressure"] = 8.0
+
+        result = simulator.apply_action(
+            "rest",
+            {"target": "player", "location": "control_room"},
+            transaction_id="heated-rest-full-stamina",
+        )
+
+        self.assertTrue(result.committed)
+        self.assertEqual(2, player["stamina"])
+        self.assertAlmostEqual(7.6, player["pressure"])
+        self.assertEqual(3, simulator.state["phase_ap"])
 
 
 class MedicalAndInjuryTests(unittest.TestCase):
@@ -442,6 +544,82 @@ class NpcAndModelBoundaryTests(unittest.TestCase):
             },
         )
 
+    def test_repair_stance_uses_trust_pressure_and_working_conditions(self) -> None:
+        simulator = started("repair_room")
+        gu_heng = simulator.state["characters"]["gu_heng"]
+        gu_heng["stamina"] = 2
+
+        cases = (
+            (2.99, 7.0, "refuse"),
+            (6.0, 9.0, "refuse"),
+            (4.49, 7.0, "conditional_accept"),
+            (6.0, 8.0, "conditional_accept"),
+            (4.5, 7.99, "accept"),
+            (6.0, 7.99, "volunteer"),
+        )
+        for trust, pressure, expected_stance in cases:
+            with self.subTest(
+                trust=trust,
+                pressure=pressure,
+                expected_stance=expected_stance,
+            ):
+                gu_heng["trust"] = trust
+                gu_heng["pressure"] = pressure
+                stance = simulator.resolve_npc_stance(
+                    "gu_heng", "repair_generator"
+                )
+                self.assertEqual(expected_stance, stance["stance"])
+
+        simulator.state["heating"]["current_zone"] = "control_room"
+        gu_heng.update({"trust": 6.0, "pressure": 7.0})
+        self.assertEqual(
+            "volunteer",
+            simulator.resolve_npc_stance(
+                "gu_heng", "repair_generator"
+            )["stance"],
+        )
+        preview = simulator.build_action_preview("repair_generator")
+        self.assertFalse(preview["can_execute"])
+        self.assertEqual(
+            "needs_gu_heng_conditions", preview["reason_code"]
+        )
+
+    def test_repair_room_heat_promise_only_counts_future_heating(self) -> None:
+        past_heat = started("repair_room")
+        promise = past_heat.apply_action(
+            "talk_gu_heng",
+            {
+                "dialogue_act": "promise",
+                "promise_condition": "heat_repair_room",
+            },
+            transaction_id="promise-after-repair-heat",
+        )
+        self.assertTrue(promise.committed)
+        self.assertEqual(
+            1,
+            past_heat.state["promises"][0][
+                "heating_history_count_at_recognition"
+            ],
+        )
+        past_heat.end_game()
+        self.assertFalse(past_heat.state["promises"][0]["fulfilled"])
+
+        future_heat = started("medical_room")
+        promise = future_heat.apply_action(
+            "talk_gu_heng",
+            {
+                "dialogue_act": "promise",
+                "promise_condition": "heat_repair_room",
+            },
+            transaction_id="promise-before-repair-heat",
+        )
+        self.assertTrue(promise.committed)
+        future_heat.settle_phase()
+        next_phase = future_heat.start_phase("repair_room")
+        self.assertTrue(next_phase["committed"])
+        future_heat.end_game()
+        self.assertTrue(future_heat.state["promises"][0]["fulfilled"])
+
     def test_model_cannot_mutate_rules_or_choose_a_different_stance(self) -> None:
         simulator = started("control_room")
         before = simulator.deterministic_outcome()
@@ -508,6 +686,52 @@ class RouteAndEndingTests(unittest.TestCase):
         self.assertEqual(0, medical.state["resources"]["medicine"])
         self.assertFalse(technical.state["flags"]["kitchen_heater_intact"])
         self.assertEqual("critical", risk._injury_level("gu_heng"))
+
+    def test_success_routes_end_immediately_after_signal(self) -> None:
+        for route_id in (
+            "medical_cooperation",
+            "technical_savings",
+            "risk_push",
+        ):
+            with self.subTest(route=route_id):
+                simulator = WhiteoutSimulatorV11()
+                output = run_route(simulator, route_id)
+
+                self.assertTrue(simulator.state["tasks"]["signal_sent"])
+                self.assertEqual(2, len(output["phase_summaries"]))
+                self.assertEqual(
+                    "afternoon",
+                    output["phase_summaries"][-1]["phase"],
+                )
+                self.assertFalse(simulator.state["window_closed"])
+                self.assertEqual(
+                    "send_signal",
+                    simulator.state["event_log"][-1]["action_id"],
+                )
+
+    def test_stable_rescue_requires_one_cooperative_npc(self) -> None:
+        simulator = WhiteoutSimulatorV11()
+        simulator.state["tasks"].update(
+            {
+                "generator_progress": 2,
+                "antenna_calibration": 1,
+                "signal_sent": True,
+                "generator_stable": True,
+            }
+        )
+        gu_heng = simulator.state["characters"]["gu_heng"]
+        ye_cheng = simulator.state["characters"]["ye_cheng"]
+        gu_heng.update({"trust": 2.99, "pressure": 7.0})
+        ye_cheng.update({"trust": 3.0, "pressure": 8.99})
+        self.assertEqual("stable_rescue", simulator.classify_ending())
+
+        ye_cheng["pressure"] = 9.0
+        self.assertEqual(
+            "signal_sent_cost_uncontrolled", simulator.classify_ending()
+        )
+
+        gu_heng.update({"trust": 3.0, "pressure": 8.99})
+        self.assertEqual("stable_rescue", simulator.classify_ending())
 
     def test_two_failure_routes_reach_distinct_failure_endings(self) -> None:
         expected = {

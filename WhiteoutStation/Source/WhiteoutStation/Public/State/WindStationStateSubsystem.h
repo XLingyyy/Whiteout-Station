@@ -43,6 +43,17 @@ public:
 	FWSActionResult CommitAction(const FWSActionRequest& Request);
 
 	UFUNCTION(BlueprintCallable, Category = "Whiteout Station|Flow")
+	bool BeginDayPhase(
+		EWSHeatingZone HeatingZone,
+		EWSReasonCode& OutReason,
+		TArray<FString>& OutChanges);
+
+	UFUNCTION(BlueprintCallable, Category = "Whiteout Station|Flow")
+	bool SettleCurrentDayPhase(
+		EWSReasonCode& OutReason,
+		FWSPhaseSummary& OutSummary);
+
+	UFUNCTION(BlueprintCallable, Category = "Whiteout Station|Flow")
 	FWSGameState EndGame();
 
 	UFUNCTION(BlueprintCallable, Category = "Whiteout Station|Save")
@@ -64,15 +75,14 @@ public:
 	FWSAgentReply GetLatestDialogue() const { return LatestDialogue; }
 
 	void CancelPendingDialogue();
+	bool ApplyLLMRuntimeConfiguration(FString& OutError);
+	FString GetLLMRuntimeStatus() const;
+	bool HasLiveLLMProvider() const;
 
 	const FWhiteoutRulesEngine& GetRulesEngine() const { return RulesEngine; }
 
 private:
 	static const FString SaveSlot;
-	static const FString LegacyV09SaveSlot;
-	static const FString LegacyV08SaveSlot;
-	static const FString LegacyV07SaveSlot;
-	static const FString LegacyV06SaveSlot;
 	FWhiteoutRulesEngine RulesEngine;
 
 	UPROPERTY()
@@ -84,7 +94,11 @@ private:
 	UPROPERTY()
 	FWSAgentReply LatestDialogue;
 
+	FDelegateHandle LLMSettingsChangedHandle;
+	FString LLMConfigurationError;
+
 	void BroadcastState();
 	void RequestActionExpression(const FWSActionRequest& ActionRequest);
 	void HandleAgentReply(const FWSAgentReply& Reply);
+	void HandleLLMSettingsChanged();
 };

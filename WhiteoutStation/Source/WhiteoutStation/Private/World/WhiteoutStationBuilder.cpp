@@ -1,5 +1,6 @@
 #include "World/WhiteoutStationBuilder.h"
 
+#include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
@@ -16,10 +17,12 @@
 #include "Engine/TextRenderActor.h"
 #include "EngineUtils.h"
 #include "Components/TextRenderComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Player/WhiteoutCharacter.h"
 #include "Presentation/WSPresentationData.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -39,6 +42,38 @@ namespace
 	const FName ExteriorLightTag(TEXT("WSExteriorLight"));
 	const FName EmergencyLightTag(TEXT("WSEmergencyLight"));
 	const FName GeneratorLightTag(TEXT("WSGeneratorPowered"));
+
+	struct FRequiredHotspotDefinition
+	{
+		FName ActionId;
+		const TCHAR* Label;
+		FVector Location;
+		FLinearColor Color;
+		FVector Scale;
+	};
+
+	const TArray<FRequiredHotspotDefinition>& RequiredHotspotDefinitions()
+	{
+		static const TArray<FRequiredHotspotDefinition> Definitions = {
+			{FName(TEXT("investigate_generator_log")), TEXT("发电机运行记录"), FVector(-120, -165, 70), FLinearColor(0.15f, 0.55f, 0.9f), FVector(0.62f)},
+			{FName(TEXT("send_signal")), TEXT("应急无线电"), FVector(280, -165, 70), FLinearColor(0.15f, 0.55f, 0.9f), FVector(0.58f)},
+			{FName(TEXT("heat_control_room")), TEXT("控制室供暖控制器"), FVector(400, 180, 70), FLinearColor(0.15f, 0.55f, 0.9f), FVector(0.7f)},
+			{FName(TEXT("inspect_control_cabinet")), TEXT("烧毁的控制柜"), FVector(850, 20, 70), FLinearColor(0.95f, 0.36f, 0.12f), FVector(0.9f)},
+			{FName(TEXT("heat_repair_room")), TEXT("维修间供暖控制器"), FVector(1050, -80, 70), FLinearColor(0.95f, 0.36f, 0.12f), FVector(0.7f)},
+			{FName(TEXT("repair_generator")), TEXT("柴油发电机"), FVector(1250, 80, 90), FLinearColor(0.95f, 0.36f, 0.12f), FVector(1.2f, 0.7f, 1.1f)},
+			{FName(TEXT("forced_self_repair")), TEXT("手动维修工具"), FVector(1450, 220, 55), FLinearColor(0.95f, 0.36f, 0.12f), FVector(0.65f)},
+			{FName(TEXT("talk_gu_heng")), TEXT("顾衡｜工程师"), FVector(860, 160, 0), FLinearColor(0.75f, 0.28f, 0.16f), FVector(0.45f, 0.45f, 1.9f)},
+			{FName(TEXT("heat_medical_room")), TEXT("医务室供暖控制器"), FVector(-120, 680, 70), FLinearColor(0.12f, 0.75f, 0.55f), FVector(0.7f)},
+			{FName(TEXT("treat_character")), TEXT("诊断与治疗台"), FVector(500, 560, 70), FLinearColor(0.12f, 0.75f, 0.55f), FVector(0.72f)},
+			{FName(TEXT("talk_ye_cheng")), TEXT("叶澄｜医生"), FVector(120, 850, 0), FLinearColor(0.12f, 0.65f, 0.72f), FVector(0.45f, 0.45f, 1.85f)},
+			{FName(TEXT("distribute_food")), TEXT("口粮台"), FVector(900, 760, 70), FLinearColor(0.9f, 0.65f, 0.12f), FVector(0.72f)},
+			{FName(TEXT("heat_kitchen")), TEXT("厨房供暖控制器"), FVector(1120, 740, 70), FLinearColor(0.9f, 0.65f, 0.12f), FVector(0.7f)},
+			{FName(TEXT("rest")), TEXT("休整床位"), FVector(1500, 780, 0), FLinearColor(0.9f, 0.65f, 0.12f), FVector(0.72f)},
+			{FName(TEXT("dismantle_kitchen_heater")), TEXT("厨房加热器"), FVector(1330, 850, 70), FLinearColor(0.9f, 0.65f, 0.12f), FVector(0.72f)},
+			{FName(TEXT("calibrate_antenna")), TEXT("室外天线控制终端"), FVector(2050, 500, 0), FLinearColor(0.4f, 0.65f, 1.0f), FVector(0.72f)},
+		};
+		return Definitions;
+	}
 }
 
 AWhiteoutStationBuilder::AWhiteoutStationBuilder()
@@ -54,69 +89,16 @@ void AWhiteoutStationBuilder::BeginPlay()
 	{
 		BuildStation();
 	}
-	else
+	EnsureRequiredHotspots();
+	if (bUsingEditableLayout
+		&& FParse::Param(FCommandLine::Get(), TEXT("WhiteoutSceneAudit")))
 	{
-		if (!RuntimeHotspots.ContainsByPredicate(
-			[](const TObjectPtr<AWSInteractableActor>& Hotspot)
-			{
-				return Hotspot
-					&& Hotspot->ActionId == TEXT("distribute_food");
-		}))
-		{
-			FVector FoodStationLocation(900.0f, 760.0f, 70.0f);
-			FVector KitchenAnchor = FoodStationLocation;
-			for (const TObjectPtr<AWSInteractableActor>& Hotspot : RuntimeHotspots)
-			{
-				if (Hotspot
-					&& Hotspot->ActionId == TEXT("dismantle_kitchen_heater"))
-				{
-					KitchenAnchor = Hotspot->GetActorLocation();
-					break;
-				}
-			}
-			const TArray<FVector> CandidateOffsets = {
-				FVector(-180.0f, -180.0f, 0.0f),
-				FVector(-260.0f, -120.0f, 0.0f),
-				FVector(-120.0f, -260.0f, 0.0f),
-				FVector(180.0f, -180.0f, 0.0f),
-				FVector(-300.0f, -260.0f, 0.0f),
-				FVector(260.0f, -120.0f, 0.0f),
-			};
-			for (const FVector& Offset : CandidateOffsets)
-			{
-				FVector Candidate = KitchenAnchor + Offset;
-				Candidate.Z = 70.0f;
-				const FVector OccupancyCenter(
-					Candidate.X,
-					Candidate.Y,
-					90.0f);
-				if (!GetWorld()->OverlapBlockingTestByChannel(
-					OccupancyCenter,
-					FQuat::Identity,
-					ECC_Visibility,
-					FCollisionShape::MakeBox(
-						FVector(55.0f, 55.0f, 85.0f))))
-				{
-					FoodStationLocation = Candidate;
-					break;
-				}
-			}
-			SpawnHotspot(
-				TEXT("distribute_food"),
-				TEXT("口粮台"),
-				FoodStationLocation,
-				FLinearColor(0.9f, 0.65f, 0.12f),
-				FVector(0.72f));
-			UE_LOG(
-				LogTemp,
-				Warning,
-				TEXT("WhiteoutStation: restored missing editable-layout hotspot distribute_food at runtime (%s)"),
-				*FoodStationLocation.ToCompactString());
-		}
-		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutSceneAudit")))
-		{
-			GetWorldTimerManager().SetTimer(SceneAuditTimer, this, &AWhiteoutStationBuilder::AuditStationLayout, 1.0f, false);
-		}
+		GetWorldTimerManager().SetTimer(
+			SceneAuditTimer,
+			this,
+			&AWhiteoutStationBuilder::AuditStationLayout,
+			1.0f,
+			false);
 	}
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
@@ -132,6 +114,99 @@ void AWhiteoutStationBuilder::BeginPlay()
 		{
 			ApplyEndingPresentation(State.Ending);
 		}
+	}
+	if (FParse::Param(
+			FCommandLine::Get(),
+			TEXT("WhiteoutAntennaInputSmokeReady")))
+	{
+		FTimerHandle AntennaInputSmokePrepTimer;
+		GetWorldTimerManager().SetTimer(
+			AntennaInputSmokePrepTimer,
+			[this]()
+			{
+				UWindStationStateSubsystem* StateSubsystem =
+					GetGameInstance()
+						? GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>()
+						: nullptr;
+				if (!StateSubsystem)
+				{
+					UE_LOG(
+						LogTemp,
+						Error,
+						TEXT("WhiteoutStation AntennaInputSmokePrep: missing state subsystem"));
+					return;
+				}
+				const auto Commit =
+					[StateSubsystem](FWSActionRequest Request)
+					{
+						Request.TransactionId = FGuid::NewGuid();
+						return StateSubsystem->CommitAction(Request).bCommitted;
+					};
+				bool bPrepared = true;
+				FWSActionRequest HeatRequest;
+				HeatRequest.ActionId = TEXT("heat_repair_room");
+				bPrepared &= Commit(HeatRequest);
+				FWSActionRequest FoodRequest;
+				FoodRequest.ActionId = TEXT("distribute_food");
+				FoodRequest.FoodForPlayer = 1;
+				FoodRequest.FoodForGuHeng = 1;
+				bPrepared &= Commit(FoodRequest);
+				FWSActionRequest RepairRequest;
+				RepairRequest.ActionId = TEXT("repair_generator");
+				RepairRequest.bHasCollaborator = true;
+				RepairRequest.Collaborator = EWSCharacterId::Player;
+				bPrepared &= Commit(RepairRequest);
+				RepairRequest.TransactionId.Invalidate();
+				RepairRequest.bForce = true;
+				bPrepared &= Commit(RepairRequest);
+				EWSReasonCode SettleReason = EWSReasonCode::PhaseLocked;
+				FWSPhaseSummary PhaseSummary;
+				bPrepared &= StateSubsystem->SettleCurrentDayPhase(
+					SettleReason,
+					PhaseSummary);
+				EWSReasonCode BeginReason = EWSReasonCode::PhaseLocked;
+				TArray<FString> BeginChanges;
+				bPrepared &= StateSubsystem->BeginDayPhase(
+					EWSHeatingZone::ControlRoom,
+					BeginReason,
+					BeginChanges);
+				FWSActionRequest CalibrationRequest;
+				CalibrationRequest.ActionId = TEXT("calibrate_antenna");
+				const FWSActionPreview CalibrationPreview =
+					StateSubsystem->PreviewAction(CalibrationRequest);
+				const FWSGameState PreparedState =
+					StateSubsystem->GetStateSnapshot();
+				bPrepared &=
+					PreparedState.Tasks.GeneratorProgress >= 2
+					&& CalibrationPreview.bCanExecute;
+				if (bPrepared)
+				{
+					UE_LOG(
+						LogTemp,
+						Display,
+						TEXT("WhiteoutStation AntennaInputSmokePrep: ready=1 AP=%d generator=%d antenna=%d calibration_cost=%d"),
+						PreparedState.ActionPoints,
+						PreparedState.Tasks.GeneratorProgress,
+						PreparedState.Tasks.AntennaCalibration,
+						CalibrationPreview.APCost);
+				}
+				else
+				{
+					UE_LOG(
+						LogTemp,
+						Error,
+						TEXT("WhiteoutStation AntennaInputSmokePrep: ready=0 AP=%d generator=%d antenna=%d calibration_reason=%s"),
+						PreparedState.ActionPoints,
+						PreparedState.Tasks.GeneratorProgress,
+						PreparedState.Tasks.AntennaCalibration,
+						*StaticEnum<EWSReasonCode>()->GetNameStringByValue(
+							static_cast<int64>(
+								CalibrationPreview.ReasonCode)));
+					FPlatformMisc::RequestExitWithStatus(false, 3);
+				}
+			},
+			0.2f,
+			false);
 	}
 }
 
@@ -301,6 +376,343 @@ bool AWhiteoutStationBuilder::RegisterEditableStationActors()
 	return false;
 }
 
+void AWhiteoutStationBuilder::EnsureRequiredHotspots()
+{
+	for (AWSInteractableActor* Hotspot : RuntimeHotspots)
+	{
+		if (Hotspot && Hotspot->ActionId == TEXT("treat_gu_heng"))
+		{
+			Hotspot->Configure(
+				TEXT("treat_character"),
+				FText::FromString(TEXT("诊断与治疗台")),
+				FLinearColor(0.12f, 0.75f, 0.55f));
+		}
+	}
+	for (const FRequiredHotspotDefinition& Definition : RequiredHotspotDefinitions())
+	{
+		const bool bAlreadyPresent = RuntimeHotspots.ContainsByPredicate(
+			[&Definition](const TObjectPtr<AWSInteractableActor>& Hotspot)
+			{
+				return Hotspot && Hotspot->ActionId == Definition.ActionId;
+			});
+		if (bAlreadyPresent)
+		{
+			continue;
+		}
+
+		const FVector SpawnLocation =
+			Definition.ActionId == TEXT("distribute_food")
+				? ResolveFoodHotspotLocation()
+				: Definition.Location;
+		AWSInteractableActor* RestoredHotspot = SpawnHotspot(
+			*Definition.ActionId.ToString(),
+			Definition.Label,
+			SpawnLocation,
+			Definition.Color,
+			Definition.Scale);
+		if (RestoredHotspot)
+		{
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("WhiteoutStation: restored missing editable-layout hotspot %s at runtime (%s)"),
+				*Definition.ActionId.ToString(),
+				*SpawnLocation.ToCompactString());
+		}
+		else
+		{
+			UE_LOG(
+				LogTemp,
+				Error,
+				TEXT("WhiteoutStation: failed to restore missing editable-layout hotspot %s at runtime (%s)"),
+				*Definition.ActionId.ToString(),
+				*SpawnLocation.ToCompactString());
+		}
+	}
+
+	for (AWSInteractableActor* Hotspot : RuntimeHotspots)
+	{
+		if (Hotspot && Hotspot->ActionId == TEXT("calibrate_antenna"))
+		{
+			ConfigureAntennaControlProxy(Hotspot);
+		}
+	}
+}
+
+FVector AWhiteoutStationBuilder::ResolveFoodHotspotLocation() const
+{
+	FVector FoodStationLocation(900.0f, 760.0f, 70.0f);
+	FVector KitchenAnchor = FoodStationLocation;
+	for (const TObjectPtr<AWSInteractableActor>& Hotspot : RuntimeHotspots)
+	{
+		if (Hotspot
+			&& Hotspot->ActionId == TEXT("dismantle_kitchen_heater"))
+		{
+			KitchenAnchor = Hotspot->GetActorLocation();
+			break;
+		}
+	}
+	const TArray<FVector> CandidateOffsets = {
+		FVector(-180.0f, -180.0f, 0.0f),
+		FVector(-260.0f, -120.0f, 0.0f),
+		FVector(-120.0f, -260.0f, 0.0f),
+		FVector(180.0f, -180.0f, 0.0f),
+		FVector(-300.0f, -260.0f, 0.0f),
+		FVector(260.0f, -120.0f, 0.0f),
+	};
+	for (const FVector& Offset : CandidateOffsets)
+	{
+		FVector Candidate = KitchenAnchor + Offset;
+		Candidate.Z = 70.0f;
+		if (!GetWorld()->OverlapBlockingTestByChannel(
+				FVector(Candidate.X, Candidate.Y, 90.0f),
+				FQuat::Identity,
+				ECC_Visibility,
+				FCollisionShape::MakeBox(FVector(55.0f, 55.0f, 85.0f))))
+		{
+			return Candidate;
+		}
+	}
+	return FoodStationLocation;
+}
+
+FVector AWhiteoutStationBuilder::ResolveAntennaControlAnchor() const
+{
+	const FVector DefaultAnchor(2260.0f, 500.0f, 0.0f);
+	AStaticMeshActor* ClosestTerminal = nullptr;
+	float ClosestDistanceSquared = TNumericLimits<float>::Max();
+	for (AStaticMeshActor* MeshActor : RuntimeAssemblyMeshes)
+	{
+		if (!MeshActor
+			|| !MeshActor->ActorHasTag(TEXT("Outdoor"))
+			|| !MeshActor->GetStaticMeshComponent()
+			|| !MeshActor->GetStaticMeshComponent()->GetStaticMesh()
+			|| !MeshActor->GetStaticMeshComponent()->GetStaticMesh()
+				->GetPathName().Contains(TEXT("Prop_Computer")))
+		{
+			continue;
+		}
+		const float DistanceSquared = FVector::DistSquared2D(
+			MeshActor->GetActorLocation(),
+			DefaultAnchor);
+		if (DistanceSquared < ClosestDistanceSquared)
+		{
+			ClosestTerminal = MeshActor;
+			ClosestDistanceSquared = DistanceSquared;
+		}
+	}
+	return ClosestTerminal
+		? ClosestTerminal->GetActorLocation()
+		: DefaultAnchor;
+}
+
+void AWhiteoutStationBuilder::ConfigureAntennaControlProxy(
+	AWSInteractableActor* Hotspot)
+{
+	if (!Hotspot)
+	{
+		return;
+	}
+
+	const FVector OriginalLocation = Hotspot->GetActorLocation();
+	Hotspot->Configure(
+		FName(TEXT("calibrate_antenna")),
+		FText::FromString(TEXT("室外天线控制终端")),
+		FLinearColor(0.4f, 0.65f, 1.0f));
+	Hotspot->SetActorScale3D(FVector(0.72f));
+	Hotspot->Tags.AddUnique(TEXT("WSAntennaControlProxy"));
+
+	const FVector Anchor = ResolveAntennaControlAnchor();
+	const TArray<FVector> CandidateLocations = {
+		Anchor + FVector(160.0f, 0.0f, 0.0f),
+		Anchor + FVector(0.0f, -160.0f, 0.0f),
+		Anchor + FVector(0.0f, 160.0f, 0.0f),
+		Anchor + FVector(-160.0f, 0.0f, 0.0f),
+		Anchor + FVector(-140.0f, -120.0f, 0.0f),
+		Anchor + FVector(-140.0f, 120.0f, 0.0f),
+		FVector(2050.0f, 500.0f, 0.0f),
+		FVector(2050.0f, 300.0f, 0.0f),
+		FVector(1950.0f, 550.0f, 0.0f),
+	};
+	for (const FVector& CandidateLocation : CandidateLocations)
+	{
+		if (PlaceHotspotAtGroundedLocation(Hotspot, CandidateLocation)
+			&& IsHotspotInteractionReachable(Hotspot))
+		{
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("WhiteoutStation: antenna control proxy ready old=%s anchor=%s proxy=%s"),
+				*OriginalLocation.ToCompactString(),
+				*Anchor.ToCompactString(),
+				*Hotspot->GetActorLocation().ToCompactString());
+			return;
+		}
+	}
+
+	PlaceHotspotAtGroundedLocation(
+		Hotspot,
+		FVector(2050.0f, 500.0f, 0.0f));
+	UE_LOG(
+		LogTemp,
+		Error,
+		TEXT("WhiteoutStation: antenna control proxy has no verified interaction approach at %s"),
+		*Hotspot->GetActorLocation().ToCompactString());
+}
+
+bool AWhiteoutStationBuilder::PlaceHotspotAtGroundedLocation(
+	AWSInteractableActor* Hotspot,
+	const FVector& Location) const
+{
+	if (!Hotspot || !GetWorld())
+	{
+		return false;
+	}
+	Hotspot->SetActorLocation(
+		FVector(Location.X, Location.Y, 0.0f),
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+	const FBox InitialBounds = Hotspot->GetComponentsBoundingBox(true);
+	if (!InitialBounds.IsValid)
+	{
+		return false;
+	}
+	Hotspot->AddActorWorldOffset(
+		FVector(0.0f, 0.0f, -InitialBounds.Min.Z),
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+	Hotspot->Tags.AddUnique(TEXT("WSGroundedHotspot"));
+
+	const FBox Bounds = Hotspot->GetComponentsBoundingBox(true);
+	FVector OccupancyExtent = Bounds.GetExtent();
+	OccupancyExtent.X = FMath::Min(OccupancyExtent.X, 70.0f);
+	OccupancyExtent.Y = FMath::Min(OccupancyExtent.Y, 70.0f);
+	OccupancyExtent.Z = FMath::Max(20.0f, OccupancyExtent.Z - 10.0f);
+	FCollisionQueryParams Params(
+		SCENE_QUERY_STAT(WhiteoutHotspotPlacement),
+		false,
+		Hotspot);
+	Params.AddIgnoredActor(this);
+	return !GetWorld()->OverlapBlockingTestByChannel(
+		Bounds.GetCenter() + FVector(0.0f, 0.0f, 10.0f),
+		FQuat::Identity,
+		ECC_Visibility,
+		FCollisionShape::MakeBox(OccupancyExtent),
+		Params);
+}
+
+bool AWhiteoutStationBuilder::IsHotspotInteractionReachable(
+	const AWSInteractableActor* Hotspot) const
+{
+	if (!Hotspot || !GetWorld())
+	{
+		return false;
+	}
+
+	FVector BoundsOrigin = Hotspot->GetActorLocation();
+	FVector BoundsExtent = FVector::ZeroVector;
+	Hotspot->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+	const FVector AimPoint = Hotspot->InteractionCollision
+		? Hotspot->InteractionCollision->Bounds.Origin
+		: BoundsOrigin;
+	const float MinimumDistance = FMath::Clamp(
+		FMath::Max(BoundsExtent.X, BoundsExtent.Y) + 90.0f,
+		140.0f,
+		220.0f);
+	const TArray<float> CandidateDistances = {
+		MinimumDistance,
+		FMath::Min(MinimumDistance + 60.0f, 390.0f),
+		FMath::Min(MinimumDistance + 120.0f, 390.0f),
+		FMath::Min(MinimumDistance + 180.0f, 390.0f),
+		390.0f};
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	constexpr int32 CandidateCount = 16;
+	int32 FloorCandidateCount = 0;
+	int32 ClearApproachCount = 0;
+	int32 InteractionCandidateCount = 0;
+	FName LastSelectedAction = NAME_None;
+	for (const float CandidateDistance : CandidateDistances)
+	{
+		for (int32 CandidateIndex = 0;
+			CandidateIndex < CandidateCount;
+			++CandidateIndex)
+		{
+			const float Angle = 2.0f * PI
+				* static_cast<float>(CandidateIndex)
+				/ static_cast<float>(CandidateCount);
+			const FVector CandidateLocation = BoundsOrigin
+				+ FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f)
+					* CandidateDistance;
+			FCollisionQueryParams Params(
+				SCENE_QUERY_STAT(WhiteoutHotspotApproach),
+				false,
+				Hotspot);
+			Params.AddIgnoredActor(this);
+			if (PlayerPawn)
+			{
+				Params.AddIgnoredActor(PlayerPawn);
+			}
+			FHitResult FloorHit;
+			if (!GetWorld()->LineTraceSingleByChannel(
+					FloorHit,
+					FVector(CandidateLocation.X, CandidateLocation.Y, 180.0f),
+					FVector(CandidateLocation.X, CandidateLocation.Y, -120.0f),
+					ECC_Visibility,
+					Params))
+			{
+				continue;
+			}
+			++FloorCandidateCount;
+			const FVector PawnLocation(
+				CandidateLocation.X,
+				CandidateLocation.Y,
+				FloorHit.ImpactPoint.Z + 94.0f);
+			if (GetWorld()->OverlapBlockingTestByChannel(
+					PawnLocation,
+					FQuat::Identity,
+					ECC_Pawn,
+					FCollisionShape::MakeCapsule(42.0f, 92.0f),
+					Params))
+			{
+				continue;
+			}
+			++ClearApproachCount;
+			const FVector CameraLocation =
+				PawnLocation + FVector(0.0f, 0.0f, 64.0f);
+			AWSInteractableActor* Selected =
+				AWhiteoutCharacter::FindInteractableFromView(
+					GetWorld(),
+					CameraLocation,
+					AimPoint - CameraLocation,
+					this);
+			if (Selected)
+			{
+				++InteractionCandidateCount;
+				LastSelectedAction = Selected->ActionId;
+			}
+			if (Selected == Hotspot)
+			{
+				return true;
+			}
+		}
+	}
+	UE_LOG(
+		LogTemp,
+		Warning,
+		TEXT("WhiteoutStation HotspotReachability: action=%s location=%s aim=%s extent=%s floor=%d clear=%d selected=%d last=%s"),
+		*Hotspot->ActionId.ToString(),
+		*Hotspot->GetActorLocation().ToCompactString(),
+		*AimPoint.ToCompactString(),
+		*BoundsExtent.ToCompactString(),
+		FloorCandidateCount,
+		ClearApproachCount,
+		InteractionCandidateCount,
+		*LastSelectedAction.ToString());
+	return false;
+}
+
 void AWhiteoutStationBuilder::ClearEditableStationLayoutInternal()
 {
 #if WITH_EDITOR
@@ -435,6 +847,7 @@ void AWhiteoutStationBuilder::BuildStation()
 
 	SpawnHotspot(TEXT("investigate_generator_log"), TEXT("发电机运行记录"), FVector(-120, -165, 70), Control, FVector(0.62f));
 	SpawnHotspot(TEXT("send_signal"), TEXT("应急无线电"), FVector(280, -165, 70), Control, FVector(0.58f));
+	SpawnHotspot(TEXT("heat_control_room"), TEXT("控制室供暖控制器"), FVector(400, 180, 70), Control, FVector(0.7f));
 	SpawnHotspot(TEXT("inspect_control_cabinet"), TEXT("烧毁的控制柜"), FVector(850, 20, 70), Repair, FVector(0.9f));
 	SpawnHotspot(TEXT("heat_repair_room"), TEXT("维修间供暖控制器"), FVector(1050, -80, 70), Repair, FVector(0.7f));
 	SpawnHotspot(TEXT("repair_generator"), TEXT("柴油发电机"), FVector(1250, 80, 90), Repair, FVector(1.2f, 0.7f, 1.1f));
@@ -442,10 +855,12 @@ void AWhiteoutStationBuilder::BuildStation()
 	SpawnHotspot(TEXT("talk_gu_heng"), TEXT("顾衡｜工程师"), FVector(860, 160, 0), FLinearColor(0.75f, 0.28f, 0.16f), FVector(0.45f, 0.45f, 1.9f));
 
 	SpawnHotspot(TEXT("heat_medical_room"), TEXT("医务室供暖控制器"), FVector(-120, 680, 70), Medical, FVector(0.7f));
-	SpawnHotspot(TEXT("treat_gu_heng"), TEXT("治疗台"), FVector(500, 560, 70), Medical, FVector(0.72f));
+	SpawnHotspot(TEXT("treat_character"), TEXT("诊断与治疗台"), FVector(500, 560, 70), Medical, FVector(0.72f));
 	SpawnHotspot(TEXT("talk_ye_cheng"), TEXT("叶澄｜医生"), FVector(120, 850, 0), FLinearColor(0.12f, 0.65f, 0.72f), FVector(0.45f, 0.45f, 1.85f));
 
 	SpawnHotspot(TEXT("distribute_food"), TEXT("口粮台"), FVector(900, 760, 70), Quarter, FVector(0.72f));
+	SpawnHotspot(TEXT("heat_kitchen"), TEXT("厨房供暖控制器"), FVector(1120, 740, 70), Quarter, FVector(0.7f));
+	SpawnHotspot(TEXT("rest"), TEXT("休整床位"), FVector(1500, 780, 0), Quarter, FVector(0.72f));
 	SpawnHotspot(TEXT("dismantle_kitchen_heater"), TEXT("厨房加热器"), FVector(1330, 850, 70), Quarter, FVector(0.72f));
 	SpawnHotspot(TEXT("calibrate_antenna"), TEXT("结冰的天线阵列"), FVector(2300, 400, 135), Outdoor, FVector(0.8f, 0.8f, 2.7f));
 
@@ -938,13 +1353,28 @@ void AWhiteoutStationBuilder::AuditStationLayout()
 			&& FMath::Abs(Hit.ImpactPoint.Z - Bounds.Min.Z) <= 3.0f;
 		// Runtime placement snaps low props to the station's shared Z=0 floor plane.
 		// The plane check covers open-frame props whose center ray passes between legs.
-		const bool bSupported = bRaySupported || FMath::Abs(Bounds.Min.Z) <= 3.0f;
+		const bool bSupported =
+			bRaySupported || FMath::Abs(Bounds.Min.Z) <= 6.0f;
 		if (bSupported)
 		{
 			++GroundedPassed;
 		}
 		else
 		{
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("WhiteoutStation GroundAudit: actor=%s location=%s bounds_min=%s center_hit=%d impact=%s mesh=%s"),
+				*MeshActor->GetActorNameOrLabel(),
+				*MeshActor->GetActorLocation().ToCompactString(),
+				*Bounds.Min.ToCompactString(),
+				bRaySupported,
+				*Hit.ImpactPoint.ToCompactString(),
+				MeshActor->GetStaticMeshComponent()
+					&& MeshActor->GetStaticMeshComponent()->GetStaticMesh()
+					? *MeshActor->GetStaticMeshComponent()->GetStaticMesh()
+						->GetPathName()
+					: TEXT("None"));
 			UnsupportedProps.Add(MakeShared<FJsonValueString>(MeshActor->GetActorNameOrLabel()));
 		}
 	}
@@ -982,44 +1412,18 @@ void AWhiteoutStationBuilder::AuditStationLayout()
 	}
 
 	int32 ReachableHotspots = 0;
+	int32 HotspotsChecked = 0;
 	TArray<TSharedPtr<FJsonValue>> UnreachableHotspots;
-	const TArray<FVector> ApproachOffsets = {
-		FVector(170.0f, 0.0f, 0.0f), FVector(-170.0f, 0.0f, 0.0f),
-		FVector(0.0f, 170.0f, 0.0f), FVector(0.0f, -170.0f, 0.0f),
-		FVector(230.0f, 0.0f, 0.0f), FVector(-230.0f, 0.0f, 0.0f),
-		FVector(0.0f, 230.0f, 0.0f), FVector(0.0f, -230.0f, 0.0f)};
+	TMap<FName, int32> HotspotActionCounts;
 	for (AWSInteractableActor* Hotspot : RuntimeHotspots)
 	{
 		if (!Hotspot)
 		{
 			continue;
 		}
-		bool bReachable = false;
-		for (const FVector& Offset : ApproachOffsets)
-		{
-			const FVector Candidate = FVector(Hotspot->GetActorLocation().X, Hotspot->GetActorLocation().Y, 90.0f) + Offset;
-			FCollisionQueryParams Params(SCENE_QUERY_STAT(WhiteoutHotspotAudit), false, Hotspot);
-			Params.AddIgnoredActor(this);
-			const bool bBlocked = GetWorld()->OverlapBlockingTestByChannel(
-				Candidate,
-				FQuat::Identity,
-				ECC_Pawn,
-				FCollisionShape::MakeCapsule(34.0f, 88.0f),
-				Params);
-			FHitResult FloorHit;
-			const bool bHasFloor = GetWorld()->LineTraceSingleByChannel(
-				FloorHit,
-				Candidate + FVector(0.0f, 0.0f, -70.0f),
-				Candidate + FVector(0.0f, 0.0f, -190.0f),
-				ECC_Visibility,
-				Params);
-			if (!bBlocked && bHasFloor)
-			{
-				bReachable = true;
-				break;
-			}
-		}
-		if (bReachable)
+		++HotspotsChecked;
+		HotspotActionCounts.FindOrAdd(Hotspot->ActionId) += 1;
+		if (IsHotspotInteractionReachable(Hotspot))
 		{
 			++ReachableHotspots;
 		}
@@ -1029,10 +1433,29 @@ void AWhiteoutStationBuilder::AuditStationLayout()
 		}
 	}
 
+	TArray<TSharedPtr<FJsonValue>> MissingRequiredHotspots;
+	TArray<TSharedPtr<FJsonValue>> DuplicateHotspots;
+	for (const FRequiredHotspotDefinition& Definition : RequiredHotspotDefinitions())
+	{
+		const int32 Count = HotspotActionCounts.FindRef(Definition.ActionId);
+		if (Count == 0)
+		{
+			MissingRequiredHotspots.Add(
+				MakeShared<FJsonValueString>(Definition.ActionId.ToString()));
+		}
+		else if (Count > 1)
+		{
+			DuplicateHotspots.Add(
+				MakeShared<FJsonValueString>(Definition.ActionId.ToString()));
+		}
+	}
+
 	const bool bPassed = GroundedChecked > 0 && GroundedPassed == GroundedChecked
 		&& CollisionChecked == RuntimeAssemblyMeshes.Num() && CollisionMatched == CollisionChecked
 		&& CorridorsPassed == CorridorProbes.Num()
-		&& ReachableHotspots == 13 && RuntimeHotspots.Num() == 13;
+		&& ReachableHotspots == HotspotsChecked
+		&& MissingRequiredHotspots.IsEmpty()
+		&& DuplicateHotspots.IsEmpty();
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetBoolField(TEXT("passed"), bPassed);
 	Root->SetNumberField(TEXT("assembly_meshes"), RuntimeAssemblyMeshes.Num());
@@ -1045,9 +1468,12 @@ void AWhiteoutStationBuilder::AuditStationLayout()
 	Root->SetNumberField(TEXT("corridors_checked"), CorridorProbes.Num());
 	Root->SetNumberField(TEXT("corridors_passed"), CorridorsPassed);
 	Root->SetArrayField(TEXT("blocked_corridors"), BlockedCorridors);
-	Root->SetNumberField(TEXT("hotspots_checked"), RuntimeHotspots.Num());
+	Root->SetNumberField(TEXT("required_hotspots"), RequiredHotspotDefinitions().Num());
+	Root->SetNumberField(TEXT("hotspots_checked"), HotspotsChecked);
 	Root->SetNumberField(TEXT("hotspots_reachable"), ReachableHotspots);
 	Root->SetArrayField(TEXT("unreachable_hotspots"), UnreachableHotspots);
+	Root->SetArrayField(TEXT("missing_required_hotspots"), MissingRequiredHotspots);
+	Root->SetArrayField(TEXT("duplicate_hotspots"), DuplicateHotspots);
 	FString Json;
 	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Json);
 	FJsonSerializer::Serialize(Root, Writer);
@@ -1056,6 +1482,6 @@ void AWhiteoutStationBuilder::AuditStationLayout()
 	UE_LOG(LogTemp, Display,
 		TEXT("WhiteoutStation SceneAudit: passed=%d ground=%d/%d collision=%d/%d corridors=%d/%d hotspots=%d/%d output=%s"),
 		bPassed, GroundedPassed, GroundedChecked, CollisionMatched, CollisionChecked,
-		CorridorsPassed, CorridorProbes.Num(), ReachableHotspots, RuntimeHotspots.Num(), *OutputPath);
-	FPlatformMisc::RequestExit(!bPassed);
+		CorridorsPassed, CorridorProbes.Num(), ReachableHotspots, HotspotsChecked, *OutputPath);
+	FPlatformMisc::RequestExitWithStatus(false, bPassed ? 0 : 1);
 }

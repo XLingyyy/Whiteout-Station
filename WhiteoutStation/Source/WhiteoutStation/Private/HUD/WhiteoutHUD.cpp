@@ -158,6 +158,11 @@ void AWhiteoutHUD::ShowSettingsForCapture()
 	if (HUDWidget) HUDWidget->ShowSettingsForCapture();
 }
 
+void AWhiteoutHUD::ShowLLMSettingsForCapture()
+{
+	if (HUDWidget) HUDWidget->ShowLLMSettingsForCapture();
+}
+
 void AWhiteoutHUD::SetOpeningCaptureStage(const int32 Stage)
 {
 	if (HUDWidget) HUDWidget->SetOpeningCaptureStage(Stage);
