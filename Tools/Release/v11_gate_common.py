@@ -19,7 +19,8 @@ from typing import Any, Iterable
 
 PROJECT_VERSION = "1.1.0"
 VERSION_TOKEN = "v1.1"
-DISTRIBUTION_CLASS = "local_review_only"
+DISTRIBUTION_CLASS = "onsite_competition_demo"
+DISTRIBUTION_BANNER = "ONSITE COMPETITION DEMO"
 REQUIRED_BRANCH = "main"
 
 PROJECT_CONFIG_REL = "WhiteoutStation/Config/DefaultGame.ini"

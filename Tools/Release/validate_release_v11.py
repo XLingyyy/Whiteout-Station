@@ -17,6 +17,7 @@ try:
     from .v11_gate_common import (
         AGENT_RUNTIME_REL,
         ARTIFACT_PREFIX,
+        DISTRIBUTION_BANNER,
         DISTRIBUTION_CLASS,
         MANIFEST_REL,
         MANIFEST_SCHEMA,
@@ -48,6 +49,7 @@ except ImportError:
     from v11_gate_common import (
         AGENT_RUNTIME_REL,
         ARTIFACT_PREFIX,
+        DISTRIBUTION_BANNER,
         DISTRIBUTION_CLASS,
         MANIFEST_REL,
         MANIFEST_SCHEMA,
@@ -164,6 +166,14 @@ def _decode_text(payload: bytes, label: str) -> str:
         if "\ufffd" not in text:
             return text
     raise GateError(f"Cannot decode {label}")
+
+
+def _validate_readme_contract(report: GateReport, readme_text: str) -> None:
+    lines = readme_text.splitlines()
+    if not lines or "v1.1" not in lines[0]:
+        report.error("Packaged README first line must identify v1.1")
+    if DISTRIBUTION_BANNER not in readme_text:
+        report.error("Packaged README must identify the onsite competition demo")
 
 
 def _load_json_bytes(payload: bytes, label: str) -> Any:
@@ -753,14 +763,8 @@ def _validate_package_contract(
             (artifact_root / README_REL).read_bytes(),
             README_REL,
         )
-        first_line = readme_text.splitlines()[0]
-        if "v1.1" not in first_line:
-            report.error("Packaged README first line must identify v1.1")
-        if "LOCAL REVIEW BUILD - DO NOT REDISTRIBUTE" not in readme_text:
-            report.error(
-                "Packaged README must carry the local-review " "distribution warning"
-            )
-    except (GateError, OSError, IndexError) as exc:
+        _validate_readme_contract(report, readme_text)
+    except (GateError, OSError) as exc:
         report.error(f"Cannot validate packaged README: {exc}")
 
     try:

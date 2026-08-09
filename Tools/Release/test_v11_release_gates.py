@@ -15,6 +15,7 @@ try:
     )
     from .v11_gate_common import (
         AGENT_RUNTIME_REL,
+        DISTRIBUTION_BANNER,
         DISTRIBUTION_CLASS,
         MANIFEST_REL,
         MANIFEST_SCHEMA,
@@ -25,8 +26,10 @@ try:
         REQUIRED_PACKAGE_FILES,
         RULES_REL,
         GateError,
+        GateReport,
         sha256_file,
     )
+    from .validate_release_v11 import _validate_readme_contract
     from .validate_source_v11 import (
         scan_tracked_secrets,
         validate_protected_assets,
@@ -42,6 +45,7 @@ except ImportError:
     )
     from v11_gate_common import (
         AGENT_RUNTIME_REL,
+        DISTRIBUTION_BANNER,
         DISTRIBUTION_CLASS,
         MANIFEST_REL,
         MANIFEST_SCHEMA,
@@ -52,8 +56,10 @@ except ImportError:
         REQUIRED_PACKAGE_FILES,
         RULES_REL,
         GateError,
+        GateReport,
         sha256_file,
     )
+    from validate_release_v11 import _validate_readme_contract
     from validate_source_v11 import (
         scan_tracked_secrets,
         validate_protected_assets,
@@ -248,7 +254,9 @@ def make_artifact(
             "show",
             f"{source_commit}:{AGENT_RUNTIME_REL}",
         ),
-        "README_v1.1.txt": b"Whiteout Station v1.1 local review build\n",
+        "README_v1.1.txt": (
+            f"Whiteout Station v1.1\n{DISTRIBUTION_BANNER}\n".encode("utf-8")
+        ),
         "ASSET_LICENSES.md": b"# Asset licenses\nFixture only.\n",
         "Validation/InputSmokeV11/input_smoke_summary.json": (
             b'{"schema":"whiteout.v1.1.real-input-smoke.v1","passed":true}\n'
@@ -308,6 +316,23 @@ def test_shipping_antenna_evidence_uses_committed_event_without_log(
     assert evidence["ap_after"] == 2
 
 
+def test_onsite_competition_readme_contract_rejects_old_warning() -> None:
+    current = GateReport()
+    _validate_readme_contract(
+        current,
+        f"Whiteout Station v1.1\n{DISTRIBUTION_BANNER}\n",
+    )
+    assert current.passed
+
+    old = GateReport()
+    _validate_readme_contract(
+        old,
+        "Whiteout Station v1.1\nLOCAL REVIEW BUILD - DO NOT REDISTRIBUTE\n",
+    )
+    assert not old.passed
+    assert any("onsite competition demo" in error for error in old.errors)
+
+
 def test_valid_v11_source_and_manifest_contract_passes(tmp_path: Path) -> None:
     repo, commit, tree = make_repository(tmp_path)
     assert validate_versions(repo).passed
@@ -322,6 +347,7 @@ def test_valid_v11_source_and_manifest_contract_passes(tmp_path: Path) -> None:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema"] == MANIFEST_SCHEMA
     assert manifest["version"] == PROJECT_VERSION
+    assert DISTRIBUTION_CLASS == "onsite_competition_demo"
     assert manifest["distribution_class"] == DISTRIBUTION_CLASS
     assert manifest["source_commit"] == commit
     assert manifest["source_tree"] == tree
