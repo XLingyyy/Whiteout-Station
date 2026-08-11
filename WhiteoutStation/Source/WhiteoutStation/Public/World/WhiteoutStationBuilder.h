@@ -25,6 +25,11 @@ public:
 	void SetLightingPreviewState(bool bCrisis, bool bGeneratorOnline);
 
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Level Editing", meta = (
+		DisplayName = "Sync Missing v1.1 Hotspots (Keeps Edits)",
+		ToolTip = "Adds only missing v1.1 interaction actors to this level. Existing actors and manual transforms are preserved."))
+	void SyncMissingEditableHotspots();
+
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Level Editing", meta = (
 		DisplayName = "Reset Editable Layout (Replaces Edits)",
 		ToolTip = "Rebuilds all generated station actors in this level. Existing manual placement and visual changes on generated actors will be replaced."))
 	void GenerateEditableStationLayout();
@@ -70,10 +75,13 @@ private:
 	void BuildStation();
 	void ResetRuntimeActorCache();
 	bool RegisterEditableStationActors();
-	void EnsureRequiredHotspots();
+	void EnsureRequiredHotspots(bool bUsingEditableLayout);
+	int32 RestoreMissingRequiredHotspots();
 	FVector ResolveFoodHotspotLocation() const;
 	FVector ResolveAntennaControlAnchor() const;
-	void ConfigureAntennaControlProxy(AWSInteractableActor* Hotspot);
+	void ConfigureAntennaControlProxy(
+		AWSInteractableActor* Hotspot,
+		bool bPreserveSavedTransform);
 	bool PlaceHotspotAtGroundedLocation(
 		AWSInteractableActor* Hotspot,
 		const FVector& Location) const;

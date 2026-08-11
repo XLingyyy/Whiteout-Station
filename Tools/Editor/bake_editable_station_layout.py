@@ -1,11 +1,11 @@
-"""Materialize the procedural station as independently editable level actors."""
+"""Materialize a new layout or safely synchronize an existing editable layout."""
 
 import unreal
 
 
 MAP_PATH = "/Game/WindStation/World/MVP_StationMap"
 MIN_EXPECTED_ACTORS = 40
-EXPECTED_HOTSPOTS = 13
+EXPECTED_HOTSPOTS = 16
 EDITABLE_TAG = "WSEditableStation"
 
 
@@ -39,7 +39,11 @@ def main() -> None:
         raise RuntimeError("Unable to create the station layout builder")
 
     builder.set_actor_label("WS Station Layout Builder")
-    builder.generate_editable_station_layout()
+    existing_editable = [actor for actor in actors if has_tag(actor, EDITABLE_TAG)]
+    if existing_editable:
+        builder.sync_missing_editable_hotspots()
+    else:
+        builder.generate_editable_station_layout()
 
     actors = list(actor_subsystem.get_all_level_actors())
     editable = [actor for actor in actors if has_tag(actor, EDITABLE_TAG)]

@@ -89,7 +89,7 @@ void AWhiteoutStationBuilder::BeginPlay()
 	{
 		BuildStation();
 	}
-	EnsureRequiredHotspots();
+	EnsureRequiredHotspots(bUsingEditableLayout);
 	if (bUsingEditableLayout
 		&& FParse::Param(FCommandLine::Get(), TEXT("WhiteoutSceneAudit")))
 	{
@@ -208,6 +208,109 @@ void AWhiteoutStationBuilder::BeginPlay()
 			0.2f,
 			false);
 	}
+}
+
+void AWhiteoutStationBuilder::SyncMissingEditableHotspots()
+{
+#if WITH_EDITOR
+	UWorld* World = GetWorld();
+	if (!World || World->WorldType != EWorldType::Editor)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("WhiteoutStation: hotspot sync can only run in an editor level"));
+		return;
+	}
+
+	ResetRuntimeActorCache();
+	AWSInteractableActor* LegacyTreatmentHotspot = nullptr;
+	TArray<AWSInteractableActor*> HotspotsNeedingRuntimeTags;
+	for (TActorIterator<AWSInteractableActor> It(World); It; ++It)
+	{
+		if (AWSInteractableActor* Hotspot = *It)
+		{
+			RuntimeHotspots.Add(Hotspot);
+			if (Hotspot->ActionId == TEXT("treat_gu_heng"))
+			{
+				LegacyTreatmentHotspot = Hotspot;
+			}
+			const bool bRequiredHotspot = RequiredHotspotDefinitions().ContainsByPredicate(
+				[Hotspot](const FRequiredHotspotDefinition& Definition)
+				{
+					return Hotspot->ActionId == Definition.ActionId;
+				});
+			if ((bRequiredHotspot || Hotspot == LegacyTreatmentHotspot)
+				&& (!Hotspot->ActorHasTag(EditableStationTag)
+					|| !Hotspot->ActorHasTag(TEXT("WSRuntimeHotspot"))))
+			{
+				HotspotsNeedingRuntimeTags.Add(Hotspot);
+			}
+		}
+	}
+
+	int32 MissingHotspotCount = 0;
+	for (const FRequiredHotspotDefinition& Definition : RequiredHotspotDefinitions())
+	{
+		const bool bAlreadyPresent = RuntimeHotspots.ContainsByPredicate(
+			[&Definition](const TObjectPtr<AWSInteractableActor>& Hotspot)
+			{
+				return Hotspot
+					&& (Hotspot->ActionId == Definition.ActionId
+						|| (Definition.ActionId == TEXT("treat_character")
+							&& Hotspot->ActionId == TEXT("treat_gu_heng")));
+			});
+		if (!bAlreadyPresent)
+		{
+			++MissingHotspotCount;
+		}
+	}
+	if (MissingHotspotCount == 0
+		&& !LegacyTreatmentHotspot
+		&& HotspotsNeedingRuntimeTags.IsEmpty())
+	{
+		EditableStationActorCount = GetEditableStationActorCount();
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("WhiteoutStation: all %d required hotspots are already present; existing actors were left unchanged"),
+			RequiredHotspotDefinitions().Num());
+		return;
+	}
+
+	const FScopedTransaction Transaction(
+		NSLOCTEXT("WhiteoutStation", "SyncMissingEditableHotspots", "Sync Missing Whiteout Station Hotspots"));
+	Modify();
+	int32 UpgradedHotspotCount = 0;
+	for (AWSInteractableActor* Hotspot : HotspotsNeedingRuntimeTags)
+	{
+		Hotspot->SetFlags(RF_Transactional);
+		Hotspot->Modify();
+		Hotspot->Tags.AddUnique(EditableStationTag);
+		Hotspot->Tags.AddUnique(TEXT("WSRuntimeHotspot"));
+		++UpgradedHotspotCount;
+	}
+	if (LegacyTreatmentHotspot)
+	{
+		LegacyTreatmentHotspot->SetFlags(RF_Transactional);
+		LegacyTreatmentHotspot->Modify();
+		LegacyTreatmentHotspot->ActionId = TEXT("treat_character");
+		LegacyTreatmentHotspot->DisplayName = FText::FromString(TEXT("诊断与治疗台"));
+		LegacyTreatmentHotspot->SetActorLabel(TEXT("诊断与治疗台"));
+		++UpgradedHotspotCount;
+	}
+	bBuildingEditableLayout = true;
+	const int32 AddedHotspotCount = RestoreMissingRequiredHotspots();
+	bBuildingEditableLayout = false;
+	EditableStationActorCount = GetEditableStationActorCount();
+	if (GetLevel())
+	{
+		GetLevel()->MarkPackageDirty();
+	}
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("WhiteoutStation: added %d missing editable hotspots and upgraded %d metadata records; existing transforms and assets were preserved"),
+		AddedHotspotCount,
+		UpgradedHotspotCount);
+#endif
 }
 
 void AWhiteoutStationBuilder::GenerateEditableStationLayout()
@@ -376,7 +479,7 @@ bool AWhiteoutStationBuilder::RegisterEditableStationActors()
 	return false;
 }
 
-void AWhiteoutStationBuilder::EnsureRequiredHotspots()
+void AWhiteoutStationBuilder::EnsureRequiredHotspots(const bool bUsingEditableLayout)
 {
 	for (AWSInteractableActor* Hotspot : RuntimeHotspots)
 	{
@@ -388,6 +491,26 @@ void AWhiteoutStationBuilder::EnsureRequiredHotspots()
 				FLinearColor(0.12f, 0.75f, 0.55f));
 		}
 	}
+	const bool bSavedAntennaWasPresent = bUsingEditableLayout
+		&& RuntimeHotspots.ContainsByPredicate(
+			[](const TObjectPtr<AWSInteractableActor>& Hotspot)
+			{
+				return Hotspot && Hotspot->ActionId == TEXT("calibrate_antenna");
+			});
+	RestoreMissingRequiredHotspots();
+
+	for (AWSInteractableActor* Hotspot : RuntimeHotspots)
+	{
+		if (Hotspot && Hotspot->ActionId == TEXT("calibrate_antenna"))
+		{
+			ConfigureAntennaControlProxy(Hotspot, bSavedAntennaWasPresent);
+		}
+	}
+}
+
+int32 AWhiteoutStationBuilder::RestoreMissingRequiredHotspots()
+{
+	int32 RestoredHotspotCount = 0;
 	for (const FRequiredHotspotDefinition& Definition : RequiredHotspotDefinitions())
 	{
 		const bool bAlreadyPresent = RuntimeHotspots.ContainsByPredicate(
@@ -412,11 +535,17 @@ void AWhiteoutStationBuilder::EnsureRequiredHotspots()
 			Definition.Scale);
 		if (RestoredHotspot)
 		{
+			++RestoredHotspotCount;
+			if (Definition.ActionId == TEXT("calibrate_antenna"))
+			{
+				RestoredHotspot->Tags.AddUnique(TEXT("WSAntennaControlProxy"));
+			}
 			UE_LOG(
 				LogTemp,
-				Warning,
-				TEXT("WhiteoutStation: restored missing editable-layout hotspot %s at runtime (%s)"),
+				Log,
+				TEXT("WhiteoutStation: restored missing editable-layout hotspot %s in %s (%s)"),
 				*Definition.ActionId.ToString(),
+				bBuildingEditableLayout ? TEXT("the editor level") : TEXT("runtime"),
 				*SpawnLocation.ToCompactString());
 		}
 		else
@@ -429,14 +558,7 @@ void AWhiteoutStationBuilder::EnsureRequiredHotspots()
 				*SpawnLocation.ToCompactString());
 		}
 	}
-
-	for (AWSInteractableActor* Hotspot : RuntimeHotspots)
-	{
-		if (Hotspot && Hotspot->ActionId == TEXT("calibrate_antenna"))
-		{
-			ConfigureAntennaControlProxy(Hotspot);
-		}
-	}
+	return RestoredHotspotCount;
 }
 
 FVector AWhiteoutStationBuilder::ResolveFoodHotspotLocation() const
@@ -507,10 +629,25 @@ FVector AWhiteoutStationBuilder::ResolveAntennaControlAnchor() const
 }
 
 void AWhiteoutStationBuilder::ConfigureAntennaControlProxy(
-	AWSInteractableActor* Hotspot)
+	AWSInteractableActor* Hotspot,
+	const bool bPreserveSavedTransform)
 {
 	if (!Hotspot)
 	{
+		return;
+	}
+
+	Hotspot->Tags.AddUnique(TEXT("WSAntennaControlProxy"));
+	if (bPreserveSavedTransform)
+	{
+		if (!IsHotspotInteractionReachable(Hotspot))
+		{
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("WhiteoutStation: saved antenna hotspot is not currently reachable at %s; keeping its editor transform"),
+				*Hotspot->GetActorLocation().ToCompactString());
+		}
 		return;
 	}
 
@@ -520,7 +657,6 @@ void AWhiteoutStationBuilder::ConfigureAntennaControlProxy(
 		FText::FromString(TEXT("室外天线控制终端")),
 		FLinearColor(0.4f, 0.65f, 1.0f));
 	Hotspot->SetActorScale3D(FVector(0.72f));
-	Hotspot->Tags.AddUnique(TEXT("WSAntennaControlProxy"));
 
 	const FVector Anchor = ResolveAntennaControlAnchor();
 	const TArray<FVector> CandidateLocations = {
@@ -757,7 +893,7 @@ void AWhiteoutStationBuilder::MarkEditableStationActor(AActor* Actor, const TCHA
 void AWhiteoutStationBuilder::BuildStation()
 {
 	ResetRuntimeActorCache();
-	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: building five-zone station and 13 action hotspots"));
+	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: building five-zone station and 16 action hotspots"));
 	ADirectionalLight* DirectionalLight = GetWorld()->SpawnActor<ADirectionalLight>(FVector(600, 400, 900), FRotator(-52, -28, 0));
 	if (DirectionalLight)
 	{
