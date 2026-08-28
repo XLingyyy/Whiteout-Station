@@ -640,6 +640,30 @@ void AWhiteoutStationBuilder::ConfigureAntennaControlProxy(
 	Hotspot->Tags.AddUnique(TEXT("WSAntennaControlProxy"));
 	if (bPreserveSavedTransform)
 	{
+		if (Hotspot->InteractionCollision && Hotspot->Mesh)
+		{
+			constexpr float InteractionMargin = 90.0f;
+			constexpr float ApproachExtension = 180.0f;
+			const FVector MeshExtent = Hotspot->Mesh->Bounds.BoxExtent;
+			const float VisualRadius = FMath::Max(MeshExtent.X, MeshExtent.Y);
+			const float ExtensionDistance = VisualRadius + ApproachExtension;
+			const FVector ProxyDirection =
+				Hotspot->GetActorForwardVector().GetSafeNormal2D();
+			const FVector ProxyCenter = Hotspot->Mesh->Bounds.Origin
+				+ ProxyDirection * (ExtensionDistance * 0.5f);
+			const FVector CollisionScale =
+				Hotspot->InteractionCollision->GetComponentScale().GetAbs();
+			const FVector ProxyExtent(
+				(ExtensionDistance * 0.5f + InteractionMargin)
+					/ FMath::Max(CollisionScale.X, KINDA_SMALL_NUMBER),
+				(VisualRadius + InteractionMargin)
+					/ FMath::Max(CollisionScale.Y, KINDA_SMALL_NUMBER),
+				(FMath::Max(MeshExtent.Z, 110.0f) + InteractionMargin)
+					/ FMath::Max(CollisionScale.Z, KINDA_SMALL_NUMBER));
+			Hotspot->InteractionCollision->SetWorldLocation(
+				ProxyCenter);
+			Hotspot->InteractionCollision->SetBoxExtent(ProxyExtent);
+		}
 		if (!IsHotspotInteractionReachable(Hotspot))
 		{
 			UE_LOG(
@@ -753,10 +777,13 @@ bool AWhiteoutStationBuilder::IsHotspotInteractionReachable(
 	const FVector AimPoint = Hotspot->InteractionCollision
 		? Hotspot->InteractionCollision->Bounds.Origin
 		: BoundsOrigin;
+	const FVector InteractionExtent = Hotspot->InteractionCollision
+		? Hotspot->InteractionCollision->Bounds.BoxExtent
+		: BoundsExtent;
 	const float MinimumDistance = FMath::Clamp(
-		FMath::Max(BoundsExtent.X, BoundsExtent.Y) + 90.0f,
+		FMath::Max(InteractionExtent.X, InteractionExtent.Y) + 90.0f,
 		140.0f,
-		220.0f);
+		390.0f);
 	const TArray<float> CandidateDistances = {
 		MinimumDistance,
 		FMath::Min(MinimumDistance + 60.0f, 390.0f),
@@ -778,7 +805,7 @@ bool AWhiteoutStationBuilder::IsHotspotInteractionReachable(
 			const float Angle = 2.0f * PI
 				* static_cast<float>(CandidateIndex)
 				/ static_cast<float>(CandidateCount);
-			const FVector CandidateLocation = BoundsOrigin
+			const FVector CandidateLocation = AimPoint
 				+ FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f)
 					* CandidateDistance;
 			FCollisionQueryParams Params(

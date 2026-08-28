@@ -14,6 +14,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/IConsoleManager.h"
+#include "Components/BoxComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
@@ -736,76 +737,136 @@ void AWhiteoutGameMode::SetupInputSmokeTarget(const FString& ActionId)
 		FVector BoundsOrigin = It->GetActorLocation();
 		FVector BoundsExtent = FVector::ZeroVector;
 		It->GetActorBounds(false, BoundsOrigin, BoundsExtent);
-		const FVector OriginalPawnLocation = Pawn->GetActorLocation();
-		const float CandidateDistance = FMath::Clamp(
-			FMath::Max(BoundsExtent.X, BoundsExtent.Y) + 260.0f,
-			300.0f,
-			380.0f);
-		FVector PawnLocation = It->GetActorLocation()
-			+ FVector(CandidateDistance, 0.0f, 0.0f);
-		PawnLocation.Z = OriginalPawnLocation.Z;
+		const FVector AimPoint = It->InteractionCollision
+			? It->InteractionCollision->Bounds.Origin
+			: BoundsOrigin;
+		const FVector InteractionExtent = It->InteractionCollision
+			? It->InteractionCollision->Bounds.BoxExtent
+			: BoundsExtent;
+		const float MinimumDistance = FMath::Clamp(
+			FMath::Max(InteractionExtent.X, InteractionExtent.Y) + 90.0f,
+			140.0f,
+			390.0f);
+		const TArray<float> CandidateDistances = {
+			MinimumDistance,
+			FMath::Min(MinimumDistance + 60.0f, 390.0f),
+			FMath::Min(MinimumDistance + 120.0f, 390.0f),
+			FMath::Min(MinimumDistance + 180.0f, 390.0f),
+			390.0f};
+		FVector PawnLocation = Pawn->GetActorLocation();
 		int32 SelectedCandidate = INDEX_NONE;
-		FCollisionQueryParams SightParams(
-			SCENE_QUERY_STAT(WhiteoutInputSmokeSight),
+		float SelectedDistance = 0.0f;
+		FCollisionQueryParams FloorParams(
+			SCENE_QUERY_STAT(WhiteoutInputSmokeApproach),
 			false,
 			Pawn);
-		constexpr int32 CandidateCount = 16;
-		for (int32 CandidateIndex = 0;
-			CandidateIndex < CandidateCount;
-			++CandidateIndex)
-		{
-			const float Angle = 2.0f * PI
-				* static_cast<float>(CandidateIndex)
-				/ static_cast<float>(CandidateCount);
-			const FVector Direction(
-				FMath::Cos(Angle),
-				FMath::Sin(Angle),
-				0.0f);
-			FVector CandidateLocation =
-				BoundsOrigin + Direction * CandidateDistance;
-			CandidateLocation.Z = OriginalPawnLocation.Z + 8.0f;
-			FVector AdjustedCandidateLocation = CandidateLocation;
-			if (GetWorld()->FindTeleportSpot(
-				Pawn,
-				AdjustedCandidateLocation,
-				Pawn->GetActorRotation()))
-			{
-				CandidateLocation = AdjustedCandidateLocation;
-			}
-			const FVector CandidateCameraLocation =
-				CandidateLocation + FVector(0.0f, 0.0f, 64.0f);
-			FHitResult SightHit;
-			if (!GetWorld()->LineTraceSingleByChannel(
-					SightHit,
-					CandidateCameraLocation,
-					BoundsOrigin,
-					ECC_Visibility,
-					SightParams)
-				|| SightHit.GetActor() != *It)
-			{
-				continue;
-			}
-			PawnLocation = CandidateLocation;
-			SelectedCandidate = CandidateIndex;
-			break;
-		}
-		Pawn->SetActorLocation(
-			PawnLocation,
+		FloorParams.AddIgnoredActor(*It);
+		FCollisionQueryParams OccupancyParams(
+			SCENE_QUERY_STAT(WhiteoutInputSmokeOccupancy),
 			false,
-			nullptr,
-			ETeleportType::TeleportPhysics);
+			Pawn);
+		const UCapsuleComponent* Capsule = Pawn->FindComponentByClass<UCapsuleComponent>();
+		const float CapsuleRadius = Capsule
+			? Capsule->GetScaledCapsuleRadius()
+			: 42.0f;
+		const float CapsuleHalfHeight = Capsule
+			? Capsule->GetScaledCapsuleHalfHeight()
+			: 92.0f;
+		constexpr int32 CandidateCount = 16;
+		for (const float CandidateDistance : CandidateDistances)
+		{
+			for (int32 CandidateIndex = 0;
+				CandidateIndex < CandidateCount;
+				++CandidateIndex)
+			{
+				const float Angle = 2.0f * PI
+					* static_cast<float>(CandidateIndex)
+					/ static_cast<float>(CandidateCount);
+				const FVector Direction(
+					FMath::Cos(Angle),
+					FMath::Sin(Angle),
+					0.0f);
+				const FVector CandidateXY =
+					AimPoint + Direction * CandidateDistance;
+				FHitResult FloorHit;
+				if (!GetWorld()->LineTraceSingleByChannel(
+						FloorHit,
+						CandidateXY + FVector(0.0f, 0.0f, 500.0f),
+						CandidateXY - FVector(0.0f, 0.0f, 1000.0f),
+						ECC_Visibility,
+						FloorParams))
+				{
+					continue;
+				}
+				const FVector CandidateLocation(
+					CandidateXY.X,
+					CandidateXY.Y,
+					FloorHit.ImpactPoint.Z + CapsuleHalfHeight + 2.0f);
+				if (GetWorld()->OverlapBlockingTestByChannel(
+						CandidateLocation,
+						FQuat::Identity,
+						ECC_Pawn,
+						FCollisionShape::MakeCapsule(
+							CapsuleRadius,
+							CapsuleHalfHeight),
+						OccupancyParams))
+				{
+					continue;
+				}
+				const FVector CandidateCameraLocation =
+					CandidateLocation + FVector(0.0f, 0.0f, 64.0f);
+				if (AWhiteoutCharacter::FindInteractableFromView(
+						GetWorld(),
+						CandidateCameraLocation,
+						AimPoint - CandidateCameraLocation,
+						Pawn)
+					!= *It)
+				{
+					continue;
+				}
+				PawnLocation = CandidateLocation;
+				SelectedCandidate = CandidateIndex;
+				SelectedDistance = CandidateDistance;
+				break;
+			}
+			if (SelectedCandidate != INDEX_NONE)
+			{
+				break;
+			}
+		}
+		if (SelectedCandidate != INDEX_NONE)
+		{
+			Pawn->SetActorLocation(
+				PawnLocation,
+				false,
+				nullptr,
+				ETeleportType::TeleportPhysics);
+		}
 		const FVector CameraLocation =
 			PawnLocation + FVector(0.0f, 0.0f, 64.0f);
 		PlayerController->SetControlRotation(
-			(BoundsOrigin - CameraLocation).Rotation());
-		UE_LOG(
-			LogTemp,
-			Display,
-			TEXT("WhiteoutStation InputSmokeSetup: target=%s pawn=%s focus=%s candidate=%d"),
-			*It->ActionId.ToString(),
-			*PawnLocation.ToCompactString(),
-			*BoundsOrigin.ToCompactString(),
-			SelectedCandidate);
+			(AimPoint - CameraLocation).Rotation());
+		if (SelectedCandidate == INDEX_NONE)
+		{
+			UE_LOG(
+				LogTemp,
+				Error,
+				TEXT("WhiteoutStation InputSmokeSetup: no reachable focus for target=%s focus=%s"),
+				*It->ActionId.ToString(),
+				*AimPoint.ToCompactString());
+		}
+		else
+		{
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("WhiteoutStation InputSmokeSetup: target=%s pawn=%s focus=%s candidate=%d distance=%.1f"),
+				*It->ActionId.ToString(),
+				*PawnLocation.ToCompactString(),
+				*AimPoint.ToCompactString(),
+				SelectedCandidate,
+				SelectedDistance);
+		}
 		return;
 	}
 	UE_LOG(
