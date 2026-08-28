@@ -734,6 +734,83 @@ void AWhiteoutGameMode::SetupInputSmokeTarget(const FString& ActionId)
 		{
 			continue;
 		}
+		if (It->ActionId != TEXT("calibrate_antenna"))
+		{
+			FVector BoundsOrigin = It->GetActorLocation();
+			FVector BoundsExtent = FVector::ZeroVector;
+			It->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+			const FVector OriginalPawnLocation = Pawn->GetActorLocation();
+			const float CandidateDistance = FMath::Clamp(
+				FMath::Max(BoundsExtent.X, BoundsExtent.Y) + 260.0f,
+				300.0f,
+				380.0f);
+			FVector PawnLocation = It->GetActorLocation()
+				+ FVector(CandidateDistance, 0.0f, 0.0f);
+			PawnLocation.Z = OriginalPawnLocation.Z;
+			int32 SelectedCandidate = INDEX_NONE;
+			FCollisionQueryParams SightParams(
+				SCENE_QUERY_STAT(WhiteoutInputSmokeSight),
+				false,
+				Pawn);
+			constexpr int32 CandidateCount = 16;
+			for (int32 CandidateIndex = 0;
+				CandidateIndex < CandidateCount;
+				++CandidateIndex)
+			{
+				const float Angle = 2.0f * PI
+					* static_cast<float>(CandidateIndex)
+					/ static_cast<float>(CandidateCount);
+				const FVector Direction(
+					FMath::Cos(Angle),
+					FMath::Sin(Angle),
+					0.0f);
+				FVector CandidateLocation =
+					BoundsOrigin + Direction * CandidateDistance;
+				CandidateLocation.Z = OriginalPawnLocation.Z + 8.0f;
+				FVector AdjustedCandidateLocation = CandidateLocation;
+				if (GetWorld()->FindTeleportSpot(
+					Pawn,
+					AdjustedCandidateLocation,
+					Pawn->GetActorRotation()))
+				{
+					CandidateLocation = AdjustedCandidateLocation;
+				}
+				const FVector CandidateCameraLocation =
+					CandidateLocation + FVector(0.0f, 0.0f, 64.0f);
+				FHitResult SightHit;
+				if (!GetWorld()->LineTraceSingleByChannel(
+						SightHit,
+						CandidateCameraLocation,
+						BoundsOrigin,
+						ECC_Visibility,
+						SightParams)
+					|| SightHit.GetActor() != *It)
+				{
+					continue;
+				}
+				PawnLocation = CandidateLocation;
+				SelectedCandidate = CandidateIndex;
+				break;
+			}
+			Pawn->SetActorLocation(
+				PawnLocation,
+				false,
+				nullptr,
+				ETeleportType::TeleportPhysics);
+			const FVector CameraLocation =
+				PawnLocation + FVector(0.0f, 0.0f, 64.0f);
+			PlayerController->SetControlRotation(
+				(BoundsOrigin - CameraLocation).Rotation());
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("WhiteoutStation InputSmokeSetup: target=%s pawn=%s focus=%s candidate=%d"),
+				*It->ActionId.ToString(),
+				*PawnLocation.ToCompactString(),
+				*BoundsOrigin.ToCompactString(),
+				SelectedCandidate);
+			return;
+		}
 		FVector BoundsOrigin = It->GetActorLocation();
 		FVector BoundsExtent = FVector::ZeroVector;
 		It->GetActorBounds(false, BoundsOrigin, BoundsExtent);
