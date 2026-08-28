@@ -1,7 +1,7 @@
 {
   "schema": "whiteout.protected-assets.v3",
   "version": "1.0.0",
-  "baseline_commit": "e7c63421411c2e40262bf77e2ff11652320d1b5a",
+  "baseline_commit": "4fd89ebbe767023bf755015f4e6e0ddc705ff2fc",
   "protected_roots": [
     "WhiteoutStation/Content/WindStation/World/MVP_StationMap.umap",
     "WhiteoutStation/Content/WindStation/Art/AnimeNPC",
@@ -12,7 +12,7 @@
     {
       "path": "WhiteoutStation/Content/WindStation/World/MVP_StationMap.umap",
       "type": "blob",
-      "object_id": "8875147852078e24fd7ca675b7692f04cc7999d6"
+      "object_id": "35433d153d0863498690c8dd788df4aa90d769ad"
     },
     {
       "path": "WhiteoutStation/Content/WindStation/Art/AnimeNPC",
@@ -27,8 +27,8 @@
   ],
   "map_baseline": {
     "path": "WhiteoutStation/Content/WindStation/World/MVP_StationMap.umap",
-    "sha256": "595311391420418d4b7157c5b2ecf1bd2f976e2830ec23e040f2df2c82b428e7",
+    "sha256": "c3aa8abde000ab5368a6acbf0183f21c78b13f54ebf0b4aef4059e83fb797c64",
     "policy": "Preserve byte-for-byte from the user checkpoint on main."
   },
-  "notes": "v1.0 protects the final user map, current Gu Heng and Ye Cheng models, exact skeletons, materials, and the validated AnimationsV10 assets after obsolete animation generations were removed."
+  "notes": "The protected map baseline includes the user-saved v1.1 hotspot layout from 2026-08-28. Gu Heng and Ye Cheng models, skeletons, materials, and validated AnimationsV10 assets remain unchanged."
 }

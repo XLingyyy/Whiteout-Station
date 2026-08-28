@@ -1,10 +1,12 @@
 """Editor smoke test for non-destructive v1.1 hotspot synchronization."""
 
+import uuid
+
 import unreal
 
 
 SOURCE_MAP_PATH = "/Game/WindStation/World/MVP_StationMap"
-TEST_MAP_PATH = "/Temp/WS_HotspotSyncTest"
+TEST_MAP_PATH = f"/Temp/WS_HotspotSyncTest_{uuid.uuid4().hex}"
 EXPECTED_ACTION_IDS = {
     "investigate_generator_log",
     "send_signal",
