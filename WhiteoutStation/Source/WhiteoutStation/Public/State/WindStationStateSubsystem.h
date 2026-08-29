@@ -78,6 +78,11 @@ public:
 	bool ApplyLLMRuntimeConfiguration(FString& OutError);
 	FString GetLLMRuntimeStatus() const;
 	bool HasLiveLLMProvider() const;
+	void RequestDialogueIntent(
+		const FString& UserText,
+		FName CurrentDialogueActionId,
+		FName CurrentTopicActionId,
+		TFunction<void(const FWSDialogueIntentResult&)> Completion);
 
 	const FWhiteoutRulesEngine& GetRulesEngine() const { return RulesEngine; }
 

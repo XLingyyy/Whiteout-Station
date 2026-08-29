@@ -65,6 +65,7 @@ public:
 	FWSScoreBreakdown CalculateScore() const;
 	void EndGame();
 	bool TryRecordModelCall();
+	FWSActionRequirementReport EvaluateActionRequirements(const FWSActionRequest& Request) const;
 
 	TArray<FName> BuildAllowedFactIds(EWSCharacterId CharacterId) const;
 	static bool ValidateAgentResponse(
@@ -83,6 +84,9 @@ private:
 
 	EWSReasonCode CanExecute(const FWSActionRequest& Request) const;
 	EWSReasonCode CanExecuteV11(const FWSActionRequest& Request) const;
+	EWSReasonCode EvaluateRepairGeneratorReason(
+		const FWSActionRequest& Request,
+		FWSActionRequirementReport* OutReport) const;
 	FWSActionPreview BuildV11Preview(const FWSActionRequest& Request) const;
 	FWSActionResult CommitV11(FWSActionRequest Request);
 	void ApplyEffect(const FWSActionRequest& Request, TArray<FString>& OutChanges);

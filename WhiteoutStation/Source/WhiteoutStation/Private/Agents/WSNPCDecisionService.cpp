@@ -28,6 +28,39 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 	const FWSActionRequest& Request,
 	const FWSGameState& State)
 {
+	FWSActionRequest GroundedRequest = Request;
+	if (GroundedRequest.SemanticFrame.QueryType == EWSDialogueQueryType::Unknown
+		&& GroundedRequest.ActionId == TEXT("talk_gu_heng")
+		&& GroundedRequest.PlayerSaid.Contains(TEXT("发电机"))
+		&& (GroundedRequest.PlayerSaid.Contains(TEXT("要怎么样"))
+			|| GroundedRequest.PlayerSaid.Contains(TEXT("怎样才"))
+			|| GroundedRequest.PlayerSaid.Contains(TEXT("怎么才"))
+			|| GroundedRequest.PlayerSaid.Contains(TEXT("什么条件"))
+			|| GroundedRequest.PlayerSaid.Contains(TEXT("需要我做什么"))
+			|| GroundedRequest.PlayerSaid.Contains(TEXT("要我做什么"))
+			|| GroundedRequest.PlayerSaid.Contains(TEXT("我要做什么"))
+			|| GroundedRequest.PlayerSaid.Contains(TEXT("才会帮"))
+			|| GroundedRequest.PlayerSaid.Contains(TEXT("才肯"))
+			|| GroundedRequest.PlayerSaid.Contains(TEXT("才愿意"))))
+	{
+		GroundedRequest.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+		GroundedRequest.SemanticFrame.QueryType = EWSDialogueQueryType::Requirements;
+		GroundedRequest.SemanticFrame.TargetActionId = TEXT("repair_generator");
+		GroundedRequest.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+		GroundedRequest.SemanticFrame.Confidence = 0.99f;
+		GroundedRequest.SemanticFrame.Source = TEXT("local_semantic_frame");
+	}
+	return BuildDeterministicReply(
+		GroundedRequest,
+		State,
+		FWSActionRequirementReport());
+}
+
+FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
+	const FWSActionRequest& Request,
+	const FWSGameState& State,
+	const FWSActionRequirementReport& RequirementReport)
+{
 	FWSAgentReply Reply;
 	Reply.ActionId = Request.ActionId;
 	Reply.TransactionId = Request.TransactionId;
@@ -106,6 +139,24 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 				? GuHeng.InjurySeverity == EWSInjurySeverity::Normal
 				: State.Flags.bGuHengTreated;
 		if (
+			Request.SemanticFrame.QueryType == EWSDialogueQueryType::Requirements
+			&& Request.SemanticFrame.TargetActionId == TEXT("repair_generator"))
+		{
+			const FWSNPCDialoguePlan Plan = BuildDialoguePlan(Request, State, RequirementReport);
+			Reply.Speaker = Plan.Speaker;
+			Reply.ResponseType = Plan.Stance;
+			Reply.Emotion = TEXT("measured");
+			Reply.Utterance = Plan.SemanticSpine;
+			Reply.SemanticSpine = Plan.SemanticSpine;
+			Reply.AnswerContract = Plan.Contract;
+			Reply.RequirementReport = RequirementReport;
+			Reply.CoveredConditionIds = Plan.Contract.MustCoverConditionIds;
+			if (GuHeng.InjurySeverity != EWSInjurySeverity::Normal)
+			{
+				Reply.ReferencedFactIds = {WhiteoutAgentFacts::HandInjury};
+			}
+		}
+		else if (
 			Request.DialogueAct == EWSDialogueAct::Command
 			&& (
 				GuHeng.Trust < 4.0f
@@ -321,6 +372,11 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 	const TArray<FName> AllowedFacts = BuildAllowedFacts(Request.ActionId, Reply.Speaker, State);
 	Reply.ReferencedFactIds = Reply.ReferencedFactIds.FilterByPredicate(
 		[&AllowedFacts](const FName FactId) { return AllowedFacts.Contains(FactId); });
+	if (Reply.SemanticSpine.IsEmpty())
+	{
+		Reply.SemanticSpine = Reply.Utterance;
+	}
+	Reply.AnswerSource = TEXT("spine_only");
 	return Reply;
 }
 
@@ -371,6 +427,158 @@ TArray<FName> UWSNPCDecisionService::BuildAllowedFacts(
 		}
 	}
 	return Result;
+}
+
+FWSNPCDialoguePlan UWSNPCDecisionService::BuildDialoguePlan(
+	const FWSActionRequest& Request,
+	const FWSGameState& State,
+	const FWSActionRequirementReport& RequirementReport)
+{
+	FWSNPCDialoguePlan Plan;
+	Plan.Speaker = Request.SemanticFrame.TargetCharacter;
+	if (Plan.Speaker == EWSCharacterId::Player)
+	{
+		Plan.Speaker = EWSCharacterId::GuHeng;
+	}
+	Plan.Stance = RequirementReport.bCurrentlyExecutable
+		? EWSResponseType::Accept
+		: EWSResponseType::ConditionalAccept;
+	Plan.Contract.QueryType = Request.SemanticFrame.QueryType;
+	Plan.Contract.TargetActionId = Request.SemanticFrame.TargetActionId;
+	Plan.Contract.MaxSentences = 3;
+	Plan.AllowedFactIds = BuildAllowedFacts(Request.ActionId, Plan.Speaker, State);
+
+	if (Request.SemanticFrame.QueryType != EWSDialogueQueryType::Requirements
+		|| Request.SemanticFrame.TargetActionId != TEXT("repair_generator"))
+	{
+		return Plan;
+	}
+
+	if (RequirementReport.ActionId != TEXT("repair_generator"))
+	{
+		Plan.Contract.MustCoverConditionIds = {
+			TEXT("player_collaboration"),
+			TEXT("repair_room_heated"),
+			TEXT("gu_heng_stamina_ready"),
+			TEXT("replacement_relay_available")};
+		Plan.Contract.AllowedRiskIds = {TEXT("right_hand_injury_risk")};
+		Plan.SemanticSpine = TEXT("要我接手发电机，你得在旁搭手。要么把维修间升温并让我恢复体力，要么准备一只可靠的替代继电器。伤手会增加耗时和风险。");
+		return Plan;
+	}
+
+	bool bAvailable = true;
+	bool bCollaborationSatisfied = true;
+	for (const FWSRequirementItem& Item : RequirementReport.UniversalRequirements)
+	{
+		if (!Item.bDisclosable)
+		{
+			continue;
+		}
+		if (Item.RequirementId == TEXT("gu_heng_available"))
+		{
+			bAvailable = Item.bSatisfied;
+		}
+		else if (Item.RequirementId == TEXT("player_collaboration"))
+		{
+			bCollaborationSatisfied = Item.bSatisfied;
+		}
+		if (Item.bSatisfied)
+		{
+			Plan.Contract.AllowedOptionalConditionIds.AddUnique(Item.RequirementId);
+		}
+		else
+		{
+			Plan.Contract.MustCoverConditionIds.AddUnique(Item.RequirementId);
+		}
+	}
+
+	bool bRepairRoomHeated = false;
+	bool bStaminaReady = false;
+	bool bRelayReady = false;
+	for (const FWSRequirementPlan& RequirementPlan : RequirementReport.AlternativePlans)
+	{
+		for (const FWSRequirementItem& Item : RequirementPlan.Requirements)
+		{
+			if (!Item.bDisclosable)
+			{
+				continue;
+			}
+			if (Item.RequirementId == TEXT("repair_room_heated"))
+			{
+				bRepairRoomHeated = Item.bSatisfied;
+			}
+			else if (Item.RequirementId == TEXT("gu_heng_stamina_ready"))
+			{
+				bStaminaReady = Item.bSatisfied;
+			}
+			else if (Item.RequirementId == TEXT("replacement_relay_available"))
+			{
+				bRelayReady = Item.bSatisfied;
+			}
+			if (Item.bSatisfied)
+			{
+				Plan.Contract.AllowedOptionalConditionIds.AddUnique(Item.RequirementId);
+			}
+			else
+			{
+				Plan.Contract.MustCoverConditionIds.AddUnique(Item.RequirementId);
+			}
+		}
+	}
+	for (const FWSRequirementItem& Risk : RequirementReport.Risks)
+	{
+		if (Risk.bDisclosable)
+		{
+			Plan.Contract.AllowedRiskIds.AddUnique(Risk.RequirementId);
+		}
+	}
+
+	FString Opening;
+	if (!bAvailable)
+	{
+		Opening = TEXT("先让我恢复到能安全工作的状态。你要在旁搭手，别让我独自做精细操作。");
+	}
+	else if (!bCollaborationSatisfied)
+	{
+		Opening = TEXT("要我接手发电机，你得在旁搭手，别让我独自做精细操作。");
+	}
+	else
+	{
+		Opening = TEXT("要我接手发电机，配合条件已经够了。");
+	}
+
+	FString SupportedRoute;
+	if (bRepairRoomHeated && bStaminaReady)
+	{
+		SupportedRoute = TEXT("维修间温度和体力条件已经满足");
+	}
+	else if (!bRepairRoomHeated && !bStaminaReady)
+	{
+		SupportedRoute = TEXT("把维修间升温并让我恢复到至少两点体力");
+	}
+	else if (!bRepairRoomHeated)
+	{
+		SupportedRoute = TEXT("把维修间升温");
+	}
+	else
+	{
+		SupportedRoute = TEXT("让我恢复到至少两点体力");
+	}
+	const FString RelayRoute = bRelayReady
+		? TEXT("可靠替代件已经备好")
+		: TEXT("准备一只可靠的替代继电器");
+	Plan.SemanticSpine = FString::Printf(
+		TEXT("%s要么%s，要么%s。"),
+		*Opening,
+		*SupportedRoute,
+		*RelayRoute);
+
+	const FWSCharacterState GuHeng = State.Characters.FindRef(EWSCharacterId::GuHeng);
+	if (GuHeng.InjurySeverity != EWSInjurySeverity::Normal)
+	{
+		Plan.SemanticSpine += TEXT("伤手会增加耗时和恶化风险，但不会单独否决维修。");
+	}
+	return Plan;
 }
 
 FString UWSNPCDecisionService::SpeakerLabel(const EWSCharacterId Speaker)

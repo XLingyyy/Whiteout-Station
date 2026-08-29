@@ -108,6 +108,18 @@ enum class EWSDialogueAct : uint8
 };
 
 UENUM(BlueprintType)
+enum class EWSDialogueQueryType : uint8
+{
+	Unknown,
+	Requirements,
+	Status,
+	Cause,
+	Alternative,
+	Evidence,
+	Consequence
+};
+
+UENUM(BlueprintType)
 enum class EWSResponseType : uint8
 {
 	Accept,
@@ -373,6 +385,220 @@ struct FWSActionCostModifier
 };
 
 USTRUCT(BlueprintType)
+struct FWSDialogueSemanticFrame
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSDialogueAct SpeechAct = EWSDialogueAct::Ask;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSDialogueQueryType QueryType = EWSDialogueQueryType::Unknown;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName TargetActionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName TargetFactId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSCharacterId TargetCharacter = EWSCharacterId::GuHeng;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float Confidence = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString Source;
+};
+
+USTRUCT(BlueprintType)
+struct FWSDialogueIntentResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
+	bool bMapped = false;
+
+	UPROPERTY(BlueprintReadOnly)
+	EWSDialogueAct DialogueAct = EWSDialogueAct::Ask;
+
+	UPROPERTY(BlueprintReadOnly)
+	FName PromiseCondition;
+
+	UPROPERTY(BlueprintReadOnly)
+	EWSDialogueQueryType QueryType = EWSDialogueQueryType::Unknown;
+
+	UPROPERTY(BlueprintReadOnly)
+	FName TargetActionId;
+
+	UPROPERTY(BlueprintReadOnly)
+	FName TargetFactId;
+
+	UPROPERTY(BlueprintReadOnly)
+	EWSCharacterId TargetCharacter = EWSCharacterId::GuHeng;
+
+	UPROPERTY(BlueprintReadOnly)
+	float Confidence = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly)
+	FString Source = TEXT("wheel_only");
+
+	UPROPERTY(BlueprintReadOnly)
+	FString Reason;
+
+	FWSDialogueSemanticFrame ToSemanticFrame() const
+	{
+		FWSDialogueSemanticFrame Result;
+		Result.SpeechAct = DialogueAct;
+		Result.QueryType = QueryType;
+		Result.TargetActionId = TargetActionId;
+		Result.TargetFactId = TargetFactId;
+		Result.TargetCharacter = TargetCharacter;
+		Result.Confidence = Confidence;
+		Result.Source = Source;
+		return Result;
+	}
+};
+
+USTRUCT(BlueprintType)
+struct FWSRequirementItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName RequirementId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bSatisfied = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bDisclosable = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName RemediationActionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FText Explanation;
+};
+
+USTRUCT(BlueprintType)
+struct FWSRequirementPlan
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName PlanId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FWSRequirementItem> Requirements;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 EstimatedAP = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float RiskScore = 0.0f;
+};
+
+USTRUCT(BlueprintType)
+struct FWSActionRequirementReport
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName ActionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bCurrentlyExecutable = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FWSRequirementItem> UniversalRequirements;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FWSRequirementPlan> AlternativePlans;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FWSRequirementItem> Risks;
+};
+
+USTRUCT(BlueprintType)
+struct FWSDialogueAnswerContract
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSDialogueQueryType QueryType = EWSDialogueQueryType::Unknown;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName TargetActionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> MustCoverConditionIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> AllowedOptionalConditionIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> AllowedRiskIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 MaxSentences = 3;
+};
+
+USTRUCT(BlueprintType)
+struct FWSNPCDialoguePlan
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSCharacterId Speaker = EWSCharacterId::GuHeng;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSResponseType Stance = EWSResponseType::Deflect;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString SemanticSpine;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSDialogueAnswerContract Contract;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> AllowedFactIds;
+};
+
+USTRUCT(BlueprintType)
+struct FWSNegotiationOffer
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FName OfferId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSCharacterId Issuer = EWSCharacterId::GuHeng;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FName TargetActionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FName> RequiredConditionIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FName PromisedNPCActionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSDayPhase ExpiryPhase = EWSDayPhase::Complete;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bAccepted = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bFulfilled = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	bool bBroken = false;
+};
+
+USTRUCT(BlueprintType)
 struct FWSHeatingSelectionRecord
 {
 	GENERATED_BODY()
@@ -597,6 +823,12 @@ struct FWSGameState
 	TArray<FWSPromiseRecord> Promises;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FWSNegotiationOffer> NegotiationOffers;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FName> PinnedRequirementActions;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	TArray<FWSEventRecord> EventLog;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
@@ -673,6 +905,9 @@ struct FWSActionRequest
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FGuid DialogueSessionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSDialogueSemanticFrame SemanticFrame;
 };
 
 USTRUCT(BlueprintType)
@@ -790,6 +1025,24 @@ struct FWSAgentReply
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FString Utterance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString SemanticSpine;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString PersonaTail;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString AnswerSource = TEXT("spine_only");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> CoveredConditionIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSActionRequirementReport RequirementReport;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSDialogueAnswerContract AnswerContract;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FString Emotion = TEXT("guarded");

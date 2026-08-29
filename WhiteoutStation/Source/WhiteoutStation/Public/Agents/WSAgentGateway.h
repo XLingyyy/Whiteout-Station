@@ -13,30 +13,6 @@ namespace FHttpRetrySystem
 
 DECLARE_DELEGATE_OneParam(FWSAgentReplyCallback, const FWSAgentReply&);
 
-USTRUCT(BlueprintType)
-struct FWSDialogueIntentResult
-{
-	GENERATED_BODY()
-
-	UPROPERTY(BlueprintReadOnly)
-	bool bMapped = false;
-
-	UPROPERTY(BlueprintReadOnly)
-	EWSDialogueAct DialogueAct = EWSDialogueAct::Ask;
-
-	UPROPERTY(BlueprintReadOnly)
-	FName PromiseCondition;
-
-	UPROPERTY(BlueprintReadOnly)
-	float Confidence = 0.0f;
-
-	UPROPERTY(BlueprintReadOnly)
-	FString Source = TEXT("wheel_only");
-
-	UPROPERTY(BlueprintReadOnly)
-	FString Reason;
-};
-
 DECLARE_DELEGATE_OneParam(FWSDialogueIntentCallback, const FWSDialogueIntentResult&);
 
 USTRUCT(BlueprintType)
@@ -91,6 +67,12 @@ public:
 		bool bAllowLiveProvider,
 		FWSAgentReplyCallback Completion);
 	void RequestExpression(
+		const FWSActionRequest& ActionRequest,
+		const FWSGameState& State,
+		const FWSActionRequirementReport& RequirementReport,
+		bool bAllowLiveProvider,
+		FWSAgentReplyCallback Completion);
+	void RequestExpression(
 		FName ActionId,
 		const FWSGameState& State,
 		bool bAllowLiveProvider,
@@ -100,8 +82,17 @@ public:
 		const FString& UserText,
 		bool bAllowLiveProvider,
 		FWSDialogueIntentCallback Completion);
+	void RequestDialogueIntent(
+		const FString& UserText,
+		FName CurrentDialogueActionId,
+		FName CurrentTopicActionId,
+		bool bAllowLiveProvider,
+		FWSDialogueIntentCallback Completion);
 
-	static FWSDialogueIntentResult ClassifyLocalIntent(const FString& UserText);
+	static FWSDialogueIntentResult ClassifyLocalIntent(
+		const FString& UserText,
+		FName CurrentDialogueActionId = NAME_None,
+		FName CurrentTopicActionId = NAME_None);
 	static bool ContainsAdversarialInstruction(const FString& UserText);
 	static bool IsOfficialDeepSeekEndpoint(const FString& CandidateEndpoint);
 	static bool IsLoopbackEndpoint(const FString& CandidateEndpoint);
@@ -119,7 +110,9 @@ public:
 		const FString& Payload,
 		const FString& UserText,
 		FWSDialogueIntentResult& OutIntent,
-		FString& OutReason);
+		FString& OutReason,
+		FName CurrentDialogueActionId = NAME_None,
+		FName CurrentTopicActionId = NAME_None);
 	static bool ExtractProviderContent(const FString& ProviderPayload, FString& OutContent, FString& OutReason);
 	static bool ExtractProviderContent(
 		const FString& ProviderPayload,
@@ -140,7 +133,10 @@ public:
 	FString GetCredentialProviderId() const { return CredentialProviderId; }
 	FString GetEndpoint() const { return Endpoint; }
 	FString GetRuntimeStatus() const;
-	FString BuildIntentRequestJson(const FString& UserText) const;
+	FString BuildIntentRequestJson(
+		const FString& UserText,
+		FName CurrentDialogueActionId = NAME_None,
+		FName CurrentTopicActionId = NAME_None) const;
 
 private:
 	FString Endpoint;

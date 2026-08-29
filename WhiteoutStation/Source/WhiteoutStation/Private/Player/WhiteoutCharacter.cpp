@@ -452,6 +452,8 @@ void AWhiteoutCharacter::BeginDialogue(AWSInteractableActor* Interactable)
 	bDialogueChoiceCommitted = false;
 	bDialogueIntentPending = false;
 	PendingPlayerSaid.Reset();
+	PendingSemanticFrame = FWSDialogueSemanticFrame();
+	CurrentDialogueTopicActionId = NAME_None;
 	ActiveDialogueSessionId = FGuid::NewGuid();
 	ActiveDialogueTransactionId.Invalidate();
 	PreviewedInteractable = nullptr;
@@ -486,11 +488,22 @@ void AWhiteoutCharacter::ChooseDialogueAct(const EWSDialogueAct DialogueAct)
 		}
 		return;
 	}
+	PendingSemanticFrame = FWSDialogueSemanticFrame();
+	PendingSemanticFrame.SpeechAct = DialogueAct;
+	PendingSemanticFrame.Source = TEXT("dialogue_wheel");
+	PendingSemanticFrame.Confidence = 1.0f;
 	SubmitDialogueChoice(DialogueAct, NAME_None, FString());
 }
 
 void AWhiteoutCharacter::ChooseDialoguePromise(const FName PromiseCondition)
 {
+	PendingSemanticFrame = FWSDialogueSemanticFrame();
+	PendingSemanticFrame.SpeechAct = EWSDialogueAct::Promise;
+	PendingSemanticFrame.TargetActionId = PromiseCondition == TEXT("heat_repair_room")
+		? FName(TEXT("repair_generator"))
+		: NAME_None;
+	PendingSemanticFrame.Source = TEXT("dialogue_wheel");
+	PendingSemanticFrame.Confidence = 1.0f;
 	SubmitDialogueChoice(EWSDialogueAct::Promise, PromiseCondition, FString());
 }
 
@@ -521,11 +534,12 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 	{
 		return;
 	}
-	const FWSActionRequest Request = ActiveDialogueTarget->BuildActionRequest(
+	FWSActionRequest Request = ActiveDialogueTarget->BuildActionRequest(
 		DialogueAct,
 		PromiseCondition,
 		PendingPlayerSaid,
 		ActiveDialogueSessionId);
+	Request.SemanticFrame = PendingSemanticFrame;
 	const FWSActionPreview Preview = ActiveDialogueTarget->PreviewRequest(Request);
 	if (!Preview.bCanExecute)
 	{
@@ -556,7 +570,70 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 
 void AWhiteoutCharacter::SubmitDialogueText(const FString& UserText)
 {
-	SubmitDialogueChoice(EWSDialogueAct::Ask, NAME_None, UserText);
+	if (!ActiveDialogueTarget || bDialogueChoiceCommitted || bDialogueIntentPending)
+	{
+		return;
+	}
+	PendingPlayerSaid = UserText.TrimStartAndEnd().Left(280);
+	if (PendingPlayerSaid.IsEmpty()
+		|| UWSAgentGateway::ContainsAdversarialInstruction(PendingPlayerSaid))
+	{
+		PendingPlayerSaid.Reset();
+		return;
+	}
+	UWindStationStateSubsystem* StateSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>()
+		: nullptr;
+	if (!StateSubsystem)
+	{
+		return;
+	}
+	bDialogueIntentPending = true;
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->SetDialogueIntentStatus(TEXT("正在理解你的问题……"), true);
+		}
+	}
+	const FGuid ExpectedSessionId = ActiveDialogueSessionId;
+	const FName DialogueActionId = ActiveDialogueTarget->ActionId;
+	TWeakObjectPtr<AWhiteoutCharacter> WeakThis(this);
+	StateSubsystem->RequestDialogueIntent(
+		PendingPlayerSaid,
+		DialogueActionId,
+		CurrentDialogueTopicActionId,
+		[WeakThis, ExpectedSessionId](const FWSDialogueIntentResult& Intent)
+		{
+			if (!WeakThis.IsValid())
+			{
+				return;
+			}
+			AWhiteoutCharacter* Character = WeakThis.Get();
+			if (!Character->ActiveDialogueTarget
+				|| Character->ActiveDialogueSessionId != ExpectedSessionId)
+			{
+				return;
+			}
+			Character->bDialogueIntentPending = false;
+			if (!Intent.bMapped)
+			{
+				if (APlayerController* PlayerController = Cast<APlayerController>(Character->Controller))
+				{
+					if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+					{
+						HUD->SetDialogueIntentStatus(TEXT("这句话的意图不够明确，请换一种问法或使用对话选项。"), false);
+					}
+				}
+				return;
+			}
+			Character->PendingSemanticFrame = Intent.ToSemanticFrame();
+			if (!Intent.TargetActionId.IsNone())
+			{
+				Character->CurrentDialogueTopicActionId = Intent.TargetActionId;
+			}
+			Character->CommitDialogueChoice(Intent.DialogueAct, Intent.PromiseCondition);
+		});
 }
 
 void AWhiteoutCharacter::SubmitDialogueChoice(
@@ -586,6 +663,7 @@ void AWhiteoutCharacter::ContinueDialogue()
 	bDialogueChoiceCommitted = false;
 	bDialogueIntentPending = false;
 	PendingPlayerSaid.Reset();
+	PendingSemanticFrame = FWSDialogueSemanticFrame();
 	ActiveDialogueTransactionId.Invalidate();
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
@@ -616,6 +694,8 @@ void AWhiteoutCharacter::CancelDialogue()
 	bDialogueChoiceCommitted = false;
 	bDialogueIntentPending = false;
 	PendingPlayerSaid.Reset();
+	PendingSemanticFrame = FWSDialogueSemanticFrame();
+	CurrentDialogueTopicActionId = NAME_None;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		PlayerController->ResetIgnoreMoveInput();

@@ -92,6 +92,8 @@ private:
 	int32 EarlySettleConfirmationAP = INDEX_NONE;
 	int32 EarlySettleConfirmationTransactionCount = INDEX_NONE;
 	FString PendingPlayerSaid;
+	FWSDialogueSemanticFrame PendingSemanticFrame;
+	FName CurrentDialogueTopicActionId;
 	FWSActionRequest PreviewActionRequest;
 	FGuid ActiveDialogueSessionId;
 	FGuid ActiveDialogueTransactionId;

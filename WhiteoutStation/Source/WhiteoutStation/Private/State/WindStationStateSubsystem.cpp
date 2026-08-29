@@ -139,6 +139,34 @@ bool UWindStationStateSubsystem::HasLiveLLMProvider() const
 		&& AgentGateway->HasLiveProvider();
 }
 
+void UWindStationStateSubsystem::RequestDialogueIntent(
+	const FString& UserText,
+	const FName CurrentDialogueActionId,
+	const FName CurrentTopicActionId,
+	TFunction<void(const FWSDialogueIntentResult&)> Completion)
+{
+	if (!AgentGateway)
+	{
+		Completion(UWSAgentGateway::ClassifyLocalIntent(
+			UserText,
+			CurrentDialogueActionId,
+			CurrentTopicActionId));
+		return;
+	}
+	const bool bUseLiveProvider = LLMConfigurationError.IsEmpty()
+		&& AgentGateway->HasLiveProvider();
+	AgentGateway->RequestDialogueIntent(
+		UserText,
+		CurrentDialogueActionId,
+		CurrentTopicActionId,
+		bUseLiveProvider,
+		FWSDialogueIntentCallback::CreateLambda(
+			[Completion = MoveTemp(Completion)](const FWSDialogueIntentResult& Intent)
+			{
+				Completion(Intent);
+			}));
+}
+
 void UWindStationStateSubsystem::HandleLLMSettingsChanged()
 {
 	FString Error;
@@ -444,9 +472,17 @@ void UWindStationStateSubsystem::RequestActionExpression(const FWSActionRequest&
 		BroadcastState();
 	}
 	TWeakObjectPtr<UWindStationStateSubsystem> WeakThis(this);
+	FWSActionRequirementReport RequirementReport;
+	if (ActionRequest.SemanticFrame.TargetActionId == TEXT("repair_generator"))
+	{
+		FWSActionRequest TargetRequest;
+		TargetRequest.ActionId = TEXT("repair_generator");
+		RequirementReport = RulesEngine.EvaluateActionRequirements(TargetRequest);
+	}
 	AgentGateway->RequestExpression(
 		ActionRequest,
 		RulesEngine.GetState(),
+		RequirementReport,
 		bUseLiveProvider,
 		FWSAgentReplyCallback::CreateLambda(
 			[WeakThis](const FWSAgentReply& Reply)

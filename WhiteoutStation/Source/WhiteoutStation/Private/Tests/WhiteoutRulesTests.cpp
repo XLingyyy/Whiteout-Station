@@ -1362,4 +1362,80 @@ bool FWhiteoutV11ModelBoundaryTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV11RequirementReportMatrixTest,
+	"WhiteoutStation.RulesV11.DialogueRequirementReportMatrix",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV11RequirementReportMatrixTest::RunTest(const FString& Parameters)
+{
+	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom)) return false;
+	FWSGameState& State = Engine.GetMutableStateForTesting();
+	FWSCharacterState& GuHeng = State.Characters.FindChecked(EWSCharacterId::GuHeng);
+	GuHeng.InjurySeverity = EWSInjurySeverity::Restricted;
+	GuHeng.Stamina = 1;
+	GuHeng.Trust = 3.5f;
+	GuHeng.Pressure = 7.2f;
+
+	auto VerifyPreviewMatchesReport = [this, &Engine](const TCHAR* Label, const FWSActionRequest& Request)
+	{
+		const FWSActionPreview Preview = Engine.Preview(Request);
+		const FWSActionRequirementReport Report = Engine.EvaluateActionRequirements(Request);
+		TestEqual(
+			FString::Printf(TEXT("%s preview/report executable match"), Label),
+			Report.bCurrentlyExecutable,
+			Preview.bCanExecute);
+		return Report;
+	};
+
+	FWSActionRequest Repair = WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+	FWSActionRequirementReport Report = VerifyPreviewMatchesReport(TEXT("low trust without collaboration"), Repair);
+	TestFalse(TEXT("Low trust requires collaboration"), Report.bCurrentlyExecutable);
+	TestTrue(
+		TEXT("Report exposes player collaboration"),
+		Report.UniversalRequirements.ContainsByPredicate([](const FWSRequirementItem& Item)
+		{
+			return Item.RequirementId == TEXT("player_collaboration") && !Item.bSatisfied;
+		}));
+
+	Repair.bHasCollaborator = true;
+	Repair.Collaborator = EWSCharacterId::Player;
+	Report = VerifyPreviewMatchesReport(TEXT("collaboration without safe plan"), Repair);
+	TestFalse(TEXT("Collaboration alone is insufficient"), Report.bCurrentlyExecutable);
+
+	State.Heating.CurrentZone = EWSHeatingZone::RepairRoom;
+	GuHeng.Stamina = 2;
+	Report = VerifyPreviewMatchesReport(TEXT("supported repair route"), Repair);
+	TestTrue(TEXT("Heated room plus stamina unlocks repair"), Report.bCurrentlyExecutable);
+
+	State.Heating.CurrentZone = EWSHeatingZone::ControlRoom;
+	GuHeng.Stamina = 1;
+	Repair.bUseRelay = true;
+	State.Resources.ReplacementRelay = 0;
+	Report = VerifyPreviewMatchesReport(TEXT("relay route without part"), Repair);
+	TestFalse(TEXT("Missing replacement relay blocks relay route"), Report.bCurrentlyExecutable);
+
+	State.Resources.ReplacementRelay = 1;
+	Report = VerifyPreviewMatchesReport(TEXT("relay route with part"), Repair);
+	TestTrue(TEXT("Replacement relay unlocks alternative route"), Report.bCurrentlyExecutable);
+
+	GuHeng.InjurySeverity = EWSInjurySeverity::Critical;
+	Report = VerifyPreviewMatchesReport(TEXT("critical injury"), Repair);
+	TestFalse(TEXT("Critical injury blocks all routes"), Report.bCurrentlyExecutable);
+
+	State.Flags.bRelayCompatibilityKnown = false;
+	Report = Engine.EvaluateActionRequirements(Repair);
+	const FWSRequirementPlan* RelayPlan = Report.AlternativePlans.FindByPredicate(
+		[](const FWSRequirementPlan& Plan) { return Plan.PlanId == TEXT("relay_replacement"); });
+	TestNotNull(TEXT("Report contains relay alternative"), RelayPlan);
+	if (RelayPlan && !RelayPlan->Requirements.IsEmpty())
+	{
+		TestFalse(
+			TEXT("Unknown compatibility does not disclose kitchen heater"),
+			RelayPlan->Requirements[0].Explanation.ToString().Contains(TEXT("厨房")));
+	}
+	return true;
+}
+
 #endif

@@ -987,52 +987,10 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecuteV11(
 	}
 	else if (Request.ActionId == RepairGenerator)
 	{
-		if (State.Tasks.GeneratorProgress >= Config.GeneratorRequired)
+		const EWSReasonCode RepairReason = EvaluateRepairGeneratorReason(Request, nullptr);
+		if (RepairReason != EWSReasonCode::Ok)
 		{
-			return EWSReasonCode::GeneratorAlreadyRepaired;
-		}
-		const FWSCharacterState& GuHeng = Character(EWSCharacterId::GuHeng);
-		if (
-			GuHeng.InjurySeverity == EWSInjurySeverity::Critical
-			|| GuHeng.Stamina <= 0)
-		{
-			return EWSReasonCode::GuHengRefused;
-		}
-		if (
-			!Request.bForce
-			&& (
-				GuHeng.Trust < 3.0f
-				|| GuHeng.Pressure >= 9.0f))
-		{
-			return EWSReasonCode::GuHengRefused;
-		}
-		if (
-			!Request.bForce
-			&& (
-				GuHeng.Trust < 4.5f
-				|| GuHeng.Pressure >= 8.0f)
-			&& !(
-				Request.bHasCollaborator
-				&& Request.Collaborator == EWSCharacterId::Player))
-		{
-			return EWSReasonCode::NeedsGuHengConditions;
-		}
-		if (
-			!Request.bForce
-			&& !(
-				State.Heating.CurrentZone == EWSHeatingZone::RepairRoom
-				&& GuHeng.Stamina >= 2)
-			&& !(
-				Request.bUseRelay
-				&& State.Resources.ReplacementRelay > 0))
-		{
-			return EWSReasonCode::NeedsGuHengConditions;
-		}
-		if (
-			Request.bUseRelay
-			&& State.Resources.ReplacementRelay < 1)
-		{
-			return EWSReasonCode::NeedsReplacementRelay;
+			return RepairReason;
 		}
 	}
 	else if (Request.ActionId == ForcedSelfRepair)
@@ -1069,6 +1027,144 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecuteV11(
 		}
 	}
 	return EWSReasonCode::Ok;
+}
+
+EWSReasonCode FWhiteoutRulesEngine::EvaluateRepairGeneratorReason(
+	const FWSActionRequest& Request,
+	FWSActionRequirementReport* OutReport) const
+{
+	using namespace WhiteoutRules;
+	const FWSCharacterState& GuHeng = Character(EWSCharacterId::GuHeng);
+	const bool bGeneratorIncomplete = State.Tasks.GeneratorProgress < Config.GeneratorRequired;
+	const bool bGuAvailable = GuHeng.InjurySeverity != EWSInjurySeverity::Critical
+		&& GuHeng.Stamina > 0;
+	const bool bHardRefusal = !Request.bForce
+		&& (GuHeng.Trust < 3.0f || GuHeng.Pressure >= 9.0f);
+	const bool bPlayerCollaborationRequired = !Request.bForce
+		&& (GuHeng.Trust < 4.5f || GuHeng.Pressure >= 8.0f);
+	const bool bHasPlayerCollaboration = Request.bHasCollaborator
+		&& Request.Collaborator == EWSCharacterId::Player;
+	const bool bSocialConditionSatisfied = !bPlayerCollaborationRequired
+		|| bHasPlayerCollaboration;
+	const bool bRepairRoomHeated = State.Heating.CurrentZone == EWSHeatingZone::RepairRoom;
+	const bool bStaminaReady = GuHeng.Stamina >= 2;
+	const bool bSupportedPlanReady = bRepairRoomHeated && bStaminaReady;
+	const bool bReplacementRelayAvailable = State.Resources.ReplacementRelay > 0;
+	const bool bRelayPlanSelectedAndReady = Request.bUseRelay && bReplacementRelayAvailable;
+
+	EWSReasonCode Result = EWSReasonCode::Ok;
+	if (!bGeneratorIncomplete)
+	{
+		Result = EWSReasonCode::GeneratorAlreadyRepaired;
+	}
+	else if (!bGuAvailable || bHardRefusal)
+	{
+		Result = EWSReasonCode::GuHengRefused;
+	}
+	else if (!bSocialConditionSatisfied)
+	{
+		Result = EWSReasonCode::NeedsGuHengConditions;
+	}
+	else if (!Request.bForce && !bSupportedPlanReady && !bRelayPlanSelectedAndReady)
+	{
+		Result = EWSReasonCode::NeedsGuHengConditions;
+	}
+	else if (Request.bUseRelay && !bReplacementRelayAvailable)
+	{
+		Result = EWSReasonCode::NeedsReplacementRelay;
+	}
+
+	if (OutReport)
+	{
+		FWSActionRequirementReport& Report = *OutReport;
+		Report = FWSActionRequirementReport();
+		Report.ActionId = RepairGenerator;
+		Report.bCurrentlyExecutable = Result == EWSReasonCode::Ok;
+
+		FWSRequirementItem Available;
+		Available.RequirementId = TEXT("gu_heng_available");
+		Available.bSatisfied = bGuAvailable && !bHardRefusal;
+		Available.RemediationActionId = GuHeng.Stamina <= 0 ? Rest : TreatCharacter;
+		Available.Explanation = FText::FromString(
+			Available.bSatisfied
+				? TEXT("顾衡目前可以参与维修")
+				: TEXT("先让顾衡恢复到能够安全工作的状态"));
+		Report.UniversalRequirements.Add(Available);
+
+		FWSRequirementItem Collaboration;
+		Collaboration.RequirementId = TEXT("player_collaboration");
+		Collaboration.bSatisfied = bSocialConditionSatisfied;
+		Collaboration.RemediationActionId = TalkGuHeng;
+		Collaboration.Explanation = FText::FromString(
+			bSocialConditionSatisfied
+				? TEXT("当前配合关系足以继续")
+				: TEXT("维修时由你在旁协助，别让他独自承担精细操作"));
+		Report.UniversalRequirements.Add(Collaboration);
+
+		FWSRequirementPlan SupportedPlan;
+		SupportedPlan.PlanId = TEXT("supported_repair");
+		SupportedPlan.EstimatedAP = (bRepairRoomHeated ? 0 : 1) + (bStaminaReady ? 0 : 1);
+		SupportedPlan.RiskScore = GuHeng.InjurySeverity == EWSInjurySeverity::Restricted ? 0.55f : 0.20f;
+		FWSRequirementItem RepairHeat;
+		RepairHeat.RequirementId = TEXT("repair_room_heated");
+		RepairHeat.bSatisfied = bRepairRoomHeated;
+		RepairHeat.RemediationActionId = HeatRepairRoom;
+		RepairHeat.Explanation = FText::FromString(
+			bRepairRoomHeated ? TEXT("维修间已经升温") : TEXT("先把维修间升温"));
+		SupportedPlan.Requirements.Add(RepairHeat);
+		FWSRequirementItem Stamina;
+		Stamina.RequirementId = TEXT("gu_heng_stamina_ready");
+		Stamina.bSatisfied = bStaminaReady;
+		Stamina.RemediationActionId = Rest;
+		Stamina.Explanation = FText::FromString(
+			bStaminaReady ? TEXT("顾衡的体力足够") : TEXT("让顾衡恢复至少两点体力"));
+		SupportedPlan.Requirements.Add(Stamina);
+		Report.AlternativePlans.Add(SupportedPlan);
+
+		FWSRequirementPlan RelayPlan;
+		RelayPlan.PlanId = TEXT("relay_replacement");
+		RelayPlan.EstimatedAP = bReplacementRelayAvailable ? 0 : 1;
+		RelayPlan.RiskScore = 0.35f;
+		FWSRequirementItem Relay;
+		Relay.RequirementId = TEXT("replacement_relay_available");
+		Relay.bSatisfied = bReplacementRelayAvailable;
+		Relay.bDisclosable = true;
+		Relay.RemediationActionId = State.Flags.bRelayCompatibilityKnown
+			? DismantleKitchenHeater
+			: InspectControlCabinet;
+		Relay.Explanation = FText::FromString(
+			bReplacementRelayAvailable
+				? TEXT("可靠替代件已经备好")
+				: State.Flags.bRelayCompatibilityKnown
+					? TEXT("可以从已确认兼容的设备取得替代件")
+					: TEXT("找到并确认一只可靠的替代继电器"));
+		RelayPlan.Requirements.Add(Relay);
+		Report.AlternativePlans.Add(RelayPlan);
+
+		FWSRequirementItem HandRisk;
+		HandRisk.RequirementId = TEXT("right_hand_injury_risk");
+		HandRisk.bSatisfied = GuHeng.InjurySeverity == EWSInjurySeverity::Normal;
+		HandRisk.bDisclosable = true;
+		HandRisk.RemediationActionId = TreatCharacter;
+		HandRisk.Explanation = FText::FromString(
+			HandRisk.bSatisfied
+				? TEXT("伤手不会额外增加维修风险")
+				: TEXT("伤手会增加耗时和恶化风险，但不是绝对禁令"));
+		Report.Risks.Add(HandRisk);
+	}
+	return Result;
+}
+
+FWSActionRequirementReport FWhiteoutRulesEngine::EvaluateActionRequirements(
+	const FWSActionRequest& Request) const
+{
+	FWSActionRequirementReport Report;
+	Report.ActionId = Request.ActionId;
+	if (IsV11() && Request.ActionId == WhiteoutRules::RepairGenerator)
+	{
+		EvaluateRepairGeneratorReason(Request, &Report);
+	}
+	return Report;
 }
 
 FWSActionPreview FWhiteoutRulesEngine::BuildV11Preview(
