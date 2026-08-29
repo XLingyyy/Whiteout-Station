@@ -30,34 +30,56 @@ class MockConfig:
     finish_reason: str = "stop"
     malformed_content: bool = False
     extra_field: bool = False
+    persona_tail_mode: str = "valid"
 
 
 def classify_intent(text: str) -> dict[str, object]:
-    if any(token in text for token in ("修复", "发电机", "维修间")):
+    target_character = "ye_cheng" if "叶澄" in text else "gu_heng"
+    target_action_id = "repair_generator" if "发电机" in text else "none"
+    if any(token in text for token in ("要怎么样", "什么条件", "要我做什么", "才肯")):
         return {
-            "intent": "promise",
-            "promise_condition": "heat_repair_room",
-            "confidence": 0.97,
+            "speech_act": "ask",
+            "query_type": "requirements",
+            "target_action_id": "repair_generator",
+            "target_fact_id": "none",
+            "target_character": target_character,
+            "confidence": 0.98,
         }
     if any(token in text for token in ("保证", "记录", "不弃站")):
         return {
-            "intent": "promise",
-            "promise_condition": "keep_records",
+            "speech_act": "promise",
+            "query_type": "unknown",
+            "target_action_id": target_action_id,
+            "target_fact_id": "none",
+            "target_character": target_character,
             "confidence": 0.95,
         }
     if any(token in text for token in ("别怕", "放心", "冷静")):
         return {
-            "intent": "reassure",
-            "promise_condition": "none",
+            "speech_act": "reassure",
+            "query_type": "unknown",
+            "target_action_id": target_action_id,
+            "target_fact_id": "none",
+            "target_character": target_character,
             "confidence": 0.94,
         }
     if any(token in text for token in ("撒谎", "证据", "隐瞒")):
         return {
-            "intent": "challenge",
-            "promise_condition": "none",
+            "speech_act": "challenge",
+            "query_type": "evidence" if "证据" in text else "unknown",
+            "target_action_id": target_action_id,
+            "target_fact_id": "none",
+            "target_character": target_character,
             "confidence": 0.93,
         }
-    return {"intent": "ask", "promise_condition": "none", "confidence": 0.91}
+    return {
+        "speech_act": "ask",
+        "query_type": "unknown",
+        "target_action_id": target_action_id,
+        "target_fact_id": "none",
+        "target_character": target_character,
+        "confidence": 0.91,
+    }
 
 
 def _message_text(message: Any) -> str:
@@ -99,7 +121,10 @@ def _select_performance(
     return preset_movement, preset_reaction
 
 
-def build_mock_content(request: dict[str, Any]) -> tuple[str, dict[str, object]]:
+def build_mock_content(
+    request: dict[str, Any],
+    persona_tail_mode: str = "valid",
+) -> tuple[str, dict[str, object]]:
     messages = request.get("messages")
     if not isinstance(messages, list):
         raise ValueError("messages must be an array")
@@ -115,9 +140,9 @@ def build_mock_content(request: dict[str, Any]) -> tuple[str, dict[str, object]]
     emotion = context.get("emotion", "focused")
     if not isinstance(emotion, str) or not emotion:
         emotion = "focused"
-    preset = context.get("preset_utterance", "联调响应正常。")
-    if not isinstance(preset, str) or not preset.strip():
-        preset = "联调响应正常。"
+    semantic_spine = context.get("semantic_spine", "联调语义骨架。")
+    if not isinstance(semantic_spine, str) or not semantic_spine.strip():
+        semantic_spine = "联调语义骨架。"
     movement_intent = context.get("preset_movement_intent", "stay")
     if movement_intent not in {"stay", "step_closer", "step_back", "return_to_post"}:
         movement_intent = "stay"
@@ -136,11 +161,17 @@ def build_mock_content(request: dict[str, Any]) -> tuple[str, dict[str, object]]
         movement_intent,
         reaction_action,
     )
-    npc_line = f"【mock】{preset.strip()}"[:240]
+    persona_tail = "【mock】我听见了。"
+    if persona_tail_mode == "empty":
+        persona_tail = ""
+    elif persona_tail_mode == "added-condition":
+        persona_tail = "你还必须先把天线修好。"
+    elif persona_tail_mode == "topic-drift":
+        persona_tail = "食物和药品也归我安排。"
     return (
         "npc_line",
         {
-            "npc_line": npc_line,
+            "persona_tail": persona_tail,
             "emotion": emotion[:32],
             "used_action_id": action_id[:64],
             "referenced_fact_ids": [],
@@ -257,7 +288,7 @@ class Handler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(length).decode("utf-8"))
             if not isinstance(request, dict):
                 raise ValueError("request must be an object")
-            kind, content = build_mock_content(request)
+            kind, content = build_mock_content(request, server.config.persona_tail_mode)
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
             self._write_json(400, {"error": {"type": "invalid_request"}})
             return
@@ -323,6 +354,11 @@ def build_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--malformed-content", action="store_true")
     parser.add_argument("--extra-field", action="store_true")
     parser.add_argument(
+        "--persona-tail-mode",
+        default="valid",
+        choices=("valid", "empty", "added-condition", "topic-drift"),
+    )
+    parser.add_argument(
         "--finish-reason",
         default="stop",
         choices=(
@@ -365,6 +401,7 @@ def run_from_cli(description: str) -> int:
             finish_reason=args.finish_reason,
             malformed_content=args.malformed_content,
             extra_field=args.extra_field,
+            persona_tail_mode=args.persona_tail_mode,
         ),
         audit_path=args.audit,
     )

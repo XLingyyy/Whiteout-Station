@@ -38,8 +38,9 @@ struct FWSLLMProviderPreset
 
 struct FWSAgentDialogueTurn
 {
-	FString UserContextJson;
-	FString AssistantPayloadJson;
+	FString UserSemanticSummaryJson;
+	FString AssistantSemanticSummaryJson;
+	FName TopicActionId;
 };
 
 UCLASS()
@@ -167,10 +168,12 @@ private:
 		const FWSGameState& State,
 		const FWSActionRequest& ActionRequest) const;
 	static FString BuildHistoryAssistantJson(const FWSAgentReply& Reply);
+	static FString BuildHistoryUserJson(
+		const FWSActionRequest& ActionRequest,
+		bool bTopicChanged);
 	void RecordDialogueTurn(
 		const FWSActionRequest& ActionRequest,
-		const FString& UserContextJson,
-		const FString& AssistantPayloadJson);
+		const FWSAgentReply& Reply);
 	static bool HasPromiseKeyword(const FString& UserText, FName PromiseCondition);
 	static FString IntentResultJson(const FWSDialogueIntentResult& Intent);
 	void UntrackRequest(const TSharedPtr<IHttpRequest, ESPMode::ThreadSafe>& Request);
@@ -187,5 +190,11 @@ private:
 		double ElapsedMilliseconds,
 		const FString& Outcome,
 		int32 PromptTokens = -1,
-		int32 CompletionTokens = -1);
+		int32 CompletionTokens = -1,
+		const FString& SemanticSource = FString(),
+		EWSDialogueQueryType QueryType = EWSDialogueQueryType::Unknown,
+		FName TargetActionId = NAME_None,
+		const FString& SpineSha256 = FString(),
+		const FString& TailOutcome = FString(),
+		const FString& FinalAnswerSource = FString());
 };

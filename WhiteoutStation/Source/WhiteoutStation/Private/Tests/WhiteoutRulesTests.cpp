@@ -511,39 +511,41 @@ bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
 
 	FWSAgentReply ModelReply;
 	FString Reason;
-	const FString ValidPayload = TEXT("{\"npc_line\":\"手伤还在，先处理低温。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HAND_INJURY\"],\"movement_intent\":\"step_closer\",\"reaction_action\":\"consider\"}");
+	const FString ValidPayload = TEXT("{\"persona_tail\":\"我听见了。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HAND_INJURY\"],\"movement_intent\":\"step_closer\",\"reaction_action\":\"consider\"}");
 	TestTrue(
 		TEXT("Schema-valid expression is accepted"),
 		UWSAgentGateway::ValidateModelPayload(ValidPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestFalse(TEXT("Accepted model line is not marked fallback"), ModelReply.bFallback);
+	TestTrue(TEXT("Accepted tail keeps deterministic spine"), ModelReply.Utterance.StartsWith(Decision.SemanticSpine));
+	TestEqual(TEXT("Accepted tail records answer source"), ModelReply.AnswerSource, FString(TEXT("spine_plus_ai")));
 	TestEqual(TEXT("Movement intent is constrained"), ModelReply.MovementIntent, EWSNPCMovementIntent::StepCloser);
 	TestEqual(TEXT("Reaction action is constrained"), ModelReply.Reaction, EWSNPCReaction::Consider);
 
-	const FString MutationPayload = TEXT("{\"npc_line\":\"修好了。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"neutral\",\"ap_delta\":2}");
+	const FString MutationPayload = TEXT("{\"persona_tail\":\"修好了。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"neutral\",\"ap_delta\":2}");
 	TestFalse(
 		TEXT("State mutation field is rejected"),
 		UWSAgentGateway::ValidateModelPayload(MutationPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestEqual(TEXT("Mutation rejection is explicit"), Reason, FString(TEXT("unexpected_field_count")));
 
-	const FString LeakPayload = TEXT("{\"npc_line\":\"保温包在柜底。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HEAT_PACK\"],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
+	const FString LeakPayload = TEXT("{\"persona_tail\":\"保温包在柜底。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HEAT_PACK\"],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
 	TestFalse(
 		TEXT("Unauthorized fact citation is rejected"),
 		UWSAgentGateway::ValidateModelPayload(LeakPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestEqual(TEXT("Leak rejection is explicit"), Reason, FString(TEXT("fact_permission_violation")));
 
-	const FString UntaggedLeakPayload = TEXT("{\"npc_line\":\"柜底还有保温包。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
+	const FString UntaggedLeakPayload = TEXT("{\"persona_tail\":\"柜底还有保温包。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
 	TestFalse(
 		TEXT("Untagged protected claim is rejected"),
 		UWSAgentGateway::ValidateModelPayload(UntaggedLeakPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestTrue(TEXT("Semantic leak identifies protected fact"), Reason.StartsWith(TEXT("semantic_fact_permission_violation:FACT_HEAT_PACK")));
 
-	const FString InvalidMovementPayload = TEXT("{\"npc_line\":\"我过去看看。\",\"emotion\":\"focused\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"walk_anywhere\",\"reaction_action\":\"acknowledge\"}");
+	const FString InvalidMovementPayload = TEXT("{\"persona_tail\":\"我过去看看。\",\"emotion\":\"focused\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"walk_anywhere\",\"reaction_action\":\"acknowledge\"}");
 	TestFalse(
 		TEXT("Unbounded movement command is rejected"),
 		UWSAgentGateway::ValidateModelPayload(InvalidMovementPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestEqual(TEXT("Movement rejection is explicit"), Reason, FString(TEXT("invalid_movement_intent")));
 
-	const FString InvalidReactionPayload = TEXT("{\"npc_line\":\"我听见了。\",\"emotion\":\"focused\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"attack_player\"}");
+	const FString InvalidReactionPayload = TEXT("{\"persona_tail\":\"我听见了。\",\"emotion\":\"focused\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"attack_player\"}");
 	TestFalse(
 		TEXT("Unbounded reaction command is rejected"),
 		UWSAgentGateway::ValidateModelPayload(InvalidReactionPayload, Decision, AllowedFacts, ModelReply, Reason));
@@ -551,11 +553,23 @@ bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
 
 	FWSAgentReply NonDialogueDecision = Decision;
 	NonDialogueDecision.ActionId = TEXT("inspect_control_cabinet");
-	const FString NonDialogueMovementPayload = TEXT("{\"npc_line\":\"我过去看看。\",\"emotion\":\"focused\",\"used_action_id\":\"inspect_control_cabinet\",\"referenced_fact_ids\":[],\"movement_intent\":\"step_back\",\"reaction_action\":\"acknowledge\"}");
+	const FString NonDialogueMovementPayload = TEXT("{\"persona_tail\":\"我过去看看。\",\"emotion\":\"focused\",\"used_action_id\":\"inspect_control_cabinet\",\"referenced_fact_ids\":[],\"movement_intent\":\"step_back\",\"reaction_action\":\"acknowledge\"}");
 	TestFalse(
 		TEXT("Non-dialogue expression cannot move an NPC"),
 		UWSAgentGateway::ValidateModelPayload(NonDialogueMovementPayload, NonDialogueDecision, {}, ModelReply, Reason));
 	TestEqual(TEXT("Context movement rejection is explicit"), Reason, FString(TEXT("movement_not_allowed")));
+
+	FWSAgentReply GroundedDecision = Decision;
+	GroundedDecision.AnswerContract.QueryType = EWSDialogueQueryType::Requirements;
+	GroundedDecision.SemanticSpine = TEXT("你得在旁搭手。维修间升温或准备可靠替代件。");
+	GroundedDecision.Utterance = GroundedDecision.SemanticSpine;
+	const FString AddedConditionPayload = TEXT("{\"persona_tail\":\"你还必须先把天线修好。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
+	TestTrue(
+		TEXT("Relevant-schema tail with a new condition degrades safely"),
+		UWSAgentGateway::ValidateModelPayload(AddedConditionPayload, GroundedDecision, AllowedFacts, ModelReply, Reason));
+	TestTrue(TEXT("New-condition tail is dropped"), ModelReply.bFallback);
+	TestEqual(TEXT("Dropped tail returns spine only"), ModelReply.Utterance, GroundedDecision.SemanticSpine);
+	TestEqual(TEXT("New-condition reason is stable"), Reason, FString(TEXT("persona_tail_added_condition")));
 
 	struct FIntentSample
 	{
@@ -610,24 +624,24 @@ bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Local intent accuracy is at least 90%"), IntentAccuracy >= 0.90f);
 
 	FWSDialogueIntentResult StrictIntent;
-	const FString ValidIntentPayload = TEXT("{\"intent\":\"promise\",\"promise_condition\":\"heat_repair_room\",\"confidence\":0.94}");
+	const FString ValidIntentPayload = TEXT("{\"speech_act\":\"promise\",\"query_type\":\"requirements\",\"target_action_id\":\"repair_generator\",\"target_fact_id\":\"none\",\"target_character\":\"gu_heng\",\"confidence\":0.94}");
 	TestTrue(
 		TEXT("Strict online intent schema is accepted"),
 		UWSAgentGateway::ValidateIntentPayload(ValidIntentPayload, TEXT("我保证配合修复"), StrictIntent, Reason));
 	TestTrue(TEXT("Online promise retains whitelisted condition"), StrictIntent.PromiseCondition == TEXT("heat_repair_room"));
-	const FString MutationIntentPayload = TEXT("{\"intent\":\"ask\",\"promise_condition\":\"none\",\"confidence\":0.9,\"state_changes\":{}}");
+	const FString MutationIntentPayload = TEXT("{\"speech_act\":\"ask\",\"query_type\":\"unknown\",\"target_action_id\":\"none\",\"target_fact_id\":\"none\",\"target_character\":\"gu_heng\",\"confidence\":0.9,\"state_changes\":{}}");
 	TestFalse(
 		TEXT("Unexpected state field is rejected from intent payload"),
 		UWSAgentGateway::ValidateIntentPayload(MutationIntentPayload, TEXT("发生了什么？"), StrictIntent, Reason));
 	TestEqual(TEXT("Strict schema rejects extra field"), Reason, FString(TEXT("unexpected_field")));
-	const FString PromiseWithoutKeyword = TEXT("{\"intent\":\"promise\",\"promise_condition\":\"keep_records\",\"confidence\":0.9}");
+	const FString PromiseWithoutKeyword = TEXT("{\"speech_act\":\"promise\",\"query_type\":\"unknown\",\"target_action_id\":\"none\",\"target_fact_id\":\"none\",\"target_character\":\"gu_heng\",\"confidence\":0.9}");
 	TestFalse(
 		TEXT("Promise requires model intent and local keyword"),
 		UWSAgentGateway::ValidateIntentPayload(PromiseWithoutKeyword, TEXT("天气真冷"), StrictIntent, Reason));
 	TestEqual(TEXT("Promise dual-check rejection is explicit"), Reason, FString(TEXT("promise_dual_check_failed")));
 
 	FString ExtractedContent;
-	const FString MockEnvelope = TEXT("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"{\\\"intent\\\":\\\"ask\\\",\\\"promise_condition\\\":\\\"none\\\",\\\"confidence\\\":0.91}\"}}]}");
+	const FString MockEnvelope = TEXT("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"{\\\"speech_act\\\":\\\"ask\\\",\\\"query_type\\\":\\\"unknown\\\",\\\"target_action_id\\\":\\\"none\\\",\\\"target_fact_id\\\":\\\"none\\\",\\\"target_character\\\":\\\"gu_heng\\\",\\\"confidence\\\":0.91}\"}}]}");
 	TestTrue(TEXT("OpenAI-compatible mock envelope is unwrapped"), UWSAgentGateway::ExtractProviderContent(MockEnvelope, ExtractedContent, Reason));
 	TestTrue(TEXT("Unwrapped mock intent validates"), UWSAgentGateway::ValidateIntentPayload(ExtractedContent, TEXT("发生了什么？"), StrictIntent, Reason));
 	const FString TruncatedEnvelope = TEXT("{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"content\":\"{}\"}}]}");
@@ -664,7 +678,7 @@ bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
 				OfflineIntent = Result;
 			}));
 	TestTrue(TEXT("No-key path completes synchronously without a provider"), bOfflineCallbackRan);
-	TestTrue(TEXT("No-key path falls back to the local dictionary"), OfflineIntent.Source == TEXT("local_dictionary"));
+	TestTrue(TEXT("No-key path uses the local semantic frame"), OfflineIntent.Source == TEXT("local_semantic_frame"));
 	TestTrue(TEXT("No-key path preserves the whitelisted promise mapping"),
 		OfflineIntent.bMapped
 			&& OfflineIntent.DialogueAct == EWSDialogueAct::Promise

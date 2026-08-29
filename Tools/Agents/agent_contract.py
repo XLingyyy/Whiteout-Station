@@ -14,7 +14,7 @@ OFFICIAL_ENDPOINT = "https://api.deepseek.com/chat/completions"
 MAX_RESPONSE_BYTES = 64 * 1024
 NPC_RESPONSE_FIELDS = frozenset(
     {
-        "npc_line",
+        "persona_tail",
         "emotion",
         "used_action_id",
         "referenced_fact_ids",
@@ -52,7 +52,7 @@ class EndpointPolicy:
 
 @dataclass(frozen=True)
 class NPCResponse:
-    npc_line: str
+    persona_tail: str
     emotion: str
     used_action_id: str
     referenced_fact_ids: tuple[str, ...]
@@ -105,7 +105,7 @@ def build_request_payload(action_id: str = "probe_availability") -> dict[str, An
     """Build the exact non-thinking JSON request used by the probe."""
 
     example = {
-        "npc_line": "联调响应正常。",
+        "persona_tail": "联调响应正常。",
         "emotion": "focused",
         "used_action_id": action_id,
         "referenced_fact_ids": [],
@@ -113,8 +113,9 @@ def build_request_payload(action_id: str = "probe_availability") -> dict[str, An
         "reaction_action": "neutral",
     }
     system_prompt = (
-        "Return exactly one JSON object and no markdown. The JSON must contain "
-        "exactly six fields: npc_line string, emotion string, used_action_id "
+        "Return exactly one JSON object and no markdown. The semantic_spine is "
+        "immutable and must not be rewritten. The JSON must contain exactly six "
+        "fields: persona_tail string with at most 48 characters, emotion string, used_action_id "
         "string equal to the supplied action_id, referenced_fact_ids string "
         "array, movement_intent enum, and reaction_action enum. Do not add facts "
         "or coordinates. Example JSON: "
@@ -122,7 +123,10 @@ def build_request_payload(action_id: str = "probe_availability") -> dict[str, An
     )
     user_prompt = json.dumps(
         {
+            "protocol_version": "dialogue_grounding_v2",
+            "prompt_mode": "semantic_spine_plus_persona_tail",
             "action_id": action_id,
+            "semantic_spine": "联调语义骨架。",
             "allowed_fact_ids": [],
             "allowed_movement_intents": ["stay"],
             "allowed_reaction_actions": ["neutral"],
@@ -137,7 +141,7 @@ def build_request_payload(action_id: str = "probe_availability") -> dict[str, An
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0,
-        "max_tokens": 160,
+        "max_tokens": 128,
         "stream": False,
         "thinking": {"type": "disabled"},
         "response_format": {"type": "json_object"},
@@ -260,15 +264,15 @@ def validate_completion(
             raise ContractError("content_missing_field")
         raise ContractError("content_unknown_field")
 
-    npc_line = response["npc_line"]
+    persona_tail = response["persona_tail"]
     emotion = response["emotion"]
     used_action_id = response["used_action_id"]
     movement_intent = response["movement_intent"]
     reaction_action = response["reaction_action"]
-    if not isinstance(npc_line, str) or not npc_line.strip():
-        raise ContractError("npc_line_invalid")
-    if len(npc_line) > 240:
-        raise ContractError("npc_line_too_long")
+    if not isinstance(persona_tail, str):
+        raise ContractError("persona_tail_invalid")
+    if len(persona_tail.strip()) > 48 or "\n" in persona_tail or "\r" in persona_tail:
+        raise ContractError("persona_tail_invalid_length")
     if not isinstance(emotion, str) or not emotion.strip() or len(emotion) > 32:
         raise ContractError("emotion_invalid")
     if (
@@ -289,7 +293,7 @@ def validate_completion(
         allowed_fact_ids,
     )
     return NPCResponse(
-        npc_line=npc_line.strip(),
+        persona_tail=persona_tail.strip(),
         emotion=emotion.strip(),
         used_action_id=used_action_id,
         referenced_fact_ids=referenced_fact_ids,

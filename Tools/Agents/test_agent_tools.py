@@ -39,7 +39,7 @@ from probe_deepseek import (
 
 def valid_content(action_id: str = ACTION_ID) -> dict[str, object]:
     return {
-        "npc_line": "联调响应正常。",
+        "persona_tail": "联调响应正常。",
         "emotion": "focused",
         "used_action_id": action_id,
         "referenced_fact_ids": [],
@@ -208,7 +208,7 @@ def test_valid_completion_is_accepted() -> None:
         encoded_envelope(),
         expected_action_id=ACTION_ID,
     )
-    assert response.npc_line == "联调响应正常。"
+    assert response.persona_tail == "联调响应正常。"
     assert response.used_action_id == ACTION_ID
     assert response.referenced_fact_ids == ()
     assert response.movement_intent == "stay"
@@ -264,6 +264,25 @@ def test_action_and_fact_guards_are_strict() -> None:
     assert_contract_error(
         "referenced_fact_not_allowed",
         encoded_envelope(unauthorized_fact),
+    )
+
+
+def test_empty_persona_tail_is_valid_spine_only_output() -> None:
+    content = valid_content()
+    content["persona_tail"] = ""
+    response = validate_completion(
+        encoded_envelope(content),
+        expected_action_id=ACTION_ID,
+    )
+    assert response.persona_tail == ""
+
+
+def test_persona_tail_is_limited_to_48_characters() -> None:
+    content = valid_content()
+    content["persona_tail"] = "尾" * 49
+    assert_contract_error(
+        "persona_tail_invalid_length",
+        encoded_envelope(content),
     )
 
 
@@ -360,7 +379,7 @@ def test_probe_does_not_retry_non_retryable_status() -> None:
         (
             encoded_envelope(
                 {
-                    "npc_line": "缺字段。",
+                    "persona_tail": "缺字段。",
                     "emotion": "focused",
                     "used_action_id": ACTION_ID,
                 }
@@ -454,7 +473,7 @@ def test_mock_selects_constrained_performance(
     context = {
         "action_id": "talk_gu_heng",
         "emotion": "focused",
-        "preset_utterance": "我听见了。",
+        "semantic_spine": "我听见了。",
         "preset_movement_intent": "stay",
         "preset_reaction_action": "neutral",
         "player_said": player_said,
@@ -468,6 +487,7 @@ def test_mock_selects_constrained_performance(
         }
     )
     assert kind == "npc_line"
+    assert content["persona_tail"] == "【mock】我听见了。"
     assert content["movement_intent"] == movement
     assert content["reaction_action"] == reaction
 

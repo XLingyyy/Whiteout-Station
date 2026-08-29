@@ -248,6 +248,68 @@ namespace
 		return Converted.Length();
 	}
 
+	FString Sha256Hex(const FString& Text)
+	{
+		const FTCHARToUTF8 Converted(*Text);
+		FSHA256Signature Signature{};
+		return FPlatformMisc::GetSHA256Signature(
+			Converted.Get(),
+			static_cast<uint32>(Converted.Length()),
+			Signature)
+			? Signature.ToString()
+			: FString();
+	}
+
+	FString NormalizeDialogueFragment(FString Text)
+	{
+		Text = Text.TrimStartAndEnd().ToLower();
+		for (const FString& Mark : {
+			FString(TEXT("。")), FString(TEXT("，")), FString(TEXT("！")), FString(TEXT("？")),
+			FString(TEXT(".")), FString(TEXT(",")), FString(TEXT("!")), FString(TEXT("?")), FString(TEXT(" "))})
+		{
+			Text.ReplaceInline(*Mark, TEXT(""), ESearchCase::CaseSensitive);
+		}
+		return Text;
+	}
+
+	bool ShouldDropPersonaTail(
+		const FString& PersonaTail,
+		const FWSAgentReply& Decision,
+		FString& OutReason)
+	{
+		if (PersonaTail.IsEmpty())
+		{
+			OutReason = TEXT("persona_tail_empty");
+			return true;
+		}
+		const FString NormalizedTail = NormalizeDialogueFragment(PersonaTail);
+		const FString NormalizedSpine = NormalizeDialogueFragment(Decision.SemanticSpine);
+		if (NormalizedTail.Len() >= 3 && NormalizedSpine.Contains(NormalizedTail))
+		{
+			OutReason = TEXT("persona_tail_duplicate");
+			return true;
+		}
+		if (Decision.AnswerContract.QueryType == EWSDialogueQueryType::Requirements
+			&& ContainsAny(PersonaTail, {
+				TEXT("必须"), TEXT("需要你"), TEXT("你得"), TEXT("先把"), TEXT("条件是"),
+				TEXT("只要"), TEXT("除非"), TEXT("否则"), TEXT("要么"), TEXT("才会") }))
+		{
+			OutReason = TEXT("persona_tail_added_condition");
+			return true;
+		}
+		for (const FString& Topic : {
+			FString(TEXT("天线")), FString(TEXT("信号")), FString(TEXT("食物")),
+			FString(TEXT("药品")), FString(TEXT("医务室")), FString(TEXT("厨房")), FString(TEXT("日志"))})
+		{
+			if (PersonaTail.Contains(Topic) && !Decision.SemanticSpine.Contains(Topic))
+			{
+				OutReason = TEXT("persona_tail_topic_drift");
+				return true;
+			}
+		}
+		return false;
+	}
+
 	FString MovementIntentToken(const EWSNPCMovementIntent Intent)
 	{
 		switch (Intent)
@@ -738,14 +800,9 @@ void UWSAgentGateway::RequestExpression(
 		RequirementReport);
 	const TArray<FName> AllowedFacts =
 		UWSNPCDecisionService::BuildAllowedFacts(ActionRequest.ActionId, Decision.Speaker, State);
-	const FString UserContextJson =
-		BuildExpressionContextJson(Decision, AllowedFacts, State, ActionRequest);
 	if (!bAllowLiveProvider || !HasLiveProvider())
 	{
-		RecordDialogueTurn(
-			ActionRequest,
-			UserContextJson,
-			BuildHistoryAssistantJson(Decision));
+		RecordDialogueTurn(ActionRequest, Decision);
 		Completion.ExecuteIfBound(Decision);
 		return;
 	}
@@ -754,10 +811,7 @@ void UWSAgentGateway::RequestExpression(
 		FWSAgentReply Fallback = Decision;
 		Fallback.Provider = ProviderName;
 		Fallback.ValidationReason = TEXT("retry_manager_unavailable");
-		RecordDialogueTurn(
-			ActionRequest,
-			UserContextJson,
-			BuildHistoryAssistantJson(Fallback));
+		RecordDialogueTurn(ActionRequest, Fallback);
 		Completion.ExecuteIfBound(Fallback);
 		return;
 	}
@@ -767,6 +821,8 @@ void UWSAgentGateway::RequestExpression(
 	const FGuid RequestId = FGuid::NewGuid();
 	const uint64 RequestGeneration = SessionGeneration;
 	const EWSDialogueAct AuditDialogueAct = ActionRequest.DialogueAct;
+	const FString SpineHash = Sha256Hex(
+		Decision.SemanticSpine.IsEmpty() ? Decision.Utterance : Decision.SemanticSpine);
 	const double StartedAt = FPlatformTime::Seconds();
 	const int64 RequestBytes = Utf8Bytes(RequestJson);
 	const FHttpRetrySystem::FRetryResponseCodes RetryCodes = {429, 500, 503};
@@ -802,7 +858,7 @@ void UWSAgentGateway::RequestExpression(
 	Request->SetContentAsString(RequestJson);
 	TWeakObjectPtr<UWSAgentGateway> WeakThis(this);
 	Request->OnProcessRequestComplete().BindLambda(
-		[WeakThis, Decision, AllowedFacts, ActionRequest, UserContextJson, Completion, RequestId, RequestGeneration, AuditDialogueAct, StartedAt, RequestBytes, AuditProvider](
+		[WeakThis, Decision, AllowedFacts, ActionRequest, Completion, RequestId, RequestGeneration, AuditDialogueAct, SpineHash, StartedAt, RequestBytes, AuditProvider](
 			FHttpRequestPtr CompletedRequest,
 			FHttpResponsePtr Response,
 			const bool bSucceeded)
@@ -844,10 +900,16 @@ void UWSAgentGateway::RequestExpression(
 					RequestBytes,
 					ResponseBytes,
 					ElapsedMilliseconds,
-					TEXT("accepted"),
+					Reply.bFallback ? TEXT("persona_tail_dropped") : TEXT("accepted"),
 					PromptTokens,
-					CompletionTokens);
-				Gateway->RecordDialogueTurn(ActionRequest, UserContextJson, ModelPayload);
+					CompletionTokens,
+					ActionRequest.SemanticFrame.Source,
+					ActionRequest.SemanticFrame.QueryType,
+					ActionRequest.SemanticFrame.TargetActionId,
+					SpineHash,
+					Reply.ValidationReason,
+					Reply.AnswerSource);
+				Gateway->RecordDialogueTurn(ActionRequest, Reply);
 				Completion.ExecuteIfBound(Reply);
 				return;
 			}
@@ -867,11 +929,14 @@ void UWSAgentGateway::RequestExpression(
 				ElapsedMilliseconds,
 				Fallback.ValidationReason,
 				PromptTokens,
-				CompletionTokens);
-			Gateway->RecordDialogueTurn(
-				ActionRequest,
-				UserContextJson,
-				BuildHistoryAssistantJson(Fallback));
+				CompletionTokens,
+				ActionRequest.SemanticFrame.Source,
+				ActionRequest.SemanticFrame.QueryType,
+				ActionRequest.SemanticFrame.TargetActionId,
+				SpineHash,
+				Fallback.ValidationReason,
+				Fallback.AnswerSource);
+			Gateway->RecordDialogueTurn(ActionRequest, Fallback);
 			Completion.ExecuteIfBound(Fallback);
 		});
 	ActiveRequests.Add(Request);
@@ -892,11 +957,16 @@ void UWSAgentGateway::RequestExpression(
 			RequestBytes,
 			0,
 			(FPlatformTime::Seconds() - StartedAt) * 1000.0,
-			Fallback.ValidationReason);
-		RecordDialogueTurn(
-			ActionRequest,
-			UserContextJson,
-			BuildHistoryAssistantJson(Fallback));
+			Fallback.ValidationReason,
+			-1,
+			-1,
+			ActionRequest.SemanticFrame.Source,
+			ActionRequest.SemanticFrame.QueryType,
+			ActionRequest.SemanticFrame.TargetActionId,
+			SpineHash,
+			Fallback.ValidationReason,
+			Fallback.AnswerSource);
+		RecordDialogueTurn(ActionRequest, Fallback);
 		Completion.ExecuteIfBound(Fallback);
 	}
 }
@@ -1107,7 +1177,7 @@ bool UWSAgentGateway::ValidateModelPayload(
 		return false;
 	}
 	const TSet<FString> AllowedFields = {
-		TEXT("npc_line"),
+		TEXT("persona_tail"),
 		TEXT("emotion"),
 		TEXT("used_action_id"),
 		TEXT("referenced_fact_ids"),
@@ -1127,12 +1197,12 @@ bool UWSAgentGateway::ValidateModelPayload(
 		}
 	}
 
-	FString Utterance;
+	FString PersonaTail;
 	FString Emotion;
 	FString UsedActionId;
 	FString MovementIntent;
 	FString ReactionAction;
-	if (!Root->TryGetStringField(TEXT("npc_line"), Utterance)
+	if (!Root->TryGetStringField(TEXT("persona_tail"), PersonaTail)
 		|| !Root->TryGetStringField(TEXT("emotion"), Emotion)
 		|| !Root->TryGetStringField(TEXT("used_action_id"), UsedActionId)
 		|| !Root->TryGetStringField(TEXT("movement_intent"), MovementIntent)
@@ -1141,11 +1211,16 @@ bool UWSAgentGateway::ValidateModelPayload(
 		OutReason = TEXT("missing_required_field");
 		return false;
 	}
-	Utterance = Utterance.TrimStartAndEnd();
+	PersonaTail = PersonaTail.TrimStartAndEnd();
 	Emotion = Emotion.TrimStartAndEnd();
 	UsedActionId = UsedActionId.TrimStartAndEnd();
 	MovementIntent = MovementIntent.TrimStartAndEnd();
 	ReactionAction = ReactionAction.TrimStartAndEnd();
+	if (PersonaTail.Len() > 48 || PersonaTail.Contains(TEXT("\n")) || PersonaTail.Contains(TEXT("\r")))
+	{
+		OutReason = TEXT("persona_tail_invalid_length");
+		return false;
+	}
 	if (Emotion.IsEmpty() || Emotion.Len() > 32)
 	{
 		OutReason = TEXT("invalid_emotion");
@@ -1194,19 +1269,30 @@ bool UWSAgentGateway::ValidateModelPayload(
 		ReferencedFacts.AddUnique(FName(FactString.TrimStartAndEnd()));
 	}
 
-	if (!FWhiteoutRulesEngine::ValidateAgentResponse(Utterance, ReferencedFacts, AllowedFactIds, false, OutReason))
+	const FString SemanticSpine = Decision.SemanticSpine.IsEmpty()
+		? Decision.Utterance
+		: Decision.SemanticSpine;
+	const FString FinalLine = PersonaTail.IsEmpty()
+		? SemanticSpine
+		: FString::Printf(TEXT("%s %s"), *SemanticSpine, *PersonaTail);
+	TArray<FName> CombinedFacts = Decision.ReferencedFactIds;
+	for (const FName FactId : ReferencedFacts)
+	{
+		CombinedFacts.AddUnique(FactId);
+	}
+	if (!FWhiteoutRulesEngine::ValidateAgentResponse(FinalLine, CombinedFacts, AllowedFactIds, false, OutReason))
 	{
 		return false;
 	}
 	FString UnauthorizedFactId;
-	if (WhiteoutAgentValidation::ContainsProtectedUnauthorizedClaim(Utterance, AllowedFactIds, UnauthorizedFactId))
+	if (WhiteoutAgentValidation::ContainsProtectedUnauthorizedClaim(PersonaTail, AllowedFactIds, UnauthorizedFactId))
 	{
 		OutReason = FString::Printf(TEXT("semantic_fact_permission_violation:%s"), *UnauthorizedFactId);
 		return false;
 	}
 	for (const FName FactId : AllowedFactIds)
 	{
-		if (Utterance.Contains(FactId.ToString(), ESearchCase::IgnoreCase) && !ReferencedFacts.Contains(FactId))
+		if (PersonaTail.Contains(FactId.ToString(), ESearchCase::IgnoreCase) && !ReferencedFacts.Contains(FactId))
 		{
 			OutReason = TEXT("uncited_fact_reference");
 			return false;
@@ -1214,14 +1300,27 @@ bool UWSAgentGateway::ValidateModelPayload(
 	}
 
 	OutReply = Decision;
-	OutReply.Utterance = Utterance;
 	OutReply.Emotion = Emotion;
-	OutReply.ReferencedFactIds = ReferencedFacts;
+	OutReply.ReferencedFactIds = CombinedFacts;
 	OutReply.MovementIntent = ParsedMovement;
 	OutReply.Reaction = ParsedReaction;
+	FString DropReason;
+	if (ShouldDropPersonaTail(PersonaTail, Decision, DropReason))
+	{
+		OutReply.Utterance = SemanticSpine;
+		OutReply.PersonaTail.Reset();
+		OutReply.AnswerSource = TEXT("spine_only");
+		OutReply.bFallback = true;
+		OutReply.ValidationReason = DropReason;
+		OutReason = DropReason;
+		return true;
+	}
+	OutReply.Utterance = FinalLine;
+	OutReply.PersonaTail = PersonaTail;
+	OutReply.AnswerSource = TEXT("spine_plus_ai");
 	OutReply.bFallback = false;
-	OutReply.ValidationReason = TEXT("ok");
-	OutReason = TEXT("ok");
+	OutReply.ValidationReason = TEXT("persona_tail_accepted");
+	OutReason = TEXT("persona_tail_accepted");
 	return true;
 }
 
@@ -1413,6 +1512,7 @@ bool UWSAgentGateway::ValidateIntentPayload(
 	const FName CurrentDialogueActionId,
 	const FName CurrentTopicActionId)
 {
+	OutIntent = FWSDialogueIntentResult();
 	TSharedPtr<FJsonObject> Root;
 	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Payload);
 	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
@@ -1752,7 +1852,13 @@ void UWSAgentGateway::AppendAuditRecord(
 	const double ElapsedMilliseconds,
 	const FString& Outcome,
 	const int32 PromptTokens,
-	const int32 CompletionTokens)
+	const int32 CompletionTokens,
+	const FString& SemanticSource,
+	const EWSDialogueQueryType QueryType,
+	const FName TargetActionId,
+	const FString& SpineSha256,
+	const FString& TailOutcome,
+	const FString& FinalAnswerSource)
 {
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("timestamp_utc"), FDateTime::UtcNow().ToIso8601());
@@ -1772,6 +1878,29 @@ void UWSAgentGateway::AppendAuditRecord(
 	Root->SetNumberField(TEXT("transport_attempt_limit"), 2);
 	Root->SetNumberField(TEXT("session_generation"), static_cast<double>(SessionGeneration));
 	Root->SetStringField(TEXT("outcome"), Outcome);
+	if (!SemanticSource.IsEmpty())
+	{
+		Root->SetStringField(TEXT("semantic_source"), SemanticSource);
+		Root->SetStringField(
+			TEXT("query_type"),
+			StaticEnum<EWSDialogueQueryType>()->GetNameStringByValue(
+				static_cast<int64>(QueryType)));
+		Root->SetStringField(
+			TEXT("target_action_id"),
+			TargetActionId.IsNone() ? TEXT("none") : TargetActionId.ToString());
+	}
+	if (!SpineSha256.IsEmpty())
+	{
+		Root->SetStringField(TEXT("semantic_spine_sha256"), SpineSha256);
+	}
+	if (!TailOutcome.IsEmpty())
+	{
+		Root->SetStringField(TEXT("tail_outcome"), TailOutcome);
+	}
+	if (!FinalAnswerSource.IsEmpty())
+	{
+		Root->SetStringField(TEXT("final_answer_source"), FinalAnswerSource);
+	}
 	if (PromptTokens >= 0)
 	{
 		Root->SetNumberField(TEXT("prompt_tokens"), PromptTokens);
@@ -1817,7 +1946,11 @@ void UWSAgentGateway::LoadConfig()
 	TimeoutSeconds = 8.0f;
 
 	FString JsonText;
-	FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.1.json");
+	FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.2.json");
+	if (!FPaths::FileExists(ConfigPath))
+	{
+		ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.1.json");
+	}
 	if (!FPaths::FileExists(ConfigPath))
 	{
 		ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.0.json");
@@ -1992,11 +2125,25 @@ FString UWSAgentGateway::BuildExpressionContextJson(
 	const FWSActionRequest& ActionRequest) const
 {
 	TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
+	Context->SetStringField(TEXT("protocol_version"), TEXT("dialogue_grounding_v2"));
+	Context->SetStringField(TEXT("prompt_mode"), TEXT("semantic_spine_plus_persona_tail"));
 	Context->SetStringField(TEXT("speaker"), UWSNPCDecisionService::SpeakerLabel(Decision.Speaker));
 	Context->SetStringField(TEXT("action_id"), Decision.ActionId.ToString());
 	Context->SetStringField(TEXT("response_type"), StaticEnum<EWSResponseType>()->GetNameStringByValue(static_cast<int64>(Decision.ResponseType)));
 	Context->SetStringField(TEXT("emotion"), Decision.Emotion);
-	Context->SetStringField(TEXT("preset_utterance"), Decision.Utterance);
+	Context->SetStringField(
+		TEXT("semantic_spine"),
+		Decision.SemanticSpine.IsEmpty() ? Decision.Utterance : Decision.SemanticSpine);
+	Context->SetStringField(TEXT("semantic_source"), ActionRequest.SemanticFrame.Source);
+	Context->SetStringField(
+		TEXT("query_type"),
+		StaticEnum<EWSDialogueQueryType>()->GetNameStringByValue(
+			static_cast<int64>(ActionRequest.SemanticFrame.QueryType)));
+	Context->SetStringField(
+		TEXT("target_action_id"),
+		ActionRequest.SemanticFrame.TargetActionId.IsNone()
+			? TEXT("none")
+			: ActionRequest.SemanticFrame.TargetActionId.ToString());
 	Context->SetStringField(TEXT("preset_movement_intent"), MovementIntentToken(Decision.MovementIntent));
 	Context->SetStringField(TEXT("preset_reaction_action"), ReactionToken(Decision.Reaction));
 	Context->SetStringField(
@@ -2006,7 +2153,19 @@ FString UWSAgentGateway::BuildExpressionContextJson(
 		TEXT("promise_condition"),
 		ActionRequest.PromiseCondition.IsNone() ? TEXT("none") : ActionRequest.PromiseCondition.ToString());
 	Context->SetStringField(TEXT("player_said"), ActionRequest.PlayerSaid.TrimStartAndEnd().Left(280));
-	Context->SetNumberField(TEXT("remaining_ap_context_only"), State.ActionPoints);
+	(void)State;
+	TArray<TSharedPtr<FJsonValue>> MustCoverConditions;
+	for (const FName ConditionId : Decision.AnswerContract.MustCoverConditionIds)
+	{
+		MustCoverConditions.Add(MakeShared<FJsonValueString>(ConditionId.ToString()));
+	}
+	Context->SetArrayField(TEXT("must_cover_condition_ids"), MustCoverConditions);
+	TArray<TSharedPtr<FJsonValue>> CoveredConditions;
+	for (const FName ConditionId : Decision.CoveredConditionIds)
+	{
+		CoveredConditions.Add(MakeShared<FJsonValueString>(ConditionId.ToString()));
+	}
+	Context->SetArrayField(TEXT("covered_condition_ids"), CoveredConditions);
 	TArray<TSharedPtr<FJsonValue>> MovementActions;
 	MovementActions.Add(MakeShared<FJsonValueString>(TEXT("stay")));
 	if (Decision.ActionId == TEXT("talk_gu_heng") || Decision.ActionId == TEXT("talk_ye_cheng"))
@@ -2048,7 +2207,7 @@ FString UWSAgentGateway::BuildRequestJson(
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("model"), ModelName);
 	Root->SetBoolField(TEXT("stream"), false);
-	AddStructuredOutputOptions(Root, ProviderName, 320);
+	AddStructuredOutputOptions(Root, ProviderName, 128);
 	if (ProviderName == TEXT("deepseek"))
 	{
 		TSharedRef<FJsonObject> Thinking = MakeShared<FJsonObject>();
@@ -2060,9 +2219,7 @@ FString UWSAgentGateway::BuildRequestJson(
 	SystemMessage->SetStringField(TEXT("role"), TEXT("system"));
 	SystemMessage->SetStringField(
 		TEXT("content"),
-		ActionRequest.PlayerSaid.IsEmpty()
-			? TEXT("You are a deterministic NPC performance renderer. Rewrite only preset_utterance in natural Chinese, maximum 240 Chinese characters. Return exactly one json object with exactly six fields: npc_line string, emotion string (1..32 chars), used_action_id string equal to action_id, referenced_fact_ids array using only allowed_fact_ids, movement_intent from allowed_movement_intents, and reaction_action from allowed_reaction_actions. With no player_said, copy preset_movement_intent and preset_reaction_action. Example json: {\"npc_line\":\"先检查继电器。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}. Never add facts, decisions, state/rule/AP/resource changes, instructions, coordinates, or markdown.")
-			: TEXT("You are the NPC performance director in a polar-station survival drama. Respond in natural Chinese (<=240 chars) to player_said while preserving the preset decision, dialogue_act, and promise_condition. Select one movement_intent only from allowed_movement_intents and one reaction_action only from allowed_reaction_actions to match the player's words. Use movement sparingly; stay is the default. Use only allowed_fact_ids as facts. Return exactly one json object with exactly six fields: npc_line, emotion, used_action_id, referenced_fact_ids, movement_intent, reaction_action. Example json: {\"npc_line\":\"先检查继电器。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"step_back\",\"reaction_action\":\"reject\"}. Never add facts, decisions, state/rule/AP/resource changes, instructions, coordinates, or markdown."));
+		TEXT("You render a short NPC performance tail in natural Chinese. The semantic_spine and answer contract are the sole source of the answer and must never be rewritten, summarized, contradicted, extended with new conditions, or replaced. persona_tail is optional, maximum 48 Chinese characters, and may express only voice, emotion, or immediate attitude. Return JSON only, exactly one object with exactly six fields: persona_tail string, emotion string (1..32 chars), used_action_id string exactly equal to action_id, referenced_fact_ids array using only allowed_fact_ids, movement_intent from allowed_movement_intents, reaction_action from allowed_reaction_actions. Example JSON: {\"persona_tail\":\"别让我再重复第二遍。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}. Use an empty persona_tail when no relevant performance line helps. Never add facts, decisions, rules, AP, resource or task changes, requirements, promises, consequences, coordinates, instructions, or markdown."));
 	Messages.Add(MakeShared<FJsonValueObject>(SystemMessage));
 	if (const TArray<FWSAgentDialogueTurn>* History =
 		DialogueHistory.Find(ActionRequest.DialogueSessionId))
@@ -2071,12 +2228,12 @@ FString UWSAgentGateway::BuildRequestJson(
 		{
 			TSharedRef<FJsonObject> PriorUser = MakeShared<FJsonObject>();
 			PriorUser->SetStringField(TEXT("role"), TEXT("user"));
-			PriorUser->SetStringField(TEXT("content"), Turn.UserContextJson);
+			PriorUser->SetStringField(TEXT("content"), Turn.UserSemanticSummaryJson);
 			Messages.Add(MakeShared<FJsonValueObject>(PriorUser));
 
 			TSharedRef<FJsonObject> PriorAssistant = MakeShared<FJsonObject>();
 			PriorAssistant->SetStringField(TEXT("role"), TEXT("assistant"));
-			PriorAssistant->SetStringField(TEXT("content"), Turn.AssistantPayloadJson);
+			PriorAssistant->SetStringField(TEXT("content"), Turn.AssistantSemanticSummaryJson);
 			Messages.Add(MakeShared<FJsonValueObject>(PriorAssistant));
 		}
 	}
@@ -2095,17 +2252,51 @@ FString UWSAgentGateway::BuildRequestJson(
 FString UWSAgentGateway::BuildHistoryAssistantJson(const FWSAgentReply& Reply)
 {
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetStringField(TEXT("npc_line"), Reply.Utterance.Left(240));
+	Root->SetStringField(TEXT("summary_type"), TEXT("assistant_semantic_summary"));
+	Root->SetStringField(
+		TEXT("stance"),
+		StaticEnum<EWSResponseType>()->GetNameStringByValue(static_cast<int64>(Reply.ResponseType)));
 	Root->SetStringField(TEXT("emotion"), Reply.Emotion.Left(32));
 	Root->SetStringField(TEXT("used_action_id"), Reply.ActionId.ToString());
-	Root->SetStringField(TEXT("movement_intent"), MovementIntentToken(Reply.MovementIntent));
-	Root->SetStringField(TEXT("reaction_action"), ReactionToken(Reply.Reaction));
-	TArray<TSharedPtr<FJsonValue>> ReferencedFacts;
-	for (const FName FactId : Reply.ReferencedFactIds)
+	Root->SetStringField(TEXT("answer_source"), Reply.AnswerSource);
+	TArray<TSharedPtr<FJsonValue>> CoveredConditions;
+	for (const FName ConditionId : Reply.CoveredConditionIds)
 	{
-		ReferencedFacts.Add(MakeShared<FJsonValueString>(FactId.ToString()));
+		CoveredConditions.Add(MakeShared<FJsonValueString>(ConditionId.ToString()));
 	}
-	Root->SetArrayField(TEXT("referenced_fact_ids"), ReferencedFacts);
+	Root->SetArrayField(TEXT("covered_condition_ids"), CoveredConditions);
+	FString Json;
+	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Json);
+	FJsonSerializer::Serialize(Root, Writer);
+	return Json;
+}
+
+FString UWSAgentGateway::BuildHistoryUserJson(
+	const FWSActionRequest& ActionRequest,
+	const bool bTopicChanged)
+{
+	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetStringField(TEXT("summary_type"), TEXT("user_semantic_summary"));
+	Root->SetStringField(
+		TEXT("speech_act"),
+		StaticEnum<EWSDialogueAct>()->GetNameStringByValue(
+			static_cast<int64>(ActionRequest.SemanticFrame.SpeechAct)));
+	Root->SetStringField(
+		TEXT("query_type"),
+		StaticEnum<EWSDialogueQueryType>()->GetNameStringByValue(
+			static_cast<int64>(ActionRequest.SemanticFrame.QueryType)));
+	Root->SetStringField(
+		TEXT("target_action_id"),
+		ActionRequest.SemanticFrame.TargetActionId.IsNone()
+			? TEXT("none")
+			: ActionRequest.SemanticFrame.TargetActionId.ToString());
+	Root->SetStringField(
+		TEXT("target_fact_id"),
+		ActionRequest.SemanticFrame.TargetFactId.IsNone()
+			? TEXT("none")
+			: ActionRequest.SemanticFrame.TargetFactId.ToString());
+	Root->SetBoolField(TEXT("topic_changed"), bTopicChanged);
 	FString Json;
 	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
 		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Json);
@@ -2115,22 +2306,25 @@ FString UWSAgentGateway::BuildHistoryAssistantJson(const FWSAgentReply& Reply)
 
 void UWSAgentGateway::RecordDialogueTurn(
 	const FWSActionRequest& ActionRequest,
-	const FString& UserContextJson,
-	const FString& AssistantPayloadJson)
+	const FWSAgentReply& Reply)
 {
 	if (!ActionRequest.DialogueSessionId.IsValid()
 		|| (ActionRequest.ActionId != TEXT("talk_gu_heng")
 			&& ActionRequest.ActionId != TEXT("talk_ye_cheng"))
-		|| UserContextJson.IsEmpty()
-		|| AssistantPayloadJson.IsEmpty())
+		|| Reply.SemanticSpine.IsEmpty())
 	{
 		return;
 	}
 	TArray<FWSAgentDialogueTurn>& History =
 		DialogueHistory.FindOrAdd(ActionRequest.DialogueSessionId);
+	const FName TopicActionId = ActionRequest.SemanticFrame.TargetActionId;
+	const bool bTopicChanged = !History.IsEmpty()
+		&& !TopicActionId.IsNone()
+		&& History.Last().TopicActionId != TopicActionId;
 	FWSAgentDialogueTurn& Turn = History.AddDefaulted_GetRef();
-	Turn.UserContextJson = UserContextJson.Left(4096);
-	Turn.AssistantPayloadJson = AssistantPayloadJson.Left(4096);
+	Turn.UserSemanticSummaryJson = BuildHistoryUserJson(ActionRequest, bTopicChanged).Left(1024);
+	Turn.AssistantSemanticSummaryJson = BuildHistoryAssistantJson(Reply).Left(1024);
+	Turn.TopicActionId = TopicActionId;
 	constexpr int32 MaxDialogueHistoryTurns = 4;
 	if (History.Num() > MaxDialogueHistoryTurns)
 	{

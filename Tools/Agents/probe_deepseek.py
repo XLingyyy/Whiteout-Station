@@ -56,7 +56,7 @@ class ProbeResult:
     attempts: int
     http_status: str
     error_code: str
-    npc_line_chars: int = 0
+    persona_tail_chars: int = 0
     referenced_fact_count: int = 0
 
 
@@ -260,7 +260,7 @@ def run_probe(
                 attempt,
                 last_status,
                 "ok",
-                len(npc_response.npc_line),
+                len(npc_response.persona_tail),
                 len(npc_response.referenced_fact_ids),
             )
         except urllib.error.HTTPError as exc:
@@ -353,7 +353,7 @@ def print_sanitized_result(result: ProbeResult) -> None:
     print(f"http_status={result.http_status}")
     print(f"error_code={result.error_code}")
     if result.success:
-        print(f"npc_line_chars={result.npc_line_chars}")
+        print(f"persona_tail_chars={result.persona_tail_chars}")
         print(f"referenced_fact_count={result.referenced_fact_count}")
     print(f"result={result.result}")
 
