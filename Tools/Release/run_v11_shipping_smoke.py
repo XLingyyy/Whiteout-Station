@@ -35,11 +35,16 @@ from mock_server import MockConfig, create_server
 
 
 ARTIFACT_PREFIX = "WhiteoutStation-v1.1-Win64-"
+RELEASE_LABEL = "v1.1"
 EXECUTABLE_REL = Path("Windows/WhiteoutStation.exe")
 AGENT_RUNTIME_REL = Path(
     "Windows/WhiteoutStation/Content/Agents/AgentRuntime.v1.1.json"
 )
 OUTPUT_REL = Path("Validation/ShippingSmokeV11")
+AGENT_RUNTIME_VERSION = "1.1.0"
+AGENT_SCHEMA_VERSION = 4
+SMOKE_SCHEMA = "whiteout.v1.1.shipping-smoke.v1"
+EXPRESSION_ACTION_IDS = frozenset({"talk_gu_heng", "talk_ye_cheng"})
 EVENT_LOG_REL = Path("Saved/Logs/WhiteoutStation_EventLog.json")
 MODEL_AUDIT_REL = Path("Saved/Logs/WhiteoutStation_ModelAudit.jsonl")
 LOOPBACK_AUDIT_REL = Path("Saved/Logs/WhiteoutStation_LoopbackAudit.jsonl")
@@ -232,8 +237,9 @@ class DroppingLoopbackEndpoint:
 class MockLoopbackEndpoint:
     """Serve deterministic valid completions and retain metadata-only audit."""
 
-    def __init__(self, audit_path: Path) -> None:
+    def __init__(self, audit_path: Path, config: MockConfig | None = None) -> None:
         self.audit_path = audit_path
+        self.config = config or MockConfig()
         self.server: Any = None
         self.thread: threading.Thread | None = None
         self.port = 0
@@ -246,7 +252,7 @@ class MockLoopbackEndpoint:
         self.server = create_server(
             "127.0.0.1",
             0,
-            config=MockConfig(),
+            config=self.config,
             audit_path=self.audit_path,
         )
         self.port = int(self.server.server_port)
@@ -303,10 +309,14 @@ def validate_artifact_root(artifact_root: Path) -> tuple[Path, Path]:
     agent = load_json(agent_path)
     if not isinstance(agent, dict):
         raise SmokeError("Packaged Agent runtime root must be an object")
-    if agent.get("runtime_version") != "1.1.0":
-        raise SmokeError("Packaged Agent runtime_version must be 1.1.0")
-    if agent.get("schema_version") != 4:
-        raise SmokeError("Packaged Agent schema_version must be 4")
+    if agent.get("runtime_version") != AGENT_RUNTIME_VERSION:
+        raise SmokeError(
+            f"Packaged Agent runtime_version must be {AGENT_RUNTIME_VERSION}"
+        )
+    if agent.get("schema_version") != AGENT_SCHEMA_VERSION:
+        raise SmokeError(
+            f"Packaged Agent schema_version must be {AGENT_SCHEMA_VERSION}"
+        )
     if agent.get("llm_enabled") is not False:
         raise SmokeError("Packaged Agent runtime must default AI integration off")
     if agent.get("endpoint") != "https://api.deepseek.com":
@@ -398,7 +408,13 @@ def audit_key_is_forbidden(key: str) -> bool:
 
 
 def validate_audit(scenario: Scenario, audit_path: Path) -> dict[str, Any] | None:
-    if scenario.llm_mode not in {"unreachable_endpoint", "loopback_mock"}:
+    failure_modes = {
+        "unreachable_endpoint",
+        "provider_rejected",
+        "timeout_endpoint",
+        "loopback_mock",
+    }
+    if scenario.llm_mode not in failure_modes:
         if audit_path.exists() and audit_path.stat().st_size:
             raise SmokeError(f"{scenario.scenario_id}: unexpected live-provider audit")
         return None
@@ -427,18 +443,19 @@ def validate_audit(scenario: Scenario, audit_path: Path) -> dict[str, Any] | Non
     expected_talk_actions = [
         action_id
         for action_id in EXPECTED_ROUTES[scenario.route]["actions"]
-        if action_id.startswith("talk_")
+        if action_id in EXPRESSION_ACTION_IDS
     ]
     if len(expected_talk_actions) != scenario.expected_model_calls:
         raise SmokeError(f"{scenario.scenario_id}: invalid model-call expectation")
     observed_talk_actions = [str(record.get("action_id", "")) for record in records]
     if sorted(observed_talk_actions) != sorted(expected_talk_actions):
         raise SmokeError(f"{scenario.scenario_id}: unexpected audit identity")
-    expected_outcomes = (
-        {"accepted"}
-        if scenario.llm_mode == "loopback_mock"
-        else {"transport_error", "provider_http_502"}
-    )
+    expected_outcomes = {
+        "loopback_mock": {"accepted"},
+        "provider_rejected": {"provider_authentication_failed"},
+        "timeout_endpoint": {"transport_error"},
+        "unreachable_endpoint": {"transport_error", "provider_http_502"},
+    }[scenario.llm_mode]
     for record in records:
         if record.get("kind") != "expression":
             raise SmokeError(f"{scenario.scenario_id}: unexpected audit identity")
@@ -529,14 +546,26 @@ def build_command(
     ]
     if scenario.llm_mode == "explicit_offline":
         command.append("-WhiteoutLLMEnabled=false")
-    elif scenario.llm_mode in {"unreachable_endpoint", "loopback_mock"}:
+    elif scenario.llm_mode in {
+        "unreachable_endpoint",
+        "provider_rejected",
+        "timeout_endpoint",
+        "loopback_mock",
+    }:
         command.append("-WhiteoutLLMEnabled=true")
-    if scenario.llm_mode in {"unreachable_endpoint", "loopback_mock"}:
+    if scenario.llm_mode in {
+        "unreachable_endpoint",
+        "provider_rejected",
+        "timeout_endpoint",
+        "loopback_mock",
+    }:
         if endpoint_port is None:
             raise SmokeError("Unreachable endpoint scenario has no loopback port")
         command.append(
             f"-WhiteoutAgentEndpoint=http://127.0.0.1:{endpoint_port}/chat/completions"
         )
+    if scenario.llm_mode == "timeout_endpoint":
+        command.append("-WhiteoutAgentTimeoutSeconds=1")
     return command
 
 
@@ -563,11 +592,25 @@ def run_scenario(
     runtime_root.mkdir(parents=True)
     evidence_root.mkdir(parents=True, exist_ok=True)
     force_empty_credential_inputs()
+    if scenario.llm_mode == "provider_rejected":
+        os.environ["WHITEOUT_LLM_API_KEY"] = "invalid-review-credential"
 
     endpoint: DroppingLoopbackEndpoint | MockLoopbackEndpoint | None = None
     started = time.monotonic()
     if scenario.llm_mode == "unreachable_endpoint":
         endpoint = DroppingLoopbackEndpoint()
+        endpoint.__enter__()
+    elif scenario.llm_mode == "provider_rejected":
+        endpoint = MockLoopbackEndpoint(
+            runtime_root / LOOPBACK_AUDIT_REL,
+            MockConfig(status_code=401),
+        )
+        endpoint.__enter__()
+    elif scenario.llm_mode == "timeout_endpoint":
+        endpoint = MockLoopbackEndpoint(
+            runtime_root / LOOPBACK_AUDIT_REL,
+            MockConfig(delay_seconds=3.0),
+        )
         endpoint.__enter__()
     elif scenario.llm_mode == "loopback_mock":
         endpoint = MockLoopbackEndpoint(runtime_root / LOOPBACK_AUDIT_REL)
@@ -585,6 +628,7 @@ def run_scenario(
     finally:
         if endpoint is not None:
             endpoint.__exit__(None, None, None)
+        force_empty_credential_inputs()
     elapsed_ms = round((time.monotonic() - started) * 1000.0)
     if return_code != 0:
         raise SmokeError(
@@ -606,15 +650,15 @@ def run_scenario(
         )
     audit_summary = validate_audit(scenario, runtime_root / MODEL_AUDIT_REL)
     if (
-        scenario.llm_mode == "unreachable_endpoint"
+        scenario.llm_mode in {"unreachable_endpoint", "timeout_endpoint"}
         and endpoint is not None
-        and not 1 <= endpoint.attempts <= 2
+        and not 1 <= endpoint.attempts <= scenario.expected_model_calls * 2
     ):
         raise SmokeError(
             f"{scenario.scenario_id}: transport attempts exceeded the bounded retry policy"
         )
     if (
-        scenario.llm_mode == "loopback_mock"
+        scenario.llm_mode in {"loopback_mock", "provider_rejected"}
         and endpoint is not None
         and endpoint.attempts != scenario.expected_model_calls
     ):
@@ -642,14 +686,14 @@ def run_scenario(
         "screenshot": {"width": dimensions[0], "height": dimensions[1]},
         "event_log": event_name,
         "runtime_screenshot": screenshot_name,
-        "api_key_supplied": False,
+        "api_key_supplied": scenario.llm_mode == "provider_rejected",
     }
     if audit_summary is not None:
         summary[
             "model_audit" if scenario.llm_mode == "loopback_mock" else "degradation"
         ] = audit_summary
         summary["model_audit_file"] = game_audit_name
-    if scenario.llm_mode == "unreachable_endpoint":
+    if scenario.llm_mode in {"unreachable_endpoint", "timeout_endpoint"}:
         summary["loopback_connections_dropped"] = endpoint.attempts
     elif scenario.llm_mode == "loopback_mock":
         server_audit_path = runtime_root / LOOPBACK_AUDIT_REL
@@ -942,13 +986,18 @@ def run_shipping_smoke(
             raise SmokeError("AI A/B changed authoritative route results")
         evidence_root = staging_root / "Evidence"
         report = {
-            "schema": "whiteout.v1.1.shipping-smoke.v1",
+            "schema": SMOKE_SCHEMA,
             "passed": True,
             "artifact_root_name": root.name,
             "credential_policy": {
                 "api_key_value_read": False,
                 "api_key_value_persisted": False,
-                "child_api_key_forced_empty": True,
+                "child_api_key_forced_empty": not any(
+                    scenario.llm_mode == "provider_rejected" for scenario in SCENARIOS
+                ),
+                "synthetic_invalid_credential_used": any(
+                    scenario.llm_mode == "provider_rejected" for scenario in SCENARIOS
+                ),
                 "local_credential_config_accepted": False,
             },
             "scenarios": summaries,

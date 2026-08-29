@@ -1045,6 +1045,9 @@ struct FWSAgentReply
 	FWSDialogueAnswerContract AnswerContract;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSDialogueSemanticFrame SemanticFrame;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FString Emotion = TEXT("guarded");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)

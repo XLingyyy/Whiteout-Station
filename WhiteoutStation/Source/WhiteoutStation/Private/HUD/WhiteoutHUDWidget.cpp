@@ -29,6 +29,7 @@
 #include "Engine/Texture2D.h"
 #include "Flow/WhiteoutGameMode.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "HUD/WSUITokens.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -42,6 +43,12 @@
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarWhiteoutDialogueDebug(
+		TEXT("Whiteout.DialogueDebug"),
+		0,
+		TEXT("Shows the local dialogue semantic frame and answer source in Development builds."),
+		ECVF_Default);
+
 	constexpr int32 InitialActionPoints = 12;
 	constexpr int32 PhaseActionPoints = 4;
 	constexpr int32 MinutesPerActionPoint = 50;
@@ -3112,11 +3119,30 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 		case EWSNPCReaction::Alarmed: ReactionLabel = TEXT("警觉"); break;
 		default: break;
 		}
-		const FString Status = FString::Printf(
+		FString Status = FString::Printf(
 			TEXT("%s　｜　表演：%s · %s"),
 			*ProviderStatus,
 			MovementLabel,
 			ReactionLabel);
+#if !UE_BUILD_SHIPPING
+		if (CVarWhiteoutDialogueDebug.GetValueOnGameThread() != 0)
+		{
+			Status += FString::Printf(
+				TEXT("\nSemantic: %s / %s / %s / %.2f　｜　%s　｜　%s"),
+				*StaticEnum<EWSDialogueAct>()->GetNameStringByValue(
+					static_cast<int64>(Reply.SemanticFrame.SpeechAct)),
+				*StaticEnum<EWSDialogueQueryType>()->GetNameStringByValue(
+					static_cast<int64>(Reply.SemanticFrame.QueryType)),
+				Reply.SemanticFrame.TargetActionId.IsNone()
+					? TEXT("none")
+					: *Reply.SemanticFrame.TargetActionId.ToString(),
+				Reply.SemanticFrame.Confidence,
+				Reply.SemanticFrame.Source.IsEmpty()
+					? TEXT("unspecified")
+					: *Reply.SemanticFrame.Source,
+				*Reply.AnswerSource);
+		}
+#endif
 		DialogueStatusText->SetText(FText::FromString(Status));
 		DialogueStatusText->SetColorAndOpacity(FSlateColor(!Reply.bFallback ? Cyan : Secondary));
 	}
@@ -4012,7 +4038,7 @@ void UWhiteoutHUDWidget::LoadGame()
 		const bool bLoaded = StateSubsystem->LoadSnapshot();
 		SystemMessage = bLoaded
 			? TEXT("已恢复最近保存的本轮状态。")
-			: TEXT("没有可读取的 v1.1 本轮存档。");
+			: TEXT("没有可读取的 v1.2 或兼容 v1.1 本轮存档。");
 		if (bLoaded)
 		{
 			ResumeGame();

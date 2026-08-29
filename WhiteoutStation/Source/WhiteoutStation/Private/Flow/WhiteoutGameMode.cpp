@@ -672,18 +672,28 @@ void AWhiteoutGameMode::RunDialogueHistoryProbeStep(const int32 Step)
 		: FWSGameState();
 	FWSActionRequest Request;
 	Request.ActionId = TEXT("talk_gu_heng");
-	Request.DialogueAct = Step == 0
-		? EWSDialogueAct::Ask
-		: EWSDialogueAct::Reassure;
+	Request.DialogueAct = EWSDialogueAct::Ask;
 	Request.PlayerSaid = Step == 0
 		? TEXT("继电器现在是什么状态？")
-		: TEXT("先稳住，我们会按顺序处理。");
+		: TEXT("那要怎么样你才肯帮我修？");
+	Request.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	Request.SemanticFrame.QueryType = Step == 0
+		? EWSDialogueQueryType::Status
+		: EWSDialogueQueryType::Requirements;
+	Request.SemanticFrame.TargetActionId = TEXT("repair_generator");
+	Request.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	Request.SemanticFrame.Confidence = 0.99f;
+	Request.SemanticFrame.Source = TEXT("shipping_dialogue_history_probe");
 	Request.TransactionId = FGuid::NewGuid();
 	Request.DialogueSessionId = DialogueHistoryProbeSessionId;
+	const FWSActionRequirementReport RequirementReport = StateSubsystem && Step == 1
+		? StateSubsystem->EvaluateActionRequirements(TEXT("repair_generator"))
+		: FWSActionRequirementReport();
 	TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
 	IntentProbeGateway->RequestExpression(
 		Request,
 		State,
+		RequirementReport,
 		true,
 		FWSAgentReplyCallback::CreateLambda(
 			[WeakThis, Step](const FWSAgentReply& Reply)
@@ -691,8 +701,14 @@ void AWhiteoutGameMode::RunDialogueHistoryProbeStep(const int32 Step)
 				UE_LOG(
 					LogTemp,
 					Display,
-					TEXT("WhiteoutStation DialogueHistoryProbe: step=%d provider=%s fallback=%s validation=%s line_chars=%d"),
+					TEXT("WhiteoutStation DialogueHistoryProbe: step=%d query_type=%s target_action=%s answer_source=%s provider=%s fallback=%s validation=%s line_chars=%d"),
 					Step + 1,
+					*StaticEnum<EWSDialogueQueryType>()->GetNameStringByValue(
+						static_cast<int64>(Reply.SemanticFrame.QueryType)),
+					Reply.SemanticFrame.TargetActionId.IsNone()
+						? TEXT("none")
+						: *Reply.SemanticFrame.TargetActionId.ToString(),
+					*Reply.AnswerSource,
 					*Reply.Provider,
 					Reply.bFallback ? TEXT("true") : TEXT("false"),
 					*Reply.ValidationReason,

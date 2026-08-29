@@ -1,12 +1,20 @@
 # Whiteout Station / 风雪站：断电前夜
 
-Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前版本为 v1.1。
+Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前版本为 v1.2。
 
 玩家在暴风雪抵达前管理早晨、午后、黄昏三个阶段共 12 点行动力，与工程师顾衡、医生叶澄调查停电、
 分配物资、修复发电机和室外天线，并尝试发出求救信号。开场、探索、行动
 预览、分阶段对话、自由文本、结算和四类结局已形成完整闭环。
 
-## v1.1 重点
+## v1.2 重点
+
+- 自由文本先解析为 SpeechAct、QueryType、TargetActionId 和 TargetCharacter；明确条件问句在本地直接命中。
+- 发电机行动预览、NPC 条件报告和执行判定使用同一套规则来源。
+- NPC 回复以本地 `semantic_spine` 为确定性核心；在线模型最多补充 48 字人格尾句与受限表演字段。
+- 顾衡提出的协作条件可固定到任务栏或接受为阶段内协议，履约、过期和违约进入结算与脱敏审计。
+- 无 Key、错误配置、网络失败、超时、非法 JSON 或越权尾句均保留切题的本地语义骨架。
+
+## v1.1 基础玩法
 
 - 每轮分为早晨、午后、黄昏，每阶段 4 AP；阶段开始时从四个房间中选择供暖区。
 - 食物、休整、泛化治疗、体能、体温、伤势、压力和信任共同影响行动条件与结局。
@@ -30,13 +38,13 @@ Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前版本为 v1.1。
 - `Enter` 结算，`C` 读取最近自动存档，`R` 开始新一轮。
 
 构建、Shipping、验收和 AI 配置见
-[`docs/BUILD_AND_PLAY_v0.9.md`](docs/BUILD_AND_PLAY_v0.9.md)；关卡对象的编辑器
+[`docs/BUILD_AND_PLAY_v1.2.md`](docs/BUILD_AND_PLAY_v1.2.md)；关卡对象的编辑器
 拖动与替换方法见 [`docs/LEVEL_EDITING.md`](docs/LEVEL_EDITING.md)。
 
 ## DeepSeek 接入
 
 运行配置位于
-`WhiteoutStation/Content/Agents/AgentRuntime.v0.9.json`。当前使用
+`WhiteoutStation/Content/Agents/AgentRuntime.v1.2.json`。当前使用
 `deepseek-v4-flash`、官方 Chat Completions 端点、非思考模式、非流式输出和
 JSON Object 响应。
 
@@ -55,8 +63,8 @@ $env:WHITEOUT_LLM_API_KEY = '<your-key>'
 ```powershell
 python -X utf8 -m pytest Tools/Agents -q
 python -X utf8 -m pytest Tools/Rules -q
-python -X utf8 -m pytest Tools/Release/test_v09_release_gates.py -q
-python -X utf8 Tools/Release/validate_source_v09.py --repo-root . --final
+python -X utf8 -m pytest Tools/Release/test_v11_release_gates.py -q
+python -X utf8 Tools/Release/validate_source_v12.py --repo-root . --final
 ```
 
 UE 自动化覆盖对话边界、模型预算、AP、资源选择、阶段意向、知识权限、路线与

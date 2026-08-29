@@ -40,9 +40,47 @@ namespace
 		}
 		return false;
 	}
+
+	void AppendOfferAudit(
+		const FString& Event,
+		const FName ActionId,
+		const FWSNegotiationOffer* Offer,
+		const FWSGameState& State)
+	{
+		TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+		Root->SetStringField(TEXT("kind"), TEXT("negotiation_offer"));
+		Root->SetStringField(TEXT("event"), Event);
+		Root->SetStringField(TEXT("action_id"), ActionId.ToString());
+		Root->SetStringField(
+			TEXT("day_phase"),
+			StaticEnum<EWSDayPhase>()->GetNameStringByValue(
+				static_cast<int64>(State.DayPhase)));
+		Root->SetStringField(TEXT("timestamp_utc"), FDateTime::UtcNow().ToIso8601());
+		if (Offer)
+		{
+			Root->SetStringField(TEXT("offer_id"), Offer->OfferId.ToString());
+			Root->SetBoolField(TEXT("accepted"), Offer->bAccepted);
+			Root->SetBoolField(TEXT("fulfilled"), Offer->bFulfilled);
+			Root->SetBoolField(TEXT("broken"), Offer->bBroken);
+		}
+		FString Json;
+		const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Json);
+		if (FJsonSerializer::Serialize(Root, Writer))
+		{
+			FFileHelper::SaveStringToFile(
+				Json + LINE_TERMINATOR,
+				*(FPaths::ProjectSavedDir()
+					/ TEXT("Logs/WhiteoutStation_OfferAudit.jsonl")),
+				FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM,
+				&IFileManager::Get(),
+				FILEWRITE_Append);
+		}
+	}
 }
 
 const FString UWindStationStateSubsystem::SaveSlot(
+	TEXT("WhiteoutStation_Autosave_v1_2"));
+const FString UWindStationStateSubsystem::LegacySaveSlot(
 	TEXT("WhiteoutStation_Autosave_v1_1"));
 
 void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -147,6 +185,11 @@ bool UWindStationStateSubsystem::SetRequirementPinned(
 	{
 		return false;
 	}
+	AppendOfferAudit(
+		bPinned ? TEXT("pinned") : TEXT("unpinned"),
+		ActionId,
+		nullptr,
+		RulesEngine.GetState());
 	SaveSnapshot();
 	BroadcastState();
 	return true;
@@ -158,6 +201,14 @@ bool UWindStationStateSubsystem::AcceptLatestNegotiationOffer(FString& OutMessag
 	{
 		return false;
 	}
+	const FWSNegotiationOffer* AcceptedOffer = RulesEngine.GetState().NegotiationOffers.IsEmpty()
+		? nullptr
+		: &RulesEngine.GetState().NegotiationOffers.Last();
+	AppendOfferAudit(
+		TEXT("accepted"),
+		LatestDialogue.RequirementReport.ActionId,
+		AcceptedOffer,
+		RulesEngine.GetState());
 	SaveSnapshot();
 	BroadcastState();
 	return true;
@@ -258,6 +309,14 @@ FWSActionPreview UWindStationStateSubsystem::PreviewAction(const FWSActionReques
 	return RulesEngine.Preview(Request);
 }
 
+FWSActionRequirementReport UWindStationStateSubsystem::EvaluateActionRequirements(
+	const FName ActionId) const
+{
+	FWSActionRequest Request;
+	Request.ActionId = ActionId;
+	return RulesEngine.EvaluateActionRequirements(Request);
+}
+
 FWSActionResult UWindStationStateSubsystem::CommitAction(const FWSActionRequest& Request)
 {
 	EWSHeatingZone HeatingZone = EWSHeatingZone::None;
@@ -287,9 +346,28 @@ FWSActionResult UWindStationStateSubsystem::CommitAction(const FWSActionRequest&
 		}
 		return Result;
 	}
+	TSet<FName> ActiveOfferIdsBeforeCommit;
+	for (const FWSNegotiationOffer& Offer : RulesEngine.GetState().NegotiationOffers)
+	{
+		if (Offer.bAccepted && !Offer.bFulfilled && !Offer.bBroken)
+		{
+			ActiveOfferIdsBeforeCommit.Add(Offer.OfferId);
+		}
+	}
 	FWSActionResult Result = RulesEngine.Commit(Request);
 	if (Result.bCommitted)
 	{
+		for (const FWSNegotiationOffer& Offer : RulesEngine.GetState().NegotiationOffers)
+		{
+			if (ActiveOfferIdsBeforeCommit.Contains(Offer.OfferId) && Offer.bFulfilled)
+			{
+				AppendOfferAudit(
+					TEXT("fulfilled"),
+					Request.ActionId,
+					&Offer,
+					RulesEngine.GetState());
+			}
+		}
 		SaveSnapshot();
 		OnActionCommitted.Broadcast(Result);
 		BroadcastState();
@@ -319,10 +397,29 @@ bool UWindStationStateSubsystem::SettleCurrentDayPhase(
 	EWSReasonCode& OutReason,
 	FWSPhaseSummary& OutSummary)
 {
+	TSet<FName> ActiveOfferIdsBeforeSettlement;
+	for (const FWSNegotiationOffer& Offer : RulesEngine.GetState().NegotiationOffers)
+	{
+		if (Offer.bAccepted && !Offer.bFulfilled && !Offer.bBroken)
+		{
+			ActiveOfferIdsBeforeSettlement.Add(Offer.OfferId);
+		}
+	}
 	const bool bSettled =
 		RulesEngine.SettleDayPhase(OutReason, OutSummary);
 	if (bSettled)
 	{
+		for (const FWSNegotiationOffer& Offer : RulesEngine.GetState().NegotiationOffers)
+		{
+			if (ActiveOfferIdsBeforeSettlement.Contains(Offer.OfferId) && Offer.bBroken)
+			{
+				AppendOfferAudit(
+					TEXT("broken"),
+					Offer.TargetActionId,
+					&Offer,
+					RulesEngine.GetState());
+			}
+		}
 		SaveSnapshot();
 		BroadcastState();
 	}
@@ -351,8 +448,14 @@ bool UWindStationStateSubsystem::SaveSnapshot()
 
 bool UWindStationStateSubsystem::LoadSnapshot()
 {
-	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlot, 0));
-	if (!Save || Save->SaveVersion != TEXT("1.1.0"))
+	const bool bLoadLegacySlot = !UGameplayStatics::DoesSaveGameExist(SaveSlot, 0)
+		&& UGameplayStatics::DoesSaveGameExist(LegacySaveSlot, 0);
+	const FString& SlotToLoad = bLoadLegacySlot ? LegacySaveSlot : SaveSlot;
+	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(
+		UGameplayStatics::LoadGameFromSlot(SlotToLoad, 0));
+	if (!Save
+		|| (Save->SaveVersion != TEXT("1.2.0")
+			&& Save->SaveVersion != TEXT("1.1.0")))
 	{
 		return false;
 	}
@@ -362,13 +465,18 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	}
 	RulesEngine.SetState(Save->State);
 	LatestDialogue = FWSAgentReply();
+	if (bLoadLegacySlot || Save->SaveVersion == TEXT("1.1.0"))
+	{
+		SaveSnapshot();
+	}
 	BroadcastState();
 	return true;
 }
 
 bool UWindStationStateSubsystem::HasSnapshot() const
 {
-	return UGameplayStatics::DoesSaveGameExist(SaveSlot, 0);
+	return UGameplayStatics::DoesSaveGameExist(SaveSlot, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlot, 0);
 }
 
 bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const

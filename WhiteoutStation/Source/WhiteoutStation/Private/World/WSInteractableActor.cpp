@@ -853,13 +853,19 @@ void AWSInteractableActor::HandleCharacterActionCommitted(const FWSActionResult&
 
 void AWSInteractableActor::HandleDialogueLine(const FWSAgentReply& Reply)
 {
-	if (!bCharacterPresentation || Reply.ActionId != ActionId)
+	if (!bCharacterPresentation)
 	{
 		return;
 	}
+	const bool bGuHengRepairFeedback = ActionId == TEXT("talk_gu_heng")
+		&& Reply.ActionId == TEXT("repair_generator")
+		&& Reply.Speaker == EWSCharacterId::GuHeng;
 	const bool bExpectedSpeaker =
-		(ActionId == TEXT("talk_gu_heng") && Reply.Speaker == EWSCharacterId::GuHeng)
-		|| (ActionId == TEXT("talk_ye_cheng") && Reply.Speaker == EWSCharacterId::YeCheng);
+		(Reply.ActionId == ActionId && ActionId == TEXT("talk_gu_heng")
+			&& Reply.Speaker == EWSCharacterId::GuHeng)
+		|| (Reply.ActionId == ActionId && ActionId == TEXT("talk_ye_cheng")
+			&& Reply.Speaker == EWSCharacterId::YeCheng)
+		|| bGuHengRepairFeedback;
 	if (!bExpectedSpeaker)
 	{
 		return;

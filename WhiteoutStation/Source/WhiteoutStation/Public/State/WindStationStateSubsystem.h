@@ -39,6 +39,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Actions")
 	FWSActionPreview PreviewAction(const FWSActionRequest& Request) const;
 
+	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Actions")
+	FWSActionRequirementReport EvaluateActionRequirements(FName ActionId) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Whiteout Station|Actions")
 	FWSActionResult CommitAction(const FWSActionRequest& Request);
 
@@ -90,6 +93,7 @@ public:
 
 private:
 	static const FString SaveSlot;
+	static const FString LegacySaveSlot;
 	FWhiteoutRulesEngine RulesEngine;
 
 	UPROPERTY()

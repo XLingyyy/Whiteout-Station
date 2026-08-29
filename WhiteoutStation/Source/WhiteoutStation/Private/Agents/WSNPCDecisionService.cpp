@@ -14,7 +14,9 @@ namespace WhiteoutAgentFacts
 
 bool UWSNPCDecisionService::RequiresExpression(const FName ActionId)
 {
-	return ActionId == TEXT("talk_gu_heng") || ActionId == TEXT("talk_ye_cheng");
+	return ActionId == TEXT("talk_gu_heng")
+		|| ActionId == TEXT("talk_ye_cheng")
+		|| ActionId == TEXT("repair_generator");
 }
 
 FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(const FName ActionId, const FWSGameState& State)
@@ -65,6 +67,7 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 	Reply.ActionId = Request.ActionId;
 	Reply.TransactionId = Request.TransactionId;
 	Reply.DialogueSessionId = Request.DialogueSessionId;
+	Reply.SemanticFrame = Request.SemanticFrame;
 	Reply.bAccepted = true;
 	Reply.bFallback = true;
 	Reply.Provider = TEXT("preset");

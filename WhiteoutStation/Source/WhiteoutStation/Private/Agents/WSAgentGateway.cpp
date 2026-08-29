@@ -2024,6 +2024,14 @@ void UWSAgentGateway::LoadConfig()
 	{
 		bLLMEnabled = CommandLineEnabled.ToBool();
 	}
+	float CommandLineTimeout = 0.0f;
+	if (FParse::Value(
+		FCommandLine::Get(),
+		TEXT("WhiteoutAgentTimeoutSeconds="),
+		CommandLineTimeout))
+	{
+		TimeoutSeconds = FMath::Clamp(CommandLineTimeout, 1.0f, 15.0f);
+	}
 
 	UWhiteoutSettingsSubsystem* RuntimeSettings = nullptr;
 	if (UGameInstance* GameInstance = GetTypedOuter<UGameInstance>())
@@ -2340,7 +2348,7 @@ FString UWSAgentGateway::BuildIntentRequestJson(
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("model"), ModelName);
 	Root->SetBoolField(TEXT("stream"), false);
-	AddStructuredOutputOptions(Root, ProviderName, 128);
+	AddStructuredOutputOptions(Root, ProviderName, 160);
 	if (ProviderName == TEXT("deepseek"))
 	{
 		TSharedRef<FJsonObject> Thinking = MakeShared<FJsonObject>();

@@ -1459,6 +1459,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FWhiteoutV12NegotiationOfferLifecycleTest::RunTest(const FString& Parameters)
 {
+	TestTrue(
+		TEXT("Generator repair requests active Gu Heng feedback"),
+		UWSNPCDecisionService::RequiresExpression(TEXT("repair_generator")));
+
 	auto BuildRequirementReply = [](FWhiteoutRulesEngine& Engine)
 	{
 		FWSActionRequest TargetRequest;
