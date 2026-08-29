@@ -190,7 +190,7 @@ def validate_worktree(repo_root: Path) -> GateReport:
     external_brief = ("??", SOURCE_BRIEF_REL)
     remaining = [entry for entry in entries if entry != external_brief]
     if external_brief in entries:
-        report.warning(
+        report.warn(
             "Ignoring the user-provided untracked v1.2 construction brief; it is "
             "an external input and is not part of the release source."
         )
