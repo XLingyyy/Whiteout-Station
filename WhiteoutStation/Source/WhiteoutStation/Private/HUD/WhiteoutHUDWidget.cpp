@@ -707,7 +707,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	DialogueBorder->SetPadding(FMargin(0));
 	UCanvasPanel* DialogueCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("DialogueCanvas"));
 	DialogueBorder->SetContent(DialogueCanvas);
-	UBorder* DialogueBar = MakeGlassPanel(DialogueCanvas, TEXT("DialogueBar"), FAnchors(0.18f, 0.68f, 0.82f, 0.97f), FMargin(0), 18.0f, WSUITokens::Color::SurfaceDialogue);
+	UBorder* DialogueBar = MakeGlassPanel(DialogueCanvas, TEXT("DialogueBar"), FAnchors(0.18f, 0.57f, 0.82f, 0.97f), FMargin(0), 18.0f, WSUITokens::Color::SurfaceDialogue);
 	SetGlassPanelPadding(DialogueBar, FMargin(14, 10));
 	UVerticalBox* DialogueBarBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueBarBox"));
 	SetGlassPanelContent(DialogueBar, DialogueBarBox);
@@ -727,6 +727,53 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UVerticalBoxSlot* DialogueStatusSlot = DialogueBarBox->AddChildToVerticalBox(DialogueStatusText);
 	DialogueStatusSlot->SetPadding(FMargin(0, 0, 0, 6));
 	DialogueStatusSlot->SetHorizontalAlignment(HAlign_Fill);
+
+	DialogueConditionBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DialogueConditionCard"));
+	DialogueConditionBorder->SetBrushColor(FLinearColor(0.04f, 0.08f, 0.10f, 0.94f));
+	DialogueConditionBorder->SetPadding(FMargin(9, 7));
+	UVerticalBox* ConditionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueConditionBox"));
+	DialogueConditionBorder->SetContent(ConditionBox);
+	DialogueConditionTitleText = MakeText(TEXT("DialogueConditionTitle"), 12, Cyan, false);
+	DialogueConditionTitleText->SetFont(UIFont(12, true));
+	DialogueConditionTitleText->SetText(FText::FromString(TEXT("协作条件 · 发电机维修")));
+	ConditionBox->AddChildToVerticalBox(DialogueConditionTitleText)->SetPadding(FMargin(0, 0, 0, 3));
+	DialogueConditionBodyText = MakeText(TEXT("DialogueConditionBody"), 12, Body);
+	DialogueConditionBodyText->SetLineHeightPercentage(1.05f);
+	ConditionBox->AddChildToVerticalBox(DialogueConditionBodyText)->SetPadding(FMargin(0, 0, 0, 4));
+	DialogueConditionStatusText = MakeText(TEXT("DialogueConditionStatus"), 11, Secondary, false);
+	ConditionBox->AddChildToVerticalBox(DialogueConditionStatusText)->SetPadding(FMargin(0, 0, 0, 4));
+	UHorizontalBox* ConditionActions = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("DialogueConditionActions"));
+	ConditionBox->AddChildToVerticalBox(ConditionActions);
+	auto MakeConditionActionButton = [this, ConditionActions](const FName Name, const FString& Label)
+	{
+		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+		FButtonStyle Style = Button->GetStyle();
+		Style.Normal.TintColor = FSlateColor(WSUITokens::Color::ButtonNormal);
+		Style.Hovered.TintColor = FSlateColor(WSUITokens::Color::ButtonHover);
+		Style.Pressed.TintColor = FSlateColor(WSUITokens::Color::ButtonPressed);
+		Button->SetStyle(Style);
+		SilenceButton(Button);
+		UTextBlock* LabelText = MakeText(
+			FName(*(Name.ToString() + TEXT("Label"))),
+			11,
+			WSUITokens::Color::TextPrimary,
+			false);
+		LabelText->SetText(FText::FromString(Label));
+		LabelText->SetJustification(ETextJustify::Center);
+		Button->SetContent(LabelText);
+		UHorizontalBoxSlot* Slot = ConditionActions->AddChildToHorizontalBox(Button);
+		Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		Slot->SetPadding(FMargin(0, 0, 5, 0));
+		return Button;
+	};
+	DialogueConditionPinButton = MakeConditionActionButton(TEXT("DialogueConditionPin"), TEXT("固定到任务栏"));
+	DialogueConditionAcceptButton = MakeConditionActionButton(TEXT("DialogueConditionAccept"), TEXT("接受条件"));
+	DialogueConditionPinButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::PinDialogueConditions);
+	DialogueConditionAcceptButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::AcceptDialogueConditions);
+	UVerticalBoxSlot* ConditionCardSlot = DialogueBarBox->AddChildToVerticalBox(DialogueConditionBorder);
+	ConditionCardSlot->SetPadding(FMargin(0, 0, 0, 6));
+	ConditionCardSlot->SetHorizontalAlignment(HAlign_Fill);
+	DialogueConditionBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	DialogueWheelPanel = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("DialogueWheel"));
 	USizeBox* IntentSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("DialogueIntentSize"));
@@ -1843,6 +1890,20 @@ FString UWhiteoutHUDWidget::BuildTaskGuide(
 	}
 
 	TArray<FString> Options;
+	if (State.PinnedRequirementActions.Contains(TEXT("repair_generator")))
+	{
+		const FWSNegotiationOffer* ActiveOffer = State.NegotiationOffers.FindByPredicate(
+			[](const FWSNegotiationOffer& Offer)
+			{
+				return Offer.TargetActionId == TEXT("repair_generator")
+					&& Offer.bAccepted
+					&& !Offer.bFulfilled
+					&& !Offer.bBroken;
+			});
+		Options.Add(ActiveOffer
+			? TEXT("• 已接受：本阶段内完成顾衡的发电机协作条件")
+			: TEXT("• 已固定：顾衡提出的发电机协作条件"));
+	}
 	if (State.Tasks.GeneratorProgress < 2)
 	{
 		Options.Add(TEXT("• 调查：日志或控制柜，换取证据与继电器信息"));
@@ -2212,6 +2273,21 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 			PromiseLines.Add(FString::Printf(TEXT("%s：%s"), *PromiseLabel, *PromiseState));
 		}
 		PromiseSummary = FString::Join(PromiseLines, TEXT("｜"));
+	}
+	if (!State.NegotiationOffers.IsEmpty())
+	{
+		TArray<FString> OfferLines;
+		for (const FWSNegotiationOffer& Offer : State.NegotiationOffers)
+		{
+			const FString OfferState = Offer.bFulfilled
+				? TEXT("已履行")
+				: Offer.bBroken ? TEXT("已违约") : TEXT("待完成");
+			OfferLines.Add(FString::Printf(TEXT("顾衡维修条件：%s"), *OfferState));
+		}
+		const FString OfferSummary = FString::Join(OfferLines, TEXT("｜"));
+		PromiseSummary = PromiseSummary == TEXT("本轮未作承诺")
+			? OfferSummary
+			: FString::Printf(TEXT("%s｜%s"), *PromiseSummary, *OfferSummary);
 	}
 	const FString HeaderFormat = FWSPresentationText::UI(
 		TEXT("ui_results_header_format_v06"),
@@ -2607,6 +2683,7 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bV
 {
 	bDialogueVisible = bVisible;
 	ActiveDialogueActionId = bVisible ? NPCActionId : NAME_None;
+	HideDialogueConditionCard();
 	ShowPanelAnimated(DialogueBorder, bVisible, WSUITokens::Anim::Normal);
 	if (!bVisible)
 	{
@@ -2657,6 +2734,7 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bV
 
 void UWhiteoutHUDWidget::ShowDialogueWheelChoices()
 {
+	HideDialogueConditionCard();
 	DialogueStage = EWSDialogueStage::IntentPick;
 	if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Visible);
 	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
@@ -2806,7 +2884,14 @@ void UWhiteoutHUDWidget::SubmitDialogueFreeText()
 	}
 	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
 	{
-		Character->SubmitDialogueChoice(PendingDialogueAct, PendingPromiseCondition, UserText);
+		if (PendingDialogueAct == EWSDialogueAct::Ask && PendingPromiseCondition.IsNone())
+		{
+			Character->SubmitDialogueText(UserText);
+		}
+		else
+		{
+			Character->SubmitDialogueChoice(PendingDialogueAct, PendingPromiseCondition, UserText);
+		}
 	}
 }
 
@@ -2999,14 +3084,14 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 	DialogueLineText->SetColorAndOpacity(FSlateColor(Body));
 	if (DialogueStatusText)
 	{
-		const FString ProviderStatus = !Reply.bFallback
+		const FString ProviderStatus = Reply.AnswerSource == TEXT("spine_plus_ai")
 			? FString::Printf(
-				TEXT("%s 在线表达"),
+				TEXT("%s 人格尾句"),
 				*LLMProviderDisplayName(Reply.Provider))
 			: Reply.Provider == TEXT("preset")
-				? TEXT("本地预设")
+				? TEXT("本地语义骨架")
 				: FString::Printf(
-					TEXT("%s 失败，本地降级：%s"),
+					TEXT("%s 尾句丢弃，保留本地骨架：%s"),
 					*LLMProviderDisplayName(Reply.Provider),
 					*LLMFallbackReasonLabel(Reply.ValidationReason));
 		const TCHAR* MovementLabel = TEXT("原地");
@@ -3035,7 +3120,161 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 		DialogueStatusText->SetText(FText::FromString(Status));
 		DialogueStatusText->SetColorAndOpacity(FSlateColor(!Reply.bFallback ? Cyan : Secondary));
 	}
+	UpdateDialogueConditionCard(Reply);
 	ShowDialogueReplyActions();
+}
+
+FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
+	const FWSActionRequirementReport& Report) const
+{
+	TArray<FString> Lines;
+	TArray<FString> Universal;
+	for (const FWSRequirementItem& Item : Report.UniversalRequirements)
+	{
+		if (Item.bDisclosable && !Item.bSatisfied)
+		{
+			Universal.Add(Item.Explanation.ToString());
+		}
+	}
+	if (!Universal.IsEmpty())
+	{
+		Lines.Add(FString::Printf(TEXT("共同：%s"), *FString::Join(Universal, TEXT("；"))));
+	}
+	else
+	{
+		Lines.Add(TEXT("共同：当前基础协作条件已满足"));
+	}
+	for (int32 PlanIndex = 0; PlanIndex < Report.AlternativePlans.Num() && PlanIndex < 2; ++PlanIndex)
+	{
+		const FWSRequirementPlan& Plan = Report.AlternativePlans[PlanIndex];
+		TArray<FString> Missing;
+		for (const FWSRequirementItem& Item : Plan.Requirements)
+		{
+			if (Item.bDisclosable && !Item.bSatisfied)
+			{
+				Missing.Add(Item.Explanation.ToString());
+			}
+		}
+		Lines.Add(FString::Printf(
+			TEXT("路线 %s：%s"),
+			PlanIndex == 0 ? TEXT("A") : TEXT("B"),
+			Missing.IsEmpty() ? TEXT("当前已满足") : *FString::Join(Missing, TEXT("；"))));
+	}
+	for (const FWSRequirementItem& Risk : Report.Risks)
+	{
+		if (Risk.bDisclosable && !Risk.bSatisfied)
+		{
+			Lines.Add(FString::Printf(TEXT("风险：%s"), *Risk.Explanation.ToString()));
+			break;
+		}
+	}
+	return FString::Join(Lines, TEXT("\n"));
+}
+
+void UWhiteoutHUDWidget::UpdateDialogueConditionCard(const FWSAgentReply& Reply)
+{
+	if (!DialogueConditionBorder
+		|| Reply.RequirementReport.ActionId != TEXT("repair_generator")
+		|| Reply.AnswerContract.QueryType != EWSDialogueQueryType::Requirements)
+	{
+		HideDialogueConditionCard();
+		return;
+	}
+	ActiveDialogueRequirementReport = Reply.RequirementReport;
+	if (DialogueConditionBodyText)
+	{
+		DialogueConditionBodyText->SetText(FText::FromString(
+			BuildDialogueConditionSummary(ActiveDialogueRequirementReport)));
+	}
+	bool bPinned = false;
+	bool bOfferActive = false;
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UWindStationStateSubsystem* StateSubsystem =
+			GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			const FWSGameState State = StateSubsystem->GetStateSnapshot();
+			bPinned = State.PinnedRequirementActions.Contains(TEXT("repair_generator"));
+			bOfferActive = State.NegotiationOffers.ContainsByPredicate(
+				[](const FWSNegotiationOffer& Offer)
+				{
+					return Offer.TargetActionId == TEXT("repair_generator")
+						&& Offer.bAccepted
+						&& !Offer.bFulfilled
+						&& !Offer.bBroken;
+				});
+		}
+	}
+	if (DialogueConditionPinButton)
+	{
+		DialogueConditionPinButton->SetIsEnabled(!bPinned);
+	}
+	if (DialogueConditionAcceptButton)
+	{
+		DialogueConditionAcceptButton->SetIsEnabled(!bOfferActive);
+	}
+	if (DialogueConditionStatusText)
+	{
+		const FString Status = bOfferActive
+			? TEXT("已接受 · 本阶段有效 · 实际行动才消耗 AP/资源")
+			: bPinned
+				? TEXT("已固定到任务栏")
+				: TEXT("条件来自当前规则状态，可固定或接受");
+		DialogueConditionStatusText->SetText(FText::FromString(Status));
+	}
+	DialogueConditionBorder->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UWhiteoutHUDWidget::HideDialogueConditionCard()
+{
+	ActiveDialogueRequirementReport = FWSActionRequirementReport();
+	if (DialogueConditionBorder)
+	{
+		DialogueConditionBorder->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UWhiteoutHUDWidget::PinDialogueConditions()
+{
+	if (ActiveDialogueRequirementReport.ActionId != TEXT("repair_generator"))
+	{
+		return;
+	}
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UWindStationStateSubsystem* StateSubsystem =
+			GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			if (StateSubsystem->SetRequirementPinned(TEXT("repair_generator"), true))
+			{
+				if (DialogueConditionPinButton) DialogueConditionPinButton->SetIsEnabled(false);
+				if (DialogueConditionStatusText)
+				{
+					DialogueConditionStatusText->SetText(FText::FromString(TEXT("已固定到任务栏")));
+				}
+			}
+		}
+	}
+}
+
+void UWhiteoutHUDWidget::AcceptDialogueConditions()
+{
+	FString Message;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UWindStationStateSubsystem* StateSubsystem =
+			GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			const bool bAccepted = StateSubsystem->AcceptLatestNegotiationOffer(Message);
+			if (DialogueConditionAcceptButton) DialogueConditionAcceptButton->SetIsEnabled(!bAccepted);
+			if (DialogueConditionPinButton && bAccepted) DialogueConditionPinButton->SetIsEnabled(false);
+			if (DialogueConditionStatusText)
+			{
+				DialogueConditionStatusText->SetText(FText::FromString(Message));
+				DialogueConditionStatusText->SetColorAndOpacity(FSlateColor(bAccepted ? Cyan : Amber));
+			}
+		}
+	}
 }
 
 void UWhiteoutHUDWidget::ResetPresentationCapture()

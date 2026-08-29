@@ -78,6 +78,8 @@ public:
 	bool ApplyLLMRuntimeConfiguration(FString& OutError);
 	FString GetLLMRuntimeStatus() const;
 	bool HasLiveLLMProvider() const;
+	bool SetRequirementPinned(FName ActionId, bool bPinned);
+	bool AcceptLatestNegotiationOffer(FString& OutMessage);
 	void RequestDialogueIntent(
 		const FString& UserText,
 		FName CurrentDialogueActionId,

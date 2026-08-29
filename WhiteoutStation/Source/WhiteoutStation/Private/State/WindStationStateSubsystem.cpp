@@ -139,6 +139,30 @@ bool UWindStationStateSubsystem::HasLiveLLMProvider() const
 		&& AgentGateway->HasLiveProvider();
 }
 
+bool UWindStationStateSubsystem::SetRequirementPinned(
+	const FName ActionId,
+	const bool bPinned)
+{
+	if (!RulesEngine.SetRequirementPinned(ActionId, bPinned))
+	{
+		return false;
+	}
+	SaveSnapshot();
+	BroadcastState();
+	return true;
+}
+
+bool UWindStationStateSubsystem::AcceptLatestNegotiationOffer(FString& OutMessage)
+{
+	if (!RulesEngine.AcceptNegotiationOffer(LatestDialogue, OutMessage))
+	{
+		return false;
+	}
+	SaveSnapshot();
+	BroadcastState();
+	return true;
+}
+
 void UWindStationStateSubsystem::RequestDialogueIntent(
 	const FString& UserText,
 	const FName CurrentDialogueActionId,

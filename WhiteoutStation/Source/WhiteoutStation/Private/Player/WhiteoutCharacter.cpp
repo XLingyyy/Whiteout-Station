@@ -651,6 +651,15 @@ void AWhiteoutCharacter::SubmitDialogueChoice(
 		PendingPlayerSaid.Reset();
 		return;
 	}
+	if (PendingSemanticFrame.Source.IsEmpty())
+	{
+		PendingSemanticFrame.SpeechAct = DialogueAct;
+		PendingSemanticFrame.TargetCharacter = ActiveDialogueTarget->ActionId == TEXT("talk_ye_cheng")
+			? EWSCharacterId::YeCheng
+			: EWSCharacterId::GuHeng;
+		PendingSemanticFrame.Source = TEXT("dialogue_wheel");
+		PendingSemanticFrame.Confidence = 1.0f;
+	}
 	CommitDialogueChoice(DialogueAct, PromiseCondition);
 }
 

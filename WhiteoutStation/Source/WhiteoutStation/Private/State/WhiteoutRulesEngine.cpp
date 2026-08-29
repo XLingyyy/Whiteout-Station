@@ -466,6 +466,8 @@ void FWhiteoutRulesEngine::Reset()
 	State.ActionCounts.Reset();
 	State.CommittedTransactions.Reset();
 	State.Promises.Reset();
+	State.NegotiationOffers.Reset();
+	State.PinnedRequirementActions.Reset();
 	State.EventLog.Reset();
 	State.PhaseSummaries.Reset();
 	State.ModelCalls = 0;
@@ -1478,6 +1480,7 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(FWSActionRequest Request)
 	}
 	ApplyV11Effect(Request, ActionPreview, Result.Changes);
 	Result.bPromiseRecorded = State.Promises.Num() > PromiseCountBefore;
+	UpdateNegotiationOffersForCommittedAction(Request, Result.Changes);
 
 	State.PhaseActionPoints = FMath::Max(
 		0,
@@ -1694,6 +1697,7 @@ bool FWhiteoutRulesEngine::SettleDayPhase(
 		OutSummary.NPCReaction = TEXT("gu_heng_withhold");
 	}
 	OutSummary.OrderedSteps.Add(TEXT("6. 阶段事件与单次 NPC 反应"));
+	ExpireNegotiationOffers(SettledPhase, OutSummary.Changes);
 	OutSummary.OrderedSteps.Add(TEXT("7. 因果摘要"));
 	const auto CharacterLabel = [](const EWSCharacterId CharacterId)
 	{
@@ -2494,6 +2498,132 @@ bool FWhiteoutRulesEngine::TryRecordModelCall()
 	}
 	++State.ModelCalls;
 	return true;
+}
+
+bool FWhiteoutRulesEngine::SetRequirementPinned(
+	const FName ActionId,
+	const bool bPinned)
+{
+	if (ActionId != WhiteoutRules::RepairGenerator)
+	{
+		return false;
+	}
+	if (bPinned)
+	{
+		State.PinnedRequirementActions.AddUnique(ActionId);
+	}
+	else
+	{
+		State.PinnedRequirementActions.Remove(ActionId);
+	}
+	return true;
+}
+
+bool FWhiteoutRulesEngine::AcceptNegotiationOffer(
+	const FWSAgentReply& Reply,
+	FString& OutMessage)
+{
+	if (Reply.RequirementReport.ActionId != WhiteoutRules::RepairGenerator
+		|| Reply.AnswerContract.QueryType != EWSDialogueQueryType::Requirements
+		|| Reply.Speaker != EWSCharacterId::GuHeng)
+	{
+		OutMessage = TEXT("当前回应没有可接受的行动条件。");
+		return false;
+	}
+	if (State.NegotiationOffers.ContainsByPredicate(
+			[](const FWSNegotiationOffer& Offer)
+			{
+				return Offer.TargetActionId == WhiteoutRules::RepairGenerator
+					&& Offer.bAccepted
+					&& !Offer.bFulfilled
+					&& !Offer.bBroken;
+			}))
+	{
+		OutMessage = TEXT("这组条件已经接受，正在任务栏追踪。");
+		return false;
+	}
+
+	FWSNegotiationOffer Offer;
+	Offer.OfferId = FName(*FString::Printf(
+		TEXT("gu_heng_repair_generator_%d_%d"),
+		static_cast<int32>(State.DayPhase),
+		State.NegotiationOffers.Num() + 1));
+	Offer.Issuer = EWSCharacterId::GuHeng;
+	Offer.TargetActionId = WhiteoutRules::RepairGenerator;
+	Offer.PromisedNPCActionId = WhiteoutRules::RepairGenerator;
+	Offer.ExpiryPhase = State.DayPhase;
+	Offer.bAccepted = true;
+	for (const FWSRequirementItem& Item : Reply.RequirementReport.UniversalRequirements)
+	{
+		if (Item.bDisclosable)
+		{
+			Offer.RequiredConditionIds.AddUnique(Item.RequirementId);
+		}
+	}
+	const FWSRequirementPlan* SelectedPlan = nullptr;
+	for (const FWSRequirementPlan& Plan : Reply.RequirementReport.AlternativePlans)
+	{
+		if (!SelectedPlan
+			|| Plan.EstimatedAP < SelectedPlan->EstimatedAP
+			|| (Plan.EstimatedAP == SelectedPlan->EstimatedAP
+				&& Plan.RiskScore < SelectedPlan->RiskScore))
+		{
+			SelectedPlan = &Plan;
+		}
+	}
+	if (SelectedPlan)
+	{
+		for (const FWSRequirementItem& Item : SelectedPlan->Requirements)
+		{
+			if (Item.bDisclosable)
+			{
+				Offer.RequiredConditionIds.AddUnique(Item.RequirementId);
+			}
+		}
+	}
+	State.NegotiationOffers.Add(Offer);
+	State.PinnedRequirementActions.AddUnique(Offer.TargetActionId);
+	OutMessage = TEXT("条件已接受并固定；后续实际行动才会消耗行动力或资源。");
+	return true;
+}
+
+void FWhiteoutRulesEngine::UpdateNegotiationOffersForCommittedAction(
+	const FWSActionRequest& Request,
+	TArray<FString>& OutChanges)
+{
+	for (FWSNegotiationOffer& Offer : State.NegotiationOffers)
+	{
+		if (!Offer.bAccepted || Offer.bFulfilled || Offer.bBroken
+			|| Offer.TargetActionId != Request.ActionId)
+		{
+			continue;
+		}
+		Offer.bFulfilled = true;
+		State.PinnedRequirementActions.Remove(Offer.TargetActionId);
+		OutChanges.Add(TEXT("顾衡的维修条件已履行，协作协议完成"));
+	}
+}
+
+void FWhiteoutRulesEngine::ExpireNegotiationOffers(
+	const EWSDayPhase SettledPhase,
+	TArray<FString>& OutChanges)
+{
+	for (FWSNegotiationOffer& Offer : State.NegotiationOffers)
+	{
+		if (!Offer.bAccepted || Offer.bFulfilled || Offer.bBroken
+			|| Offer.ExpiryPhase != SettledPhase)
+		{
+			continue;
+		}
+		Offer.bBroken = true;
+		State.PinnedRequirementActions.Remove(Offer.TargetActionId);
+		if (Offer.Issuer == EWSCharacterId::GuHeng)
+		{
+			FWSCharacterState& GuHeng = Character(EWSCharacterId::GuHeng);
+			GuHeng.Trust = FMath::Clamp(GuHeng.Trust - 0.5f, 0.0f, 10.0f);
+		}
+		OutChanges.Add(TEXT("顾衡的维修条件已过期，协议标记为违约"));
+	}
 }
 
 EWSEndingType FWhiteoutRulesEngine::ClassifyEnding() const

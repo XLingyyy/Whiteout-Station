@@ -66,6 +66,14 @@ public:
 	void EndGame();
 	bool TryRecordModelCall();
 	FWSActionRequirementReport EvaluateActionRequirements(const FWSActionRequest& Request) const;
+	bool SetRequirementPinned(FName ActionId, bool bPinned);
+	bool AcceptNegotiationOffer(const FWSAgentReply& Reply, FString& OutMessage);
+	void UpdateNegotiationOffersForCommittedAction(
+		const FWSActionRequest& Request,
+		TArray<FString>& OutChanges);
+	void ExpireNegotiationOffers(
+		EWSDayPhase SettledPhase,
+		TArray<FString>& OutChanges);
 
 	TArray<FName> BuildAllowedFactIds(EWSCharacterId CharacterId) const;
 	static bool ValidateAgentResponse(

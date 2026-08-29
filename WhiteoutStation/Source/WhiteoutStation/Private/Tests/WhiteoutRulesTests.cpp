@@ -1452,4 +1452,76 @@ bool FWhiteoutV11RequirementReportMatrixTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV12NegotiationOfferLifecycleTest,
+	"WhiteoutStation.RulesV11.DialogueNegotiationOfferLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV12NegotiationOfferLifecycleTest::RunTest(const FString& Parameters)
+{
+	auto BuildRequirementReply = [](FWhiteoutRulesEngine& Engine)
+	{
+		FWSActionRequest TargetRequest;
+		TargetRequest.ActionId = TEXT("repair_generator");
+		const FWSActionRequirementReport Report =
+			Engine.EvaluateActionRequirements(TargetRequest);
+		FWSActionRequest DialogueRequest;
+		DialogueRequest.ActionId = TEXT("talk_gu_heng");
+		DialogueRequest.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+		DialogueRequest.SemanticFrame.QueryType = EWSDialogueQueryType::Requirements;
+		DialogueRequest.SemanticFrame.TargetActionId = TEXT("repair_generator");
+		DialogueRequest.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+		return UWSNPCDecisionService::BuildDeterministicReply(
+			DialogueRequest,
+			Engine.GetState(),
+			Report);
+	};
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::RepairRoom)) return false;
+		FWSCharacterState& GuHeng = Engine.GetMutableStateForTesting().Characters.FindChecked(EWSCharacterId::GuHeng);
+		GuHeng.Trust = 3.5f;
+		GuHeng.Pressure = 7.2f;
+		GuHeng.Stamina = 2;
+		GuHeng.InjurySeverity = EWSInjurySeverity::Restricted;
+		const FWSAgentReply Reply = BuildRequirementReply(Engine);
+		const int32 APBeforeAccept = Engine.GetState().ActionPoints;
+		const FWSResourceState ResourcesBeforeAccept = Engine.GetState().Resources;
+		FString Message;
+		TestTrue(TEXT("Grounded conditions create an offer"), Engine.AcceptNegotiationOffer(Reply, Message));
+		TestEqual(TEXT("Accepting an offer spends no AP"), Engine.GetState().ActionPoints, APBeforeAccept);
+		TestEqual(TEXT("Accepting an offer consumes no fuel"), Engine.GetState().Resources.Fuel, ResourcesBeforeAccept.Fuel);
+		TestEqual(TEXT("Accepting an offer consumes no relay"), Engine.GetState().Resources.ReplacementRelay, ResourcesBeforeAccept.ReplacementRelay);
+		TestTrue(TEXT("Accepted offer is pinned"), Engine.GetState().PinnedRequirementActions.Contains(TEXT("repair_generator")));
+		TestEqual(TEXT("One offer is stored"), Engine.GetState().NegotiationOffers.Num(), 1);
+
+		FWSActionRequest Repair = WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+		Repair.bHasCollaborator = true;
+		Repair.Collaborator = EWSCharacterId::Player;
+		const FWSActionResult RepairResult = Engine.Commit(Repair);
+		TestTrue(TEXT("Player can fulfill the accepted repair offer"), RepairResult.bCommitted);
+		TestTrue(TEXT("Offer becomes fulfilled after target action"), Engine.GetState().NegotiationOffers[0].bFulfilled);
+		TestFalse(TEXT("Fulfilled offer is removed from task tracking"), Engine.GetState().PinnedRequirementActions.Contains(TEXT("repair_generator")));
+	}
+
+	{
+		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom)) return false;
+		const FWSAgentReply Reply = BuildRequirementReply(Engine);
+		FString Message;
+		TestTrue(TEXT("A second run can accept the offer"), Engine.AcceptNegotiationOffer(Reply, Message));
+		const float TrustBeforeExpiry = Engine.GetState().Characters.FindChecked(EWSCharacterId::GuHeng).Trust;
+		EWSReasonCode Reason = EWSReasonCode::UnknownAction;
+		FWSPhaseSummary Summary;
+		TestTrue(TEXT("Offer expiry phase settles"), Engine.SettleDayPhase(Reason, Summary));
+		TestTrue(TEXT("Unfulfilled offer becomes broken"), Engine.GetState().NegotiationOffers[0].bBroken);
+		TestEqual(
+			TEXT("Broken offer applies deterministic trust cost"),
+			Engine.GetState().Characters.FindChecked(EWSCharacterId::GuHeng).Trust,
+			TrustBeforeExpiry - 0.5f);
+	}
+	return true;
+}
+
 #endif
