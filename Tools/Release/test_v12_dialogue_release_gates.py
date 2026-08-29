@@ -86,4 +86,6 @@ def test_v12_shipping_contract_covers_grounded_actions_and_failures() -> None:
     assert v11_smoke.AGENT_RUNTIME_VERSION == "1.2.0"
     assert v11_smoke.AGENT_SCHEMA_VERSION == 5
     assert "repair_generator" in v11_smoke.EXPRESSION_ACTION_IDS
-    assert {"provider_rejected", "timeout_endpoint", "loopback_mock"} <= modes
+    assert v11_smoke.PERFORMANCE_VALIDATION_REASON == "persona_tail_accepted"
+    assert {"provider_rejected", "loopback_mock"} <= modes
+    assert v11_smoke.RUN_TIMEOUT_PROBE is True

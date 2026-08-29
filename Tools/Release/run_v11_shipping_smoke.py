@@ -45,6 +45,8 @@ AGENT_RUNTIME_VERSION = "1.1.0"
 AGENT_SCHEMA_VERSION = 4
 SMOKE_SCHEMA = "whiteout.v1.1.shipping-smoke.v1"
 EXPRESSION_ACTION_IDS = frozenset({"talk_gu_heng", "talk_ye_cheng"})
+PERFORMANCE_VALIDATION_REASON = "ok"
+RUN_TIMEOUT_PROBE = False
 EVENT_LOG_REL = Path("Saved/Logs/WhiteoutStation_EventLog.json")
 MODEL_AUDIT_REL = Path("Saved/Logs/WhiteoutStation_ModelAudit.jsonl")
 LOOPBACK_AUDIT_REL = Path("Saved/Logs/WhiteoutStation_LoopbackAudit.jsonl")
@@ -798,6 +800,74 @@ def run_dialogue_history_probe(
     }
 
 
+def run_timeout_probe(
+    executable: Path,
+    staging_root: Path,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    scenario_id = "timeout_expression_probe"
+    runtime_root = staging_root / "Runtime" / scenario_id
+    evidence_root = staging_root / "Evidence"
+    runtime_root.mkdir(parents=True)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    force_empty_credential_inputs()
+    loopback_audit = runtime_root / LOOPBACK_AUDIT_REL
+    with MockLoopbackEndpoint(
+        loopback_audit,
+        MockConfig(delay_seconds=20.0),
+    ) as endpoint:
+        command = [
+            str(executable),
+            "-WhiteoutExpressionProbe=维修条件是什么？",
+            "-WhiteoutExpressionAction=talk_gu_heng",
+            "-WhiteoutLLMEnabled=true",
+            "-WhiteoutAgentTimeoutSeconds=1",
+            (
+                "-WhiteoutAgentEndpoint="
+                f"http://127.0.0.1:{endpoint.port}/chat/completions"
+            ),
+            f"-UserDir={runtime_root.resolve()}",
+            "-RenderOffscreen",
+            "-nosplash",
+            "-unattended",
+            "-NoSound",
+        ]
+        try:
+            return_code = run_process(command, executable.parent, timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            raise SmokeError(f"{scenario_id}: Shipping process timed out") from exc
+        request_count = endpoint.attempts
+    force_empty_credential_inputs()
+    if return_code != 0:
+        raise SmokeError(f"{scenario_id}: process returned {return_code}")
+    model_audit = runtime_root / MODEL_AUDIT_REL
+    records = load_json_lines(model_audit, scenario_id)
+    if len(records) != 1:
+        raise SmokeError(f"{scenario_id}: expected one model audit record")
+    record = records[0]
+    if (
+        record.get("kind") != "expression"
+        or record.get("action_id") != "talk_gu_heng"
+        or record.get("outcome") != "transport_error"
+        or record.get("final_answer_source") != "spine_only"
+        or record.get("transport_attempt_limit") != 2
+    ):
+        raise SmokeError(f"{scenario_id}: timeout did not use bounded spine fallback")
+    if not 1 <= request_count <= 2:
+        raise SmokeError(f"{scenario_id}: timeout retry count is outside bounds")
+    audit_name = f"{scenario_id}_ModelAudit.jsonl"
+    shutil.copy2(model_audit, evidence_root / audit_name)
+    print(f"{scenario_id}=PASS outcome=transport_error requests={request_count}")
+    return {
+        "scenario_id": scenario_id,
+        "passed": True,
+        "outcome": "transport_error",
+        "final_answer_source": "spine_only",
+        "requests": request_count,
+        "model_audit": audit_name,
+    }
+
+
 def run_performance_probe(
     executable: Path,
     staging_root: Path,
@@ -820,6 +890,7 @@ def run_performance_probe(
             f"-WhiteoutExpressionAction={action_id}",
             "-WhiteoutApplyExpressionProbe",
             "-WhiteoutPerformanceCaptureToSaved",
+            f"-WhiteoutInputSmokeTarget={action_id}",
             "-WhiteoutLLMEnabled=true",
             (
                 "-WhiteoutAgentEndpoint="
@@ -858,7 +929,7 @@ def run_performance_probe(
         "action_id": action_id,
         "provider": "loopback",
         "fallback": False,
-        "validation_reason": "ok",
+        "validation_reason": PERFORMANCE_VALIDATION_REASON,
         "movement_intent": "step_closer",
         "reaction_action": "acknowledge",
         "performance_applied": True,
@@ -950,6 +1021,11 @@ def run_shipping_smoke(
             run_scenario(executable, scenario, staging_root, timeout_seconds)
             for scenario in SCENARIOS
         ]
+        timeout_probe = (
+            run_timeout_probe(executable, staging_root, timeout_seconds)
+            if RUN_TIMEOUT_PROBE
+            else None
+        )
         history_probe = run_dialogue_history_probe(
             executable,
             staging_root,
@@ -1001,6 +1077,7 @@ def run_shipping_smoke(
                 "local_credential_config_accepted": False,
             },
             "scenarios": summaries,
+            "timeout_probe": timeout_probe,
             "dialogue_history_probe": history_probe,
             "performance_probes": performance_probes,
             "ai_ab": {

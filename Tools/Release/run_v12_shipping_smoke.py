@@ -29,30 +29,21 @@ def configure_v12_contract() -> None:
     smoke.EXPRESSION_ACTION_IDS = frozenset(
         {"talk_gu_heng", "talk_ye_cheng", "repair_generator"}
     )
+    smoke.PERFORMANCE_VALIDATION_REASON = "persona_tail_accepted"
+    smoke.RUN_TIMEOUT_PROBE = True
     smoke.SCENARIOS = (
         smoke.Scenario("missing_key_medical", "medical", "default_missing_key", 0),
-        smoke.Scenario(
-            "missing_key_technical", "technical", "default_missing_key", 0
-        ),
+        smoke.Scenario("missing_key_technical", "technical", "default_missing_key", 0),
         smoke.Scenario("missing_key_quick", "quick", "default_missing_key", 0),
         smoke.Scenario("missing_key_wait", "wait", "default_missing_key", 0),
-        smoke.Scenario(
-            "missing_key_collapse", "collapse", "default_missing_key", 0
-        ),
-        smoke.Scenario(
-            "explicit_offline_medical", "medical", "explicit_offline", 0
-        ),
+        smoke.Scenario("missing_key_collapse", "collapse", "default_missing_key", 0),
+        smoke.Scenario("explicit_offline_medical", "medical", "explicit_offline", 0),
         smoke.Scenario("loopback_online_quick", "quick", "loopback_mock", 3),
-        smoke.Scenario(
-            "loopback_online_technical", "technical", "loopback_mock", 3
-        ),
+        smoke.Scenario("loopback_online_technical", "technical", "loopback_mock", 3),
         smoke.Scenario(
             "unreachable_endpoint_quick", "quick", "unreachable_endpoint", 3
         ),
-        smoke.Scenario(
-            "invalid_credential_quick", "quick", "provider_rejected", 3
-        ),
-        smoke.Scenario("timeout_endpoint_quick", "quick", "timeout_endpoint", 3),
+        smoke.Scenario("invalid_credential_quick", "quick", "provider_rejected", 3),
     )
 
 
