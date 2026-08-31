@@ -742,6 +742,22 @@ def test_valid_natural_mock_realizes_exact_probe_contract() -> None:
     assert response.realized_atom_ids == ("PROBE_ACKNOWLEDGED",)
 
 
+def test_valid_natural_mock_mirrors_required_disclosed_facts() -> None:
+    request = build_request_payload()
+    context = json.loads(request["messages"][-1]["content"])
+    context.pop("planned_disclosure_fact_ids", None)
+    context["required_disclosed_fact_ids"] = ["FACT_RELAY_COMPATIBILITY"]
+    request["messages"][-1]["content"] = json.dumps(
+        context,
+        ensure_ascii=False,
+    )
+
+    kind, content = build_mock_content(request, "valid_natural")
+
+    assert kind == "npc_line"
+    assert content["disclosed_fact_ids"] == ["FACT_RELAY_COMPATIBILITY"]
+
+
 @pytest.mark.parametrize(
     ("mode", "reason"),
     [

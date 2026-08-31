@@ -282,6 +282,7 @@ def build_mock_content(
 
     planned_facts = _string_list(
         context,
+        "required_disclosed_fact_ids",
         "planned_disclosure_fact_ids",
         "planned_knowledge_upgrade_fact_ids",
     )
@@ -384,7 +385,12 @@ class Handler(BaseHTTPRequestHandler):
             "must_atom_count": len(_atom_entries(context, "must_realize")),
             "may_atom_count": len(_atom_entries(context, "may_realize")),
             "planned_disclosure_count": len(
-                _string_list(context, "planned_disclosure_fact_ids")
+                _string_list(
+                    context,
+                    "required_disclosed_fact_ids",
+                    "planned_disclosure_fact_ids",
+                    "planned_knowledge_upgrade_fact_ids",
+                )
             ),
             "message_count": len(safe_messages),
             "role_sequence": role_sequence,

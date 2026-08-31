@@ -731,6 +731,20 @@ def test_v13_shipping_contract_covers_every_required_mock_mode() -> None:
     assert v11_smoke.AGENT_RUNTIME_REL.as_posix().endswith("AgentRuntime.v1.3.json")
 
 
+def test_v13_shipping_contract_pins_v13_route_scores() -> None:
+    configure_v13_contract()
+    assert {
+        route: contract["score"]
+        for route, contract in v11_smoke.EXPECTED_ROUTES.items()
+    } == {
+        "medical": 74.70,
+        "technical": 72.94,
+        "quick": 58.94,
+        "wait": 36.92,
+        "collapse": 42.16,
+    }
+
+
 def test_v13_mock_valid_and_failure_payloads_are_distinct() -> None:
     context = {
         "protocol_version": "dialogue_epistemic_v3",
@@ -747,7 +761,7 @@ def test_v13_mock_valid_and_failure_payloads_are_distinct() -> None:
             },
         ],
         "may_realize": [],
-        "planned_disclosure_fact_ids": [],
+        "required_disclosed_fact_ids": ["FACT_RELAY_COMPATIBILITY"],
         "allowed_emotions": ["focused"],
         "allowed_movement_intents": ["stay"],
         "allowed_reaction_actions": ["consider"],
@@ -763,6 +777,7 @@ def test_v13_mock_valid_and_failure_payloads_are_distinct() -> None:
         "PLAYER_ASSISTANCE_NEEDED",
         "GU_HENG_NEEDS_RECOVERY",
     ]
+    assert valid["disclosed_fact_ids"] == ["FACT_RELAY_COMPATIBILITY"]
     _kind, missing = mock_server.build_mock_content(request, "missing_atom")
     assert missing["realized_atom_ids"] != valid["realized_atom_ids"]
     _kind, forbidden = mock_server.build_mock_content(request, "forbidden_fact")

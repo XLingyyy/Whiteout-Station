@@ -233,6 +233,18 @@ V13_SCENARIOS = (
     V13Scenario("invalid_credential_quick", "quick", "provider_rejected", 1),
 )
 
+_BASE_EXPECTED_ROUTES = {
+    route: {**contract, "actions": list(contract["actions"])}
+    for route, contract in smoke.EXPECTED_ROUTES.items()
+}
+V13_EXPECTED_ROUTE_SCORES = {
+    "medical": 74.70,
+    "technical": 72.94,
+    "quick": 58.94,
+    "wait": 36.92,
+    "collapse": 42.16,
+}
+
 _BASE_VALIDATE_EVENT_LOG = smoke.validate_event_log
 _BASE_RUN_SCENARIO = smoke.run_scenario
 _BASE_VALIDATE_AUDIT = smoke.validate_audit
@@ -795,6 +807,14 @@ def configure_v13_contract() -> None:
     smoke.EXPRESSION_ACTION_IDS = frozenset(
         {"talk_gu_heng", "talk_ye_cheng"}
     )
+    smoke.EXPECTED_ROUTES = {
+        route: {
+            **contract,
+            "actions": list(contract["actions"]),
+            "score": V13_EXPECTED_ROUTE_SCORES[route],
+        }
+        for route, contract in _BASE_EXPECTED_ROUTES.items()
+    }
     smoke.PERFORMANCE_VALIDATION_REASON = "accepted"
     smoke.RUN_TIMEOUT_PROBE = False
     smoke.SCENARIOS = V13_SCENARIOS
