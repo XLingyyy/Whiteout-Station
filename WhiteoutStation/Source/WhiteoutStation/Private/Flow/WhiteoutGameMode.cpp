@@ -1,6 +1,7 @@
 #include "Flow/WhiteoutGameMode.h"
 
 #include "Agents/WSAgentGateway.h"
+#include "Agents/WSNPCDecisionService.h"
 #include "Algo/Sort.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
@@ -45,6 +46,35 @@
 
 namespace
 {
+	FWSPreparedDialogue BuildProbePreparedDialogue(
+		const FWSActionRequest& Request,
+		const FWSGameState& State,
+		const FWSActionRequirementReport& RequirementReport,
+		const int64 StateRevision,
+		const int64 Generation)
+	{
+		FWSPreparedDialogue Prepared;
+		Prepared.TransactionId = Request.TransactionId;
+		Prepared.StateRevision = StateRevision;
+		Prepared.Generation = Generation;
+		Prepared.OriginalRequest = Request;
+		Prepared.ReadSnapshot = State;
+		Prepared.Contract = UWSNPCDecisionService::BuildDialogueContract(
+			Request,
+			State,
+			RequirementReport,
+			Prepared.LocalFallback);
+		Prepared.AllowedFactIds = UWSNPCDecisionService::BuildAllowedFacts(
+			Request,
+			Prepared.LocalFallback.Speaker,
+			State);
+		Prepared.PlannedDisclosureFacts =
+			Prepared.LocalFallback.PlannedDisclosureFacts;
+		Prepared.PlannedKnowledgeUpgrades =
+			Prepared.LocalFallback.DisclosedFactIds;
+		return Prepared;
+	}
+
 	FString PerformanceMovementToken(const EWSNPCMovementIntent Intent)
 	{
 		switch (Intent)
@@ -425,14 +455,26 @@ void AWhiteoutGameMode::BeginPlay()
 		const FWSGameState ProbeState = ProbeSubsystem
 			? ProbeSubsystem->GetStateSnapshot()
 			: FWSGameState();
+		FWSActionRequest ExpressionProbeRequest;
+		ExpressionProbeRequest.ActionId = ExpressionProbeAction;
+		ExpressionProbeRequest.TransactionId = FGuid::NewGuid();
+		ExpressionProbeRequest.PlayerSaid =
+			ExpressionProbeText.TrimStartAndEnd().Left(280);
+		const FWSPreparedDialogue ExpressionProbePrepared =
+			BuildProbePreparedDialogue(
+				ExpressionProbeRequest,
+				ProbeState,
+				FWSActionRequirementReport(),
+				ProbeSubsystem ? ProbeSubsystem->GetStateRevision() : 0,
+				0);
 		TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
-		IntentProbeGateway->RequestExpression(
-			ExpressionProbeAction,
-			ProbeState,
+		IntentProbeGateway->RequestDialogueRealization(
+			ExpressionProbePrepared,
 			true,
-			FWSAgentReplyCallback::CreateLambda(
-				[WeakThis, bApplyExpressionProbe, ExpressionProbeActor, ExpressionProbeStart, ExpressionProbeAction](const FWSAgentReply& Reply)
+			FWSDialogueOutcomeCallback::CreateLambda(
+				[WeakThis, bApplyExpressionProbe, ExpressionProbeActor, ExpressionProbeStart, ExpressionProbeAction](const FWSDialogueOutcome& Outcome)
 				{
+					const FWSAgentReply& Reply = Outcome.FinalReply;
 					UE_LOG(
 						LogTemp,
 						Display,
@@ -558,8 +600,7 @@ void AWhiteoutGameMode::BeginPlay()
 							bApplyExpressionProbe ? 2.9f : 0.4f,
 							false);
 					}
-				}),
-			ExpressionProbeText);
+				}));
 	}
 
 	const bool bDialogueHistoryProbeRequested = FParse::Param(
@@ -686,15 +727,20 @@ void AWhiteoutGameMode::RunDialogueHistoryProbeStep(const int32 Step)
 	const FWSActionRequirementReport RequirementReport = StateSubsystem && Step == 1
 		? StateSubsystem->EvaluateActionRequirements(TEXT("repair_generator"))
 		: FWSActionRequirementReport();
-	TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
-	IntentProbeGateway->RequestExpression(
+	const FWSPreparedDialogue Prepared = BuildProbePreparedDialogue(
 		Request,
 		State,
 		RequirementReport,
+		StateSubsystem ? StateSubsystem->GetStateRevision() : 0,
+		0);
+	TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
+	IntentProbeGateway->RequestDialogueRealization(
+		Prepared,
 		true,
-		FWSAgentReplyCallback::CreateLambda(
-			[WeakThis, Step](const FWSAgentReply& Reply)
+		FWSDialogueOutcomeCallback::CreateLambda(
+			[WeakThis, Step, Request](const FWSDialogueOutcome& Outcome)
 			{
+				const FWSAgentReply& Reply = Outcome.FinalReply;
 				UE_LOG(
 					LogTemp,
 					Display,
@@ -713,6 +759,12 @@ void AWhiteoutGameMode::RunDialogueHistoryProbeStep(const int32 Step)
 				if (!WeakThis.IsValid())
 				{
 					return;
+				}
+				if (WeakThis->IntentProbeGateway)
+				{
+					WeakThis->IntentProbeGateway->RecordCommittedDialogueTurn(
+						Request,
+						Reply);
 				}
 				if (Step == 0)
 				{

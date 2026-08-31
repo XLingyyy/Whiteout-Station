@@ -356,6 +356,168 @@ namespace
 		return true;
 	}
 
+	bool IsAllowedEmotion(const FString& Emotion)
+	{
+		static const TSet<FString> Allowed = {
+			TEXT("guarded"), TEXT("focused"), TEXT("firm"), TEXT("strained"),
+			TEXT("cornered"), TEXT("defiant"), TEXT("withdrawn"), TEXT("measured"),
+			TEXT("wary"), TEXT("controlled"), TEXT("defensive"), TEXT("uneasy"),
+			TEXT("steadier"), TEXT("resentful"), TEXT("clinical"), TEXT("grim"),
+			TEXT("alarmed"), TEXT("urgent"), TEXT("relieved"), TEXT("reserved"),
+			TEXT("calm"), TEXT("concerned"), TEXT("neutral")};
+		return Allowed.Contains(Emotion);
+	}
+
+	int32 CountSentences(const FString& Line)
+	{
+		int32 Count = 0;
+		bool bInsideTerminalRun = false;
+		for (const TCHAR Character : Line)
+		{
+			const bool bTerminal = Character == TEXT('。')
+				|| Character == TEXT('！')
+				|| Character == TEXT('？')
+				|| Character == TEXT('.')
+				|| Character == TEXT('!')
+				|| Character == TEXT('?');
+			if (bTerminal && !bInsideTerminalRun)
+			{
+				++Count;
+			}
+			bInsideTerminalRun = bTerminal;
+		}
+		return FMath::Max(1, Count);
+	}
+
+	bool ContainsIdentifierLikeToken(const FString& Line)
+	{
+		for (int32 Index = 1; Index + 1 < Line.Len(); ++Index)
+		{
+			if (Line[Index] != TEXT('_'))
+			{
+				continue;
+			}
+			const TCHAR Before = Line[Index - 1];
+			const TCHAR After = Line[Index + 1];
+			if ((FChar::IsAlnum(Before) || Before == TEXT('_'))
+				&& (FChar::IsAlnum(After) || After == TEXT('_')))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	const FWSDialogueSemanticAtom* FindContractAtom(
+		const FWSDialogueRealizationContract& Contract,
+		const FName AtomId)
+	{
+		if (const FWSDialogueSemanticAtom* Must =
+			Contract.MustRealize.FindByPredicate(
+				[AtomId](const FWSDialogueSemanticAtom& Atom)
+				{
+					return Atom.AtomId == AtomId;
+				}))
+		{
+			return Must;
+		}
+		return Contract.MayRealize.FindByPredicate(
+			[AtomId](const FWSDialogueSemanticAtom& Atom)
+			{
+				return Atom.AtomId == AtomId;
+			});
+	}
+
+	struct FDialogueDomainConcept
+	{
+		FString Label;
+		TArray<FString> SurfaceForms;
+		TArray<FName> RelatedFactIds;
+		TArray<FName> RelatedActionIds;
+	};
+
+	const TArray<FDialogueDomainConcept>& DialogueDomainConcepts()
+	{
+		static const TArray<FDialogueDomainConcept> Concepts = {
+			{TEXT("antenna"), {TEXT("天线"), TEXT("校准信号")}, {}, {TEXT("calibrate_antenna")}},
+			{TEXT("medicine"), {TEXT("药品"), TEXT("用药")}, {}, {TEXT("treat_gu_heng"), TEXT("treat_character")}},
+			{TEXT("medical_room"), {TEXT("医务室")}, {}, {TEXT("heat_medical_room"), TEXT("treat_gu_heng"), TEXT("treat_character")}},
+			{TEXT("heat_pack"), {TEXT("保温包"), TEXT("暖袋"), TEXT("热敷袋")}, {TEXT("FACT_HEAT_PACK")}, {}},
+			{TEXT("relay"), {TEXT("继电器"), TEXT("替代件"), TEXT("触点")}, {TEXT("FACT_BURNT_RELAY"), TEXT("FACT_RELAY_COMPATIBILITY")}, {TEXT("repair_generator")}},
+			{TEXT("kitchen_heater"), {TEXT("厨房加热器")}, {TEXT("FACT_RELAY_COMPATIBILITY")}, {TEXT("dismantle_kitchen_heater")}},
+			{TEXT("generator_log"), {TEXT("日志"), TEXT("旁路")}, {TEXT("FACT_FORCED_RESTART_SUSPICION"), TEXT("FACT_FORCED_RESTART_CONFIRMED")}, {TEXT("investigate_generator_log")}},
+			{TEXT("hand_injury"), {TEXT("手伤"), TEXT("伤手"), TEXT("右手"), TEXT("伤口")}, {TEXT("FACT_HAND_INJURY"), TEXT("FACT_MEDICAL_DIAGNOSIS")}, {}},
+			{TEXT("food"), {TEXT("食物"), TEXT("热量")}, {}, {TEXT("distribute_food")}},
+			{TEXT("repair_room"), {TEXT("维修间")}, {}, {TEXT("heat_repair_room"), TEXT("repair_generator")}},
+			{TEXT("heating"), {TEXT("供暖"), TEXT("升温"), TEXT("低温")}, {}, {TEXT("heat_repair_room"), TEXT("heat_medical_room")}}};
+		return Concepts;
+	}
+
+	bool IsDomainConceptAuthorized(
+		const FDialogueDomainConcept& Concept,
+		const FWSPreparedDialogue& Prepared,
+		const FWSDialogueOutcome& Outcome)
+	{
+		for (const FName FactId : Concept.RelatedFactIds)
+		{
+			if (Outcome.DisclosedFactIds.Contains(FactId))
+			{
+				return true;
+			}
+		}
+		for (const FName AtomId : Outcome.RealizedAtomIds)
+		{
+			const FWSDialogueSemanticAtom* Atom =
+				FindContractAtom(Prepared.Contract, AtomId);
+			if (!Atom)
+			{
+				continue;
+			}
+			for (const FString& Token : Atom->RequiredConceptTokens)
+			{
+				if (Token.Len() < 2)
+				{
+					continue;
+				}
+				for (const FString& Surface : Concept.SurfaceForms)
+				{
+					if (Token.Contains(Surface, ESearchCase::IgnoreCase)
+						|| Surface.Contains(Token, ESearchCase::IgnoreCase))
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	FWSDialogueOutcome MakePreparedFallbackOutcome(
+		const FWSPreparedDialogue& Prepared,
+		const FString& Provider,
+		const FString& Reason)
+	{
+		FWSDialogueOutcome Outcome;
+		Outcome.FinalReply = Prepared.LocalFallback;
+		Outcome.FinalReply.Provider = Provider.IsEmpty()
+			? TEXT("preset")
+			: Provider;
+		Outcome.FinalReply.ValidationReason = Reason.IsEmpty()
+			? TEXT("local_natural_fallback")
+			: Reason;
+		Outcome.FinalReply.bFallback = true;
+		Outcome.FinalReply.AnswerSource = TEXT("local_natural_fallback");
+		Outcome.DisclosedFactIds =
+			Prepared.PlannedKnowledgeUpgrades;
+		Outcome.RealizedAtomIds =
+			Prepared.LocalFallback.RealizedAtomIds;
+		Outcome.AnswerSource = TEXT("local_natural_fallback");
+		Outcome.FinalReply.ReferencedFactIds = Outcome.DisclosedFactIds;
+		Outcome.FinalReply.DisclosedFactIds = Outcome.DisclosedFactIds;
+		Outcome.FinalReply.RealizedAtomIds = Outcome.RealizedAtomIds;
+		return Outcome;
+	}
+
 	FString HttpFailureReason(const int32 StatusCode, const bool bSucceeded)
 	{
 		if (!bSucceeded)
@@ -487,6 +649,19 @@ namespace WhiteoutAgentValidation
 		}
 		return false;
 	}
+
+	bool ContainsProtectedFactClaim(
+		const FString& Utterance,
+		const FName FactId)
+	{
+		const FProtectedPhraseSet* Protected = GetProtectedFacts().FindByPredicate(
+			[FactId](const FProtectedPhraseSet& Candidate)
+			{
+				return Candidate.FactId == FactId;
+			});
+		return Protected
+			&& ContainsAny(Utterance, Protected->Phrases);
+	}
 }
 
 void UWSAgentGateway::Initialize()
@@ -523,7 +698,10 @@ bool UWSAgentGateway::HasLiveProvider() const
 {
 	const bool bCredentialReady = !bRequiresApiKey
 		|| (!ApiKey.IsEmpty() && CredentialProviderId == ProviderName);
-	return bLLMEnabled && IsAllowedEndpoint(Endpoint) && bCredentialReady;
+	return bRuntimeContractValid
+		&& bLLMEnabled
+		&& IsAllowedEndpoint(Endpoint)
+		&& bCredentialReady;
 }
 
 TArray<FWSLLMProviderPreset> UWSAgentGateway::GetProviderPresets()
@@ -1026,6 +1204,183 @@ void UWSAgentGateway::RequestExpression(
 	}
 }
 
+void UWSAgentGateway::RequestDialogueRealization(
+	const FWSPreparedDialogue& Prepared,
+	const bool bAllowLiveProvider,
+	FWSDialogueOutcomeCallback Completion)
+{
+	if (!bAllowLiveProvider || !HasLiveProvider())
+	{
+		Completion.ExecuteIfBound(MakePreparedFallbackOutcome(
+			Prepared,
+			TEXT("preset"),
+			bAllowLiveProvider
+				? TEXT("live_provider_unavailable")
+				: TEXT("live_provider_disabled")));
+		return;
+	}
+	if (!RetryManager.IsValid())
+	{
+		Completion.ExecuteIfBound(MakePreparedFallbackOutcome(
+			Prepared,
+			ProviderName,
+			TEXT("retry_manager_unavailable")));
+		return;
+	}
+
+	const FString ContextJson = BuildDialogueRealizationContextJson(Prepared);
+	const FString RequestJson = BuildDialogueRealizationRequestJson(Prepared);
+	const FString AuditProvider = ProviderName;
+	const FGuid RequestId = FGuid::NewGuid();
+	const uint64 RequestGeneration = SessionGeneration;
+	const double StartedAt = FPlatformTime::Seconds();
+	const int64 RequestBytes = Utf8Bytes(RequestJson);
+	const FString ContractHash = Sha256Hex(ContextJson);
+	const FHttpRetrySystem::FRetryResponseCodes RetryCodes = {429, 500, 503};
+	const FHttpRetrySystem::FRetryVerbs RetryVerbs = {FName(TEXT("POST"))};
+	FHttpRetrySystem::FExponentialBackoffCurve Backoff;
+	Backoff.Base = 2.0f;
+	Backoff.ExponentBias = 0.0f;
+	Backoff.MinCoefficient = 0.5f;
+	Backoff.MaxCoefficient = 1.0f;
+	Backoff.MaxBackoffSeconds = 1.0f;
+	const TSharedRef<FHttpRetrySystem::FRequest, ESPMode::ThreadSafe> RetryRequest =
+		RetryManager->CreateRequest(
+			FHttpRetrySystem::FRetryLimitCountSetting(0u),
+			FHttpRetrySystem::FRetryTimeoutRelativeSecondsSetting(TimeoutSeconds + 1.0),
+			RetryCodes,
+			RetryVerbs,
+			FHttpRetrySystem::FRetryDomainsPtr(),
+			FHttpRetrySystem::FRetryLimitCountSetting(),
+			Backoff);
+	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request =
+		StaticCastSharedRef<IHttpRequest>(RetryRequest);
+	Request->SetURL(Endpoint);
+	Request->SetVerb(TEXT("POST"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json; charset=utf-8"));
+	if (!ApiKey.IsEmpty()
+		&& CredentialProviderId == ProviderName
+		&& ShouldAttachApiKeyToEndpoint(Endpoint))
+	{
+		Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *ApiKey));
+	}
+	Request->SetTimeout(TimeoutSeconds);
+	Request->SetDelegateThreadPolicy(EHttpRequestDelegateThreadPolicy::CompleteOnGameThread);
+	Request->SetContentAsString(RequestJson);
+	TWeakObjectPtr<UWSAgentGateway> WeakThis(this);
+	Request->OnProcessRequestComplete().BindLambda(
+		[WeakThis, Prepared, Completion, RequestId, RequestGeneration, StartedAt, RequestBytes, AuditProvider, ContractHash](
+			FHttpRequestPtr CompletedRequest,
+			FHttpResponsePtr Response,
+			const bool bSucceeded)
+		{
+			if (!WeakThis.IsValid())
+			{
+				return;
+			}
+			UWSAgentGateway* Gateway = WeakThis.Get();
+			Gateway->UntrackRequest(CompletedRequest);
+			if (RequestGeneration != Gateway->SessionGeneration)
+			{
+				return;
+			}
+			const FString ProviderPayload = Response.IsValid()
+				? Response->GetContentAsString()
+				: FString();
+			const int32 StatusCode = Response.IsValid()
+				? Response->GetResponseCode()
+				: 0;
+			const int64 ResponseBytes = Response.IsValid()
+				? Response->GetContent().Num()
+				: 0;
+			const double ElapsedMilliseconds =
+				(FPlatformTime::Seconds() - StartedAt) * 1000.0;
+			FString ModelPayload;
+			FString FinishReason;
+			FString Reason;
+			int32 PromptTokens = -1;
+			int32 CompletionTokens = -1;
+			ExtractUsage(ProviderPayload, PromptTokens, CompletionTokens);
+			FWSDialogueOutcome Outcome;
+			if (bSucceeded
+				&& Response.IsValid()
+				&& EHttpResponseCodes::IsOk(StatusCode)
+				&& ExtractProviderContent(
+					ProviderPayload,
+					ModelPayload,
+					FinishReason,
+					Reason)
+				&& ValidateDialogueOutcomePayload(
+					ModelPayload,
+					Prepared,
+					Outcome,
+					Reason))
+			{
+				Outcome.FinalReply.Provider = AuditProvider;
+				Gateway->AppendAuditRecord(
+					TEXT("dialogue_expression_v3"),
+					AuditProvider,
+					RequestId,
+					Prepared.OriginalRequest.ActionId,
+					Prepared.OriginalRequest.DialogueAct,
+					StatusCode,
+					FinishReason,
+					RequestBytes,
+					ResponseBytes,
+					ElapsedMilliseconds,
+					TEXT("accepted"),
+					PromptTokens,
+					CompletionTokens,
+					Prepared.OriginalRequest.SemanticFrame.Source,
+					Prepared.OriginalRequest.SemanticFrame.QueryType,
+					Prepared.OriginalRequest.SemanticFrame.TargetActionId,
+					ContractHash,
+					Outcome.FinalReply.ValidationReason,
+					Outcome.AnswerSource);
+				Completion.ExecuteIfBound(Outcome);
+				return;
+			}
+
+			const FString FailureReason = Reason.IsEmpty()
+				? HttpFailureReason(StatusCode, bSucceeded)
+				: Reason;
+			FWSDialogueOutcome Fallback = MakePreparedFallbackOutcome(
+				Prepared,
+				AuditProvider,
+				FailureReason);
+			Gateway->AppendAuditRecord(
+				TEXT("dialogue_expression_v3"),
+				AuditProvider,
+				RequestId,
+				Prepared.OriginalRequest.ActionId,
+				Prepared.OriginalRequest.DialogueAct,
+				StatusCode,
+				FinishReason,
+				RequestBytes,
+				ResponseBytes,
+				ElapsedMilliseconds,
+				FailureReason,
+				PromptTokens,
+				CompletionTokens,
+				Prepared.OriginalRequest.SemanticFrame.Source,
+				Prepared.OriginalRequest.SemanticFrame.QueryType,
+				Prepared.OriginalRequest.SemanticFrame.TargetActionId,
+				ContractHash,
+				FailureReason,
+				Fallback.AnswerSource);
+			Completion.ExecuteIfBound(Fallback);
+		});
+	ActiveRequests.Add(Request);
+	if (!Request->ProcessRequest())
+	{
+		UntrackRequest(Request);
+		Completion.ExecuteIfBound(MakePreparedFallbackOutcome(
+			Prepared,
+			AuditProvider,
+			TEXT("request_not_started")));
+	}
+}
+
 void UWSAgentGateway::RequestDialogueIntent(
 	const FString& UserText,
 	const bool bAllowLiveProvider,
@@ -1418,6 +1773,298 @@ bool UWSAgentGateway::ValidateModelPayload(
 	OutReply.bFallback = false;
 	OutReply.ValidationReason = TEXT("persona_tail_accepted");
 	OutReason = TEXT("persona_tail_accepted");
+	return true;
+}
+
+bool UWSAgentGateway::ValidateDialogueOutcomePayload(
+	const FString& Payload,
+	const FWSPreparedDialogue& Prepared,
+	FWSDialogueOutcome& OutOutcome,
+	FString& OutReason)
+{
+	TSharedPtr<FJsonObject> Root;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Payload);
+	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+	{
+		OutReason = TEXT("invalid_json");
+		return false;
+	}
+	const TSet<FString> AllowedFields = {
+		TEXT("npc_line"),
+		TEXT("realized_atom_ids"),
+		TEXT("disclosed_fact_ids"),
+		TEXT("emotion"),
+		TEXT("movement_intent"),
+		TEXT("reaction_action")};
+	if (Root->Values.Num() != AllowedFields.Num())
+	{
+		OutReason = TEXT("unexpected_field_count");
+		return false;
+	}
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Root->Values)
+	{
+		if (!AllowedFields.Contains(Field.Key))
+		{
+			OutReason = TEXT("unexpected_field");
+			return false;
+		}
+	}
+
+	FString NpcLine;
+	FString Emotion;
+	FString MovementIntent;
+	FString ReactionAction;
+	if (!Root->TryGetStringField(TEXT("npc_line"), NpcLine)
+		|| !Root->TryGetStringField(TEXT("emotion"), Emotion)
+		|| !Root->TryGetStringField(TEXT("movement_intent"), MovementIntent)
+		|| !Root->TryGetStringField(TEXT("reaction_action"), ReactionAction))
+	{
+		OutReason = TEXT("missing_required_field");
+		return false;
+	}
+	if (NpcLine != NpcLine.TrimStartAndEnd()
+		|| Emotion != Emotion.TrimStartAndEnd()
+		|| MovementIntent != MovementIntent.TrimStartAndEnd()
+		|| ReactionAction != ReactionAction.TrimStartAndEnd())
+	{
+		OutReason = TEXT("unexpected_outer_whitespace");
+		return false;
+	}
+
+	TArray<FString> AllowedAtomStrings;
+	for (const FWSDialogueSemanticAtom& Atom : Prepared.Contract.MustRealize)
+	{
+		AllowedAtomStrings.Add(Atom.AtomId.ToString());
+	}
+	for (const FWSDialogueSemanticAtom& Atom : Prepared.Contract.MayRealize)
+	{
+		AllowedAtomStrings.Add(Atom.AtomId.ToString());
+	}
+	TArray<FString> AllowedFactStrings;
+	for (const FName FactId : Prepared.AllowedFactIds)
+	{
+		AllowedFactStrings.Add(FactId.ToString());
+	}
+	const auto ParseExactIdArray = [&Root, &OutReason](
+		const TCHAR* FieldName,
+		const TArray<FString>& AllowedIds,
+		TArray<FName>& OutIds)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
+		if (!Root->TryGetArrayField(FieldName, Values) || !Values)
+		{
+			OutReason = TEXT("missing_required_field");
+			return false;
+		}
+		TSet<FString> SeenExactIds;
+		for (const TSharedPtr<FJsonValue>& Value : *Values)
+		{
+			FString ExactId;
+			if (!Value.IsValid()
+				|| !Value->TryGetString(ExactId)
+				|| ExactId.IsEmpty()
+				|| ExactId != ExactId.TrimStartAndEnd())
+			{
+				OutReason = FString::Printf(TEXT("invalid_id_list:%s"), FieldName);
+				return false;
+			}
+			if (SeenExactIds.Contains(ExactId))
+			{
+				OutReason = FString::Printf(TEXT("duplicate_id:%s"), FieldName);
+				return false;
+			}
+			const bool bKnownExactId = AllowedIds.ContainsByPredicate(
+				[&ExactId](const FString& AllowedId)
+				{
+					return AllowedId.Equals(ExactId, ESearchCase::CaseSensitive);
+				});
+			if (!bKnownExactId)
+			{
+				OutReason = FString::Printf(TEXT("unknown_id:%s:%s"), FieldName, *ExactId);
+				return false;
+			}
+			SeenExactIds.Add(ExactId);
+			OutIds.Add(FName(*ExactId));
+		}
+		return true;
+	};
+
+	TArray<FName> RealizedAtomIds;
+	TArray<FName> DisclosedFactIds;
+	if (!ParseExactIdArray(
+			TEXT("realized_atom_ids"),
+			AllowedAtomStrings,
+			RealizedAtomIds)
+		|| !ParseExactIdArray(
+			TEXT("disclosed_fact_ids"),
+			AllowedFactStrings,
+			DisclosedFactIds))
+	{
+		return false;
+	}
+
+	EWSNPCMovementIntent ParsedMovement = EWSNPCMovementIntent::Stay;
+	if (!TryParseMovementIntent(MovementIntent, ParsedMovement))
+	{
+		OutReason = TEXT("invalid_movement_intent");
+		return false;
+	}
+	EWSNPCReaction ParsedReaction = EWSNPCReaction::Neutral;
+	if (!TryParseReaction(ReactionAction, ParsedReaction))
+	{
+		OutReason = TEXT("invalid_reaction_action");
+		return false;
+	}
+
+	FWSAgentReply Reply = Prepared.LocalFallback;
+	Reply.Utterance = NpcLine;
+	Reply.SemanticSpine.Reset();
+	Reply.PersonaTail.Reset();
+	Reply.Emotion = Emotion;
+	Reply.ReferencedFactIds = DisclosedFactIds;
+	Reply.DisclosedFactIds = DisclosedFactIds;
+	Reply.RealizedAtomIds = RealizedAtomIds;
+	Reply.MovementIntent = ParsedMovement;
+	Reply.Reaction = ParsedReaction;
+	Reply.AnswerSource = TEXT("online_full_line");
+	Reply.ValidationReason = TEXT("dialogue_v3_accepted");
+	Reply.bFallback = false;
+
+	FWSDialogueOutcome Outcome;
+	Outcome.FinalReply = MoveTemp(Reply);
+	Outcome.DisclosedFactIds = DisclosedFactIds;
+	Outcome.RealizedAtomIds = RealizedAtomIds;
+	Outcome.AnswerSource = TEXT("online_full_line");
+	if (!ValidateDialogueOutcome(Prepared, Outcome, OutReason))
+	{
+		return false;
+	}
+	OutOutcome = MoveTemp(Outcome);
+	OutReason = TEXT("dialogue_v3_accepted");
+	return true;
+}
+
+bool UWSAgentGateway::ValidateDialogueOutcome(
+	const FWSPreparedDialogue& Prepared,
+	const FWSDialogueOutcome& Outcome,
+	FString& OutReason)
+{
+	if (!FWhiteoutRulesEngine::ValidateDialogueOutcomeContract(
+			Prepared,
+			Outcome,
+			OutReason))
+	{
+		return false;
+	}
+	const FString& Line = Outcome.FinalReply.Utterance;
+	const int32 MaxCharacters = FMath::Min(96, Prepared.Contract.MaxCharacters);
+	const int32 MaxSentences = FMath::Min(2, Prepared.Contract.MaxSentences);
+	if (Line.IsEmpty()
+		|| MaxCharacters <= 0
+		|| MaxSentences <= 0
+		|| Line.Len() > MaxCharacters
+		|| CountSentences(Line) > MaxSentences
+		|| Line.Contains(TEXT("\n"))
+		|| Line.Contains(TEXT("\r")))
+	{
+		OutReason = TEXT("npc_line_length_or_sentence_limit");
+		return false;
+	}
+	if (!IsAllowedEmotion(Outcome.FinalReply.Emotion)
+		|| Outcome.FinalReply.Emotion.Len() > 32)
+	{
+		OutReason = TEXT("invalid_emotion");
+		return false;
+	}
+
+	static const TArray<FString> SystemJargon = {
+		TEXT("AP"), TEXT("Stamina"), TEXT("条件ID"), TEXT("条件 ID"),
+		TEXT("至少两点"), TEXT("至少2点"), TEXT("阈值"),
+		TEXT("不会单独否决"), TEXT("否决"), TEXT("修正值"), TEXT("+1")};
+	if (ContainsAny(Line, SystemJargon) || ContainsIdentifierLikeToken(Line))
+	{
+		OutReason = TEXT("system_jargon");
+		return false;
+	}
+	for (const FString& Phrase : Prepared.Contract.ForbiddenPhrases)
+	{
+		if (!Phrase.IsEmpty()
+			&& Line.Contains(Phrase, ESearchCase::IgnoreCase))
+		{
+			OutReason = TEXT("forbidden_phrase");
+			return false;
+		}
+	}
+	for (const FName FactId : Prepared.Contract.ForbiddenFactIds)
+	{
+		if (WhiteoutAgentValidation::ContainsProtectedFactClaim(Line, FactId))
+		{
+			OutReason = FString::Printf(
+				TEXT("forbidden_fact_surface:%s"),
+				*FactId.ToString());
+			return false;
+		}
+	}
+	FString UnauthorizedFactId;
+	if (WhiteoutAgentValidation::ContainsProtectedUnauthorizedClaim(
+			Line,
+			Prepared.PlannedKnowledgeUpgrades,
+			UnauthorizedFactId))
+	{
+		OutReason = FString::Printf(
+			TEXT("unplanned_fact_surface:%s"),
+			*UnauthorizedFactId);
+		return false;
+	}
+
+	for (const FName AtomId : Outcome.RealizedAtomIds)
+	{
+		const FWSDialogueSemanticAtom* Atom =
+			FindContractAtom(Prepared.Contract, AtomId);
+		if (!Atom)
+		{
+			OutReason = TEXT("unknown_realized_atom");
+			return false;
+		}
+		const bool bCoversSurface = Atom->RequiredConceptTokens.ContainsByPredicate(
+			[&Line](const FString& Token)
+			{
+				return !Token.IsEmpty()
+					&& Line.Contains(Token, ESearchCase::IgnoreCase);
+			});
+		if (!bCoversSurface)
+		{
+			OutReason = FString::Printf(
+				TEXT("atom_surface_missing:%s"),
+				*AtomId.ToString());
+			return false;
+		}
+		if (Atom->ForbiddenSurfaceForms.ContainsByPredicate(
+				[&Line](const FString& Surface)
+				{
+					return !Surface.IsEmpty()
+						&& Line.Contains(Surface, ESearchCase::IgnoreCase);
+				}))
+		{
+			OutReason = FString::Printf(
+				TEXT("atom_forbidden_surface:%s"),
+				*AtomId.ToString());
+			return false;
+		}
+	}
+
+	for (const FDialogueDomainConcept& Concept : DialogueDomainConcepts())
+	{
+		if (ContainsAny(Line, Concept.SurfaceForms)
+			&& !IsDomainConceptAuthorized(Concept, Prepared, Outcome))
+		{
+			OutReason = FString::Printf(
+				TEXT("added_domain_concept:%s"),
+				*Concept.Label);
+			return false;
+		}
+	}
+	OutReason = TEXT("accepted");
 	return true;
 }
 
@@ -2135,31 +2782,54 @@ void UWSAgentGateway::LoadConfig()
 	CredentialSource = TEXT("none");
 	CredentialProviderId.Reset();
 	TimeoutSeconds = 8.0f;
+	bRuntimeContractValid = false;
 
 	FString JsonText;
-	FString ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.2.json");
-	if (!FPaths::FileExists(ConfigPath))
-	{
-		ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.1.json");
-	}
-	if (!FPaths::FileExists(ConfigPath))
-	{
-		ConfigPath = FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.0.json");
-	}
+	const FString ConfigPath =
+		FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.3.json");
 	if (FFileHelper::LoadFileToString(JsonText, *ConfigPath))
 	{
 		TSharedPtr<FJsonObject> Root;
 		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonText);
 		if (FJsonSerializer::Deserialize(Reader, Root) && Root.IsValid())
 		{
-			Root->TryGetStringField(TEXT("endpoint"), Endpoint);
-			Root->TryGetStringField(TEXT("provider_name"), ProviderName);
-			Root->TryGetStringField(TEXT("model"), ModelName);
-			Root->TryGetBoolField(TEXT("llm_enabled"), bLLMEnabled);
-			double ConfigTimeout = TimeoutSeconds;
-			if (Root->TryGetNumberField(TEXT("timeout_seconds"), ConfigTimeout))
+			double SchemaVersion = 0.0;
+			double MaxSentences = 0.0;
+			double MaxLineChars = 0.0;
+			double MaxOutputTokens = 0.0;
+			FString RuntimeVersion;
+			FString ProtocolVersion;
+			FString PromptMode;
+			const bool bHasContractFields =
+				Root->TryGetNumberField(TEXT("schema_version"), SchemaVersion)
+				&& Root->TryGetStringField(TEXT("runtime_version"), RuntimeVersion)
+				&& Root->TryGetStringField(TEXT("protocol_version"), ProtocolVersion)
+				&& Root->TryGetStringField(TEXT("prompt_mode"), PromptMode)
+				&& Root->TryGetNumberField(TEXT("max_sentences"), MaxSentences)
+				&& Root->TryGetNumberField(TEXT("max_line_chars"), MaxLineChars)
+				&& Root->TryGetNumberField(TEXT("max_output_tokens"), MaxOutputTokens);
+			bRuntimeContractValid = bHasContractFields
+				&& SchemaVersion == 6.0
+				&& RuntimeVersion == TEXT("1.3.0")
+				&& ProtocolVersion == TEXT("dialogue_epistemic_v3")
+				&& PromptMode == TEXT("semantic_atoms_full_line")
+				&& MaxSentences == 2.0
+				&& MaxLineChars == 96.0
+				&& MaxOutputTokens == 256.0;
+			if (bRuntimeContractValid)
 			{
-				TimeoutSeconds = FMath::Clamp(static_cast<float>(ConfigTimeout), 1.0f, 10.0f);
+				Root->TryGetStringField(TEXT("endpoint"), Endpoint);
+				Root->TryGetStringField(TEXT("provider_name"), ProviderName);
+				Root->TryGetStringField(TEXT("model"), ModelName);
+				Root->TryGetBoolField(TEXT("llm_enabled"), bLLMEnabled);
+				double ConfigTimeout = TimeoutSeconds;
+				if (Root->TryGetNumberField(TEXT("timeout_seconds"), ConfigTimeout))
+				{
+					TimeoutSeconds = FMath::Clamp(
+						static_cast<float>(ConfigTimeout),
+						1.0f,
+						10.0f);
+				}
 			}
 		}
 	}
@@ -2315,6 +2985,194 @@ void UWSAgentGateway::LoadConfig()
 		ModelName = TEXT("unset");
 		bLLMEnabled = false;
 	}
+	if (!bRuntimeContractValid)
+	{
+		bLLMEnabled = false;
+	}
+}
+
+FString UWSAgentGateway::BuildDialogueRealizationContextJson(
+	const FWSPreparedDialogue& Prepared) const
+{
+	TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
+	Context->SetStringField(
+		TEXT("protocol_version"),
+		TEXT("dialogue_epistemic_v3"));
+	Context->SetStringField(
+		TEXT("prompt_mode"),
+		TEXT("semantic_atoms_full_line"));
+	Context->SetStringField(
+		TEXT("speaker"),
+		UWSNPCDecisionService::SpeakerLabel(
+			Prepared.LocalFallback.Speaker));
+	Context->SetStringField(
+		TEXT("player_said"),
+		Prepared.OriginalRequest.PlayerSaid.TrimStartAndEnd().Left(280));
+	Context->SetStringField(
+		TEXT("stance"),
+		StaticEnum<EWSResponseType>()->GetNameStringByValue(
+			static_cast<int64>(Prepared.LocalFallback.ResponseType)));
+	Context->SetStringField(
+		TEXT("persona_style"),
+		Prepared.Contract.PersonaStyleId);
+	Context->SetNumberField(
+		TEXT("max_sentences"),
+		FMath::Min(2, Prepared.Contract.MaxSentences));
+	Context->SetNumberField(
+		TEXT("max_characters"),
+		FMath::Min(96, Prepared.Contract.MaxCharacters));
+
+	const auto AtomValues = [](const TArray<FWSDialogueSemanticAtom>& Atoms)
+	{
+		TArray<TSharedPtr<FJsonValue>> Values;
+		for (const FWSDialogueSemanticAtom& Atom : Atoms)
+		{
+			TSharedRef<FJsonObject> Object = MakeShared<FJsonObject>();
+			Object->SetStringField(TEXT("id"), Atom.AtomId.ToString());
+			Object->SetStringField(
+				TEXT("fallback"),
+				Atom.NaturalFallback.ToString());
+			TArray<TSharedPtr<FJsonValue>> Tokens;
+			for (const FString& Token : Atom.RequiredConceptTokens)
+			{
+				Tokens.Add(MakeShared<FJsonValueString>(Token));
+			}
+			Object->SetArrayField(TEXT("surface_tokens"), Tokens);
+			TArray<TSharedPtr<FJsonValue>> Facts;
+			for (const FName FactId : Atom.RelatedFactIds)
+			{
+				Facts.Add(MakeShared<FJsonValueString>(FactId.ToString()));
+			}
+			Object->SetArrayField(TEXT("related_fact_ids"), Facts);
+			Values.Add(MakeShared<FJsonValueObject>(Object));
+		}
+		return Values;
+	};
+	Context->SetArrayField(
+		TEXT("must_realize"),
+		AtomValues(Prepared.Contract.MustRealize));
+	Context->SetArrayField(
+		TEXT("may_realize"),
+		AtomValues(Prepared.Contract.MayRealize));
+
+	const auto NameValues = [](const TArray<FName>& Names)
+	{
+		TArray<TSharedPtr<FJsonValue>> Values;
+		for (const FName Name : Names)
+		{
+			Values.Add(MakeShared<FJsonValueString>(Name.ToString()));
+		}
+		return Values;
+	};
+	Context->SetArrayField(
+		TEXT("required_disclosed_fact_ids"),
+		NameValues(Prepared.PlannedKnowledgeUpgrades));
+	Context->SetArrayField(
+		TEXT("forbidden_fact_ids"),
+		NameValues(Prepared.Contract.ForbiddenFactIds));
+	TArray<TSharedPtr<FJsonValue>> ForbiddenPhrases;
+	for (const FString& Phrase : Prepared.Contract.ForbiddenPhrases)
+	{
+		ForbiddenPhrases.Add(MakeShared<FJsonValueString>(Phrase));
+	}
+	Context->SetArrayField(
+		TEXT("forbidden_phrases"),
+		ForbiddenPhrases);
+	TArray<TSharedPtr<FJsonValue>> SemanticHistory;
+	if (const TArray<FWSAgentDialogueTurn>* History =
+		DialogueHistory.Find(Prepared.OriginalRequest.DialogueSessionId))
+	{
+		for (const FWSAgentDialogueTurn& Turn : *History)
+		{
+			TSharedPtr<FJsonObject> UserSummary;
+			TSharedPtr<FJsonObject> AssistantSummary;
+			const TSharedRef<TJsonReader<>> UserReader =
+				TJsonReaderFactory<>::Create(Turn.UserSemanticSummaryJson);
+			const TSharedRef<TJsonReader<>> AssistantReader =
+				TJsonReaderFactory<>::Create(Turn.AssistantSemanticSummaryJson);
+			if (!FJsonSerializer::Deserialize(UserReader, UserSummary)
+				|| !UserSummary.IsValid()
+				|| !FJsonSerializer::Deserialize(AssistantReader, AssistantSummary)
+				|| !AssistantSummary.IsValid())
+			{
+				continue;
+			}
+			TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetObjectField(TEXT("user"), UserSummary);
+			Entry->SetObjectField(TEXT("assistant"), AssistantSummary);
+			SemanticHistory.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+	}
+	Context->SetArrayField(TEXT("semantic_history"), SemanticHistory);
+	Context->SetArrayField(TEXT("allowed_emotions"), {
+		MakeShared<FJsonValueString>(TEXT("guarded")),
+		MakeShared<FJsonValueString>(TEXT("focused")),
+		MakeShared<FJsonValueString>(TEXT("firm")),
+		MakeShared<FJsonValueString>(TEXT("strained")),
+		MakeShared<FJsonValueString>(TEXT("cornered")),
+		MakeShared<FJsonValueString>(TEXT("measured")),
+		MakeShared<FJsonValueString>(TEXT("wary")),
+		MakeShared<FJsonValueString>(TEXT("controlled")),
+		MakeShared<FJsonValueString>(TEXT("defensive")),
+		MakeShared<FJsonValueString>(TEXT("steadier")),
+		MakeShared<FJsonValueString>(TEXT("clinical")),
+		MakeShared<FJsonValueString>(TEXT("urgent")),
+		MakeShared<FJsonValueString>(TEXT("reserved")),
+		MakeShared<FJsonValueString>(TEXT("calm")),
+		MakeShared<FJsonValueString>(TEXT("concerned")),
+		MakeShared<FJsonValueString>(TEXT("neutral"))});
+	Context->SetArrayField(TEXT("allowed_movement_intents"), {
+		MakeShared<FJsonValueString>(TEXT("stay")),
+		MakeShared<FJsonValueString>(TEXT("step_closer")),
+		MakeShared<FJsonValueString>(TEXT("step_back")),
+		MakeShared<FJsonValueString>(TEXT("return_to_post"))});
+	Context->SetArrayField(TEXT("allowed_reaction_actions"), {
+		MakeShared<FJsonValueString>(TEXT("neutral")),
+		MakeShared<FJsonValueString>(TEXT("acknowledge")),
+		MakeShared<FJsonValueString>(TEXT("consider")),
+		MakeShared<FJsonValueString>(TEXT("reassure")),
+		MakeShared<FJsonValueString>(TEXT("reject")),
+		MakeShared<FJsonValueString>(TEXT("alarmed"))});
+
+	FString Json;
+	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Json);
+	FJsonSerializer::Serialize(Context, Writer);
+	return Json;
+}
+
+FString UWSAgentGateway::BuildDialogueRealizationRequestJson(
+	const FWSPreparedDialogue& Prepared) const
+{
+	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetStringField(TEXT("model"), ModelName);
+	Root->SetBoolField(TEXT("stream"), false);
+	AddStructuredOutputOptions(Root, ProviderName, 256);
+	if (ProviderName == TEXT("deepseek"))
+	{
+		TSharedRef<FJsonObject> Thinking = MakeShared<FJsonObject>();
+		Thinking->SetStringField(TEXT("type"), TEXT("disabled"));
+		Root->SetObjectField(TEXT("thinking"), Thinking);
+	}
+	TArray<TSharedPtr<FJsonValue>> Messages;
+	TSharedRef<FJsonObject> SystemMessage = MakeShared<FJsonObject>();
+	SystemMessage->SetStringField(TEXT("role"), TEXT("system"));
+	SystemMessage->SetStringField(
+		TEXT("content"),
+		TEXT("你是游戏 NPC 的中文台词实现器，不负责决定规则。must_realize 中的意思必须全部自然表达，may_realize 只可选用列出的意思；不得新增条件、事实、承诺、资源、任务结果或系统数值。forbidden_fact_ids 和 forbidden_phrases 绝不能出现在台词中。台词必须是 1-2 句自然中文且不超过输入的 max_characters。realized_atom_ids 必须准确列出实际表达的原子，disclosed_fact_ids 必须与 required_disclosed_fact_ids 完全一致。严格返回一个 JSON 对象，字段只能且必须是 npc_line、realized_atom_ids、disclosed_fact_ids、emotion、movement_intent、reaction_action；禁止 Markdown、换行和额外字段。"));
+	Messages.Add(MakeShared<FJsonValueObject>(SystemMessage));
+	TSharedRef<FJsonObject> UserMessage = MakeShared<FJsonObject>();
+	UserMessage->SetStringField(TEXT("role"), TEXT("user"));
+	UserMessage->SetStringField(
+		TEXT("content"),
+		BuildDialogueRealizationContextJson(Prepared));
+	Messages.Add(MakeShared<FJsonValueObject>(UserMessage));
+	Root->SetArrayField(TEXT("messages"), Messages);
+
+	FString Json;
+	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Json);
+	FJsonSerializer::Serialize(Root, Writer);
+	return Json;
 }
 
 FString UWSAgentGateway::BuildExpressionContextJson(
@@ -2458,12 +3316,18 @@ FString UWSAgentGateway::BuildHistoryAssistantJson(const FWSAgentReply& Reply)
 	Root->SetStringField(TEXT("emotion"), Reply.Emotion.Left(32));
 	Root->SetStringField(TEXT("used_action_id"), Reply.ActionId.ToString());
 	Root->SetStringField(TEXT("answer_source"), Reply.AnswerSource);
-	TArray<TSharedPtr<FJsonValue>> CoveredConditions;
-	for (const FName ConditionId : Reply.CoveredConditionIds)
+	TArray<TSharedPtr<FJsonValue>> RealizedAtoms;
+	for (const FName AtomId : Reply.RealizedAtomIds)
 	{
-		CoveredConditions.Add(MakeShared<FJsonValueString>(ConditionId.ToString()));
+		RealizedAtoms.Add(MakeShared<FJsonValueString>(AtomId.ToString()));
 	}
-	Root->SetArrayField(TEXT("covered_condition_ids"), CoveredConditions);
+	Root->SetArrayField(TEXT("realized_atom_ids"), RealizedAtoms);
+	TArray<TSharedPtr<FJsonValue>> DisclosedFacts;
+	for (const FName FactId : Reply.DisclosedFactIds)
+	{
+		DisclosedFacts.Add(MakeShared<FJsonValueString>(FactId.ToString()));
+	}
+	Root->SetArrayField(TEXT("disclosed_fact_ids"), DisclosedFacts);
 	FString Json;
 	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
 		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Json);
@@ -2516,8 +3380,7 @@ void UWSAgentGateway::RecordDialogueTurn(
 {
 	if (!ActionRequest.DialogueSessionId.IsValid()
 		|| (ActionRequest.ActionId != TEXT("talk_gu_heng")
-			&& ActionRequest.ActionId != TEXT("talk_ye_cheng"))
-		|| Reply.SemanticSpine.IsEmpty())
+			&& ActionRequest.ActionId != TEXT("talk_ye_cheng")))
 	{
 		return;
 	}

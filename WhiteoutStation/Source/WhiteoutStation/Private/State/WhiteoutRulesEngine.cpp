@@ -546,9 +546,10 @@ FWSActionResult FWhiteoutRulesEngine::Commit(FWSActionRequest Request)
 	return CommitInternal(MoveTemp(Request), nullptr, nullptr);
 }
 
-FWSActionResult FWhiteoutRulesEngine::CommitDialogueOutcome(
+bool FWhiteoutRulesEngine::ValidateDialogueOutcomeContract(
 	const FWSPreparedDialogue& Prepared,
-	const FWSDialogueOutcome& Outcome)
+	const FWSDialogueOutcome& Outcome,
+	FString& OutReason)
 {
 	const FWSActionRequest& Request = Prepared.OriginalRequest;
 	const FWSAgentReply& Reply = Outcome.FinalReply;
@@ -559,30 +560,166 @@ FWSActionResult FWhiteoutRulesEngine::CommitDialogueOutcome(
 		Request.ActionId == WhiteoutRules::TalkYeCheng
 			? EWSCharacterId::YeCheng
 			: EWSCharacterId::GuHeng;
+	if (!bDialogueAction
+		|| !Prepared.TransactionId.IsValid()
+		|| Prepared.TransactionId != Request.TransactionId
+		|| Prepared.TransactionId != Reply.TransactionId
+		|| Request.ActionId != Reply.ActionId
+		|| Request.DialogueSessionId != Reply.DialogueSessionId
+		|| Reply.Speaker != ExpectedSpeaker)
+	{
+		OutReason = TEXT("dialogue_identity_mismatch");
+		return false;
+	}
+
+	const auto ContainsDuplicates = [](const TArray<FName>& Values)
+	{
+		TSet<FName> Seen;
+		for (const FName Value : Values)
+		{
+			if (Value.IsNone() || Seen.Contains(Value))
+			{
+				return true;
+			}
+			Seen.Add(Value);
+		}
+		return false;
+	};
 	const auto IsSubset = [](const TArray<FName>& Candidate, const TArray<FName>& Allowed)
 	{
-		return Candidate.ContainsByPredicate(
-			[&Allowed](const FName FactId)
+		return !Candidate.ContainsByPredicate(
+			[&Allowed](const FName Value)
 			{
-				return !Allowed.Contains(FactId);
-			}) == false;
+				return !Allowed.Contains(Value);
+			});
 	};
-	const bool bSameDisclosures =
-		IsSubset(Outcome.DisclosedFactIds, Reply.DisclosedFactIds)
-		&& IsSubset(Reply.DisclosedFactIds, Outcome.DisclosedFactIds);
-	const bool bValid = bDialogueAction
-		&& Prepared.TransactionId.IsValid()
-		&& Prepared.TransactionId == Request.TransactionId
-		&& Prepared.TransactionId == Reply.TransactionId
-		&& Request.ActionId == Reply.ActionId
-		&& Request.DialogueSessionId == Reply.DialogueSessionId
-		&& Reply.Speaker == ExpectedSpeaker
-		&& IsSubset(Prepared.PlannedDisclosureFacts, Prepared.AllowedFactIds)
-		&& IsSubset(Outcome.DisclosedFactIds, Prepared.PlannedDisclosureFacts)
-		&& IsSubset(Reply.ReferencedFactIds, Prepared.PlannedDisclosureFacts)
-		&& IsSubset(Reply.DisclosedFactIds, Prepared.PlannedDisclosureFacts)
-		&& bSameDisclosures;
-	if (!bValid)
+	const auto SameSet = [&IsSubset](const TArray<FName>& Left, const TArray<FName>& Right)
+	{
+		return Left.Num() == Right.Num()
+			&& IsSubset(Left, Right)
+			&& IsSubset(Right, Left);
+	};
+
+	TArray<FName> MustAtomIds;
+	TArray<FName> MayAtomIds;
+	for (const FWSDialogueSemanticAtom& Atom : Prepared.Contract.MustRealize)
+	{
+		if (Atom.AtomId.IsNone()
+			|| MustAtomIds.Contains(Atom.AtomId)
+			|| Atom.RequiredConceptTokens.IsEmpty()
+			|| ContainsDuplicates(Atom.RelatedFactIds))
+		{
+			OutReason = TEXT("invalid_must_atom_contract");
+			return false;
+		}
+		MustAtomIds.Add(Atom.AtomId);
+	}
+	for (const FWSDialogueSemanticAtom& Atom : Prepared.Contract.MayRealize)
+	{
+		if (Atom.AtomId.IsNone()
+			|| MustAtomIds.Contains(Atom.AtomId)
+			|| MayAtomIds.Contains(Atom.AtomId)
+			|| Atom.RequiredConceptTokens.IsEmpty()
+			|| !Atom.RelatedFactIds.IsEmpty())
+		{
+			OutReason = TEXT("invalid_may_atom_contract");
+			return false;
+		}
+		MayAtomIds.Add(Atom.AtomId);
+	}
+	if (MustAtomIds.IsEmpty()
+		|| ContainsDuplicates(Prepared.AllowedFactIds)
+		|| ContainsDuplicates(Prepared.PlannedDisclosureFacts)
+		|| ContainsDuplicates(Prepared.PlannedKnowledgeUpgrades)
+		|| ContainsDuplicates(Prepared.Contract.ForbiddenFactIds)
+		|| ContainsDuplicates(Outcome.RealizedAtomIds)
+		|| ContainsDuplicates(Outcome.DisclosedFactIds)
+		|| ContainsDuplicates(Reply.RealizedAtomIds)
+		|| ContainsDuplicates(Reply.ReferencedFactIds)
+		|| ContainsDuplicates(Reply.DisclosedFactIds))
+	{
+		OutReason = TEXT("duplicate_or_empty_contract_id");
+		return false;
+	}
+
+	TArray<FName> AllowedAtomIds = MustAtomIds;
+	AllowedAtomIds.Append(MayAtomIds);
+	if (!IsSubset(MustAtomIds, Outcome.RealizedAtomIds)
+		|| !IsSubset(Outcome.RealizedAtomIds, AllowedAtomIds)
+		|| !SameSet(Outcome.RealizedAtomIds, Reply.RealizedAtomIds))
+	{
+		OutReason = TEXT("realized_atom_set_mismatch");
+		return false;
+	}
+	if (!IsSubset(
+			Prepared.PlannedKnowledgeUpgrades,
+			Prepared.PlannedDisclosureFacts)
+		|| !IsSubset(
+			Prepared.PlannedDisclosureFacts,
+			Prepared.AllowedFactIds)
+		|| Prepared.PlannedDisclosureFacts.ContainsByPredicate(
+			[&Prepared](const FName FactId)
+			{
+				return Prepared.Contract.ForbiddenFactIds.Contains(FactId);
+			})
+		|| !SameSet(
+			Outcome.DisclosedFactIds,
+			Prepared.PlannedKnowledgeUpgrades)
+		|| !SameSet(Reply.DisclosedFactIds, Outcome.DisclosedFactIds)
+		|| !SameSet(Reply.ReferencedFactIds, Outcome.DisclosedFactIds)
+		|| Outcome.DisclosedFactIds.ContainsByPredicate(
+			[&Prepared](const FName FactId)
+			{
+				return Prepared.Contract.ForbiddenFactIds.Contains(FactId);
+			}))
+	{
+		OutReason = TEXT("disclosed_fact_set_mismatch");
+		return false;
+	}
+
+	for (const FName PlannedFactId : Prepared.PlannedKnowledgeUpgrades)
+	{
+		const bool bSupportedByRealizedMust =
+			Prepared.Contract.MustRealize.ContainsByPredicate(
+				[&Outcome, PlannedFactId](const FWSDialogueSemanticAtom& Atom)
+				{
+					return Outcome.RealizedAtomIds.Contains(Atom.AtomId)
+						&& Atom.RelatedFactIds.Contains(PlannedFactId);
+				});
+		if (!bSupportedByRealizedMust)
+		{
+			OutReason = TEXT("planned_fact_without_required_atom");
+			return false;
+		}
+	}
+	for (const FWSDialogueSemanticAtom& Atom : Prepared.Contract.MustRealize)
+	{
+		if (!IsSubset(Atom.RelatedFactIds, Prepared.PlannedKnowledgeUpgrades))
+		{
+			OutReason = TEXT("atom_related_fact_not_planned");
+			return false;
+		}
+	}
+	if (Outcome.AnswerSource.IsEmpty()
+		|| Outcome.AnswerSource != Reply.AnswerSource)
+	{
+		OutReason = TEXT("answer_source_mismatch");
+		return false;
+	}
+	OutReason = TEXT("accepted");
+	return true;
+}
+
+FWSActionResult FWhiteoutRulesEngine::CommitDialogueOutcome(
+	const FWSPreparedDialogue& Prepared,
+	const FWSDialogueOutcome& Outcome)
+{
+	const FWSActionRequest& Request = Prepared.OriginalRequest;
+	FString ValidationReason;
+	if (!ValidateDialogueOutcomeContract(
+			Prepared,
+			Outcome,
+			ValidationReason))
 	{
 		FWSActionResult Result;
 		Result.ActionId = Request.ActionId;

@@ -172,6 +172,10 @@ private:
 		const FWSAgentReply& Reply,
 		FGuid TransactionId,
 		int64 Generation);
+	void HandlePreparedDialogueOutcome(
+		const FWSDialogueOutcome& Outcome,
+		FGuid TransactionId,
+		int64 Generation);
 	bool CommitDialogueOutcome(
 		const FWSPreparedDialogue& Prepared,
 		const FWSDialogueOutcome& Outcome,

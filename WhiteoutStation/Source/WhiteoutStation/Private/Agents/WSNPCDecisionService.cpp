@@ -78,6 +78,112 @@ namespace
 		return Context.PlayerKnownFacts.Contains(FactId)
 			|| Context.PublicFacts.Contains(FactId);
 	}
+
+	int32 StableFallbackVariant(
+		const FWSActionRequest& Request,
+		const FWSGameState& State,
+		const int32 VariantCount)
+	{
+		if (VariantCount <= 1)
+		{
+			return 0;
+		}
+		const FString Seed = FString::Printf(
+			TEXT("%s|%d|%d|%s|%d"),
+			*Request.ActionId.ToString(),
+			static_cast<int32>(Request.DialogueAct),
+			static_cast<int32>(Request.SemanticFrame.QueryType),
+			*Request.PlayerSaid.TrimStartAndEnd(),
+			State.EventLog.Num());
+		return static_cast<int32>(GetTypeHash(Seed) % VariantCount);
+	}
+
+	FWSDialogueSemanticAtom MakeSemanticAtom(
+		const FName AtomId,
+		const FString& NaturalFallback,
+		TArray<FString> RequiredConceptTokens,
+		TArray<FName> RelatedFactIds = {})
+	{
+		FWSDialogueSemanticAtom Atom;
+		Atom.AtomId = AtomId;
+		Atom.NaturalFallback = FText::FromString(NaturalFallback);
+		Atom.RequiredConceptTokens = MoveTemp(RequiredConceptTokens);
+		Atom.RelatedFactIds = MoveTemp(RelatedFactIds);
+		Atom.bRequired = true;
+		return Atom;
+	}
+
+	void AddRequiredAtom(
+		FWSDialogueRealizationContract& Contract,
+		FWSAgentReply& Fallback,
+		FWSDialogueSemanticAtom Atom)
+	{
+		Fallback.RealizedAtomIds.AddUnique(Atom.AtomId);
+		Contract.MustRealize.Add(MoveTemp(Atom));
+	}
+
+	TArray<FString> SurfaceTokensForFallback(const FString& Utterance)
+	{
+		TArray<FString> Tokens;
+		for (const FString& Candidate : {
+			FString(TEXT("证据")), FString(TEXT("检查")), FString(TEXT("医务室")),
+			FString(TEXT("风险")), FString(TEXT("承诺")), FString(TEXT("记录")),
+			FString(TEXT("低温")), FString(TEXT("配合")), FString(TEXT("维修")),
+			FString(TEXT("诊断")), FString(TEXT("继电器")), FString(TEXT("日志")),
+			FString(TEXT("升温")), FString(TEXT("休整")), FString(TEXT("缓")),
+			FString(TEXT("压力")), FString(TEXT("方案")), FString(TEXT("供暖"))})
+		{
+			if (Utterance.Contains(Candidate))
+			{
+				Tokens.Add(Candidate);
+			}
+		}
+		if (Tokens.IsEmpty())
+		{
+			FString Compact = Utterance.TrimStartAndEnd();
+			while (!Compact.IsEmpty()
+				&& (Compact[0] == TEXT('。') || Compact[0] == TEXT('，')
+					|| Compact[0] == TEXT('！') || Compact[0] == TEXT('？')))
+			{
+				Compact.RightChopInline(1, EAllowShrinking::No);
+			}
+			Tokens.Add(Compact.Left(FMath::Min(2, Compact.Len())));
+		}
+		return Tokens;
+	}
+
+	void FinalizeFallbackPerformance(FWSAgentReply& Reply)
+	{
+		Reply.MovementIntent = EWSNPCMovementIntent::Stay;
+		if (Reply.Emotion.Equals(TEXT("alarmed"), ESearchCase::IgnoreCase)
+			|| Reply.Emotion.Equals(TEXT("urgent"), ESearchCase::IgnoreCase))
+		{
+			Reply.Reaction = EWSNPCReaction::Alarmed;
+			return;
+		}
+		switch (Reply.ResponseType)
+		{
+		case EWSResponseType::Accept:
+		case EWSResponseType::ConditionalAccept:
+			Reply.Reaction = EWSNPCReaction::Acknowledge;
+			break;
+		case EWSResponseType::PartialDisclosure:
+		case EWSResponseType::FullDisclosure:
+			Reply.Reaction = EWSNPCReaction::Consider;
+			break;
+		case EWSResponseType::Reassure:
+			Reply.Reaction = EWSNPCReaction::Reassure;
+			break;
+		case EWSResponseType::Refuse:
+		case EWSResponseType::Deflect:
+		case EWSResponseType::Accuse:
+			Reply.Reaction = EWSNPCReaction::Reject;
+			break;
+		default:
+			Reply.Reaction = EWSNPCReaction::Neutral;
+			break;
+		}
+	}
 }
 
 FWSDialogueDisclosureContext UWSNPCDecisionService::BuildDisclosureContext(
@@ -889,6 +995,452 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 	}
 	Reply.AnswerSource = TEXT("spine_only");
 	return Reply;
+}
+
+FWSDialogueRealizationContract UWSNPCDecisionService::BuildDialogueContract(
+	const FWSActionRequest& Request,
+	const FWSGameState& State,
+	const FWSActionRequirementReport& RequirementReport,
+	FWSAgentReply& OutLocalFallback)
+{
+	using namespace WhiteoutAgentFacts;
+	FWSDialogueRealizationContract Contract;
+	Contract.MaxSentences = 2;
+	Contract.MaxCharacters = 96;
+	Contract.ForbiddenPhrases = {
+		TEXT("AP"),
+		TEXT("Stamina"),
+		TEXT("条件ID"),
+		TEXT("条件 ID"),
+		TEXT("至少两点"),
+		TEXT("至少2点"),
+		TEXT("阈值"),
+		TEXT("不会单独否决"),
+		TEXT("否决"),
+		TEXT("修正值"),
+		TEXT("+1")};
+
+	const bool bGuHengRequirements =
+		Request.ActionId == TEXT("talk_gu_heng")
+		&& Request.SemanticFrame.QueryType == EWSDialogueQueryType::Requirements
+		&& Request.SemanticFrame.TargetActionId == TEXT("repair_generator");
+	if (bGuHengRequirements)
+	{
+		OutLocalFallback = FWSAgentReply();
+		OutLocalFallback.Speaker = EWSCharacterId::GuHeng;
+		OutLocalFallback.ActionId = Request.ActionId;
+		OutLocalFallback.TransactionId = Request.TransactionId;
+		OutLocalFallback.DialogueSessionId = Request.DialogueSessionId;
+		OutLocalFallback.SemanticFrame = Request.SemanticFrame;
+		OutLocalFallback.ResponseType = RequirementReport.bCurrentlyExecutable
+			? EWSResponseType::Accept
+			: EWSResponseType::ConditionalAccept;
+		OutLocalFallback.Emotion = TEXT("measured");
+		OutLocalFallback.bAccepted = true;
+		OutLocalFallback.bFallback = true;
+		OutLocalFallback.Provider = TEXT("preset");
+
+		const FWSDialogueDisclosureContext DisclosureContext =
+			BuildDisclosureContext(Request, EWSCharacterId::GuHeng, State);
+		OutLocalFallback.RequirementReport = ResolveRequirementVisibility(
+			RequirementReport,
+			DisclosureContext);
+
+		bool bNeedsAssistance = true;
+		bool bNeedsRecovery =
+			State.Characters.FindRef(EWSCharacterId::GuHeng).Stamina < 2;
+		bool bNeedsWarmth =
+			State.Heating.CurrentZone != EWSHeatingZone::RepairRoom;
+		for (const FWSRequirementItem& Item : RequirementReport.UniversalRequirements)
+		{
+			if (Item.RequirementId == TEXT("player_collaboration"))
+			{
+				bNeedsAssistance = !Item.bSatisfied;
+			}
+			else if (Item.RequirementId == TEXT("gu_heng_available")
+				&& !Item.bSatisfied)
+			{
+				bNeedsRecovery = true;
+			}
+		}
+		for (const FWSRequirementPlan& Plan : RequirementReport.AlternativePlans)
+		{
+			if (Plan.PlanId != TEXT("supported_repair"))
+			{
+				continue;
+			}
+			for (const FWSRequirementItem& Item : Plan.Requirements)
+			{
+				if (Item.RequirementId == TEXT("repair_room_heated"))
+				{
+					bNeedsWarmth = !Item.bSatisfied;
+				}
+				else if (Item.RequirementId == TEXT("gu_heng_stamina_ready"))
+				{
+					bNeedsRecovery = !Item.bSatisfied;
+				}
+			}
+		}
+
+		if (bNeedsAssistance)
+		{
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("PLAYER_ASSISTANCE_NEEDED"),
+					TEXT("你留下来搭把手"),
+					{TEXT("搭把手"), TEXT("搭手"), TEXT("帮我"), TEXT("配合")}));
+			OutLocalFallback.CoveredConditionIds.AddUnique(
+				TEXT("player_collaboration"));
+		}
+		if (bNeedsRecovery)
+		{
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("GU_HENG_NEEDS_RECOVERY"),
+					TEXT("让我先缓口气"),
+					{TEXT("缓口气"), TEXT("缓过来"), TEXT("喘口气"), TEXT("歇一会")}));
+			OutLocalFallback.CoveredConditionIds.AddUnique(
+				TEXT("gu_heng_stamina_ready"));
+		}
+		if (bNeedsWarmth)
+		{
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("REPAIR_ROOM_SHOULD_BE_WARM"),
+					TEXT("把维修间弄暖"),
+					{TEXT("维修间"), TEXT("弄暖"), TEXT("升温")}));
+			OutLocalFallback.CoveredConditionIds.AddUnique(
+				TEXT("repair_room_heated"));
+		}
+
+		const int32 Variant = StableFallbackVariant(Request, State, 3);
+		const int32 MissingMask =
+			(bNeedsAssistance ? 1 : 0)
+			| (bNeedsRecovery ? 2 : 0)
+			| (bNeedsWarmth ? 4 : 0);
+		switch (MissingMask)
+		{
+		case 1:
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("你留下来搭把手，我就动手。别把活全压给我。")
+				: TEXT("你在旁边搭手，我来修。配合跟上就行。");
+			break;
+		case 2:
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("给我一点时间缓过来，我就动手。")
+				: TEXT("让我先喘口气。缓过来就接着修。");
+			break;
+		case 3:
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("你留下来搭把手，让我先缓口气。我就动手。")
+				: TEXT("你在旁边搭手，再给我点时间缓过来。准备好就开工。");
+			break;
+		case 4:
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("先把维修间弄暖，我就动手。")
+				: TEXT("维修间升温以后，我马上开工。");
+			break;
+		case 5:
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("你留下来搭把手，把维修间弄暖。我就动手。")
+				: TEXT("你在旁边搭手，维修间也得升温。办好这两件事，我来修。");
+			break;
+		case 6:
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("先把维修间弄暖，让我缓口气。我就动手。")
+				: TEXT("维修间升温，再给我点时间缓过来。随后开工。");
+			break;
+		case 7:
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("你留下来搭把手，把维修间弄暖。让我先缓口气，我就动手。")
+				: Variant == 1
+					? TEXT("你在旁边搭手，先把维修间升温。给我点时间缓过来，接着干。")
+					: TEXT("搭手、升温，再让我喘口气。准备好这些，我来修。");
+			break;
+		default:
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("GU_HENG_READY_TO_REPAIR"),
+					TEXT("现在可以动手"),
+					{TEXT("动手"), TEXT("开工"), TEXT("开始修")}));
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("人手和环境都准备好了。我现在就动手。")
+				: TEXT("准备得够了，直接开工。");
+			break;
+		}
+	}
+	else
+	{
+		OutLocalFallback = BuildDeterministicReply(
+			Request,
+			State,
+			RequirementReport);
+		OutLocalFallback.RealizedAtomIds.Reset();
+
+		const bool bYeCheng = Request.ActionId == TEXT("talk_ye_cheng");
+		const bool bGeneralYeStatus = bYeCheng
+			&& OutLocalFallback.DisclosedFactIds.IsEmpty()
+			&& OutLocalFallback.Utterance.StartsWith(TEXT("备用电"));
+		const bool bHeatPackDisclosure = bYeCheng
+			&& OutLocalFallback.DisclosedFactIds.Contains(HeatPack);
+		const bool bDiagnosisDisclosure = bYeCheng
+			&& WSDialogueDisclosurePolicy::IsTargetedGuHengDiagnosisQuestion(Request)
+			&& OutLocalFallback.DisclosedFactIds.Contains(MedicalDiagnosis)
+			&& OutLocalFallback.DisclosedFactIds.Contains(HandInjury);
+		if (bGeneralYeStatus)
+		{
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("BACKUP_POWER_DECLINING"),
+					TEXT("备用电还在往下掉"),
+					{TEXT("备用电"), TEXT("供电"), TEXT("电量")}));
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("BLIZZARD_WINDOW_SHRINKING"),
+					TEXT("暴雪窗口也在缩"),
+					{TEXT("暴雪"), TEXT("风雪"), TEXT("窗口")}));
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("HEAT_PRIORITY_DECISION"),
+					TEXT("先决定供暖给哪间房"),
+					{TEXT("供暖"), TEXT("哪间房"), TEXT("优先")}));
+			const int32 Variant = StableFallbackVariant(Request, State, 3);
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("备用电还在往下掉，暴雪窗口也在缩。先决定这一阶段把供暖给哪间房。")
+				: Variant == 1
+					? TEXT("备用电撑不了太久，暴雪正在逼近。先定下供暖优先给哪间房。")
+					: TEXT("供电在减弱，暴雪留给我们的窗口也不多。先排供暖优先级。");
+		}
+		else if (bHeatPackDisclosure)
+		{
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("HAND_INJURY_AFFECTS_FINE_WORK"),
+					TEXT("他的右手已经影响精细操作"),
+					{TEXT("右手"), TEXT("手伤"), TEXT("精细操作"), TEXT("精细活")},
+					{HandInjury, MedicalDiagnosis}));
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("HEAT_PACK_AVAILABLE"),
+					TEXT("柜底还有一只保温包"),
+					{TEXT("保温包"), TEXT("暖袋")},
+					{HeatPack}));
+			const int32 Variant = StableFallbackVariant(Request, State, 3);
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("他的右手已经影响精细操作。柜底还有一只保温包，必要时可以顶一次。")
+				: Variant == 1
+					? TEXT("顾衡现在做精细活有风险。柜底的保温包能临时支撑一次。")
+					: TEXT("他的右手不适合继续做精细操作。需要时可以用柜底那只保温包撑一次。");
+		}
+		else if (bDiagnosisDisclosure)
+		{
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("HAND_INJURY_AFFECTS_FINE_WORK"),
+					TEXT("他的右手已经影响精细操作"),
+					{TEXT("右手"), TEXT("手伤"), TEXT("精细操作"), TEXT("精细活")},
+					{HandInjury, MedicalDiagnosis}));
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("MEDICAL_ROOM_SHOULD_BE_WARM"),
+					TEXT("先让医务室暖起来"),
+					{TEXT("医务室"), TEXT("升温"), TEXT("暖起来")}));
+			const int32 Variant = StableFallbackVariant(Request, State, 3);
+			OutLocalFallback.Utterance = Variant == 0
+				? TEXT("他的右手已经影响精细操作。先让医务室暖起来，再处理。")
+				: Variant == 1
+					? TEXT("顾衡的手伤会妨碍精细活。医务室升温以后，我再稳妥处理。")
+					: TEXT("他的右手现在做不了精细操作。先把医务室弄暖。");
+		}
+		else if (bYeCheng
+			&& WSDialogueDisclosurePolicy::IsGuHengConditionObservationQuestion(Request))
+		{
+			if (OutLocalFallback.DisclosedFactIds.Contains(HandInjury))
+			{
+				AddRequiredAtom(
+					Contract,
+					OutLocalFallback,
+					MakeSemanticAtom(
+						TEXT("HAND_INJURY_OBSERVED"),
+						TEXT("他在避开用右手做精细操作"),
+						{TEXT("右手"), TEXT("精细操作"), TEXT("手不稳")},
+						{HandInjury}));
+			}
+			AddRequiredAtom(
+				Contract,
+				OutLocalFallback,
+				MakeSemanticAtom(
+					TEXT("TARGETED_HAND_CHECK_NEEDED"),
+					TEXT("还需要针对性检查"),
+					{TEXT("检查"), TEXT("观察"), TEXT("不能下结论")}));
+		}
+		else
+		{
+			const bool bCombinedMedicalAssessment = bYeCheng
+				&& OutLocalFallback.DisclosedFactIds.Contains(HandInjury)
+				&& OutLocalFallback.DisclosedFactIds.Contains(MedicalDiagnosis);
+			if (bCombinedMedicalAssessment)
+			{
+				AddRequiredAtom(
+					Contract,
+					OutLocalFallback,
+					MakeSemanticAtom(
+						TEXT("HAND_INJURY_MEDICAL_ASSESSMENT"),
+						TEXT("顾衡的手部状态需要继续处理"),
+						{TEXT("手伤"), TEXT("伤手"), TEXT("右手"), TEXT("复查"), TEXT("诊断")},
+						{HandInjury, MedicalDiagnosis}));
+			}
+			const auto AddFactAtom = [
+				&Contract,
+				&OutLocalFallback](
+					const FName FactId,
+					const FName AtomId,
+					const FString& Fallback,
+					TArray<FString> Tokens)
+			{
+				if (OutLocalFallback.DisclosedFactIds.Contains(FactId))
+				{
+					AddRequiredAtom(
+						Contract,
+						OutLocalFallback,
+						MakeSemanticAtom(
+							AtomId,
+							Fallback,
+							MoveTemp(Tokens),
+							{FactId}));
+				}
+			};
+			AddFactAtom(
+				GeneratorProtectionStop,
+				TEXT("GENERATOR_PROTECTION_STOP_KNOWN"),
+				TEXT("发电机曾因保护停机"),
+				{TEXT("保护停机")});
+			AddFactAtom(
+				ForcedRestartSuspicion,
+				TEXT("FORCED_RESTART_SUSPICION_RAISED"),
+				TEXT("日志里的强制重启很可疑"),
+				{TEXT("强制重启"), TEXT("旁路")});
+			AddFactAtom(
+				BurntRelay,
+				TEXT("BURNT_RELAY_EVIDENCE_CONFIRMED"),
+				TEXT("继电器已经烧毁"),
+				{TEXT("继电器"), TEXT("触点"), TEXT("熔毁")});
+			if (!bCombinedMedicalAssessment)
+			{
+				AddFactAtom(
+					HandInjury,
+					bYeCheng
+						? FName(TEXT("HAND_INJURY_OBSERVED"))
+						: FName(TEXT("HAND_PROBLEM_ACKNOWLEDGED")),
+					TEXT("顾衡的右手状态需要处理"),
+					{TEXT("右手"), TEXT("手伤"), TEXT("伤手"), TEXT("手现在"), TEXT("伤")});
+				AddFactAtom(
+					MedicalDiagnosis,
+					TEXT("MEDICAL_DIAGNOSIS_CONFIRMED"),
+					TEXT("诊断已经确认"),
+					{TEXT("诊断"), TEXT("检查"), TEXT("复查")});
+			}
+			AddFactAtom(
+				HeatPack,
+				TEXT("HEAT_PACK_AVAILABLE"),
+				TEXT("保温包可以使用"),
+				{TEXT("保温包"), TEXT("暖袋")});
+			AddFactAtom(
+				RelayCompatibility,
+				TEXT("RELAY_ALTERNATIVE_CONFIRMED"),
+				TEXT("替代件规格已经确认"),
+				{TEXT("厨房加热器"), TEXT("规格能替"), TEXT("规格能对上"), TEXT("替代件")});
+			AddFactAtom(
+				ForcedRestartConfirmed,
+				TEXT("FORCED_RESTART_CONFIRMED"),
+				TEXT("保护回路被旁路过"),
+				{TEXT("旁路"), TEXT("越过保护"), TEXT("绕过保护")});
+			if (Contract.MustRealize.IsEmpty())
+			{
+				const bool bGuHengPersonalProbe = !bYeCheng
+					&& (Request.SemanticFrame.TargetFactId == HandInjury
+						|| Request.SemanticFrame.QueryType == EWSDialogueQueryType::Status);
+				AddRequiredAtom(
+					Contract,
+					OutLocalFallback,
+					MakeSemanticAtom(
+						bGuHengPersonalProbe
+							? FName(TEXT("GU_HENG_DEFLECTS_PERSONAL_PROBE"))
+							: bYeCheng
+								? FName(TEXT("YE_CHENG_CONTEXT_RESPONSE"))
+								: FName(TEXT("GU_HENG_CONTEXT_RESPONSE")),
+						OutLocalFallback.Utterance,
+						SurfaceTokensForFallback(OutLocalFallback.Utterance)));
+			}
+			else
+			{
+				AddRequiredAtom(
+					Contract,
+					OutLocalFallback,
+					MakeSemanticAtom(
+						bYeCheng
+							? FName(TEXT("YE_CHENG_CONTEXT_STANCE"))
+							: FName(TEXT("GU_HENG_CONTEXT_STANCE")),
+						TEXT("保持当前立场并回应眼前问题"),
+						SurfaceTokensForFallback(OutLocalFallback.Utterance)));
+			}
+		}
+	}
+
+	OutLocalFallback.SemanticSpine.Reset();
+	OutLocalFallback.PersonaTail.Reset();
+	OutLocalFallback.AnswerContract = FWSDialogueAnswerContract();
+	OutLocalFallback.AnswerSource = TEXT("local_natural_fallback");
+	OutLocalFallback.ValidationReason = TEXT("deterministic_full_line");
+	OutLocalFallback.bFallback = true;
+	OutLocalFallback.PlannedDisclosureFacts =
+		OutLocalFallback.DisclosedFactIds;
+	OutLocalFallback.ReferencedFactIds =
+		OutLocalFallback.DisclosedFactIds;
+	FinalizeFallbackPerformance(OutLocalFallback);
+
+	Contract.PersonaStyleId =
+		OutLocalFallback.Speaker == EWSCharacterId::YeCheng
+			? TEXT("ye_cheng_risk_first")
+			: TEXT("gu_heng_guarded_direct");
+	for (const FName FactId : {
+		GeneratorProtectionStop,
+		ForcedRestartSuspicion,
+		BurntRelay,
+		HandInjury,
+		MedicalDiagnosis,
+		HeatPack,
+		RelayCompatibility,
+		ForcedRestartConfirmed})
+	{
+		if (!OutLocalFallback.DisclosedFactIds.Contains(FactId))
+		{
+			Contract.ForbiddenFactIds.AddUnique(FactId);
+		}
+	}
+	return Contract;
 }
 
 TArray<FName> UWSNPCDecisionService::BuildAllowedFacts(

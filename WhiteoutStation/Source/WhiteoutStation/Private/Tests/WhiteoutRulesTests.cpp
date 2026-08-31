@@ -65,10 +65,11 @@ namespace WhiteoutRuleTests
 		Prepared.TransactionId = Request.TransactionId;
 		Prepared.OriginalRequest = Request;
 		Prepared.ReadSnapshot = Engine.GetState();
-		Prepared.LocalFallback = UWSNPCDecisionService::BuildDeterministicReply(
+		Prepared.Contract = UWSNPCDecisionService::BuildDialogueContract(
 			Request,
 			Prepared.ReadSnapshot,
-			RequirementReport);
+			RequirementReport,
+			Prepared.LocalFallback);
 		Prepared.AllowedFactIds = UWSNPCDecisionService::BuildAllowedFacts(
 			Request,
 			Prepared.LocalFallback.Speaker,
@@ -77,13 +78,6 @@ namespace WhiteoutRuleTests
 			Prepared.LocalFallback.PlannedDisclosureFacts;
 		Prepared.PlannedKnowledgeUpgrades =
 			Prepared.LocalFallback.DisclosedFactIds;
-
-		FWSDialogueSemanticAtom FallbackAtom;
-		FallbackAtom.AtomId = TEXT("test_deterministic_fallback");
-		FallbackAtom.NaturalFallback = FText::FromString(
-			Prepared.LocalFallback.Utterance);
-		FallbackAtom.RelatedFactIds = Prepared.PlannedDisclosureFacts;
-		Prepared.Contract.MustRealize.Add(FallbackAtom);
 		return Prepared;
 	}
 
@@ -92,11 +86,8 @@ namespace WhiteoutRuleTests
 		FWSDialogueOutcome Outcome;
 		Outcome.FinalReply = Prepared.LocalFallback;
 		Outcome.DisclosedFactIds = Prepared.LocalFallback.DisclosedFactIds;
-		if (!Prepared.Contract.MustRealize.IsEmpty())
-		{
-			Outcome.RealizedAtomIds = {
-				Prepared.Contract.MustRealize[0].AtomId};
-		}
+		Outcome.RealizedAtomIds =
+			Prepared.LocalFallback.RealizedAtomIds;
 		Outcome.AnswerSource = Prepared.LocalFallback.AnswerSource;
 		return Outcome;
 	}
@@ -3342,36 +3333,28 @@ bool FWhiteoutV13DialogueOutcomeTransactionTest::RunTest(
 		TEXT("FACT_HAND_INJURY")};
 	PartialDisclosure.FinalReply.ReferencedFactIds = {
 		TEXT("FACT_HAND_INJURY")};
+	const int32 PartialEventsBefore =
+		PartialDisclosureEngine.GetState().EventLog.Num();
 	const FWSActionResult PartialCommitted =
 		PartialDisclosureEngine.CommitDialogueOutcome(
 			DiagnosisPrepared,
 			PartialDisclosure);
-	TestTrue(TEXT("A valid actual-disclosure subset commits"), PartialCommitted.bCommitted);
-	TestTrue(
-		TEXT("Only the spoken hand injury is added as suspected knowledge"),
-		PartialDisclosureEngine.GetState().PlayerKnowledge.FindRef(
-			TEXT("FACT_HAND_INJURY")) == EWSKnowledgeLevel::Suspected);
 	TestFalse(
-		TEXT("An unspoken medical diagnosis does not update the diagnosis flag"),
+		TEXT("An online disclosure subset cannot diverge from the frozen plan"),
+		PartialCommitted.bCommitted);
+	TestFalse(
+		TEXT("A rejected disclosure subset does not update the diagnosis flag"),
 		PartialDisclosureEngine.GetState().Flags.bGuHengDiagnosed);
 	TestFalse(
-		TEXT("An unspoken medical diagnosis grants no diagnosis knowledge"),
+		TEXT("A rejected disclosure subset grants no knowledge"),
 		PartialDisclosureEngine.GetState().PlayerKnowledge.Contains(
-			TEXT("FACT_MEDICAL_DIAGNOSIS")));
-	if (!PartialDisclosureEngine.GetState().EventLog.IsEmpty())
-	{
-		const FWSEventRecord& Event =
-			PartialDisclosureEngine.GetState().EventLog.Last();
-		TestTrue(
-			TEXT("The event retains both planned facts for audit"),
-			Event.PlannedDisclosureFacts.Contains(TEXT("FACT_HAND_INJURY"))
-				&& Event.PlannedDisclosureFacts.Contains(
-					TEXT("FACT_MEDICAL_DIAGNOSIS")));
-		TestTrue(
-			TEXT("The event records only the actually disclosed fact"),
-			Event.DisclosedFactIds.Num() == 1
-				&& Event.DisclosedFactIds.Contains(TEXT("FACT_HAND_INJURY")));
-	}
+			TEXT("FACT_HAND_INJURY"))
+			|| PartialDisclosureEngine.GetState().PlayerKnowledge.Contains(
+				TEXT("FACT_MEDICAL_DIAGNOSIS")));
+	TestTrue(
+		TEXT("A rejected disclosure subset writes no event"),
+		PartialDisclosureEngine.GetState().EventLog.Num()
+			== PartialEventsBefore);
 
 	FWhiteoutRulesEngine EmptyDisclosureEngine =
 		WhiteoutRuleTests::LoadedV11Engine(*this);
@@ -3395,7 +3378,9 @@ bool FWhiteoutV13DialogueOutcomeTransactionTest::RunTest(
 		EmptyDisclosureEngine.CommitDialogueOutcome(
 			EmptyPrepared,
 			EmptyDisclosure);
-	TestTrue(TEXT("A valid empty actual-disclosure set commits"), EmptyCommitted.bCommitted);
+	TestFalse(
+		TEXT("An empty online disclosure cannot replace a non-empty frozen plan"),
+		EmptyCommitted.bCommitted);
 	TestTrue(
 		TEXT("An empty actual-disclosure set grants no knowledge"),
 		EmptyDisclosureEngine.GetState().PlayerKnowledge.IsEmpty());

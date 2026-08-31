@@ -13,6 +13,8 @@ namespace FHttpRetrySystem
 
 DECLARE_DELEGATE_OneParam(FWSAgentReplyCallback, const FWSAgentReply&);
 
+DECLARE_DELEGATE_OneParam(FWSDialogueOutcomeCallback, const FWSDialogueOutcome&);
+
 DECLARE_DELEGATE_OneParam(FWSDialogueIntentCallback, const FWSDialogueIntentResult&);
 
 USTRUCT(BlueprintType)
@@ -79,6 +81,10 @@ public:
 		bool bAllowLiveProvider,
 		FWSAgentReplyCallback Completion,
 		const FString& PlayerSaid = FString());
+	void RequestDialogueRealization(
+		const FWSPreparedDialogue& Prepared,
+		bool bAllowLiveProvider,
+		FWSDialogueOutcomeCallback Completion);
 	void RequestDialogueIntent(
 		const FString& UserText,
 		bool bAllowLiveProvider,
@@ -130,6 +136,15 @@ public:
 		const TArray<FName>& AllowedFactIds,
 		FWSAgentReply& OutReply,
 		FString& OutReason);
+	static bool ValidateDialogueOutcomePayload(
+		const FString& Payload,
+		const FWSPreparedDialogue& Prepared,
+		FWSDialogueOutcome& OutOutcome,
+		FString& OutReason);
+	static bool ValidateDialogueOutcome(
+		const FWSPreparedDialogue& Prepared,
+		const FWSDialogueOutcome& Outcome,
+		FString& OutReason);
 	static bool IsExpressionKnowledgeBoundaryOpen(
 		EWSCharacterId Speaker,
 		const TArray<FName>& AllowedFactIds);
@@ -155,6 +170,7 @@ private:
 	float TimeoutSeconds = 4.0f;
 	bool bLLMEnabled = false;
 	bool bRequiresApiKey = false;
+	bool bRuntimeContractValid = true;
 	uint64 SessionGeneration = 1;
 
 	TSharedPtr<FHttpRetrySystem::FManager, ESPMode::ThreadSafe> RetryManager;
@@ -173,6 +189,10 @@ private:
 		const TArray<FName>& AllowedFactIds,
 		const FWSGameState& State,
 		const FWSActionRequest& ActionRequest) const;
+	FString BuildDialogueRealizationContextJson(
+		const FWSPreparedDialogue& Prepared) const;
+	FString BuildDialogueRealizationRequestJson(
+		const FWSPreparedDialogue& Prepared) const;
 	static FString BuildHistoryAssistantJson(const FWSAgentReply& Reply);
 	static FString BuildHistoryUserJson(
 		const FWSActionRequest& ActionRequest,

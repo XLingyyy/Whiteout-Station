@@ -1167,6 +1167,9 @@ struct FWSAgentReply
 	TArray<FName> DisclosedFactIds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> RealizedAtomIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	EWSNPCMovementIntent MovementIntent = EWSNPCMovementIntent::Stay;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)

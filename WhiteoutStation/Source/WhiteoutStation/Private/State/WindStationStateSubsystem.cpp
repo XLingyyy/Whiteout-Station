@@ -598,10 +598,11 @@ FWSActionResult UWindStationStateSubsystem::PrepareDialogue(
 		TargetRequest.ActionId = TEXT("repair_generator");
 		RequirementReport = RulesEngine.EvaluateActionRequirements(TargetRequest);
 	}
-	Prepared.LocalFallback = UWSNPCDecisionService::BuildDeterministicReply(
+	Prepared.Contract = UWSNPCDecisionService::BuildDialogueContract(
 		ActionRequest,
 		Prepared.ReadSnapshot,
-		RequirementReport);
+		RequirementReport,
+		Prepared.LocalFallback);
 	Prepared.AllowedFactIds = UWSNPCDecisionService::BuildAllowedFacts(
 		ActionRequest,
 		Prepared.LocalFallback.Speaker,
@@ -611,38 +612,23 @@ FWSActionResult UWindStationStateSubsystem::PrepareDialogue(
 	Prepared.PlannedKnowledgeUpgrades =
 		Prepared.LocalFallback.DisclosedFactIds;
 
-	FWSDialogueSemanticAtom FallbackAtom;
-	FallbackAtom.AtomId = FName(*FString::Printf(
-		TEXT("prepared_%s"),
-		*ActionRequest.ActionId.ToString()));
-	FallbackAtom.NaturalFallback = FText::FromString(
-		Prepared.LocalFallback.Utterance);
-	FallbackAtom.RelatedFactIds = Prepared.PlannedDisclosureFacts;
-	Prepared.Contract.MustRealize.Add(FallbackAtom);
-	Prepared.Contract.PersonaStyleId =
-		Prepared.LocalFallback.Speaker == EWSCharacterId::YeCheng
-			? TEXT("ye_cheng_clinical")
-			: TEXT("gu_heng_guarded");
-	for (const FName ProtectedFactId : {
-		FName(TEXT("FACT_HAND_INJURY")),
-		FName(TEXT("FACT_MEDICAL_DIAGNOSIS")),
-		FName(TEXT("FACT_HEAT_PACK")),
-		FName(TEXT("FACT_RELAY_COMPATIBILITY")),
-		FName(TEXT("FACT_FORCED_RESTART_CONFIRMED"))})
-	{
-		if (!Prepared.AllowedFactIds.Contains(ProtectedFactId))
-		{
-			Prepared.Contract.ForbiddenFactIds.Add(ProtectedFactId);
-		}
-	}
-
 	FWSDialogueOutcome SimulationOutcome;
 	SimulationOutcome.FinalReply = Prepared.LocalFallback;
 	SimulationOutcome.DisclosedFactIds =
 		Prepared.LocalFallback.DisclosedFactIds;
-	SimulationOutcome.RealizedAtomIds = {FallbackAtom.AtomId};
+	SimulationOutcome.RealizedAtomIds =
+		Prepared.LocalFallback.RealizedAtomIds;
 	SimulationOutcome.AnswerSource =
 		Prepared.LocalFallback.AnswerSource;
+	FString FallbackValidationReason;
+	if (!UWSAgentGateway::ValidateDialogueOutcome(
+			Prepared,
+			SimulationOutcome,
+			FallbackValidationReason))
+	{
+		Result.ReasonCode = EWSReasonCode::DialogueOutcomeInvalid;
+		return Result;
+	}
 	FWhiteoutRulesEngine Simulation = RulesEngine;
 	const FWSActionResult SimulationResult =
 		Simulation.CommitDialogueOutcome(Prepared, SimulationOutcome);
@@ -670,14 +656,6 @@ void UWindStationStateSubsystem::RealizePreparedDialogue()
 	{
 		return;
 	}
-	FWSActionRequirementReport RequirementReport;
-	if (PendingDialogue.OriginalRequest.SemanticFrame.TargetActionId
-		== TEXT("repair_generator"))
-	{
-		FWSActionRequest TargetRequest;
-		TargetRequest.ActionId = TEXT("repair_generator");
-		RequirementReport = RulesEngine.EvaluateActionRequirements(TargetRequest);
-	}
 	const FGuid TransactionId = PendingDialogue.TransactionId;
 	const int64 Generation = PendingDialogue.Generation;
 #if WITH_DEV_AUTOMATION_TESTS
@@ -700,15 +678,10 @@ void UWindStationStateSubsystem::RealizePreparedDialogue()
 		return;
 	}
 #endif
-	const bool bKnowledgeBoundaryOpen =
-		UWSAgentGateway::IsExpressionKnowledgeBoundaryOpen(
-			PendingDialogue.LocalFallback.Speaker,
-			PendingDialogue.AllowedFactIds);
 	const bool bLiveProviderEligible =
 		LLMConfigurationError.IsEmpty()
 		&& AgentGateway
 		&& AgentGateway->HasLiveProvider()
-		&& bKnowledgeBoundaryOpen
 		&& RulesEngine.GetState().ModelCalls
 			< RulesEngine.GetConfig().ModelCallHardLimit;
 	const bool bUseLiveProvider =
@@ -742,18 +715,16 @@ void UWindStationStateSubsystem::RealizePreparedDialogue()
 
 	const FWSPreparedDialogue Prepared = PendingDialogue;
 	TWeakObjectPtr<UWindStationStateSubsystem> WeakThis(this);
-	AgentGateway->RequestExpression(
-		Prepared.OriginalRequest,
-		Prepared.ReadSnapshot,
-		RequirementReport,
+	AgentGateway->RequestDialogueRealization(
+		Prepared,
 		bUseLiveProvider,
-		FWSAgentReplyCallback::CreateLambda(
-			[WeakThis, TransactionId, Generation](const FWSAgentReply& Reply)
+		FWSDialogueOutcomeCallback::CreateLambda(
+			[WeakThis, TransactionId, Generation](const FWSDialogueOutcome& Outcome)
 			{
 				if (WeakThis.IsValid())
 				{
-					WeakThis->HandlePreparedDialogueReply(
-						Reply,
+					WeakThis->HandlePreparedDialogueOutcome(
+						Outcome,
 						TransactionId,
 						Generation);
 				}
@@ -773,6 +744,19 @@ void UWindStationStateSubsystem::HandlePreparedDialogueReply(
 	const FGuid TransactionId,
 	const int64 Generation)
 {
+	FWSDialogueOutcome Outcome;
+	Outcome.FinalReply = Reply;
+	Outcome.DisclosedFactIds = Reply.DisclosedFactIds;
+	Outcome.RealizedAtomIds = Reply.RealizedAtomIds;
+	Outcome.AnswerSource = Reply.AnswerSource;
+	HandlePreparedDialogueOutcome(Outcome, TransactionId, Generation);
+}
+
+void UWindStationStateSubsystem::HandlePreparedDialogueOutcome(
+	const FWSDialogueOutcome& RealizedOutcome,
+	const FGuid TransactionId,
+	const int64 Generation)
+{
 	if (!bHasPendingDialogue
 		|| PendingDialogue.TransactionId != TransactionId
 		|| PendingDialogue.Generation != Generation)
@@ -781,53 +765,30 @@ void UWindStationStateSubsystem::HandlePreparedDialogueReply(
 	}
 
 	const FWSPreparedDialogue Prepared = PendingDialogue;
-	FWSAgentReply FinalReply = Reply;
-	const auto IsSubset = [](const TArray<FName>& Candidate, const TArray<FName>& Allowed)
+	FWSDialogueOutcome Outcome = RealizedOutcome;
+	FString ValidationReason;
+	if (!UWSAgentGateway::ValidateDialogueOutcome(
+			Prepared,
+			Outcome,
+			ValidationReason))
 	{
-		return !Candidate.ContainsByPredicate(
-			[&Allowed](const FName FactId)
-			{
-				return !Allowed.Contains(FactId);
-			});
-	};
-	const EWSCharacterId ExpectedSpeaker =
-		Prepared.OriginalRequest.ActionId == TEXT("talk_ye_cheng")
-			? EWSCharacterId::YeCheng
-			: EWSCharacterId::GuHeng;
-	const bool bReplyIdentityValid =
-		FinalReply.TransactionId == Prepared.TransactionId
-		&& FinalReply.ActionId == Prepared.OriginalRequest.ActionId
-		&& FinalReply.DialogueSessionId
-			== Prepared.OriginalRequest.DialogueSessionId
-		&& FinalReply.Speaker == ExpectedSpeaker;
-	const bool bReplyDisclosureValid =
-		IsSubset(
-			FinalReply.ReferencedFactIds,
-			Prepared.PlannedDisclosureFacts)
-		&& IsSubset(
-			FinalReply.DisclosedFactIds,
-			Prepared.PlannedDisclosureFacts);
-	if (!bReplyIdentityValid || !bReplyDisclosureValid)
-	{
-		const FString FailureReason = FinalReply.ValidationReason;
-		FinalReply = Prepared.LocalFallback;
-		FinalReply.Provider = Reply.Provider;
-		FinalReply.ValidationReason = FailureReason.IsEmpty()
+		const FString Provider = Outcome.FinalReply.Provider;
+		const FString FailureReason = Outcome.FinalReply.ValidationReason;
+		Outcome.FinalReply = Prepared.LocalFallback;
+		Outcome.FinalReply.Provider = Provider;
+		Outcome.FinalReply.ValidationReason = FailureReason.IsEmpty()
 			? TEXT("prepared_outcome_validation_failed")
 			: FailureReason;
-		FinalReply.bFallback = true;
+		Outcome.FinalReply.bFallback = true;
+		Outcome.DisclosedFactIds =
+			Prepared.LocalFallback.DisclosedFactIds;
+		Outcome.RealizedAtomIds =
+			Prepared.LocalFallback.RealizedAtomIds;
+		Outcome.AnswerSource =
+			Prepared.LocalFallback.AnswerSource;
 	}
-	FinalReply.PlannedDisclosureFacts =
+	Outcome.FinalReply.PlannedDisclosureFacts =
 		Prepared.PlannedDisclosureFacts;
-
-	FWSDialogueOutcome Outcome;
-	Outcome.FinalReply = FinalReply;
-	Outcome.DisclosedFactIds = FinalReply.DisclosedFactIds;
-	for (const FWSDialogueSemanticAtom& Atom : Prepared.Contract.MustRealize)
-	{
-		Outcome.RealizedAtomIds.AddUnique(Atom.AtomId);
-	}
-	Outcome.AnswerSource = FinalReply.AnswerSource;
 
 	FWSActionResult Result;
 	if (!CommitDialogueOutcome(Prepared, Outcome, Result))
@@ -1303,46 +1264,8 @@ void UWindStationStateSubsystem::RequestActionExpression(const FWSActionRequest&
 		ActionRequest,
 		RulesEngine.GetState(),
 		RequirementReport);
-	const TArray<FName> AllowedFacts = UWSNPCDecisionService::BuildAllowedFacts(
-		ActionRequest,
-		Decision.Speaker,
-		RulesEngine.GetState());
-	const bool bKnowledgeBoundaryOpen =
-		UWSAgentGateway::IsExpressionKnowledgeBoundaryOpen(
-			Decision.Speaker,
-			AllowedFacts);
-	const bool bLiveProviderEligible =
-		LLMConfigurationError.IsEmpty()
-		&& AgentGateway->HasLiveProvider()
-		&& bKnowledgeBoundaryOpen;
-	const bool bUseLiveProvider =
-		bLiveProviderEligible && RulesEngine.TryRecordModelCall();
-	if (bUseLiveProvider)
-	{
-		++StateRevision;
-		SaveSnapshot();
-		BroadcastState();
-	}
-	TWeakObjectPtr<UWindStationStateSubsystem> WeakThis(this);
-	AgentGateway->RequestExpression(
-		ActionRequest,
-		RulesEngine.GetState(),
-		RequirementReport,
-		bUseLiveProvider,
-		FWSAgentReplyCallback::CreateLambda(
-			[WeakThis, ActionRequest](const FWSAgentReply& Reply)
-			{
-				if (WeakThis.IsValid())
-				{
-					if (WeakThis->AgentGateway)
-					{
-						WeakThis->AgentGateway->RecordCommittedDialogueTurn(
-							ActionRequest,
-							Reply);
-					}
-					WeakThis->HandleAgentReply(Reply);
-				}
-			}));
+	AgentGateway->RecordCommittedDialogueTurn(ActionRequest, Decision);
+	HandleAgentReply(Decision);
 }
 
 void UWindStationStateSubsystem::HandleAgentReply(const FWSAgentReply& Reply)

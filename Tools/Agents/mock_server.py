@@ -1,4 +1,4 @@
-"""OpenAI-compatible local mock server shared by Whiteout Station agent tools."""
+"""OpenAI-compatible deterministic v1.3 mock shared by agent tools."""
 
 from __future__ import annotations
 
@@ -10,15 +10,42 @@ import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 try:
-    from .agent_contract import MODEL, make_completion_envelope
+    from .agent_contract import (
+        EMOTIONS,
+        MODEL,
+        MOVEMENT_INTENTS,
+        REACTION_ACTIONS,
+        make_completion_envelope,
+    )
 except ImportError:
-    from agent_contract import MODEL, make_completion_envelope
+    from agent_contract import (
+        EMOTIONS,
+        MODEL,
+        MOVEMENT_INTENTS,
+        REACTION_ACTIONS,
+        make_completion_envelope,
+    )
 
 
 MAX_REQUEST_BYTES = 64 * 1024
+MOCK_MODES = (
+    "valid_natural",
+    "missing_atom",
+    "forbidden_fact",
+    "added_condition",
+    "system_jargon",
+    "invalid_json",
+    "timeout",
+)
+LEGACY_MODE_MAP = {
+    "valid": "valid_natural",
+    "empty": "missing_atom",
+    "added-condition": "added_condition",
+    "topic-drift": "added_condition",
+}
 
 
 @dataclass(frozen=True)
@@ -30,7 +57,15 @@ class MockConfig:
     finish_reason: str = "stop"
     malformed_content: bool = False
     extra_field: bool = False
-    persona_tail_mode: str = "valid"
+    mode: str = "valid_natural"
+    # Deprecated v1.2 compatibility for old launch scripts.
+    persona_tail_mode: str = ""
+
+    @property
+    def effective_mode(self) -> str:
+        if self.persona_tail_mode:
+            return LEGACY_MODE_MAP.get(self.persona_tail_mode, self.mode)
+        return self.mode
 
 
 def classify_intent(text: str) -> dict[str, object]:
@@ -97,8 +132,17 @@ def _request_context(user_text: str) -> dict[str, Any]:
     return context if isinstance(context, dict) else {}
 
 
+def _allowed_token(context: Mapping[str, Any], field: str, default: str) -> str:
+    values = context.get(field)
+    if isinstance(values, list) and values:
+        first = values[0]
+        if isinstance(first, str) and first:
+            return first
+    return default
+
+
 def _select_performance(
-    context: dict[str, Any],
+    context: Mapping[str, Any],
     preset_movement: str,
     preset_reaction: str,
 ) -> tuple[str, str]:
@@ -121,9 +165,76 @@ def _select_performance(
     return preset_movement, preset_reaction
 
 
+def _atom_id(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Mapping):
+        candidate = value.get("id", value.get("atom_id", ""))
+        return candidate.strip() if isinstance(candidate, str) else ""
+    return ""
+
+
+def _atom_fallback(value: Any) -> str:
+    if isinstance(value, Mapping):
+        candidate = value.get("fallback", value.get("natural_fallback", ""))
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+        for field in (
+            "required_surface_tokens",
+            "required_concept_tokens",
+            "surface_tokens",
+        ):
+            tokens = value.get(field)
+            if isinstance(tokens, list):
+                for token in tokens:
+                    if isinstance(token, str) and token.strip():
+                        return token.strip()
+    atom_id = _atom_id(value)
+    return atom_id if atom_id else "我听见了"
+
+
+def _atom_entries(context: Mapping[str, Any], field: str) -> list[Any]:
+    values = context.get(field)
+    return values if isinstance(values, list) else []
+
+
+def _compact_natural_line(atoms: Sequence[Any]) -> str:
+    pieces: list[str] = []
+    for atom in atoms:
+        piece = _atom_fallback(atom).strip().rstrip("。！？.!?；;，,")
+        if piece:
+            pieces.append(piece)
+    if not pieces:
+        return "我听见了。"
+    line = "，".join(pieces) + "。"
+    if len(line) <= 96:
+        return line
+
+    compact: list[str] = []
+    for atom in atoms:
+        if isinstance(atom, Mapping):
+            tokens = atom.get(
+                "required_surface_tokens",
+                atom.get("required_concept_tokens", atom.get("surface_tokens", [])),
+            )
+            if isinstance(tokens, list) and tokens and isinstance(tokens[0], str):
+                compact.append(tokens[0].strip())
+                continue
+        compact.append(_atom_fallback(atom).strip()[:12])
+    return ("，".join(filter(None, compact)) + "。")[:96]
+
+
+def _string_list(context: Mapping[str, Any], *fields: str) -> list[str]:
+    for field in fields:
+        values = context.get(field)
+        if isinstance(values, list):
+            return [value for value in values if isinstance(value, str) and value]
+    return []
+
+
 def build_mock_content(
     request: dict[str, Any],
-    persona_tail_mode: str = "valid",
+    mode: str = "valid_natural",
 ) -> tuple[str, dict[str, object]]:
     messages = request.get("messages")
     if not isinstance(messages, list):
@@ -133,55 +244,64 @@ def build_mock_content(
     if "Classify" in system_text:
         return "intent", classify_intent(user_text)
 
+    effective_mode = LEGACY_MODE_MAP.get(mode, mode)
+    if effective_mode not in MOCK_MODES:
+        raise ValueError("unknown mock mode")
     context = _request_context(user_text)
-    action_id = context.get("action_id", "probe_availability")
-    if not isinstance(action_id, str) or not action_id:
-        action_id = "probe_availability"
-    emotion = context.get("emotion", "focused")
-    if not isinstance(emotion, str) or not emotion:
-        emotion = "focused"
-    semantic_spine = context.get("semantic_spine", "联调语义骨架。")
-    if not isinstance(semantic_spine, str) or not semantic_spine.strip():
-        semantic_spine = "联调语义骨架。"
-    movement_intent = context.get("preset_movement_intent", "stay")
-    if movement_intent not in {"stay", "step_closer", "step_back", "return_to_post"}:
-        movement_intent = "stay"
-    reaction_action = context.get("preset_reaction_action", "neutral")
-    if reaction_action not in {
-        "neutral",
-        "acknowledge",
-        "consider",
-        "reassure",
-        "reject",
-        "alarmed",
-    }:
-        reaction_action = "neutral"
-    movement_intent, reaction_action = _select_performance(
-        context,
-        movement_intent,
-        reaction_action,
+    must_atoms = _atom_entries(context, "must_realize")
+    realized_atoms = must_atoms.copy()
+    if effective_mode == "missing_atom" and realized_atoms:
+        realized_atoms = realized_atoms[1:]
+
+    npc_line = _compact_natural_line(realized_atoms)
+    if effective_mode == "forbidden_fact":
+        npc_line = npc_line.rstrip("。") + "，他的手伤已经影响维修。"
+    elif effective_mode == "added_condition":
+        npc_line = npc_line.rstrip("。") + "，你还得先把天线修好。"
+    elif effective_mode == "system_jargon":
+        npc_line = npc_line.rstrip("。") + "，这会消耗 AP，至少两点体力才行。"
+
+    emotion = context.get("emotion", "")
+    allowed_emotions = _string_list(context, "allowed_emotions")
+    if not isinstance(emotion, str) or emotion not in EMOTIONS:
+        emotion = allowed_emotions[0] if allowed_emotions else "focused"
+
+    movement = context.get(
+        "preset_movement_intent",
+        _allowed_token(context, "allowed_movement_intents", "stay"),
     )
-    persona_tail = "【mock】我听见了。"
-    if persona_tail_mode == "empty":
-        persona_tail = ""
-    elif persona_tail_mode == "added-condition":
-        persona_tail = "你还必须先把天线修好。"
-    elif persona_tail_mode == "topic-drift":
-        persona_tail = "食物和药品也归我安排。"
+    if not isinstance(movement, str) or movement not in MOVEMENT_INTENTS:
+        movement = "stay"
+    reaction = context.get(
+        "preset_reaction_action",
+        _allowed_token(context, "allowed_reaction_actions", "neutral"),
+    )
+    if not isinstance(reaction, str) or reaction not in REACTION_ACTIONS:
+        reaction = "neutral"
+    movement, reaction = _select_performance(context, movement, reaction)
+
+    planned_facts = _string_list(
+        context,
+        "planned_disclosure_fact_ids",
+        "planned_knowledge_upgrade_fact_ids",
+    )
     return (
         "npc_line",
         {
-            "persona_tail": persona_tail,
-            "emotion": emotion[:32],
-            "used_action_id": action_id[:64],
-            "referenced_fact_ids": [],
-            "movement_intent": movement_intent,
-            "reaction_action": reaction_action,
+            "npc_line": npc_line,
+            "realized_atom_ids": [
+                atom_id for atom in realized_atoms if (atom_id := _atom_id(atom))
+            ],
+            "disclosed_fact_ids": planned_facts,
+            "emotion": emotion,
+            "movement_intent": movement,
+            "reaction_action": reaction,
         },
     )
 
 
 class WhiteoutMockServer(ThreadingHTTPServer):
+    daemon_threads = True
     config: MockConfig
     audit_path: Path | None
     audit_lock: threading.Lock
@@ -200,7 +320,7 @@ class WhiteoutMockServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "WhiteoutAgentMock/0.5"
+    server_version = "WhiteoutAgentMock/1.3"
 
     def log_message(self, _format: str, *_args: object) -> None:
         return
@@ -211,11 +331,14 @@ class Handler(BaseHTTPRequestHandler):
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(encoded)))
-        self.end_headers()
-        self.wfile.write(encoded)
+        try:
+            self.send_response(status_code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def _audit(
         self,
@@ -229,7 +352,11 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(server, WhiteoutMockServer) or server.audit_path is None:
             return
         messages = request.get("messages")
-        user_text = _message_text(messages[-1]) if isinstance(messages, list) and messages else ""
+        user_text = (
+            _message_text(messages[-1])
+            if isinstance(messages, list) and messages
+            else ""
+        )
         context = _request_context(user_text)
         safe_messages = messages if isinstance(messages, list) else []
         role_sequence = [
@@ -238,22 +365,27 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(message, dict)
         ]
         history_turns = (
-            max(0, (len(safe_messages) - 2) // 2)
-            if kind == "npc_line"
-            else 0
+            max(0, (len(safe_messages) - 2) // 2) if kind == "npc_line" else 0
         )
         thinking = request.get("thinking")
         response_format = request.get("response_format")
         record = {
             "timestamp_utc": time.time(),
             "kind": kind,
+            "mock_mode": server.config.effective_mode,
             "model_matches_expected": request.get("model") == MODEL,
             "thinking_disabled": thinking == {"type": "disabled"},
             "stream_disabled": request.get("stream") is False,
             "response_format_json_object": response_format == {"type": "json_object"},
+            "protocol_version": context.get("protocol_version", ""),
+            "prompt_mode": context.get("prompt_mode", ""),
             "action_id": context.get("action_id", ""),
-            "dialogue_act": context.get("dialogue_act", ""),
             "has_player_text": bool(context.get("player_said")),
+            "must_atom_count": len(_atom_entries(context, "must_realize")),
+            "may_atom_count": len(_atom_entries(context, "may_realize")),
+            "planned_disclosure_count": len(
+                _string_list(context, "planned_disclosure_fact_ids")
+            ),
             "message_count": len(safe_messages),
             "role_sequence": role_sequence,
             "history_turns": history_turns,
@@ -273,8 +405,11 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(server, WhiteoutMockServer):
             self.send_error(500)
             return
-        if server.config.delay_seconds > 0:
-            time.sleep(server.config.delay_seconds)
+        delay = server.config.delay_seconds
+        if server.config.effective_mode == "timeout" and delay <= 0:
+            delay = 30.0
+        if delay > 0:
+            time.sleep(delay)
 
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -288,7 +423,7 @@ class Handler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(length).decode("utf-8"))
             if not isinstance(request, dict):
                 raise ValueError("request must be an object")
-            kind, content = build_mock_content(request, server.config.persona_tail_mode)
+            kind, content = build_mock_content(request, server.config.effective_mode)
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
             self._write_json(400, {"error": {"type": "invalid_request"}})
             return
@@ -310,7 +445,10 @@ class Handler(BaseHTTPRequestHandler):
                 finish_reason=server.config.finish_reason,
                 empty_content=server.config.empty_content,
             )
-            if server.config.malformed_content:
+            if (
+                server.config.malformed_content
+                or server.config.effective_mode == "invalid_json"
+            ):
                 payload["choices"][0]["message"]["content"] = "{malformed-json"
         self._write_json(status_code, payload)
         self._audit(
@@ -328,6 +466,8 @@ def create_server(
     config: MockConfig,
     audit_path: Path | None = None,
 ) -> WhiteoutMockServer:
+    if config.effective_mode not in MOCK_MODES:
+        raise ValueError("unknown mock mode")
     if audit_path is not None:
         audit_path.parent.mkdir(parents=True, exist_ok=True)
     server = WhiteoutMockServer((host, port), Handler)
@@ -353,10 +493,11 @@ def build_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--empty-content", action="store_true")
     parser.add_argument("--malformed-content", action="store_true")
     parser.add_argument("--extra-field", action="store_true")
+    parser.add_argument("--mode", default="valid_natural", choices=MOCK_MODES)
     parser.add_argument(
         "--persona-tail-mode",
-        default="valid",
-        choices=("valid", "empty", "added-condition", "topic-drift"),
+        choices=tuple(LEGACY_MODE_MAP),
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--finish-reason",
@@ -401,7 +542,8 @@ def run_from_cli(description: str) -> int:
             finish_reason=args.finish_reason,
             malformed_content=args.malformed_content,
             extra_field=args.extra_field,
-            persona_tail_mode=args.persona_tail_mode,
+            mode=args.mode,
+            persona_tail_mode=args.persona_tail_mode or "",
         ),
         audit_path=args.audit,
     )

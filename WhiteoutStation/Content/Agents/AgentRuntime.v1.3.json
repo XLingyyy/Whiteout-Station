@@ -1,0 +1,18 @@
+{
+  "schema_version": 6,
+  "runtime_version": "1.3.0",
+  "protocol_version": "dialogue_epistemic_v3",
+  "prompt_mode": "semantic_atoms_full_line",
+  "max_sentences": 2,
+  "max_line_chars": 96,
+  "max_output_tokens": 256,
+  "provider_name": "deepseek",
+  "model": "deepseek-v4-flash",
+  "endpoint": "https://api.deepseek.com",
+  "timeout_seconds": 8,
+  "llm_enabled": false,
+  "transport": "openai_chat_completions",
+  "credential_policy": "Settings UI credentials are process-memory only. Environment and ignored LocalConfig credentials remain supported for development.",
+  "fallback_policy": "Transport errors, timeout, malformed JSON, schema mismatch, missing or unknown atoms, disclosure mismatch, forbidden content, added conditions, system jargon, or invalid performance fields immediately use the prepared deterministic natural fallback without a second model call.",
+  "notes": "The model realizes one complete natural NPC line from semantic atoms. Rules, disclosure decisions, state changes, and the exact planned disclosure fact set remain local and deterministic. AgentRuntime.v1.2.json is retained only for migration compatibility; production targets v1.3."
+}

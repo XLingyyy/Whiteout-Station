@@ -89,6 +89,10 @@ public:
 		const TArray<FName>& AllowedFactIds,
 		bool bContainsRuleMutation,
 		FString& OutReason);
+	static bool ValidateDialogueOutcomeContract(
+		const FWSPreparedDialogue& Prepared,
+		const FWSDialogueOutcome& Outcome,
+		FString& OutReason);
 
 	static int32 GetActionCost(FName ActionId);
 	static bool IsCoreAction(FName ActionId);

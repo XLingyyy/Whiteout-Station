@@ -18,6 +18,11 @@ public:
 		const FWSActionRequest& Request,
 		const FWSGameState& State,
 		const FWSActionRequirementReport& RequirementReport);
+	static FWSDialogueRealizationContract BuildDialogueContract(
+		const FWSActionRequest& Request,
+		const FWSGameState& State,
+		const FWSActionRequirementReport& RequirementReport,
+		FWSAgentReply& OutLocalFallback);
 	static FWSNPCDialoguePlan BuildDialoguePlan(
 		const FWSActionRequest& Request,
 		const FWSGameState& State,
