@@ -19,6 +19,13 @@ PROMISE_CONDITIONS = frozenset(
 # Older route fixtures predate explicit dialogue intent parameters. Explicit JSON
 # parameters take precedence when present.
 ROUTE_DIALOGUE_DEFAULTS: dict[tuple[str, str], dict[str, Any]] = {
+    ("medical_cooperation", "talk_ye_cheng"): {
+        "dialogue_act": "ask",
+        "speech_act": "ask",
+        "query_type": "status",
+        "target_character": "gu_heng",
+        "player_said": "顾衡还能不能做精细维修？",
+    },
     ("medical_cooperation", "talk_gu_heng"): {
         "dialogue_act": "promise",
         "promise_condition": "heat_repair_room",
@@ -27,6 +34,125 @@ ROUTE_DIALOGUE_DEFAULTS: dict[tuple[str, str], dict[str, Any]] = {
         "dialogue_act": "challenge",
     },
 }
+
+
+def _dialogue_value(params: dict[str, Any], key: str) -> str:
+    return str(params.get(key, "") or "").strip().lower()
+
+
+def _is_ask(params: dict[str, Any]) -> bool:
+    return (
+        _dialogue_value(params, "dialogue_act") == "ask"
+        and _dialogue_value(params, "speech_act") == "ask"
+    )
+
+
+def _is_targeted_gu_heng_diagnosis_question(params: dict[str, Any]) -> bool:
+    if not _is_ask(params):
+        return False
+
+    target_character = _dialogue_value(params, "target_character")
+    query_type = _dialogue_value(params, "query_type")
+    target_action = _dialogue_value(params, "target_action_id")
+    target_fact = str(params.get("target_fact_id", "") or "").strip().upper()
+    player_said = str(params.get("player_said", "") or "")
+    explicit_condition_question = any(
+        term in player_said
+        for term in (
+            "能不能修",
+            "顾衡的手怎么",
+            "顾衡受伤",
+            "顾衡的伤势",
+            "顾衡的右手",
+            "顾衡身体",
+        )
+    )
+    fine_work_ability_question = any(
+        term in player_said for term in ("精细维修", "精细操作")
+    ) and any(
+        term in player_said
+        for term in (
+            "能不能",
+            "还能不能",
+            "是否能",
+            "影响",
+            "做不了",
+            "无法",
+            "撑得住",
+            "完成不了",
+        )
+    )
+    specific_condition_question = (
+        explicit_condition_question or fine_work_ability_question
+    )
+    return (
+        target_character == "gu_heng"
+        and query_type in {"status", "evidence"}
+        and target_action in {"", "none", "repair_generator"}
+        and specific_condition_question
+        and target_fact
+        in {"", "NONE", "FACT_HAND_INJURY", "FACT_MEDICAL_DIAGNOSIS"}
+    )
+
+
+def _is_heat_pack_disclosure_question(params: dict[str, Any]) -> bool:
+    if not _is_ask(params):
+        return False
+
+    player_said = str(params.get("player_said", "") or "")
+    query_type = _dialogue_value(params, "query_type")
+    target_character = _dialogue_value(params, "target_character")
+    target_action = _dialogue_value(params, "target_action_id")
+    target_fact = str(params.get("target_fact_id", "") or "").strip().upper()
+    explicit_support_question = any(
+        term in player_said for term in ("保温包", "医疗物资")
+    )
+    medical_context = any(
+        term in player_said
+        for term in (
+            "处理办法",
+            "治疗",
+            "医疗",
+            "药品",
+            "药物",
+            "伤势",
+            "受伤",
+            "失温",
+            "保暖",
+        )
+    )
+    medical_alternative = (
+        query_type == "alternative"
+        and target_character == "gu_heng"
+        and target_action in {"treat_gu_heng", "treat_character"}
+        and medical_context
+    )
+    work_support_alternative = (
+        query_type == "alternative"
+        and target_character == "gu_heng"
+        and target_action == "repair_generator"
+        and any(
+            term in player_said
+            for term in (
+                "撑过一次维修",
+                "撑过维修",
+                "支撑一次维修",
+                "坚持一次维修",
+                "完成一次维修",
+            )
+        )
+    )
+    explicit_fact_question = (
+        target_fact == "FACT_HEAT_PACK"
+        and query_type in {"alternative", "unknown"}
+        and (explicit_support_question or medical_context)
+    )
+    return (
+        explicit_support_question
+        or medical_alternative
+        or work_support_alternative
+        or explicit_fact_question
+    )
 
 
 @dataclass(frozen=True)
@@ -222,9 +348,9 @@ class WhiteoutSimulator:
             if dialogue_act == "challenge":
                 challenge_available = (
                     self._knows("FACT_FORCED_RESTART_SUSPICION")
-                    or self._knows("FACT_BURNT_RELAY")
+                    and self._knows("FACT_BURNT_RELAY")
                     if action_id == "talk_gu_heng"
-                    else flags["heat_pack_revealed"]
+                    else flags["gu_heng_diagnosed"]
                 )
                 if not challenge_available:
                     return "dialogue_act_unavailable"
@@ -451,17 +577,24 @@ class WhiteoutSimulator:
             self._discover_fact("FACT_BURNT_RELAY", "confirmed")
             self._discover_fact("FACT_HAND_INJURY", "suspected")
         elif action_id == "talk_ye_cheng":
+            diagnosis_known_before = flags["gu_heng_diagnosed"] or self._knows(
+                "FACT_MEDICAL_DIAGNOSIS", "confirmed"
+            )
+            trust_before = float(self.state["characters"]["ye_cheng"]["trust"])
             self._change_character(
                 "ye_cheng",
                 trust=balance["talk_ye_cheng"]["ye_trust"],
                 pressure=balance["talk_ye_cheng"]["ye_pressure"],
             )
-            flags["gu_heng_diagnosed"] = True
-            self._add_evidence("EVIDENCE_MEDICAL_DIAGNOSIS")
-            self._discover_fact("FACT_HAND_INJURY", "confirmed")
-            self._discover_fact("FACT_MEDICAL_DIAGNOSIS", "confirmed")
+            if _is_targeted_gu_heng_diagnosis_question(params):
+                flags["gu_heng_diagnosed"] = True
+                self._add_evidence("EVIDENCE_MEDICAL_DIAGNOSIS")
+                self._discover_fact("FACT_HAND_INJURY", "confirmed")
+                self._discover_fact("FACT_MEDICAL_DIAGNOSIS", "confirmed")
             if (
-                self.state["characters"]["ye_cheng"]["trust"]
+                _is_heat_pack_disclosure_question(params)
+                and diagnosis_known_before
+                and trust_before
                 >= self.rules["balance"]["thresholds"]["ye_heat_pack_disclosure_trust"]
             ):
                 flags["heat_pack_revealed"] = True
@@ -639,12 +772,6 @@ class WhiteoutSimulator:
                 health=balance["mid_crisis_injured_worker_health"],
                 pressure=balance["mid_crisis_injured_worker_pressure"],
             )
-        if (
-            self.state["characters"]["ye_cheng"]["trust"]
-            >= self.rules["balance"]["thresholds"]["ye_heat_pack_disclosure_trust"]
-        ):
-            self.state["flags"]["heat_pack_revealed"] = True
-            self._discover_fact("FACT_HEAT_PACK", "confirmed")
 
     def _apply_dialogue_modifier(
         self, action_id: str, params: dict[str, Any]
@@ -894,11 +1021,10 @@ def run_route(simulator: WhiteoutSimulator, route_id: str) -> dict[str, Any]:
     route = simulator.rules["routes"][route_id]
     steps: list[dict[str, Any]] = []
     for index, step in enumerate(route["steps"], start=1):
-        params = copy.deepcopy(step.get("params", {}))
-        if not params:
-            params = copy.deepcopy(
-                ROUTE_DIALOGUE_DEFAULTS.get((route_id, step["action"]), {})
-            )
+        params = copy.deepcopy(
+            ROUTE_DIALOGUE_DEFAULTS.get((route_id, step["action"]), {})
+        )
+        params.update(copy.deepcopy(step.get("params", {})))
         result = simulator.apply_action(
             step["action"],
             params,

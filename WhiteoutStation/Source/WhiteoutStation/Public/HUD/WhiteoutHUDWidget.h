@@ -94,6 +94,25 @@ public:
 	void ShowDialogueReplyForCapture(const FString& Speaker, const FString& Line);
 	void SetDialogueIntentStatus(const FString& Message, bool bProcessing);
 	void SetSystemMessage(const FString& Message);
+	static FString BuildObjectiveSummary(const FWSGameState& State);
+	static FString BuildDialogueConditionSummary(const FWSActionRequirementReport& Report);
+	static TArray<FText> BuildOpeningStoryLines();
+	static FString BuildVisibleInjuryLabel(
+		EWSCharacterId CharacterId,
+		const FWSGameState& State);
+	static FString BuildVisibleCharacterStatus(
+		EWSCharacterId CharacterId,
+		const FWSGameState& State);
+	static FString BuildDialogueCardSummary(
+		EWSCharacterId CharacterId,
+		const FWSGameState& State);
+	static FText BuildDialogueInputHint(EWSDialogueAct DialogueAct);
+	static FString BuildPhaseSettlementSummary(
+		const FWSPhaseSummary& Summary,
+		const FWSGameState& State);
+	static FString BuildDialogueStatusSummary(
+		const FWSAgentReply& Reply,
+		bool bIncludeDebugDetails = false);
 	bool AdvanceOpening();
 	bool IsOpeningVisible() const;
 	void DismissOpening();
@@ -532,7 +551,6 @@ private:
 	void ShowDialogueReplyActions();
 	void UpdateDialogueConditionCard(const FWSAgentReply& Reply);
 	void HideDialogueConditionCard();
-	FString BuildDialogueConditionSummary(const FWSActionRequirementReport& Report) const;
 	void UpdateDialogueCard(const FWSGameState& State);
 	void UpdateResults(const FWSGameState& State);
 	void TickOpening(float DeltaTime);

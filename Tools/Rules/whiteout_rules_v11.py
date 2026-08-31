@@ -20,6 +20,141 @@ PROMISE_CONDITIONS = frozenset(
     {"heat_repair_room", "preserve_records", "reserve_medicine"}
 )
 RATING_ORDER = ("S", "A", "B", "C", "D")
+ROUTE_DIALOGUE_DEFAULTS: dict[tuple[str, str], dict[str, Any]] = {
+    ("medical_cooperation", "talk_ye_cheng"): {
+        "dialogue_act": "ask",
+        "speech_act": "ask",
+        "query_type": "status",
+        "target_character": "gu_heng",
+        "player_said": "顾衡还能不能做精细维修？",
+    }
+}
+# The authored medical route has no generator-log evidence, so its afternoon
+# Gu Heng follow-up is observational under the double-evidence Challenge gate.
+ROUTE_DIALOGUE_MIGRATIONS: dict[tuple[str, str, str], dict[str, Any]] = {
+    ("medical_cooperation", "afternoon", "talk_gu_heng"): {
+        "dialogue_act": "ask"
+    }
+}
+
+
+def _dialogue_value(params: dict[str, Any], key: str) -> str:
+    return str(params.get(key, "") or "").strip().lower()
+
+
+def _is_ask(params: dict[str, Any]) -> bool:
+    return (
+        _dialogue_value(params, "dialogue_act") == "ask"
+        and _dialogue_value(params, "speech_act") == "ask"
+    )
+
+
+def _is_targeted_gu_heng_diagnosis_question(params: dict[str, Any]) -> bool:
+    if not _is_ask(params):
+        return False
+
+    target_character = _dialogue_value(params, "target_character")
+    query_type = _dialogue_value(params, "query_type")
+    target_action = _dialogue_value(params, "target_action_id")
+    target_fact = str(params.get("target_fact_id", "") or "").strip().upper()
+    player_said = str(params.get("player_said", "") or "")
+    explicit_condition_question = any(
+        term in player_said
+        for term in (
+            "能不能修",
+            "顾衡的手怎么",
+            "顾衡受伤",
+            "顾衡的伤势",
+            "顾衡的右手",
+            "顾衡身体",
+        )
+    )
+    fine_work_ability_question = any(
+        term in player_said for term in ("精细维修", "精细操作")
+    ) and any(
+        term in player_said
+        for term in (
+            "能不能",
+            "还能不能",
+            "是否能",
+            "影响",
+            "做不了",
+            "无法",
+            "撑得住",
+            "完成不了",
+        )
+    )
+    specific_condition_question = (
+        explicit_condition_question or fine_work_ability_question
+    )
+    return (
+        target_character == "gu_heng"
+        and query_type in {"status", "evidence"}
+        and target_action in {"", "none", "repair_generator"}
+        and specific_condition_question
+        and target_fact
+        in {"", "NONE", "FACT_HAND_INJURY", "FACT_MEDICAL_DIAGNOSIS"}
+    )
+
+
+def _is_heat_pack_disclosure_question(params: dict[str, Any]) -> bool:
+    if not _is_ask(params):
+        return False
+
+    player_said = str(params.get("player_said", "") or "")
+    query_type = _dialogue_value(params, "query_type")
+    target_character = _dialogue_value(params, "target_character")
+    target_action = _dialogue_value(params, "target_action_id")
+    target_fact = str(params.get("target_fact_id", "") or "").strip().upper()
+    explicit_support_question = any(
+        term in player_said for term in ("保温包", "医疗物资")
+    )
+    medical_context = any(
+        term in player_said
+        for term in (
+            "处理办法",
+            "治疗",
+            "医疗",
+            "药品",
+            "药物",
+            "伤势",
+            "受伤",
+            "失温",
+            "保暖",
+        )
+    )
+    medical_alternative = (
+        query_type == "alternative"
+        and target_character == "gu_heng"
+        and target_action in {"treat_gu_heng", "treat_character"}
+        and medical_context
+    )
+    work_support_alternative = (
+        query_type == "alternative"
+        and target_character == "gu_heng"
+        and target_action == "repair_generator"
+        and any(
+            term in player_said
+            for term in (
+                "撑过一次维修",
+                "撑过维修",
+                "支撑一次维修",
+                "坚持一次维修",
+                "完成一次维修",
+            )
+        )
+    )
+    explicit_fact_question = (
+        target_fact == "FACT_HEAT_PACK"
+        and query_type in {"alternative", "unknown"}
+        and (explicit_support_question or medical_context)
+    )
+    return (
+        explicit_support_question
+        or medical_alternative
+        or work_support_alternative
+        or explicit_fact_question
+    )
 
 
 class RuleError(ValueError):
@@ -133,6 +268,7 @@ class WhiteoutSimulatorV11:
                     "kitchen_heater_intact": True,
                     "records_preserved": False,
                     "cabinet_inspected": False,
+                    "gu_heng_diagnosed": False,
                     "heat_pack_revealed": False,
                     "relay_compatibility_known": False,
                     "log_penalty_active": False,
@@ -303,6 +439,15 @@ class WhiteoutSimulatorV11:
             condition = params.get("promise_condition")
             if act != "promise" and condition not in (None, ""):
                 return "invalid_promise_condition"
+            if act == "challenge" and action_id == "talk_gu_heng":
+                knowledge = self.state["player_knowledge"]
+                challenge_available = (
+                    knowledge.get("FACT_FORCED_RESTART_SUSPICION")
+                    in {"suspected", "confirmed"}
+                    and knowledge.get("FACT_BURNT_RELAY") == "confirmed"
+                )
+                if not challenge_available:
+                    return "dialogue_act_unavailable"
             if act == "promise":
                 if action_id != "talk_gu_heng":
                     return "dialogue_act_unavailable"
@@ -727,23 +872,41 @@ class WhiteoutSimulatorV11:
         npc = self.state["characters"][npc_id]
         act = str(params.get("dialogue_act", "ask")).strip().lower()
         if npc_id == "ye_cheng":
+            diagnosis_known_before = self.state["flags"][
+                "gu_heng_diagnosed"
+            ] or self.state["player_knowledge"].get(
+                "FACT_MEDICAL_DIAGNOSIS"
+            ) == "confirmed"
+            trust_before = float(npc["trust"])
             npc["trust"] = self._clamp(float(npc["trust"]) + 0.4, 0, 10)
             npc["pressure"] = self._clamp(float(npc["pressure"]) - 0.4, 0, 10)
-            self.state["flags"]["heat_pack_revealed"] = True
-            self.state["player_knowledge"]["FACT_MEDICAL_DIAGNOSIS"] = "confirmed"
-            self.state["player_knowledge"]["FACT_HAND_INJURY"] = "confirmed"
+            if _is_targeted_gu_heng_diagnosis_question(params):
+                self.state["flags"]["gu_heng_diagnosed"] = True
+                self.state["player_knowledge"][
+                    "FACT_MEDICAL_DIAGNOSIS"
+                ] = "confirmed"
+                self.state["player_knowledge"]["FACT_HAND_INJURY"] = "confirmed"
+            if (
+                _is_heat_pack_disclosure_question(params)
+                and diagnosis_known_before
+                and trust_before
+                >= float(self.rules["thresholds"]["trust"]["cooperative"])
+            ):
+                self.state["flags"]["heat_pack_revealed"] = True
+                self.state["player_knowledge"]["FACT_HEAT_PACK"] = "confirmed"
         elif act == "challenge" and (
-            "FACT_FORCED_RESTART_SUSPICION" in self.state["player_knowledge"]
-            or self.state["flags"]["cabinet_inspected"]
+            self.state["player_knowledge"].get("FACT_FORCED_RESTART_SUSPICION")
+            in {"suspected", "confirmed"}
+            and self.state["player_knowledge"].get("FACT_BURNT_RELAY")
+            == "confirmed"
         ):
             npc["trust"] = self._clamp(float(npc["trust"]) + 0.8, 0, 10)
             npc["pressure"] = self._clamp(float(npc["pressure"]) + 0.2, 0, 10)
             self.state["flags"]["relay_compatibility_known"] = True
             self.state["player_knowledge"]["FACT_RELAY_COMPATIBILITY"] = "confirmed"
-            if "FACT_FORCED_RESTART_SUSPICION" in self.state["player_knowledge"]:
-                self.state["player_knowledge"][
-                    "FACT_FORCED_RESTART_CONFIRMED"
-                ] = "confirmed"
+            self.state["player_knowledge"][
+                "FACT_FORCED_RESTART_CONFIRMED"
+            ] = "confirmed"
         elif act == "command":
             npc["trust"] = self._clamp(float(npc["trust"]) - 0.4, 0, 10)
             npc["pressure"] = self._clamp(float(npc["pressure"]) + 0.6, 0, 10)
@@ -1081,18 +1244,7 @@ class WhiteoutSimulatorV11:
         )
 
     def _phase_npc_reaction(self) -> dict[str, Any] | None:
-        ye = self.state["characters"]["ye_cheng"]
         gu = self.state["characters"]["gu_heng"]
-        if (
-            not self.state["flags"]["heat_pack_revealed"]
-            and float(ye["trust"]) >= self.rules["thresholds"]["trust"]["cooperative"]
-        ):
-            self.state["flags"]["heat_pack_revealed"] = True
-            return {
-                "npc": "ye_cheng",
-                "stance": "volunteer",
-                "effect": "主动披露化学保温包",
-            }
         if float(gu["pressure"]) >= self.rules["thresholds"]["pressure"]["breaking"]:
             return {
                 "npc": "gu_heng",
@@ -1700,7 +1852,17 @@ def run_route(
                 f"{started['reason_code']}"
             )
         for step_index, step in enumerate(phase_plan["actions"]):
-            params = copy.deepcopy(step.get("params", {}))
+            params = copy.deepcopy(
+                ROUTE_DIALOGUE_DEFAULTS.get((route_id, step["action"]), {})
+            )
+            params.update(copy.deepcopy(step.get("params", {})))
+            params.update(
+                copy.deepcopy(
+                    ROUTE_DIALOGUE_MIGRATIONS.get(
+                        (route_id, phase_plan["phase"], step["action"]), {}
+                    )
+                )
+            )
             transaction_id = (
                 f"{route_id}:{phase_index}:{step_index}:{step['action']}"
             )

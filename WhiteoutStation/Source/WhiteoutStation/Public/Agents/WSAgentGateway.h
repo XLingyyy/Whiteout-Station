@@ -127,6 +127,9 @@ public:
 		const TArray<FName>& AllowedFactIds,
 		FWSAgentReply& OutReply,
 		FString& OutReason);
+	static bool IsExpressionKnowledgeBoundaryOpen(
+		EWSCharacterId Speaker,
+		const TArray<FName>& AllowedFactIds);
 
 	FString GetProviderName() const { return ProviderName; }
 	FString GetModelName() const { return ModelName; }

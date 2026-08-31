@@ -1,5 +1,7 @@
 #include "Presentation/WSPresentationText.h"
 
+#include "State/WSKnowledgePolicy.h"
+
 namespace
 {
 	const FName UITextTable(TEXT("/Game/WindStation/UI/ST_WhiteoutStation_zh.ST_WhiteoutStation_zh"));
@@ -51,20 +53,20 @@ FText FWSPresentationText::ActionImpact(const FName ActionId)
 	if (ActionId == TEXT("investigate_generator_log")) return TableText(TEXT("impact_investigate_generator_log"), TEXT("确认故障记录并获得与维修有关的证据。"));
 	if (ActionId == TEXT("send_signal")) return TableText(TEXT("impact_send_signal"), TEXT("在发电机与天线就绪后发出求救信号；该行动不消耗行动力。"));
 	if (ActionId == TEXT("heat_control_room")) return Text(TEXT("锁定控制室供暖，保护记录并降低备用节电惩罚。"));
-	if (ActionId == TEXT("inspect_control_cabinet")) return TableText(TEXT("impact_inspect_control_cabinet"), TEXT("检查继电器损坏状况，推进替代部件线索。"));
+	if (ActionId == TEXT("inspect_control_cabinet")) return Text(TEXT("检查控制柜故障状况并记录现场线索。"));
 	if (ActionId == TEXT("heat_repair_room")) return TableText(TEXT("impact_heat_repair_room"), TEXT("锁定本阶段维修间供暖，降低精细维修的低温代价。"));
-	if (ActionId == TEXT("repair_generator")) return TableText(TEXT("impact_repair_generator"), TEXT("推进发电机修复；需要线索、部件或顾衡配合。"));
+	if (ActionId == TEXT("repair_generator")) return Text(TEXT("推进发电机修复；具体条件随调查、环境与人员状态更新。"));
 	if (ActionId == TEXT("forced_self_repair")) return TableText(TEXT("impact_forced_self_repair"), TEXT("无需顾衡配合尝试维修，但会让你承担更高的人身代价。"));
 	if (ActionId == TEXT("talk_gu_heng")) return TableText(TEXT("impact_talk_gu_heng"), TEXT("根据当前对话意图获取信息、争取配合或记录承诺。"));
 	if (ActionId == TEXT("heat_medical_room")) return TableText(TEXT("impact_heat_medical_room"), TEXT("锁定本阶段医务室供暖，开放完整治疗。"));
-	if (ActionId == TEXT("treat_gu_heng") || ActionId == TEXT("treat_character")) return TableText(TEXT("impact_treat_gu_heng"), TEXT("可对任一角色包扎、完整治疗或使用保温包临时支撑。"));
-	if (ActionId == TEXT("talk_ye_cheng")) return TableText(TEXT("impact_talk_ye_cheng"), TEXT("获取诊断、物资或责任相关信息。"));
+	if (ActionId == TEXT("treat_gu_heng") || ActionId == TEXT("treat_character")) return Text(TEXT("根据当前已开放方案处理指定角色的状态。"));
+	if (ActionId == TEXT("talk_ye_cheng")) return Text(TEXT("询问人员状态、风险与可执行建议。"));
 	if (ActionId == TEXT("distribute_food")) return TableText(TEXT("impact_distribute_food"), TEXT("在三人间分配有限食物，恢复体能并改变压力与信任。"));
 	if (ActionId == TEXT("heat_kitchen")) return Text(TEXT("锁定本阶段厨房供暖，允许准备热餐。"));
 	if (ActionId == TEXT("rest")) return Text(TEXT("供暖区休整恢复体能；未供暖区等待只降低压力。"));
-	if (ActionId == TEXT("dismantle_kitchen_heater")) return TableText(TEXT("impact_dismantle_kitchen_heater"), TEXT("牺牲厨房供暖换取可用于发电机的替代继电器。"));
+	if (ActionId == TEXT("dismantle_kitchen_heater")) return Text(TEXT("永久拆除厨房加热器，并失去该处供暖。"));
 	if (ActionId == TEXT("calibrate_antenna")) return TableText(TEXT("impact_calibrate_antenna"), TEXT("在室外完成天线校准，为发送信号做准备。"));
-	return TableText(TEXT("impact_default"), TEXT("该行动会写入一次确定性状态事务。"));
+	return Text(TEXT("行动结果会立即记录。"));
 }
 
 FText FWSPresentationText::ActionExecutor(const FName ActionId)
@@ -81,7 +83,7 @@ FText FWSPresentationText::ActionResourceCost(const FName ActionId)
 {
 	if (ActionId == TEXT("heat_control_room") || ActionId == TEXT("heat_repair_room") || ActionId == TEXT("heat_medical_room") || ActionId == TEXT("heat_kitchen")) return UI(TEXT("resource_fuel_one"), TEXT("燃料 ×1"));
 	if (ActionId == TEXT("distribute_food")) return UI(TEXT("resource_food_allocation"), TEXT("食品 1–2 份（按当前分配）"));
-	if (ActionId == TEXT("treat_gu_heng") || ActionId == TEXT("treat_character")) return UI(TEXT("resource_treatment"), TEXT("完整治疗消耗药品；保温包方案消耗保温包"));
+	if (ActionId == TEXT("treat_gu_heng") || ActionId == TEXT("treat_character")) return Text(TEXT("按当前选择消耗界面已显示的治疗资源"));
 	if (ActionId == TEXT("dismantle_kitchen_heater")) return UI(TEXT("resource_kitchen_heater"), TEXT("厨房加热器完整性（不可逆）"));
 	return UI(TEXT("resource_none"), TEXT("无直接物资消耗"));
 }
@@ -104,12 +106,12 @@ FText FWSPresentationText::ReasonCause(const EWSReasonCode Reason)
 	case EWSReasonCode::EmptyFoodAllocation: return TableText(TEXT("reason_empty_food_cause"), TEXT("尚未选择要分配的口粮。"));
 	case EWSReasonCode::InsufficientFood: return TableText(TEXT("reason_insufficient_food_cause"), TEXT("食品储备不足。"));
 	case EWSReasonCode::NeedsMedicalHeat: return TableText(TEXT("reason_needs_medical_heat_cause"), TEXT("医务室过冷，无法安全治疗。"));
-	case EWSReasonCode::NeedsDiagnosis: return TableText(TEXT("reason_needs_diagnosis_cause"), TEXT("还缺少叶澄的明确诊断。"));
-	case EWSReasonCode::HeatPackHidden: return TableText(TEXT("reason_heat_pack_hidden_cause"), TEXT("保温包的位置尚未被发现。"));
+	case EWSReasonCode::NeedsDiagnosis: return Text(TEXT("尚未确认目标当前是否需要这项处理。"));
+	case EWSReasonCode::HeatPackHidden: return Text(TEXT("当前选择的治疗资源尚未公开或不可用。"));
 	case EWSReasonCode::InvalidTreatmentResource: return TableText(TEXT("reason_invalid_treatment_cause"), TEXT("选择的治疗资源当前不可用。"));
 	case EWSReasonCode::NeedsMedicine: return TableText(TEXT("reason_needs_medicine_cause"), TEXT("药品已经耗尽。"));
-	case EWSReasonCode::NeedsHeatPack: return TableText(TEXT("reason_needs_heat_pack_cause"), TEXT("需要先取得隐藏的保温包。"));
-	case EWSReasonCode::NeedsRelayEvidence: return TableText(TEXT("reason_needs_relay_evidence_cause"), TEXT("还不能确认替代继电器是否兼容。"));
+	case EWSReasonCode::NeedsHeatPack: return Text(TEXT("当前选择的治疗资源储备不足。"));
+	case EWSReasonCode::NeedsRelayEvidence: return Text(TEXT("现有线索还不足以确认这条维修路线。"));
 	case EWSReasonCode::HeaterAlreadyDismantled: return TableText(TEXT("reason_heater_dismantled_cause"), TEXT("厨房加热器已经被拆解。"));
 	case EWSReasonCode::GeneratorAlreadyRepaired: return TableText(TEXT("reason_generator_repaired_cause"), TEXT("发电机已经修复。"));
 	case EWSReasonCode::GuHengCritical: return TableText(TEXT("reason_gu_critical_cause"), TEXT("顾衡的身体状况太差，无法参与维修。"));
@@ -129,7 +131,7 @@ FText FWSPresentationText::ReasonCause(const EWSReasonCode Reason)
 	case EWSReasonCode::WindowClosed: return Text(TEXT("当天的行动窗口已经关闭。"));
 	case EWSReasonCode::ExecutorExhausted: return Text(TEXT("执行者体能已经耗尽。"));
 	case EWSReasonCode::ExecutorHypothermic: return Text(TEXT("执行者已经失温，无法安全执行。"));
-	case EWSReasonCode::RelevantInjuryCritical: return Text(TEXT("相关伤势已到危重程度。"));
+	case EWSReasonCode::RelevantInjuryCritical: return Text(TEXT("相关执行者当前无法安全参与。"));
 	case EWSReasonCode::InvalidCollaborator: return Text(TEXT("所选协作者不适合这项行动。"));
 	case EWSReasonCode::CollaboratorUnavailable: return Text(TEXT("所选协作者当前无法参与。"));
 	case EWSReasonCode::HotMealUnavailable: return Text(TEXT("厨房未供暖或加热器已经拆除，无法准备热餐。"));
@@ -139,10 +141,10 @@ FText FWSPresentationText::ReasonCause(const EWSReasonCode Reason)
 	case EWSReasonCode::TreatmentNotNeeded: return Text(TEXT("该角色当前无需这种治疗。"));
 	case EWSReasonCode::NeedsHeatedMedicalRoom: return Text(TEXT("完整治疗需要本阶段为医务室供暖。"));
 	case EWSReasonCode::YeChengExhausted: return Text(TEXT("叶澄的体能已经耗尽，无法继续治疗。"));
-	case EWSReasonCode::NeedsRelayKnowledge: return Text(TEXT("尚未确认厨房继电器可以替代。"));
+	case EWSReasonCode::NeedsRelayKnowledge: return Text(TEXT("现有信息不足，无法确定这项操作的作用。"));
 	case EWSReasonCode::GuHengRefused: return Text(TEXT("顾衡当前无法或拒绝继续维修。"));
-	case EWSReasonCode::NeedsGuHengConditions: return Text(TEXT("顾衡需要足够体能与维修间供暖，或使用继电器/强行方案。"));
-	case EWSReasonCode::NeedsReplacementRelay: return Text(TEXT("当前没有可用的替代继电器。"));
+	case EWSReasonCode::NeedsGuHengConditions: return Text(TEXT("当前配合与现场条件还不足以安全推进维修。"));
+	case EWSReasonCode::NeedsReplacementRelay: return Text(TEXT("当前选择的维修方案缺少必要部件。"));
 	default: return TableText(TEXT("reason_default_cause"), TEXT("当前条件不满足。"));
 	}
 }
@@ -154,11 +156,11 @@ FText FWSPresentationText::ReasonNextStep(const EWSReasonCode Reason)
 	case EWSReasonCode::InsufficientAP: return TableText(TEXT("reason_insufficient_ap_next"), TEXT("改选低成本行动，或在行动力归零后使用免费的发信窗口。"));
 	case EWSReasonCode::NeedsFuel: return TableText(TEXT("reason_needs_fuel_next"), TEXT("保留或寻找燃料，再回到供暖控制器。"));
 	case EWSReasonCode::NeedsMedicalHeat: return TableText(TEXT("reason_needs_medical_heat_next"), TEXT("先使用医务室供暖控制器。"));
-	case EWSReasonCode::NeedsDiagnosis: return TableText(TEXT("reason_needs_diagnosis_next"), TEXT("先与叶澄交谈并询问顾衡的伤情。"));
-	case EWSReasonCode::HeatPackHidden: return TableText(TEXT("reason_heat_pack_hidden_next"), TEXT("从叶澄处取得物资线索。"));
-	case EWSReasonCode::NeedsMedicine: return TableText(TEXT("reason_needs_medicine_next"), TEXT("改用已发现的保温包，或选择不消耗药品的路线。"));
-	case EWSReasonCode::NeedsHeatPack: return TableText(TEXT("reason_needs_heat_pack_next"), TEXT("与叶澄交谈，确认隐藏保温包的位置。"));
-	case EWSReasonCode::NeedsRelayEvidence: return TableText(TEXT("reason_needs_relay_evidence_next"), TEXT("检查控制柜，或取得能证明继电器兼容的记录。"));
+	case EWSReasonCode::NeedsDiagnosis: return Text(TEXT("先向叶澄询问顾衡当前的身体状态。"));
+	case EWSReasonCode::HeatPackHidden: return Text(TEXT("与叶澄确认当前可用的治疗方案。"));
+	case EWSReasonCode::NeedsMedicine: return Text(TEXT("选择其他已公开且可用的治疗方案，或保留资源。"));
+	case EWSReasonCode::NeedsHeatPack: return Text(TEXT("改用其他已公开的治疗方案。"));
+	case EWSReasonCode::NeedsRelayEvidence: return Text(TEXT("继续检查控制柜并核对维修所需规格。"));
 	case EWSReasonCode::GuHengCritical: return TableText(TEXT("reason_gu_critical_next"), TEXT("先恢复医务室供暖并治疗顾衡。"));
 	case EWSReasonCode::NeedsCooperation: return TableText(TEXT("reason_needs_cooperation_next"), TEXT("与顾衡交谈，询问、安抚或作出可兑现的承诺。"));
 	case EWSReasonCode::NeedsGeneratorRecords: return TableText(TEXT("reason_needs_records_next"), TEXT("返回控制室调查发电机运行记录。"));
@@ -172,18 +174,18 @@ FText FWSPresentationText::ReasonNextStep(const EWSReasonCode Reason)
 	case EWSReasonCode::PhaseNotStarted: return Text(TEXT("前往四个供暖控制器之一，按 F 锁定本阶段供暖区。"));
 	case EWSReasonCode::HeatingLocked: return Text(TEXT("完成本阶段并按 Enter 结算后，可在下一阶段重新选择。"));
 	case EWSReasonCode::ExecutorExhausted: return Text(TEXT("分配食物或在供暖区休整，恢复执行者体能。"));
-	case EWSReasonCode::ExecutorHypothermic: return Text(TEXT("先进入供暖区休整，或使用保温包临时支撑。"));
-	case EWSReasonCode::RelevantInjuryCritical: return Text(TEXT("在供暖的医务室完成治疗，或改选其他执行者与策略。"));
+	case EWSReasonCode::ExecutorHypothermic: return Text(TEXT("先进入供暖区休整，或采用已公开的保暖方案。"));
+	case EWSReasonCode::RelevantInjuryCritical: return Text(TEXT("先恢复执行者状态，或改选其他执行者与策略。"));
 	case EWSReasonCode::InvalidCollaborator: return Text(TEXT("按 Q 切回单独执行，或选择行动支持的协作者。"));
 	case EWSReasonCode::CollaboratorUnavailable: return Text(TEXT("先恢复协作者状态，或按 Q 切回单独执行。"));
 	case EWSReasonCode::HotMealUnavailable: return Text(TEXT("下一阶段为厨房供暖并保留加热器，或按 Q 切换为冷口粮。"));
 	case EWSReasonCode::TreatmentNotNeeded: return Text(TEXT("按 Q 更换目标或治疗方法。"));
-	case EWSReasonCode::NeedsHeatedMedicalRoom: return Text(TEXT("下一阶段选择医务室供暖，或按 Q 改为包扎/保温包。"));
+	case EWSReasonCode::NeedsHeatedMedicalRoom: return Text(TEXT("下一阶段选择医务室供暖，或按 Q 改用已开放的处理方式。"));
 	case EWSReasonCode::YeChengExhausted: return Text(TEXT("先为叶澄分配食物或让她在供暖区休整。"));
-	case EWSReasonCode::NeedsRelayKnowledge: return Text(TEXT("先检查控制柜并确认替代继电器规格。"));
-	case EWSReasonCode::GuHengRefused: return Text(TEXT("恢复顾衡体能、治疗伤势，或改用强行自行维修。"));
-	case EWSReasonCode::NeedsGuHengConditions: return Text(TEXT("为维修间供暖并恢复顾衡体能，或按 Q 切换继电器/强行方案。"));
-	case EWSReasonCode::NeedsReplacementRelay: return Text(TEXT("检查控制柜后拆取厨房加热器中的兼容继电器。"));
+	case EWSReasonCode::NeedsRelayKnowledge: return Text(TEXT("继续检查相关设备，并核对已经取得的线索。"));
+	case EWSReasonCode::GuHengRefused: return Text(TEXT("恢复顾衡状态、改善配合，或改用其他已知方案。"));
+	case EWSReasonCode::NeedsGuHengConditions: return Text(TEXT("与顾衡确认条件，并改善维修环境或人员状态。"));
+	case EWSReasonCode::NeedsReplacementRelay: return Text(TEXT("检查已公开方案所需条件，或切换到已知可行的方案。"));
 	default: return TableText(TEXT("reason_default_next"), TEXT("检查目标、资源、证据和队员状态后选择下一步。"));
 	}
 }
@@ -200,7 +202,7 @@ FText FWSPresentationText::EvidenceLabel(const FName EvidenceId)
 	}
 	if (EvidenceId == TEXT("EVIDENCE_ARC_MARKS"))
 	{
-		return Text(TEXT("控制柜电弧痕迹：电弧由手动旁路端指向主继电器，与日志中的 08:11 强制重启记录吻合。"));
+		return Text(TEXT("控制柜电弧痕迹：柜内存在异常电弧和熔损，可用于判断故障发生顺序。"));
 	}
 	if (EvidenceId == TEXT("EVIDENCE_BLOODY_BANDAGE"))
 	{
@@ -208,11 +210,11 @@ FText FWSPresentationText::EvidenceLabel(const FName EvidenceId)
 	}
 	if (EvidenceId == TEXT("EVIDENCE_HAND_OBSERVATION"))
 	{
-		return Text(TEXT("控制柜边缘的伤手痕迹：带血指印和绷带纤维表明，受伤人员曾在事故时操作控制柜。"));
+		return Text(TEXT("控制柜边缘的手部异常痕迹：带血指印和绷带纤维表明，事故时有人带着新近包扎操作控制柜。"));
 	}
 	if (EvidenceId == TEXT("EVIDENCE_MEDICAL_DIAGNOSIS"))
 	{
-		return Text(TEXT("叶澄的诊断记录：顾衡右手撕裂并伴随失温，继续带伤维修会恶化；医务室供暖后可用药品或保温包治疗。"));
+		return Text(TEXT("叶澄的诊断记录：顾衡右手撕裂并伴随失温，继续带伤维修会恶化；医务室升温后再安排处理。"));
 	}
 	if (EvidenceId == TEXT("EVIDENCE_HEAT_PACK"))
 	{
@@ -239,7 +241,7 @@ FText FWSPresentationText::FactLabel(const FName FactId)
 	if (FactId == TEXT("FACT_GENERATOR_PROTECTION_STOP")) return Text(TEXT("发电机因电压异常触发保护停机"));
 	if (FactId == TEXT("FACT_FORCED_RESTART_SUSPICION")) return Text(TEXT("保护停机后发生过手动旁路重启"));
 	if (FactId == TEXT("FACT_BURNT_RELAY")) return Text(TEXT("控制柜主继电器已经烧毁"));
-	if (FactId == TEXT("FACT_HAND_INJURY")) return Text(TEXT("顾衡的伤手与控制柜现场痕迹吻合"));
+	if (FactId == TEXT("FACT_HAND_INJURY")) return Text(TEXT("顾衡的手部异常仍待医疗确认"));
 	if (FactId == TEXT("FACT_MEDICAL_DIAGNOSIS")) return Text(TEXT("顾衡需要治疗后再参与稳定维修"));
 	if (FactId == TEXT("FACT_HEAT_PACK")) return Text(TEXT("医务室藏有可用于治疗的应急保温包"));
 	if (FactId == TEXT("FACT_RELAY_COMPATIBILITY")) return Text(TEXT("厨房加热器继电器可替代发电机损坏件"));
@@ -267,15 +269,15 @@ FText FWSPresentationText::FactDescription(const FName FactId)
 	}
 	if (FactId == TEXT("FACT_BURNT_RELAY"))
 	{
-		return Text(TEXT("现场检查确认主继电器失效；这条事实允许拆取厨房加热器中的兼容继电器。"));
+		return Text(TEXT("现场检查确认主继电器已经失效；替代路线仍需继续查明规格与来源。"));
 	}
 	if (FactId == TEXT("FACT_HAND_INJURY"))
 	{
-		return Text(TEXT("现场血迹、绷带纤维与叶澄诊断相互印证；顾衡带伤维修会继续损害健康。"));
+		return Text(TEXT("现场血迹与绷带纤维说明顾衡右手可能受伤；严重程度仍待叶澄确认。"));
 	}
 	if (FactId == TEXT("FACT_MEDICAL_DIAGNOSIS"))
 	{
-		return Text(TEXT("医务室恢复供暖后，可消耗 1 份药品或已发现的保温包治疗顾衡，并获得稳定维修条件。"));
+		return Text(TEXT("叶澄确认顾衡右手状态会影响精细操作；先恢复医务室供暖，再安排当前可用的治疗。"));
 	}
 	if (FactId == TEXT("FACT_HEAT_PACK"))
 	{
@@ -365,29 +367,33 @@ FText FWSPresentationText::DialogueOpening(const EWSCharacterId CharacterId, con
 	{
 		if (State.Flags.bGuHengCooperative)
 		{
-			return TableText(TEXT("dlg_open_gu_cooperative"), TEXT("工具和备件都点过了，听你安排。"));
+			return Text(TEXT("工具和备件都点过了，听你安排。"));
 		}
 		if (State.Flags.bGuHengTreated)
 		{
-			return TableText(TEXT("dlg_open_gu_treated"), TEXT("手能用了。维修间有温度，我就上发电机。"));
+			return Text(TEXT("手能用了。维修间有温度，我就上发电机。"));
 		}
 		if (State.Flags.bGuHengDiagnosed)
 		{
-			return TableText(TEXT("dlg_open_gu_diagnosed"), TEXT("手使不上力，别问太多。要帮忙，先把医务室弄暖。"));
+			return Text(TEXT("手使不上力，别问太多。要帮忙，先把医务室弄暖。"));
 		}
-		return TableText(TEXT("dlg_open_gu_default"), TEXT("……说事。发电机房还等着我。"));
+		return Text(TEXT("……说事。发电机房还等着我。"));
 	}
 	if (CharacterId == EWSCharacterId::YeCheng)
 	{
 		if (State.Flags.bGuHengTreated)
 		{
-			return TableText(TEXT("dlg_open_ye_treated"), TEXT("他的手在恢复。别再让那只手受冻。"));
+			return Text(TEXT("他的手在恢复。别再让那只手受冻。"));
 		}
 		if (State.Flags.bMedicalRoomHeated)
 		{
-			return TableText(TEXT("dlg_open_ye_heated"), TEXT("医务室能用了。他随时可以接受治疗。"));
+			return FWSKnowledgePolicy::IsGuHengTreatmentOptionVisible(State)
+				? Text(TEXT("医务室能用了。顾衡可以开始治疗，其他突发状况也能处理。"))
+				: Text(TEXT("医务室能用了。我可以先做检查，也能处理突发状况。"));
 		}
-		return TableText(TEXT("dlg_open_ye_default"), TEXT("我在。先说伤员，还是先说设备？"));
+		return FWSKnowledgePolicy::IsGuHengTreatmentOptionVisible(State)
+			? Text(TEXT("我在。先说顾衡的处理，还是先说设备？"))
+			: Text(TEXT("我在。先说人员状态，还是先说设备？"));
 	}
 	return FText::GetEmpty();
 }

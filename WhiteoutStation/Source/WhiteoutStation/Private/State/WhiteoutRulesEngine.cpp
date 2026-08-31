@@ -4,6 +4,7 @@
 #include "Misc/FileHelper.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "State/WSDialogueDisclosurePolicy.h"
 
 namespace WhiteoutRules
 {
@@ -663,7 +664,7 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecute(const FWSActionRequest& Request) 
 		{
 			const bool bChallengeAvailable = Request.ActionId == TalkGuHeng
 				? Knows(FactForcedRestartSuspicion) || Knows(FactBurntRelay)
-				: State.Flags.bHeatPackRevealed;
+				: State.Flags.bGuHengDiagnosed;
 			if (!bChallengeAvailable)
 			{
 				return EWSReasonCode::DialogueActUnavailable;
@@ -938,6 +939,12 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecuteV11(
 			Request.ActionId == TreatGuHeng
 			? EWSCharacterId::GuHeng
 			: Request.TreatmentTarget;
+		if (Target == EWSCharacterId::GuHeng
+			&& !State.Flags.bGuHengDiagnosed
+			&& !Knows(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed))
+		{
+			return EWSReasonCode::NeedsDiagnosis;
+		}
 		const FWSCharacterState& TargetState = Character(Target);
 		const EWSTreatmentMethod Method =
 			Request.ActionId == TreatGuHeng
@@ -1100,7 +1107,7 @@ EWSReasonCode FWhiteoutRulesEngine::EvaluateRepairGeneratorReason(
 		Collaboration.Explanation = FText::FromString(
 			bSocialConditionSatisfied
 				? TEXT("当前配合关系足以继续")
-				: TEXT("维修时由你在旁协助，别让他独自承担精细操作"));
+				: TEXT("这段维修需要你在旁配合"));
 		Report.UniversalRequirements.Add(Collaboration);
 
 		FWSRequirementPlan SupportedPlan;
@@ -1119,7 +1126,7 @@ EWSReasonCode FWhiteoutRulesEngine::EvaluateRepairGeneratorReason(
 		Stamina.bSatisfied = bStaminaReady;
 		Stamina.RemediationActionId = Rest;
 		Stamina.Explanation = FText::FromString(
-			bStaminaReady ? TEXT("顾衡的体力足够") : TEXT("让顾衡恢复至少两点体力"));
+			bStaminaReady ? TEXT("顾衡现在能继续动手") : TEXT("让顾衡先缓口气"));
 		SupportedPlan.Requirements.Add(Stamina);
 		Report.AlternativePlans.Add(SupportedPlan);
 
@@ -1130,7 +1137,9 @@ EWSReasonCode FWhiteoutRulesEngine::EvaluateRepairGeneratorReason(
 		FWSRequirementItem Relay;
 		Relay.RequirementId = TEXT("replacement_relay_available");
 		Relay.bSatisfied = bReplacementRelayAvailable;
-		Relay.bDisclosable = true;
+		Relay.bDisclosable = bReplacementRelayAvailable
+			|| State.Flags.bRelayCompatibilityKnown
+			|| Knows(FactRelayCompatibility);
 		Relay.RemediationActionId = State.Flags.bRelayCompatibilityKnown
 			? DismantleKitchenHeater
 			: InspectControlCabinet;
@@ -1139,14 +1148,15 @@ EWSReasonCode FWhiteoutRulesEngine::EvaluateRepairGeneratorReason(
 				? TEXT("可靠替代件已经备好")
 				: State.Flags.bRelayCompatibilityKnown
 					? TEXT("可以从已确认兼容的设备取得替代件")
-					: TEXT("找到并确认一只可靠的替代继电器"));
+					: TEXT("现有信息还不足以确认另一条维修路线"));
 		RelayPlan.Requirements.Add(Relay);
 		Report.AlternativePlans.Add(RelayPlan);
 
 		FWSRequirementItem HandRisk;
 		HandRisk.RequirementId = TEXT("right_hand_injury_risk");
 		HandRisk.bSatisfied = GuHeng.InjurySeverity == EWSInjurySeverity::Normal;
-		HandRisk.bDisclosable = true;
+		HandRisk.bDisclosable = State.Flags.bGuHengDiagnosed
+			|| Knows(FactHandInjury, EWSKnowledgeLevel::Confirmed);
 		HandRisk.RemediationActionId = TreatCharacter;
 		HandRisk.Explanation = FText::FromString(
 			HandRisk.bSatisfied
@@ -1685,14 +1695,7 @@ bool FWhiteoutRulesEngine::SettleDayPhase(
 		OutSummary.PhaseEvent = TEXT("antenna_window_closed");
 	}
 
-	if (
-		!State.Flags.bHeatPackRevealed
-		&& Character(EWSCharacterId::YeCheng).Trust >= 5.5f)
-	{
-		State.Flags.bHeatPackRevealed = true;
-		OutSummary.NPCReaction = TEXT("ye_cheng_volunteer_heat_pack");
-	}
-	else if (Character(EWSCharacterId::GuHeng).Pressure >= 9.0f)
+	if (Character(EWSCharacterId::GuHeng).Pressure >= 9.0f)
 	{
 		OutSummary.NPCReaction = TEXT("gu_heng_withhold");
 	}
@@ -1840,12 +1843,20 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 	}
 	else if (Request.ActionId == TalkYeCheng)
 	{
+		const bool bDiagnosisKnownBefore = State.Flags.bGuHengDiagnosed
+			|| Knows(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed);
+		const float TrustBefore = Character(EWSCharacterId::YeCheng).Trust;
 		ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, -0.4f, 0.4f);
-		State.Flags.bGuHengDiagnosed = true;
-		AddEvidence(TEXT("EVIDENCE_MEDICAL_DIAGNOSIS"), &OutChanges);
-		DiscoverFact(FactHandInjury, EWSKnowledgeLevel::Confirmed, &OutChanges);
-		DiscoverFact(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed, &OutChanges);
-		if (Character(EWSCharacterId::YeCheng).Trust >= 6.0f)
+		if (WSDialogueDisclosurePolicy::IsTargetedGuHengDiagnosisQuestion(Request))
+		{
+			State.Flags.bGuHengDiagnosed = true;
+			AddEvidence(TEXT("EVIDENCE_MEDICAL_DIAGNOSIS"), &OutChanges);
+			DiscoverFact(FactHandInjury, EWSKnowledgeLevel::Confirmed, &OutChanges);
+			DiscoverFact(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed, &OutChanges);
+		}
+		if (WSDialogueDisclosurePolicy::IsHeatPackDisclosureQuestion(Request)
+			&& bDiagnosisKnownBefore
+			&& TrustBefore >= 6.0f)
 		{
 			State.Flags.bHeatPackRevealed = true;
 			AddEvidence(TEXT("EVIDENCE_HEAT_PACK"), &OutChanges);
@@ -2043,21 +2054,33 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 	else if (Request.ActionId == TalkYeCheng)
 	{
 		FWSCharacterState& YeCheng = Character(EWSCharacterId::YeCheng);
+		const bool bDiagnosisKnownBefore = State.Flags.bGuHengDiagnosed
+			|| Knows(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed);
+		const float TrustBefore = YeCheng.Trust;
 		YeCheng.Trust = FMath::Clamp(YeCheng.Trust + 0.4f, 0.0f, 10.0f);
 		YeCheng.Pressure = FMath::Clamp(YeCheng.Pressure - 0.4f, 0.0f, 10.0f);
-		State.Flags.bGuHengDiagnosed = true;
-		State.Flags.bHeatPackRevealed = true;
-		DiscoverFact(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed, &OutChanges);
-		DiscoverFact(FactHandInjury, EWSKnowledgeLevel::Confirmed, &OutChanges);
-		DiscoverFact(FactHeatPack, EWSKnowledgeLevel::Confirmed, &OutChanges);
-		OutChanges.Add(TEXT("叶澄披露诊断与保温包信息"));
+		if (WSDialogueDisclosurePolicy::IsTargetedGuHengDiagnosisQuestion(Request))
+		{
+			State.Flags.bGuHengDiagnosed = true;
+			DiscoverFact(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed, &OutChanges);
+			DiscoverFact(FactHandInjury, EWSKnowledgeLevel::Confirmed, &OutChanges);
+			OutChanges.Add(TEXT("叶澄披露顾衡的诊断结论"));
+		}
+		if (WSDialogueDisclosurePolicy::IsHeatPackDisclosureQuestion(Request)
+			&& bDiagnosisKnownBefore
+			&& TrustBefore >= 5.5f)
+		{
+			State.Flags.bHeatPackRevealed = true;
+			DiscoverFact(FactHeatPack, EWSKnowledgeLevel::Confirmed, &OutChanges);
+			OutChanges.Add(TEXT("叶澄披露保温包信息"));
+		}
 	}
 	else if (Request.ActionId == TalkGuHeng)
 	{
 		FWSCharacterState& GuHeng = Character(EWSCharacterId::GuHeng);
 		const bool bEvidenceBacked =
 			Knows(FactForcedRestartSuspicion)
-			|| State.Flags.bCabinetInspected;
+			&& Knows(FactBurntRelay);
 		if (Request.DialogueAct == EWSDialogueAct::Challenge && bEvidenceBacked)
 		{
 			GuHeng.Trust = FMath::Clamp(GuHeng.Trust + 0.8f, 0.0f, 10.0f);
@@ -2386,11 +2409,6 @@ void FWhiteoutRulesEngine::TriggerMidCrisis(TArray<FString>& OutChanges)
 	if (!State.Flags.bGuHengTreated && ActionCount(WhiteoutRules::RepairGenerator) > 0)
 	{
 		ChangeCharacter(EWSCharacterId::GuHeng, -0.2f, 0, 0, 0, 0.4f, 0);
-	}
-	if (Character(EWSCharacterId::YeCheng).Trust >= 6.0f)
-	{
-		State.Flags.bHeatPackRevealed = true;
-		DiscoverFact(WhiteoutRules::FactHeatPack, EWSKnowledgeLevel::Confirmed, &OutChanges);
 	}
 	OutChanges.Add(TEXT("Mid-crisis: backup battery voltage collapsed"));
 }
@@ -3209,21 +3227,21 @@ int32 FWhiteoutRulesEngine::ActionMaxUses(const FName ActionId)
 FText FWhiteoutRulesEngine::ActionPreviewText(const FName ActionId)
 {
 	using namespace WhiteoutRules;
-	if (ActionId == InvestigateGeneratorLog) return FText::FromString(TEXT("读取保护系统与手动旁路记录。"));
-	if (ActionId == InspectControlCabinet) return FText::FromString(TEXT("检查烧毁继电器、电弧痕迹与伤手线索。"));
+	if (ActionId == InvestigateGeneratorLog) return FText::FromString(TEXT("读取发电机运行记录，核对停机前后的事件。"));
+	if (ActionId == InspectControlCabinet) return FText::FromString(TEXT("检查控制柜内的故障痕迹。"));
 	if (ActionId == TalkGuHeng) return FText::FromString(TEXT("询问、质疑或交换维修条件。"));
-	if (ActionId == TalkYeCheng) return FText::FromString(TEXT("获取顾衡伤势与暴雪风险判断。"));
-	if (ActionId == HeatRepairRoom) return FText::FromString(TEXT("消耗1燃料，提高维修效率并保护顾衡。"));
-	if (ActionId == HeatMedicalRoom) return FText::FromString(TEXT("消耗1燃料，允许完整诊断与治疗。"));
+	if (ActionId == TalkYeCheng) return FText::FromString(TEXT("询问人员状态与暴雪风险。"));
+	if (ActionId == HeatRepairRoom) return FText::FromString(TEXT("消耗1燃料，提高维修间温度。"));
+	if (ActionId == HeatMedicalRoom) return FText::FromString(TEXT("消耗1燃料，提高医务室温度。"));
 	if (ActionId == DistributeFood) return FText::FromString(TEXT("一次性分配最多2份食物。"));
 	if (ActionId == Rest) return FText::FromString(TEXT("在供暖区恢复体能，或在其他区域降低压力。"));
-	if (ActionId == TreatGuHeng) return FText::FromString(TEXT("消耗药品或已披露的保温包，改善伤手。"));
-	if (ActionId == TreatCharacter) return FText::FromString(TEXT("包扎、完整治疗或使用保温包支撑指定角色。"));
-	if (ActionId == DismantleKitchenHeater) return FText::FromString(TEXT("取得替代继电器。"));
-	if (ActionId == RepairGenerator) return FText::FromString(TEXT("根据治疗、供暖与继电器状态产生1—2点进度。"));
-	if (ActionId == ForcedSelfRepair) return FText::FromString(TEXT("不依赖顾衡，2AP只获得1点进度。"));
+	if (ActionId == TreatGuHeng) return FText::FromString(TEXT("使用当前可用的治疗方案照顾顾衡。"));
+	if (ActionId == TreatCharacter) return FText::FromString(TEXT("由叶澄为指定角色进行当前可用的医疗处理。"));
+	if (ActionId == DismantleKitchenHeater) return FText::FromString(TEXT("拆解厨房加热器，并永久失去该处供暖。"));
+	if (ActionId == RepairGenerator) return FText::FromString(TEXT("尝试推进发电机维修。"));
+	if (ActionId == ForcedSelfRepair) return FText::FromString(TEXT("尝试独自强行维修发电机。"));
 	if (ActionId == CalibrateAntenna) return FText::FromString(TEXT("发电机恢复后完成天线校准。"));
-	if (ActionId == SendSignal) return FText::FromString(TEXT("发电机2/2且天线1/1时立即发信。"));
+	if (ActionId == SendSignal) return FText::FromString(TEXT("设备准备完成后发送求救信号。"));
 	return FText::GetEmpty();
 }
 
@@ -3232,7 +3250,7 @@ FText FWhiteoutRulesEngine::ActionRiskText(const FName ActionId)
 	using namespace WhiteoutRules;
 	if (ActionId == CalibrateAntenna) return FText::FromString(TEXT("结算两次室外暴露，明显降低体温与精力。"));
 	if (ActionId == DismantleKitchenHeater) return FText::FromString(TEXT("破坏夜间供暖；独自拆解会受轻伤。"));
-	if (ActionId == RepairGenerator) return FText::FromString(TEXT("顾衡带伤维修会继续恶化。"));
+	if (ActionId == RepairGenerator) return FText::FromString(TEXT("当前人员与环境状态会影响维修风险。"));
 	if (ActionId == ForcedSelfRepair) return FText::FromString(TEXT("玩家受伤并大幅疲劳；只能使用一次。"));
 	if (ActionId == TreatCharacter) return FText::FromString(TEXT("叶澄连续治疗会消耗体能；完整治疗需要本阶段供暖医务室。"));
 	if (ActionId == HeatRepairRoom || ActionId == HeatMedicalRoom) return FText::FromString(TEXT("会消耗夜间燃料储备。"));

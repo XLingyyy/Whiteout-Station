@@ -203,6 +203,244 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(4, len(set(cases)))
 
 
+class DisclosurePolicyTests(unittest.TestCase):
+    @staticmethod
+    def diagnosis_question() -> dict[str, str]:
+        return {
+            "dialogue_act": "ask",
+            "speech_act": "ask",
+            "query_type": "status",
+            "target_character": "gu_heng",
+            "player_said": "顾衡还能不能做精细维修？",
+        }
+
+    @staticmethod
+    def treatment_alternative() -> dict[str, str]:
+        return {
+            "dialogue_act": "ask",
+            "speech_act": "ask",
+            "query_type": "alternative",
+            "target_character": "gu_heng",
+            "target_action_id": "treat_gu_heng",
+            "player_said": "还有别的处理办法吗？",
+        }
+
+    def test_general_ye_cheng_question_does_not_disclose_medical_secrets(self) -> None:
+        sim = WhiteoutSimulator()
+        result = sim.apply_action(
+            "talk_ye_cheng",
+            {
+                "dialogue_act": "ask",
+                "speech_act": "ask",
+                "query_type": "unknown",
+                "target_character": "ye_cheng",
+                "player_said": "现在是什么情况？",
+            },
+        )
+
+        self.assertTrue(result.committed)
+        self.assertFalse(sim.state["flags"]["gu_heng_diagnosed"])
+        self.assertFalse(sim.state["flags"]["heat_pack_revealed"])
+        self.assertNotIn("FACT_HAND_INJURY", sim.state["player_knowledge"])
+        self.assertNotIn("FACT_MEDICAL_DIAGNOSIS", sim.state["player_knowledge"])
+        self.assertNotIn("FACT_HEAT_PACK", sim.state["player_knowledge"])
+
+    def test_general_gu_heng_status_and_glove_question_only_observe(self) -> None:
+        for player_said in ("顾衡现在怎么样？", "顾衡的手套放在哪里？"):
+            with self.subTest(player_said=player_said):
+                sim = WhiteoutSimulator()
+                result = sim.apply_action(
+                    "talk_ye_cheng",
+                    {
+                        "dialogue_act": "ask",
+                        "speech_act": "ask",
+                        "query_type": "status",
+                        "target_character": "gu_heng",
+                        "player_said": player_said,
+                    },
+                )
+
+                self.assertTrue(result.committed)
+                self.assertFalse(sim.state["flags"]["gu_heng_diagnosed"])
+                self.assertNotIn("FACT_HAND_INJURY", sim.state["player_knowledge"])
+                self.assertNotIn(
+                    "FACT_MEDICAL_DIAGNOSIS", sim.state["player_knowledge"]
+                )
+                self.assertNotIn("EVIDENCE_MEDICAL_DIAGNOSIS", sim.state["evidence"])
+
+    def test_fine_work_tool_question_does_not_diagnose_from_semantic_tags(self) -> None:
+        sim = WhiteoutSimulator()
+        result = sim.apply_action(
+            "talk_ye_cheng",
+            {
+                "dialogue_act": "ask",
+                "speech_act": "ask",
+                "query_type": "status",
+                "target_character": "gu_heng",
+                "target_fact_id": "FACT_MEDICAL_DIAGNOSIS",
+                "player_said": "顾衡做精细维修用哪把工具？",
+            },
+        )
+
+        self.assertTrue(result.committed)
+        self.assertFalse(sim.state["flags"]["gu_heng_diagnosed"])
+        self.assertNotIn("FACT_HAND_INJURY", sim.state["player_knowledge"])
+        self.assertNotIn("FACT_MEDICAL_DIAGNOSIS", sim.state["player_knowledge"])
+        self.assertNotIn("EVIDENCE_MEDICAL_DIAGNOSIS", sim.state["evidence"])
+
+    def test_unrelated_alternative_cannot_disclose_heat_pack_from_semantic_tags(self) -> None:
+        sim = WhiteoutSimulator()
+        self.assertTrue(
+            sim.apply_action(
+                "talk_ye_cheng", self.diagnosis_question(), "diagnosis-before-antenna"
+            ).committed
+        )
+        result = sim.apply_action(
+            "talk_ye_cheng",
+            {
+                "dialogue_act": "ask",
+                "speech_act": "ask",
+                "query_type": "alternative",
+                "target_character": "gu_heng",
+                "target_action_id": "treat_gu_heng",
+                "target_fact_id": "FACT_HEAT_PACK",
+                "player_said": "天线还有别的办法吗？",
+            },
+            "unrelated-antenna-alternative",
+        )
+
+        self.assertTrue(result.committed)
+        self.assertFalse(sim.state["flags"]["heat_pack_revealed"])
+        self.assertNotIn("FACT_HEAT_PACK", sim.state["player_knowledge"])
+        self.assertNotIn("EVIDENCE_HEAT_PACK", sim.state["evidence"])
+
+    def test_diagnosis_and_heat_pack_require_separate_targeted_questions(self) -> None:
+        sim = WhiteoutSimulator()
+        diagnosis = sim.apply_action(
+            "talk_ye_cheng",
+            self.diagnosis_question(),
+            "targeted-diagnosis",
+        )
+
+        self.assertTrue(diagnosis.committed)
+        self.assertTrue(sim.state["flags"]["gu_heng_diagnosed"])
+        self.assertEqual(
+            "confirmed", sim.state["player_knowledge"]["FACT_HAND_INJURY"]
+        )
+        self.assertEqual(
+            "confirmed", sim.state["player_knowledge"]["FACT_MEDICAL_DIAGNOSIS"]
+        )
+        self.assertFalse(sim.state["flags"]["heat_pack_revealed"])
+
+        disclosure = sim.apply_action(
+            "talk_ye_cheng",
+            self.treatment_alternative(),
+            "treatment-alternative",
+        )
+        self.assertTrue(disclosure.committed)
+        self.assertTrue(sim.state["flags"]["heat_pack_revealed"])
+        self.assertEqual(
+            "confirmed", sim.state["player_knowledge"]["FACT_HEAT_PACK"]
+        )
+
+    def test_heat_pack_alternative_is_blocked_before_diagnosis_or_below_trust(self) -> None:
+        undiagnosed = WhiteoutSimulator()
+        self.assertTrue(
+            undiagnosed.apply_action(
+                "talk_ye_cheng",
+                self.treatment_alternative(),
+                "premature-alternative",
+            ).committed
+        )
+        self.assertFalse(undiagnosed.state["flags"]["heat_pack_revealed"])
+
+        low_trust = WhiteoutSimulator()
+        low_trust.state["characters"]["ye_cheng"]["trust"] = (
+            low_trust.rules["balance"]["thresholds"][
+                "ye_heat_pack_disclosure_trust"
+            ]
+            - 0.1
+        )
+        low_trust.state["flags"]["gu_heng_diagnosed"] = True
+        self.assertTrue(
+            low_trust.apply_action(
+                "talk_ye_cheng",
+                self.treatment_alternative(),
+                "low-trust-alternative",
+            ).committed
+        )
+        self.assertGreaterEqual(
+            low_trust.state["characters"]["ye_cheng"]["trust"],
+            low_trust.rules["balance"]["thresholds"][
+                "ye_heat_pack_disclosure_trust"
+            ],
+        )
+        self.assertFalse(low_trust.state["flags"]["heat_pack_revealed"])
+
+    def test_evidence_query_diagnoses_and_repair_alternative_must_be_explicit(self) -> None:
+        diagnosis = WhiteoutSimulator()
+        result = diagnosis.apply_action(
+            "talk_ye_cheng",
+            {
+                "dialogue_act": "ask",
+                "speech_act": "ask",
+                "query_type": "evidence",
+                "target_character": "gu_heng",
+                "target_action_id": "repair_generator",
+                "target_fact_id": "FACT_HAND_INJURY",
+                "player_said": "你怎么知道顾衡的右手会影响精细维修？",
+            },
+        )
+        self.assertTrue(result.committed)
+        self.assertTrue(diagnosis.state["flags"]["gu_heng_diagnosed"])
+
+        ambiguous = WhiteoutSimulator()
+        ambiguous.state["flags"]["gu_heng_diagnosed"] = True
+        self.assertTrue(
+            ambiguous.apply_action(
+                "talk_ye_cheng",
+                {
+                    "dialogue_act": "ask",
+                    "speech_act": "ask",
+                    "query_type": "alternative",
+                    "target_character": "gu_heng",
+                    "target_action_id": "repair_generator",
+                    "player_said": "还有别的办法吗？",
+                },
+            ).committed
+        )
+        self.assertFalse(ambiguous.state["flags"]["heat_pack_revealed"])
+
+        explicit = WhiteoutSimulator()
+        explicit.state["flags"]["gu_heng_diagnosed"] = True
+        self.assertTrue(
+            explicit.apply_action(
+                "talk_ye_cheng",
+                {
+                    "dialogue_act": "ask",
+                    "speech_act": "ask",
+                    "query_type": "alternative",
+                    "target_character": "gu_heng",
+                    "target_action_id": "repair_generator",
+                    "player_said": "有什么办法能支撑顾衡完成一次维修？",
+                },
+            ).committed
+        )
+        self.assertTrue(explicit.state["flags"]["heat_pack_revealed"])
+
+    def test_mid_crisis_does_not_reveal_heat_pack_off_screen(self) -> None:
+        sim = WhiteoutSimulator()
+        sim.state["ap"] = 7
+        sim.state["tasks"]["generator_progress"] = 2
+        sim.state["characters"]["ye_cheng"]["trust"] = 10.0
+
+        result = sim.apply_action("calibrate_antenna", transaction_id="cross-crisis")
+
+        self.assertTrue(result.crisis_triggered)
+        self.assertFalse(sim.state["flags"]["heat_pack_revealed"])
+        self.assertNotIn("FACT_HEAT_PACK", sim.state["player_knowledge"])
+
+
 class KnowledgeAndAgentTests(unittest.TestCase):
     def test_initial_contexts_do_not_leak_other_npc_secret(self) -> None:
         sim = WhiteoutSimulator()
@@ -248,6 +486,48 @@ class KnowledgeAndAgentTests(unittest.TestCase):
 
 
 class DialogueIntentTests(unittest.TestCase):
+    def test_gu_heng_challenge_requires_log_and_relay_evidence(self) -> None:
+        cabinet_only = WhiteoutSimulator()
+        self.assertTrue(cabinet_only.apply_action("inspect_control_cabinet").committed)
+        params = {"dialogue_act": "challenge"}
+        preview = cabinet_only.preview_action("talk_gu_heng", params)
+        result = cabinet_only.apply_action(
+            "talk_gu_heng", params, "cabinet-only-challenge"
+        )
+
+        self.assertFalse(preview["can_execute"])
+        self.assertEqual("dialogue_act_unavailable", preview["reason_code"])
+        self.assertFalse(result.committed)
+        self.assertFalse(cabinet_only.state["flags"]["relay_compatibility_known"])
+        self.assertNotIn(
+            "FACT_RELAY_COMPATIBILITY", cabinet_only.state["player_knowledge"]
+        )
+        self.assertNotIn(
+            "FACT_FORCED_RESTART_CONFIRMED", cabinet_only.state["player_knowledge"]
+        )
+
+        both_evidence = WhiteoutSimulator()
+        self.assertTrue(
+            both_evidence.apply_action("investigate_generator_log").committed
+        )
+        self.assertTrue(both_evidence.apply_action("inspect_control_cabinet").committed)
+        result = both_evidence.apply_action(
+            "talk_gu_heng", params, "both-evidence-challenge"
+        )
+
+        self.assertTrue(result.committed)
+        self.assertTrue(both_evidence.state["flags"]["relay_compatibility_known"])
+        self.assertEqual(
+            "confirmed",
+            both_evidence.state["player_knowledge"]["FACT_RELAY_COMPATIBILITY"],
+        )
+        self.assertEqual(
+            "confirmed",
+            both_evidence.state["player_knowledge"][
+                "FACT_FORCED_RESTART_CONFIRMED"
+            ],
+        )
+
     def test_unknown_dialogue_acts_are_rejected_atomically(self) -> None:
         for action_id in ("talk_gu_heng", "talk_ye_cheng"):
             with self.subTest(action_id=action_id):
@@ -374,7 +654,7 @@ class DialogueIntentTests(unittest.TestCase):
         )
 
         sim.apply_action("investigate_generator_log", transaction_id="stage-log")
-        self.assertTrue(
+        self.assertFalse(
             sim.preview_action("talk_gu_heng", {"dialogue_act": "challenge"})[
                 "can_execute"
             ]
@@ -387,6 +667,13 @@ class DialogueIntentTests(unittest.TestCase):
                     "promise_condition": "keep_records",
                 },
             )["can_execute"]
+        )
+
+        sim.apply_action("inspect_control_cabinet", transaction_id="stage-cabinet")
+        self.assertTrue(
+            sim.preview_action("talk_gu_heng", {"dialogue_act": "challenge"})[
+                "can_execute"
+            ]
         )
         self.assertFalse(
             sim.preview_action(
@@ -401,7 +688,13 @@ class DialogueIntentTests(unittest.TestCase):
         sim = WhiteoutSimulator()
         sim.apply_action(
             "talk_ye_cheng",
-            {"dialogue_act": "ask"},
+            {
+                "dialogue_act": "ask",
+                "speech_act": "ask",
+                "query_type": "status",
+                "target_character": "gu_heng",
+                "player_said": "顾衡还能不能做精细维修？",
+            },
             "stage-ask-ye",
         )
         self.assertTrue(
@@ -426,7 +719,7 @@ class DialogueIntentTests(unittest.TestCase):
             ("talk_ye_cheng", "challenge", None, 6.1, 4.7, 0),
             ("talk_ye_cheng", "reassure", None, 6.7, 4.0, 0),
             ("talk_gu_heng", "ask", None, 3.2, 7.6, 0),
-            ("talk_gu_heng", "challenge", None, 2.9, 7.9, 0),
+            ("talk_gu_heng", "challenge", None, 4.5, 7.7, 0),
             ("talk_gu_heng", "reassure", None, 3.5, 7.2, 0),
             (
                 "talk_gu_heng",
@@ -441,13 +734,15 @@ class DialogueIntentTests(unittest.TestCase):
             with self.subTest(action=action_id, intent=dialogue_act):
                 sim = WhiteoutSimulator()
                 if action_id == "talk_ye_cheng" and dialogue_act == "challenge":
-                    sim.state["flags"]["heat_pack_revealed"] = True
+                    sim.state["flags"]["gu_heng_diagnosed"] = True
                 elif action_id == "talk_ye_cheng" and dialogue_act == "reassure":
                     sim.state["mid_crisis_triggered"] = True
-                elif action_id == "talk_gu_heng" and dialogue_act in {
-                    "challenge",
-                    "promise",
-                }:
+                elif action_id == "talk_gu_heng" and dialogue_act == "challenge":
+                    sim.state["player_knowledge"][
+                        "FACT_FORCED_RESTART_SUSPICION"
+                    ] = "suspected"
+                    sim.state["player_knowledge"]["FACT_BURNT_RELAY"] = "confirmed"
+                elif action_id == "talk_gu_heng" and dialogue_act == "promise":
                     sim.state["player_knowledge"][
                         "FACT_FORCED_RESTART_SUSPICION"
                     ] = "suspected"
@@ -492,7 +787,7 @@ class RouteAndScoreTests(unittest.TestCase):
         expected = {
             "medical_cooperation": {
                 "ap": 4,
-                "score": 81.76,
+                "score": 80.76,
                 "dialogue": {
                     "dialogue_act": "promise",
                     "promise_condition": "heat_repair_room",
@@ -500,7 +795,7 @@ class RouteAndScoreTests(unittest.TestCase):
             },
             "technical_replacement": {
                 "ap": 4,
-                "score": 76.94,
+                "score": 75.94,
                 "dialogue": {"dialogue_act": "challenge"},
             },
             "forced_quick_repair": {
@@ -545,33 +840,22 @@ class RouteAndScoreTests(unittest.TestCase):
 
         cost = WhiteoutSimulator()
         cost.apply_action("investigate_generator_log")
+        cost.state["characters"]["player"]["fatigue"] = 4.7
         self.assertTrue(cost.apply_action("forced_self_repair").committed)
-        for index in range(2):
-            result = cost.apply_action(
-                "talk_gu_heng",
-                {"dialogue_act": "challenge"},
-                f"cost-challenge-{index}",
-            )
-            self.assertTrue(result.committed)
         self.assertEqual("cost_uncontrolled", cost.end_game()["ending"])
 
         collapse = WhiteoutSimulator()
-        collapse.apply_action("investigate_generator_log")
+        self.assertTrue(collapse.apply_action("heat_medical_room").committed)
+        self.assertTrue(collapse.apply_action("heat_repair_room").committed)
+        collapse.state["characters"]["gu_heng"]["pressure"] = 8.0
         for index in range(2):
-            collapse.apply_action(
-                "talk_gu_heng",
-                {"dialogue_act": "challenge"},
-                f"collapse-challenge-{index}",
+            self.assertTrue(
+                collapse.apply_action(
+                    "talk_gu_heng",
+                    {"dialogue_act": "ask"},
+                    f"collapse-ask-{index}",
+                ).committed
             )
-        collapse.apply_action("heat_medical_room")
-        collapse.apply_action("heat_repair_room")
-        collapse.apply_action("talk_ye_cheng", {"dialogue_act": "ask"})
-        collapse.apply_action(
-            "distribute_food",
-            {"player": 1, "gu_heng": 0, "ye_cheng": 0},
-        )
-        self.assertTrue(collapse.apply_action("inspect_control_cabinet").committed)
-        self.assertEqual(4, collapse.state["ap"])
         self.assertEqual("total_collapse", collapse.end_game()["ending"])
 
         success = run_route(WhiteoutSimulator(), "medical_cooperation")
@@ -590,6 +874,9 @@ class RouteAndScoreTests(unittest.TestCase):
         medical_talk = next(
             step for step in medical["steps"] if step["action"] == "talk_gu_heng"
         )
+        medical_diagnosis = next(
+            step for step in medical["steps"] if step["action"] == "talk_ye_cheng"
+        )
         technical_talk = next(
             step for step in technical["steps"] if step["action"] == "talk_gu_heng"
         )
@@ -599,6 +886,16 @@ class RouteAndScoreTests(unittest.TestCase):
                 "promise_condition": "heat_repair_room",
             },
             medical_talk["params"],
+        )
+        self.assertEqual(
+            {
+                "dialogue_act": "ask",
+                "speech_act": "ask",
+                "query_type": "status",
+                "target_character": "gu_heng",
+                "player_said": "顾衡还能不能做精细维修？",
+            },
+            medical_diagnosis["params"],
         )
         self.assertEqual(
             {"dialogue_act": "challenge"},

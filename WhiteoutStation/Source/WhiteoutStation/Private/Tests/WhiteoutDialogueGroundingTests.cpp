@@ -70,6 +70,12 @@ bool FWhiteoutDialogueSemanticFrameMatrixTest::RunTest(const FString& Parameters
 		TEXT("repair_generator"));
 	TestEqual(TEXT("Evidence question remains Ask"), Evidence.DialogueAct, EWSDialogueAct::Ask);
 	TestEqual(TEXT("Evidence question is not Challenge"), Evidence.QueryType, EWSDialogueQueryType::Evidence);
+	const FWSDialogueIntentResult GuHengEvidence = UWSAgentGateway::ClassifyLocalIntent(
+		TEXT("你怎么知道顾衡的右手会影响精细维修？"),
+		TEXT("talk_ye_cheng"),
+		TEXT("repair_generator"));
+	TestEqual(TEXT("Named Gu Heng evidence question targets Gu Heng"), GuHengEvidence.TargetCharacter, EWSCharacterId::GuHeng);
+	TestTrue(TEXT("Named Gu Heng evidence question clears a stale repair topic"), GuHengEvidence.TargetActionId.IsNone());
 
 	const FWSDialogueIntentResult Alternative = UWSAgentGateway::ClassifyLocalIntent(
 		TEXT("还有别的办法吗？"),
@@ -89,6 +95,51 @@ bool FWhiteoutDialogueSemanticFrameMatrixTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("Explicit character switches topic"), TopicSwitch.TargetCharacter, EWSCharacterId::YeCheng);
 	TestTrue(TEXT("Character topic switch clears generator action"), TopicSwitch.TargetActionId.IsNone());
 	TestEqual(TEXT("Character topic switch asks status"), TopicSwitch.QueryType, EWSDialogueQueryType::Status);
+
+	const FWSDialogueIntentResult GuHengStatus = UWSAgentGateway::ClassifyLocalIntent(
+		TEXT("顾衡现在怎么样？"),
+		TEXT("talk_ye_cheng"));
+	TestTrue(TEXT("Gu Heng status maps locally"), GuHengStatus.bMapped);
+	TestEqual(TEXT("Gu Heng status targets Gu Heng"), GuHengStatus.TargetCharacter, EWSCharacterId::GuHeng);
+	TestTrue(TEXT("Gu Heng status clears action target"), GuHengStatus.TargetActionId.IsNone());
+	TestEqual(TEXT("Gu Heng status query type"), GuHengStatus.QueryType, EWSDialogueQueryType::Status);
+	const FWSDialogueIntentResult GuHengFineWork = UWSAgentGateway::ClassifyLocalIntent(
+		TEXT("顾衡还能不能做精细维修？"),
+		TEXT("talk_ye_cheng"));
+	TestEqual(TEXT("Fine-work diagnosis wording targets Gu Heng"), GuHengFineWork.TargetCharacter, EWSCharacterId::GuHeng);
+	TestEqual(TEXT("Fine-work diagnosis wording maps to Status"), GuHengFineWork.QueryType, EWSDialogueQueryType::Status);
+	const FWSDialogueIntentResult GuHengGlove = UWSAgentGateway::ClassifyLocalIntent(
+		TEXT("顾衡的手套放在哪里？"),
+		TEXT("talk_ye_cheng"));
+	TestFalse(
+		TEXT("A question about Gu Heng's gloves is not a condition query"),
+		GuHengGlove.TargetCharacter == EWSCharacterId::GuHeng
+			&& GuHengGlove.QueryType == EWSDialogueQueryType::Status);
+
+	const FWSDialogueIntentResult MedicalAlternative = UWSAgentGateway::ClassifyLocalIntent(
+		TEXT("还有别的处理办法吗？"),
+		TEXT("talk_ye_cheng"));
+	TestTrue(TEXT("Medical alternative maps locally"), MedicalAlternative.bMapped);
+	TestEqual(TEXT("Medical alternative remains Ask"), MedicalAlternative.DialogueAct, EWSDialogueAct::Ask);
+	TestEqual(TEXT("Medical alternative query type"), MedicalAlternative.QueryType, EWSDialogueQueryType::Alternative);
+	TestEqual(TEXT("Medical alternative target"), MedicalAlternative.TargetActionId, FName(TEXT("treat_gu_heng")));
+	TestEqual(TEXT("Medical alternative targets Gu Heng"), MedicalAlternative.TargetCharacter, EWSCharacterId::GuHeng);
+	const FWSDialogueIntentResult MedicalAlternativeAfterRepairTopic =
+		UWSAgentGateway::ClassifyLocalIntent(
+			TEXT("还有别的处理办法吗？"),
+			TEXT("talk_ye_cheng"),
+			TEXT("repair_generator"));
+	TestEqual(
+		TEXT("Medical wording overrides a stale repair topic"),
+		MedicalAlternativeAfterRepairTopic.TargetActionId,
+		FName(TEXT("treat_gu_heng")));
+
+	const FWSDialogueIntentResult MedicalSupplies = UWSAgentGateway::ClassifyLocalIntent(
+		TEXT("还有什么医疗物资可用？"),
+		TEXT("talk_ye_cheng"));
+	TestTrue(TEXT("Medical-supply question maps locally"), MedicalSupplies.bMapped);
+	TestEqual(TEXT("Medical-supply query type"), MedicalSupplies.QueryType, EWSDialogueQueryType::Alternative);
+	TestEqual(TEXT("Medical-supply target"), MedicalSupplies.TargetActionId, FName(TEXT("treat_gu_heng")));
 	return true;
 }
 

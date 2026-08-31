@@ -406,19 +406,71 @@ namespace WhiteoutAgentValidation
 		TArray<FString> Phrases;
 	};
 
+	const TArray<FProtectedPhraseSet>& GetProtectedFacts()
+	{
+		static const TArray<FProtectedPhraseSet> ProtectedFacts = {
+			{TEXT("FACT_GENERATOR_PROTECTION_STOP"), {TEXT("保护停机"), TEXT("protection stop")}},
+			{TEXT("FACT_BURNT_RELAY"), {TEXT("继电器烧"), TEXT("烧毁继电器"), TEXT("触点熔"), TEXT("burnt relay")}},
+			{TEXT("FACT_HAND_INJURY"), {
+				TEXT("手伤"), TEXT("伤手"), TEXT("右手受伤"), TEXT("手部受伤"),
+				TEXT("右手使不上力"), TEXT("手还使不上力"), TEXT("手上的伤口"),
+				TEXT("手上伤口"), TEXT("伤口又裂"), TEXT("hand injury"),
+				TEXT("injured hand"), TEXT("right hand")}},
+			{TEXT("FACT_HEAT_PACK"), {
+				TEXT("保温包"), TEXT("暖袋"), TEXT("热敷袋"), TEXT("heat pack")}},
+			{TEXT("FACT_RELAY_COMPATIBILITY"), {
+				TEXT("规格能对上"), TEXT("继电器能替"), TEXT("替代继电器"), TEXT("可靠替代件"),
+				TEXT("确认可用的替代件"), TEXT("厨房加热器"), TEXT("正好能装上"),
+				TEXT("零件能装上"), TEXT("compatible relay")}},
+			{TEXT("FACT_FORCED_RESTART_SUSPICION"), {TEXT("手动旁路"), TEXT("强制重启"), TEXT("forced restart"), TEXT("manual bypass")}},
+			{TEXT("FACT_FORCED_RESTART_CONFIRMED"), {TEXT("越过保护"), TEXT("绕过保护"), TEXT("bypassed protection")}},
+			{TEXT("FACT_MEDICAL_DIAGNOSIS"), {
+				TEXT("完整诊断"), TEXT("诊断结论"), TEXT("诊断结果"), TEXT("medical diagnosis")}}
+		};
+		return ProtectedFacts;
+	}
+
+	bool IsProtectedForSpeaker(const FName FactId, const EWSCharacterId Speaker)
+	{
+		if (Speaker == EWSCharacterId::YeCheng)
+		{
+			return FactId == TEXT("FACT_HAND_INJURY")
+				|| FactId == TEXT("FACT_MEDICAL_DIAGNOSIS")
+				|| FactId == TEXT("FACT_HEAT_PACK");
+		}
+		if (Speaker == EWSCharacterId::GuHeng)
+		{
+			return FactId == TEXT("FACT_GENERATOR_PROTECTION_STOP")
+				|| FactId == TEXT("FACT_BURNT_RELAY")
+				|| FactId == TEXT("FACT_HAND_INJURY")
+				|| FactId == TEXT("FACT_RELAY_COMPATIBILITY")
+				|| FactId == TEXT("FACT_FORCED_RESTART_SUSPICION")
+				|| FactId == TEXT("FACT_FORCED_RESTART_CONFIRMED");
+		}
+		return true;
+	}
+
+	bool HasUnavailableProtectedFact(
+		const TArray<FName>& AllowedFactIds,
+		const EWSCharacterId Speaker)
+	{
+		for (const FProtectedPhraseSet& Protected : GetProtectedFacts())
+		{
+			if (IsProtectedForSpeaker(Protected.FactId, Speaker)
+				&& !AllowedFactIds.Contains(Protected.FactId))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool ContainsProtectedUnauthorizedClaim(
 		const FString& Utterance,
 		const TArray<FName>& AllowedFactIds,
 		FString& OutFactId)
 	{
-		const TArray<FProtectedPhraseSet> ProtectedFacts = {
-			{TEXT("FACT_HEAT_PACK"), {TEXT("保温包"), TEXT("heat pack")}},
-			{TEXT("FACT_RELAY_COMPATIBILITY"), {TEXT("规格能对上"), TEXT("继电器能替"), TEXT("compatible relay")}},
-			{TEXT("FACT_FORCED_RESTART_SUSPICION"), {TEXT("手动旁路"), TEXT("强制重启"), TEXT("forced restart"), TEXT("manual bypass")}},
-			{TEXT("FACT_FORCED_RESTART_CONFIRMED"), {TEXT("越过保护"), TEXT("绕过保护"), TEXT("bypassed protection")}},
-			{TEXT("FACT_MEDICAL_DIAGNOSIS"), {TEXT("完整诊断"), TEXT("medical diagnosis")}}
-		};
-		for (const FProtectedPhraseSet& Protected : ProtectedFacts)
+		for (const FProtectedPhraseSet& Protected : GetProtectedFacts())
 		{
 			if (AllowedFactIds.Contains(Protected.FactId))
 			{
@@ -800,10 +852,18 @@ void UWSAgentGateway::RequestExpression(
 		RequirementReport);
 	const TArray<FName> AllowedFacts =
 		UWSNPCDecisionService::BuildAllowedFacts(ActionRequest.ActionId, Decision.Speaker, State);
-	if (!bAllowLiveProvider || !HasLiveProvider())
+	const bool bKnowledgeBoundaryOpen = IsExpressionKnowledgeBoundaryOpen(
+		Decision.Speaker,
+		AllowedFacts);
+	if (!bAllowLiveProvider || !HasLiveProvider() || !bKnowledgeBoundaryOpen)
 	{
-		RecordDialogueTurn(ActionRequest, Decision);
-		Completion.ExecuteIfBound(Decision);
+		FWSAgentReply Fallback = Decision;
+		if (bAllowLiveProvider && HasLiveProvider() && !bKnowledgeBoundaryOpen)
+		{
+			Fallback.ValidationReason = TEXT("persona_tail_knowledge_boundary");
+		}
+		RecordDialogueTurn(ActionRequest, Fallback);
+		Completion.ExecuteIfBound(Fallback);
 		return;
 	}
 	if (!RetryManager.IsValid())
@@ -1315,6 +1375,19 @@ bool UWSAgentGateway::ValidateModelPayload(
 		OutReason = DropReason;
 		return true;
 	}
+	if (!PersonaTail.IsEmpty()
+		&& WhiteoutAgentValidation::HasUnavailableProtectedFact(
+			AllowedFactIds,
+			Decision.Speaker))
+	{
+		OutReply.Utterance = SemanticSpine;
+		OutReply.PersonaTail.Reset();
+		OutReply.AnswerSource = TEXT("spine_only");
+		OutReply.bFallback = true;
+		OutReply.ValidationReason = TEXT("persona_tail_knowledge_boundary");
+		OutReason = OutReply.ValidationReason;
+		return true;
+	}
 	OutReply.Utterance = FinalLine;
 	OutReply.PersonaTail = PersonaTail;
 	OutReply.AnswerSource = TEXT("spine_plus_ai");
@@ -1322,6 +1395,15 @@ bool UWSAgentGateway::ValidateModelPayload(
 	OutReply.ValidationReason = TEXT("persona_tail_accepted");
 	OutReason = TEXT("persona_tail_accepted");
 	return true;
+}
+
+bool UWSAgentGateway::IsExpressionKnowledgeBoundaryOpen(
+	const EWSCharacterId Speaker,
+	const TArray<FName>& AllowedFactIds)
+{
+	return !WhiteoutAgentValidation::HasUnavailableProtectedFact(
+		AllowedFactIds,
+		Speaker);
 }
 
 FWSDialogueIntentResult UWSAgentGateway::ClassifyLocalIntent(
@@ -1344,8 +1426,11 @@ FWSDialogueIntentResult UWSAgentGateway::ClassifyLocalIntent(
 
 	const bool bMentionsGenerator = ContainsAny(Text, {
 		TEXT("发电机"), TEXT("机组"), TEXT("供电"), TEXT("generator")});
+	const bool bMentionsAntenna = ContainsAny(Text, {
+		TEXT("天线"), TEXT("无线电"), TEXT("信号")});
 	const bool bGeneratorTopic = CurrentTopicActionId == TEXT("repair_generator");
-	const bool bTargetsGenerator = bMentionsGenerator || bGeneratorTopic;
+	const bool bTargetsGenerator = bMentionsGenerator
+		|| (!bMentionsAntenna && bGeneratorTopic);
 	const bool bRequirementsQuestion = ContainsAny(Text, {
 		TEXT("要怎么样"), TEXT("怎样才"), TEXT("怎么才"), TEXT("什么条件"),
 		TEXT("需要我做什么"), TEXT("要我做什么"), TEXT("我要做什么"), TEXT("才会帮"), TEXT("才肯"),
@@ -1377,6 +1462,31 @@ FWSDialogueIntentResult UWSAgentGateway::ClassifyLocalIntent(
 		Result.Confidence = 0.94f;
 		Result.Source = TEXT("local_semantic_frame");
 		Result.Reason = TEXT("character_status_topic_switch");
+		return Result;
+	}
+	const bool bExplicitGuHengConditionQuestion = ContainsAny(Text, {
+		TEXT("顾衡的手怎么"), TEXT("顾衡受伤"), TEXT("顾衡的伤势"),
+		TEXT("顾衡身体"), TEXT("顾衡能不能修"), TEXT("顾衡还能不能修")});
+	const bool bFineWorkAbilityQuestion = ContainsAny(Text, {
+		TEXT("精细维修"), TEXT("精细操作")})
+		&& ContainsAny(Text, {
+			TEXT("能不能"), TEXT("还能不能"), TEXT("是否能"), TEXT("影响"),
+			TEXT("做不了"), TEXT("无法"), TEXT("撑得住"), TEXT("完成不了")});
+	const bool bGuHengConditionQuestion =
+		CurrentDialogueActionId == TEXT("talk_ye_cheng")
+		&& bMentionsGuHeng
+		&& !bMentionsYeCheng
+		&& (bExplicitGuHengConditionQuestion || bFineWorkAbilityQuestion);
+	if (bGuHengConditionQuestion)
+	{
+		Result.bMapped = true;
+		Result.DialogueAct = EWSDialogueAct::Ask;
+		Result.QueryType = EWSDialogueQueryType::Status;
+		Result.TargetCharacter = EWSCharacterId::GuHeng;
+		Result.TargetActionId = NAME_None;
+		Result.Confidence = 0.96f;
+		Result.Source = TEXT("local_semantic_frame");
+		Result.Reason = TEXT("gu_heng_condition_question_match");
 		return Result;
 	}
 
@@ -1412,15 +1522,68 @@ FWSDialogueIntentResult UWSAgentGateway::ClassifyLocalIntent(
 		Result.bMapped = true;
 		Result.DialogueAct = EWSDialogueAct::Ask;
 		Result.QueryType = EWSDialogueQueryType::Evidence;
-		Result.TargetActionId = bTargetsGenerator ? FName(TEXT("repair_generator")) : CurrentTopicActionId;
+		if (bMentionsGuHeng || bMentionsYeCheng)
+		{
+			Result.TargetCharacter = bMentionsGuHeng
+				? EWSCharacterId::GuHeng
+				: EWSCharacterId::YeCheng;
+		}
+		Result.TargetActionId = (bMentionsGuHeng || bMentionsYeCheng)
+			&& !bMentionsGenerator
+			? NAME_None
+			: bTargetsGenerator
+				? FName(TEXT("repair_generator"))
+				: CurrentTopicActionId;
 		Result.Confidence = 0.95f;
 		Result.Source = TEXT("local_semantic_frame");
 		Result.Reason = TEXT("evidence_question_match");
 		return Result;
 	}
-	if (bTargetsGenerator && ContainsAny(Text, {
-		TEXT("别的办法"), TEXT("其他办法"), TEXT("另一种办法"), TEXT("替代方案"),
-		TEXT("还能怎么"), TEXT("有没有别的") }))
+	const bool bAlternativeQuestion = ContainsAny(Text, {
+			TEXT("别的办法"), TEXT("其他办法"), TEXT("另一种办法"), TEXT("替代方案"),
+			TEXT("别的处理办法"), TEXT("其他处理办法"), TEXT("有什么办法"),
+			TEXT("还能怎么"), TEXT("有没有别的") });
+	const bool bWorkSupportQuestion = CurrentDialogueActionId == TEXT("talk_ye_cheng")
+		&& ContainsAny(Text, {TEXT("撑过"), TEXT("支撑"), TEXT("坚持"), TEXT("完成")})
+		&& ContainsAny(Text, {TEXT("一次维修"), TEXT("这次维修"), TEXT("维修工作")});
+	const bool bMedicalSupportQuestion = ContainsAny(Text, {
+		TEXT("医疗物资"), TEXT("保温包"), TEXT("处理办法")});
+	if (bWorkSupportQuestion)
+	{
+		Result.bMapped = true;
+		Result.DialogueAct = EWSDialogueAct::Ask;
+		Result.QueryType = EWSDialogueQueryType::Alternative;
+		Result.TargetActionId = TEXT("repair_generator");
+		Result.TargetCharacter = EWSCharacterId::GuHeng;
+		Result.Confidence = 0.97f;
+		Result.Source = TEXT("local_semantic_frame");
+		Result.Reason = TEXT("work_support_alternative_match");
+		return Result;
+	}
+	if (CurrentDialogueActionId == TEXT("talk_ye_cheng") && bMedicalSupportQuestion)
+	{
+		Result.bMapped = true;
+		Result.DialogueAct = EWSDialogueAct::Ask;
+		Result.QueryType = EWSDialogueQueryType::Alternative;
+		Result.TargetActionId = TEXT("treat_gu_heng");
+		Result.TargetCharacter = EWSCharacterId::GuHeng;
+		Result.Confidence = 0.95f;
+		Result.Source = TEXT("local_semantic_frame");
+		Result.Reason = TEXT("alternative_medical_support_match");
+		return Result;
+	}
+	if (bMentionsAntenna && bAlternativeQuestion)
+	{
+		Result.bMapped = true;
+		Result.DialogueAct = EWSDialogueAct::Ask;
+		Result.QueryType = EWSDialogueQueryType::Alternative;
+		Result.TargetActionId = TEXT("calibrate_antenna");
+		Result.Confidence = 0.95f;
+		Result.Source = TEXT("local_semantic_frame");
+		Result.Reason = TEXT("alternative_antenna_match");
+		return Result;
+	}
+	if (bTargetsGenerator && bAlternativeQuestion)
 	{
 		Result.bMapped = true;
 		Result.DialogueAct = EWSDialogueAct::Ask;
@@ -1608,6 +1771,10 @@ bool UWSAgentGateway::ValidateIntentPayload(
 	else if (TargetActionId == TEXT("repair_generator"))
 	{
 		OutIntent.TargetActionId = TEXT("repair_generator");
+	}
+	else if (TargetActionId == TEXT("treat_gu_heng"))
+	{
+		OutIntent.TargetActionId = TEXT("treat_gu_heng");
 	}
 	else
 	{

@@ -20,6 +20,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Presentation/WSPresentationData.h"
 #include "State/WindStationStateSubsystem.h"
+#include "State/WSKnowledgePolicy.h"
 #include "UObject/ConstructorHelpers.h"
 #include "WorldCollision.h"
 
@@ -393,8 +394,8 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 			if (UStaticMesh* WrapMesh = WrapCfg.Mesh.LoadSynchronous())
 			{
 				InjuryWrap->SetStaticMesh(WrapMesh);
-				InjuryWrap->SetVisibility(true);
-				InjuryWrap->SetHiddenInGame(false);
+				InjuryWrap->SetVisibility(false);
+				InjuryWrap->SetHiddenInGame(true);
 				InjuryWrap->SetRelativeScale3D(WrapCfg.RelativeScale);
 				InjuryWrap->SetRelativeRotation(WrapCfg.RelativeRotation);
 				if (!WrapCfg.Material.IsNull())
@@ -489,8 +490,8 @@ void AWSInteractableActor::ConfigureCharacterPresentation()
 			if (UStaticMesh* WrapMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")))
 			{
 				InjuryWrap->SetStaticMesh(WrapMesh);
-				InjuryWrap->SetVisibility(true);
-				InjuryWrap->SetHiddenInGame(false);
+				InjuryWrap->SetVisibility(false);
+				InjuryWrap->SetHiddenInGame(true);
 				InjuryWrap->SetRelativeScale3D(FVector(0.006f, 0.006f, 0.0024f));
 				InjuryWrap->SetRelativeRotation(FRotator(0.0f, 0.0f, 90.0f));
 				if (UMaterialInterface* WrapMaterial = LoadObject<UMaterialInterface>(
@@ -823,7 +824,13 @@ void AWSInteractableActor::ApplyCharacterState(const FWSGameState& State)
 	{
 		return;
 	}
-	static_cast<void>(State);
+	if (InjuryWrap)
+	{
+		const bool bShowInjuryWrap = ActionId == TEXT("talk_gu_heng")
+			&& FWSKnowledgePolicy::IsGuHengInjuryWrapVisible(State);
+		InjuryWrap->SetVisibility(bShowInjuryWrap);
+		InjuryWrap->SetHiddenInGame(!bShowInjuryWrap);
+	}
 	if (bMovementActive || bReactionActive)
 	{
 		return;
@@ -968,12 +975,17 @@ FWSActionRequest AWSInteractableActor::BuildActionRequest(
 		Request.FoodForPlayer = 1;
 		Request.FoodForGuHeng = 1;
 	}
-	if (ActionId == TEXT("treat_gu_heng")
-		|| ActionId == TEXT("treat_character"))
+	if (ActionId == TEXT("treat_gu_heng"))
 	{
 		Request.TreatmentResource = EWSResourceType::Medicine;
 		Request.TreatmentMethod = EWSTreatmentMethod::Full;
 		Request.TreatmentTarget = EWSCharacterId::GuHeng;
+	}
+	else if (ActionId == TEXT("treat_character"))
+	{
+		Request.TreatmentResource = EWSResourceType::Medicine;
+		Request.TreatmentMethod = EWSTreatmentMethod::Bandage;
+		Request.TreatmentTarget = EWSCharacterId::Player;
 	}
 	return Request;
 }

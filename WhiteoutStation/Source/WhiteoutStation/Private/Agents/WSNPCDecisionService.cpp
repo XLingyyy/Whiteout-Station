@@ -1,5 +1,7 @@
 #include "Agents/WSNPCDecisionService.h"
 
+#include "State/WSDialogueDisclosurePolicy.h"
+
 namespace WhiteoutAgentFacts
 {
 	const FName GeneratorProtectionStop(TEXT("FACT_GENERATOR_PROTECTION_STOP"));
@@ -78,9 +80,20 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		Reply.Speaker = EWSCharacterId::YeCheng;
 		Reply.ResponseType = EWSResponseType::FullDisclosure;
 		Reply.Emotion = TEXT("focused");
-		Reply.ReferencedFactIds = {WhiteoutAgentFacts::HandInjury, WhiteoutAgentFacts::MedicalDiagnosis};
 		const FWSCharacterState YeCheng =
 			State.Characters.FindRef(EWSCharacterId::YeCheng);
+		const bool bDiagnosisKnown =
+			State.Flags.bGuHengDiagnosed
+			|| PlayerKnows(
+				State,
+				WhiteoutAgentFacts::MedicalDiagnosis,
+				EWSKnowledgeLevel::Confirmed);
+		const bool bDiagnosisQuestion =
+			WSDialogueDisclosurePolicy::IsTargetedGuHengDiagnosisQuestion(Request);
+		const bool bConditionObservation =
+			WSDialogueDisclosurePolicy::IsGuHengConditionObservationQuestion(Request);
+		const bool bHeatPackQuestion =
+			WSDialogueDisclosurePolicy::IsHeatPackDisclosureQuestion(Request);
 		if (
 			Request.DialogueAct == EWSDialogueAct::Command
 			&& (
@@ -89,7 +102,7 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		{
 			Reply.ResponseType = EWSResponseType::Refuse;
 			Reply.Emotion = TEXT("firm");
-			Reply.Utterance = TEXT("我不会在这种状态下照命令冒险。先处理伤员和压力，再谈下一步。");
+			Reply.Utterance = TEXT("我不会在这种状态下照命令冒险。先处理眼前的风险和压力，再谈下一步。");
 		}
 		else if (
 			YeCheng.Pressure >= 9.0f
@@ -97,19 +110,57 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		{
 			Reply.ResponseType = EWSResponseType::ConditionalAccept;
 			Reply.Emotion = TEXT("strained");
-			Reply.Utterance = TEXT("我还能配合，但先给医务室升温或安排休整；继续硬推只会让情况失控。");
+			if (bHeatPackQuestion && bDiagnosisKnown && State.Flags.bHeatPackRevealed)
+			{
+				Reply.ReferencedFactIds = {
+					WhiteoutAgentFacts::HandInjury,
+					WhiteoutAgentFacts::MedicalDiagnosis,
+					WhiteoutAgentFacts::HeatPack};
+				Reply.Utterance = TEXT("我还能配合，但先给医务室升温。顾衡的手伤要尽快处理，柜底那只保温包也可以用。");
+			}
+			else if (bDiagnosisQuestion)
+			{
+				Reply.ReferencedFactIds = {
+					WhiteoutAgentFacts::HandInjury,
+					WhiteoutAgentFacts::MedicalDiagnosis};
+				Reply.Utterance = TEXT("我还能配合，但顾衡的手伤不能再拖。先给医务室升温，我再继续处理。");
+			}
+			else
+			{
+				Reply.Utterance = TEXT("我还能配合，但先给医务室升温或安排休整；继续硬推只会让情况失控。");
+			}
 		}
 		else if (Request.DialogueAct == EWSDialogueAct::Challenge)
 		{
 			Reply.ResponseType = EWSResponseType::PartialDisclosure;
 			Reply.Emotion = TEXT("firm");
-			Reply.Utterance = TEXT("你可以质疑我的判断，但顾衡的手伤和低温都在恶化。先给医务室升温，我会把诊断依据逐项告诉你。");
+			if (bDiagnosisKnown)
+			{
+				Reply.ReferencedFactIds = {
+					WhiteoutAgentFacts::HandInjury,
+					WhiteoutAgentFacts::MedicalDiagnosis};
+				Reply.Utterance = TEXT("你可以质疑我的判断，但顾衡的手伤和低温都在恶化。先给医务室升温，我会把诊断依据逐项告诉你。");
+			}
+			else
+			{
+				Reply.Utterance = TEXT("你可以质疑我的判断，但现在先把医务室升温。等我检查完，再把依据逐项告诉你。");
+			}
 		}
 		else if (Request.DialogueAct == EWSDialogueAct::Reassure)
 		{
 			Reply.ResponseType = EWSResponseType::Reassure;
 			Reply.Emotion = TEXT("steadier");
-			Reply.Utterance = TEXT("好，我会稳住。顾衡需要的是升温、诊断和固定伤手，我们按这个顺序来。");
+			if (bDiagnosisKnown)
+			{
+				Reply.ReferencedFactIds = {
+					WhiteoutAgentFacts::HandInjury,
+					WhiteoutAgentFacts::MedicalDiagnosis};
+				Reply.Utterance = TEXT("好，我会稳住。顾衡需要升温、复查和固定伤手，我们按这个顺序来。");
+			}
+			else
+			{
+				Reply.Utterance = TEXT("好，我会稳住。先把医务室升温，剩下的等检查结果出来再安排。");
+			}
 		}
 		else if (Request.DialogueAct == EWSDialogueAct::Promise)
 		{
@@ -117,14 +168,39 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 			Reply.Emotion = TEXT("reserved");
 			Reply.Utterance = TEXT("先别把承诺给我。把可执行的方案说清楚，再去和顾衡确认条件。");
 		}
-		else if (State.Flags.bHeatPackRevealed)
+		else if (bHeatPackQuestion && bDiagnosisKnown && State.Flags.bHeatPackRevealed)
 		{
-			Reply.ReferencedFactIds.Add(WhiteoutAgentFacts::HeatPack);
+			Reply.ReferencedFactIds = {
+				WhiteoutAgentFacts::HandInjury,
+				WhiteoutAgentFacts::MedicalDiagnosis,
+				WhiteoutAgentFacts::HeatPack};
 			Reply.Utterance = TEXT("顾衡的手伤已经影响精细操作。先把医务室升温；必要时，柜底还有一只保温包可用。");
+		}
+		else if (bDiagnosisQuestion)
+		{
+			Reply.ResponseType = EWSResponseType::PartialDisclosure;
+			Reply.ReferencedFactIds = {
+				WhiteoutAgentFacts::HandInjury,
+				WhiteoutAgentFacts::MedicalDiagnosis};
+			Reply.Utterance = TEXT("我已经确认顾衡的右手伤势会影响精细操作。先让医务室恢复温度，才能稳妥处理。");
+		}
+		else if (bConditionObservation)
+		{
+			Reply.ResponseType = EWSResponseType::PartialDisclosure;
+			if (PlayerKnows(State, WhiteoutAgentFacts::HandInjury))
+			{
+				Reply.ReferencedFactIds = {WhiteoutAgentFacts::HandInjury};
+				Reply.Utterance = TEXT("我只看到他在避开用右手做精细操作。这还是观察，不能代替针对性检查。");
+			}
+			else
+			{
+				Reply.Utterance = TEXT("我还没有完成针对性检查。先观察他能否稳定操作，再核对控制柜现场；现在不能下结论。");
+			}
 		}
 		else
 		{
-			Reply.Utterance = TEXT("顾衡的手伤不能再拖。先让医务室恢复温度，我才能完成诊断和处理。");
+			Reply.ResponseType = EWSResponseType::PartialDisclosure;
+			Reply.Utterance = TEXT("备用电还在往下掉，暴雪窗口也在缩。先决定这一阶段把供暖给哪间房。");
 		}
 	}
 	else if (Request.ActionId == TEXT("talk_gu_heng"))
@@ -134,6 +210,8 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 			PlayerKnows(State, WhiteoutAgentFacts::ForcedRestartSuspicion);
 		const bool bKnowsBurntRelay = PlayerKnows(State, WhiteoutAgentFacts::BurntRelay);
 		const bool bKnowsRelayCompatibility = State.Flags.bRelayCompatibilityKnown;
+		const bool bKnowsRestartConfirmed =
+			PlayerKnows(State, WhiteoutAgentFacts::ForcedRestartConfirmed);
 		const bool bHasBothEvidence = bKnowsRestartSuspicion && bKnowsBurntRelay;
 		const FWSCharacterState GuHeng =
 			State.Characters.FindRef(EWSCharacterId::GuHeng);
@@ -167,7 +245,7 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		{
 			Reply.ResponseType = EWSResponseType::Refuse;
 			Reply.Emotion = TEXT("defiant");
-			Reply.Utterance = TEXT("我不会在伤势和条件都没解决时服从危险命令。先拿出能执行的方案。");
+			Reply.Utterance = TEXT("条件还没解决，我不会服从这种危险命令。先拿出能执行的方案。");
 		}
 		else if (
 			(
@@ -190,7 +268,7 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 			}
 			else if (Request.PromiseCondition == TEXT("reserve_medicine"))
 			{
-				Reply.Utterance = TEXT("药品留给真正需要的人，我接受。先把伤情和剩余资源记清楚。");
+				Reply.Utterance = TEXT("药品留作应急，我接受。先把剩余资源和使用顺序记清楚。");
 			}
 			else
 			{
@@ -201,8 +279,16 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		{
 			Reply.ResponseType = EWSResponseType::Reassure;
 			Reply.Emotion = TEXT("wary");
-			Reply.ReferencedFactIds = {WhiteoutAgentFacts::HandInjury};
-			Reply.Utterance = TEXT("我听到了。先把伤和低温处理掉，再给我一个能执行的维修顺序。");
+			if (PlayerKnows(State, WhiteoutAgentFacts::HandInjury)
+				|| State.Flags.bGuHengDiagnosed)
+			{
+				Reply.ReferencedFactIds = {WhiteoutAgentFacts::HandInjury};
+				Reply.Utterance = TEXT("我听到了。先把伤和低温处理掉，再给我一个能执行的维修顺序。");
+			}
+			else
+			{
+				Reply.Utterance = TEXT("我听到了。先把低温和配合问题解决，再给我一个能执行的维修顺序。");
+			}
 		}
 		else if (Request.DialogueAct == EWSDialogueAct::Challenge && bHasBothEvidence)
 		{
@@ -214,7 +300,15 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 			if (bKnowsRelayCompatibility)
 			{
 				Reply.ReferencedFactIds.Add(WhiteoutAgentFacts::RelayCompatibility);
-				Reply.Utterance = TEXT("日志和熔毁继电器都对得上，保护回路很可能被旁路过。厨房加热器的规格能替，但拆掉会失去一处热源。");
+				if (bKnowsRestartConfirmed)
+				{
+					Reply.ReferencedFactIds.Add(WhiteoutAgentFacts::ForcedRestartConfirmed);
+					Reply.Utterance = TEXT("日志和熔毁继电器都对得上，可以确认保护回路被旁路过。厨房加热器的规格能替，但拆掉会失去一处热源。");
+				}
+				else
+				{
+					Reply.Utterance = TEXT("日志和熔毁继电器都对得上。厨房加热器的规格能替，但拆掉会失去一处热源。");
+				}
 			}
 			else
 			{
@@ -260,8 +354,7 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		{
 			Reply.ResponseType = EWSResponseType::Deflect;
 			Reply.Emotion = TEXT("guarded");
-			Reply.ReferencedFactIds = {WhiteoutAgentFacts::HandInjury};
-			Reply.Utterance = TEXT("先别审我。我的手还使不上力，想让我修，就先解决伤和低温。");
+			Reply.Utterance = TEXT("先别审我。想让我修，就把配合和低温问题解决。");
 		}
 	}
 	else if (Request.ActionId == TEXT("inspect_control_cabinet"))
@@ -280,7 +373,7 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		Reply.Emotion = bGuHengReceivedFood ? TEXT("steadier") : TEXT("resentful");
 		Reply.Utterance = bGuHengReceivedFood
 			? TEXT("这份够我撑到修完。接下来按你排的顺序做。")
-			: TEXT("你分得很清楚。要我带伤干活，却连一口热量都没有。");
+			: TEXT("你分得很清楚。要我继续干活，却连一口热量都没有。");
 	}
 	else if (Request.ActionId == TEXT("treat_gu_heng"))
 	{
@@ -312,7 +405,6 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 			bGuHengTreated
 			? TEXT("focused")
 			: TEXT("strained");
-		Reply.ReferencedFactIds = {WhiteoutAgentFacts::HandInjury};
 		Reply.Utterance = State.Tasks.GeneratorProgress >= 2
 			? TEXT("转速稳住了，母线电压正在回升。现在去处理天线。")
 			: TEXT("这一段恢复了，但还差最后一处故障。给我一点时间，或者找替代件。");
@@ -322,8 +414,15 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		Reply.Speaker = EWSCharacterId::GuHeng;
 		Reply.ResponseType = EWSResponseType::Accuse;
 		Reply.Emotion = TEXT("alarmed");
-		Reply.ReferencedFactIds = {WhiteoutAgentFacts::GeneratorProtectionStop};
-		Reply.Utterance = TEXT("停手！保护停机不是让你硬跨过去的。你已经伤到了自己，别再碰第二次。");
+		if (PlayerKnows(State, WhiteoutAgentFacts::GeneratorProtectionStop))
+		{
+			Reply.ReferencedFactIds = {WhiteoutAgentFacts::GeneratorProtectionStop};
+			Reply.Utterance = TEXT("停手！保护停机不是让你硬跨过去的。你已经伤到了自己，别再碰第二次。");
+		}
+		else
+		{
+			Reply.Utterance = TEXT("停手！这种硬接风险太高。你已经伤到了自己，别再碰第二次。");
+		}
 	}
 	else if (Request.ActionId == TEXT("calibrate_antenna"))
 	{
@@ -392,12 +491,20 @@ TArray<FName> UWSNPCDecisionService::BuildAllowedFacts(
 	TArray<FName> Result = State.PublicFacts;
 	if (Speaker == EWSCharacterId::YeCheng)
 	{
-		if (ActionId == TEXT("talk_ye_cheng") || ActionId == TEXT("treat_gu_heng"))
+		const bool bDiagnosisKnown =
+			State.Flags.bGuHengDiagnosed
+			|| PlayerKnows(State, MedicalDiagnosis, EWSKnowledgeLevel::Confirmed);
+		if (ActionId == TEXT("treat_gu_heng") || bDiagnosisKnown)
 		{
 			Result.AddUnique(HandInjury);
 			Result.AddUnique(MedicalDiagnosis);
 		}
-		if (State.Flags.bHeatPackRevealed)
+		else if (PlayerKnows(State, HandInjury))
+		{
+			Result.AddUnique(HandInjury);
+		}
+		if (PlayerKnows(State, HeatPack)
+			|| (ActionId == TEXT("treat_gu_heng") && State.Flags.bHeatPackRevealed))
 		{
 			Result.AddUnique(HeatPack);
 		}
@@ -409,7 +516,8 @@ TArray<FName> UWSNPCDecisionService::BuildAllowedFacts(
 			Result.AddUnique(BurntRelay);
 			Result.AddUnique(HandInjury);
 		}
-		if (ActionId == TEXT("talk_gu_heng") || ActionId == TEXT("repair_generator"))
+		if ((ActionId == TEXT("talk_gu_heng") || ActionId == TEXT("repair_generator"))
+			&& (PlayerKnows(State, HandInjury) || State.Flags.bGuHengDiagnosed))
 		{
 			Result.AddUnique(HandInjury);
 		}
@@ -417,7 +525,7 @@ TArray<FName> UWSNPCDecisionService::BuildAllowedFacts(
 		{
 			Result.AddUnique(GeneratorProtectionStop);
 		}
-		if (State.Flags.bRelayCompatibilityKnown)
+		if (PlayerKnows(State, RelayCompatibility))
 		{
 			Result.AddUnique(RelayCompatibility);
 		}
@@ -462,10 +570,8 @@ FWSNPCDialoguePlan UWSNPCDecisionService::BuildDialoguePlan(
 		Plan.Contract.MustCoverConditionIds = {
 			TEXT("player_collaboration"),
 			TEXT("repair_room_heated"),
-			TEXT("gu_heng_stamina_ready"),
-			TEXT("replacement_relay_available")};
-		Plan.Contract.AllowedRiskIds = {TEXT("right_hand_injury_risk")};
-		Plan.SemanticSpine = TEXT("要我接手发电机，你得在旁搭手。要么把维修间升温并让我恢复体力，要么准备一只可靠的替代继电器。伤手会增加耗时和风险。");
+			TEXT("gu_heng_stamina_ready")};
+		Plan.SemanticSpine = TEXT("要我接手发电机，你得在旁搭手。先把维修间弄暖，再让我缓口气；设备上的缺口还得继续查清。");
 		return Plan;
 	}
 
@@ -498,11 +604,20 @@ FWSNPCDialoguePlan UWSNPCDecisionService::BuildDialoguePlan(
 	bool bRepairRoomHeated = false;
 	bool bStaminaReady = false;
 	bool bRelayReady = false;
+	const bool bRelayRouteKnown =
+		State.Resources.ReplacementRelay > 0
+		|| State.Flags.bRelayCompatibilityKnown
+		|| PlayerKnows(State, WhiteoutAgentFacts::RelayCompatibility);
 	for (const FWSRequirementPlan& RequirementPlan : RequirementReport.AlternativePlans)
 	{
 		for (const FWSRequirementItem& Item : RequirementPlan.Requirements)
 		{
 			if (!Item.bDisclosable)
+			{
+				continue;
+			}
+			if (Item.RequirementId == TEXT("replacement_relay_available")
+				&& !bRelayRouteKnown)
 			{
 				continue;
 			}
@@ -539,25 +654,25 @@ FWSNPCDialoguePlan UWSNPCDecisionService::BuildDialoguePlan(
 	FString Opening;
 	if (!bAvailable)
 	{
-		Opening = TEXT("先让我恢复到能安全工作的状态。你要在旁搭手，别让我独自做精细操作。");
+		Opening = TEXT("先让我缓过来，到了能安全动手的状态再说。维修时你得在旁搭手。");
 	}
 	else if (!bCollaborationSatisfied)
 	{
-		Opening = TEXT("要我接手发电机，你得在旁搭手，别让我独自做精细操作。");
+		Opening = TEXT("要我接手发电机，你得在旁搭手。");
 	}
 	else
 	{
-		Opening = TEXT("要我接手发电机，配合条件已经够了。");
+		Opening = TEXT("要我接手发电机，眼下的配合够了。");
 	}
 
 	FString SupportedRoute;
 	if (bRepairRoomHeated && bStaminaReady)
 	{
-		SupportedRoute = TEXT("维修间温度和体力条件已经满足");
+		SupportedRoute = TEXT("维修间够暖，我也缓过来了，这条路能走");
 	}
 	else if (!bRepairRoomHeated && !bStaminaReady)
 	{
-		SupportedRoute = TEXT("把维修间升温并让我恢复到至少两点体力");
+		SupportedRoute = TEXT("先把维修间弄暖，再让我缓口气");
 	}
 	else if (!bRepairRoomHeated)
 	{
@@ -565,21 +680,14 @@ FWSNPCDialoguePlan UWSNPCDecisionService::BuildDialoguePlan(
 	}
 	else
 	{
-		SupportedRoute = TEXT("让我恢复到至少两点体力");
+		SupportedRoute = TEXT("先让我缓口气");
 	}
-	const FString RelayRoute = bRelayReady
-		? TEXT("可靠替代件已经备好")
-		: TEXT("准备一只可靠的替代继电器");
-	Plan.SemanticSpine = FString::Printf(
-		TEXT("%s要么%s，要么%s。"),
-		*Opening,
-		*SupportedRoute,
-		*RelayRoute);
-
-	const FWSCharacterState GuHeng = State.Characters.FindRef(EWSCharacterId::GuHeng);
-	if (GuHeng.InjurySeverity != EWSInjurySeverity::Normal)
+	Plan.SemanticSpine = FString::Printf(TEXT("%s%s。"), *Opening, *SupportedRoute);
+	if (bRelayRouteKnown)
 	{
-		Plan.SemanticSpine += TEXT("伤手会增加耗时和恶化风险，但不会单独否决维修。");
+		Plan.SemanticSpine += bRelayReady
+			? TEXT("备用件也已经备好，必要时可以走那条路。")
+			: TEXT("或者把已经确认可用的替代件准备好。");
 	}
 	return Plan;
 }

@@ -9,10 +9,12 @@
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HUD/WhiteoutHUD.h"
+#include "HUD/WhiteoutHUDWidget.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "Kismet/GameplayStatics.h"
 #include "Presentation/WSPresentationText.h"
+#include "State/WSKnowledgePolicy.h"
 #include "State/WindStationStateSubsystem.h"
 #include "Sound/SoundBase.h"
 #include "Settings/WhiteoutSettingsSubsystem.h"
@@ -251,6 +253,17 @@ void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
 	{
 		return;
 	}
+	FWSGameState StateSnapshot;
+	bool bHasStateSnapshot = false;
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UWindStationStateSubsystem* StateSubsystem =
+			GameInstance->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			StateSnapshot = StateSubsystem->GetStateSnapshot();
+			bHasStateSnapshot = true;
+		}
+	}
 	if (PreviewActionRequest.ActionId == TEXT("distribute_food"))
 	{
 		static const int32 FoodOptions[][3] = {
@@ -285,17 +298,25 @@ void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
 		PreviewActionRequest.ActionId == TEXT("treat_gu_heng")
 		|| PreviewActionRequest.ActionId == TEXT("treat_character"))
 	{
-		static const EWSCharacterId Targets[] = {
+		TArray<EWSCharacterId> Targets = {
 			EWSCharacterId::Player,
-			EWSCharacterId::GuHeng,
 			EWSCharacterId::YeCheng};
-		static const EWSTreatmentMethod Methods[] = {
+		if (bHasStateSnapshot
+			&& FWSKnowledgePolicy::IsGuHengTreatmentOptionVisible(StateSnapshot))
+		{
+			Targets.Insert(EWSCharacterId::GuHeng, 1);
+		}
+		TArray<EWSTreatmentMethod> Methods = {
 			EWSTreatmentMethod::Bandage,
-			EWSTreatmentMethod::Full,
-			EWSTreatmentMethod::HeatPack};
+			EWSTreatmentMethod::Full};
+		if (bHasStateSnapshot
+			&& FWSKnowledgePolicy::IsHeatPackOptionVisible(StateSnapshot))
+		{
+			Methods.Add(EWSTreatmentMethod::HeatPack);
+		}
 		int32 TargetIndex = 0;
 		int32 MethodIndex = 0;
-		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Targets); ++Index)
+		for (int32 Index = 0; Index < Targets.Num(); ++Index)
 		{
 			if (PreviewActionRequest.TreatmentTarget == Targets[Index])
 			{
@@ -303,7 +324,7 @@ void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
 				break;
 			}
 		}
-		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Methods); ++Index)
+		for (int32 Index = 0; Index < Methods.Num(); ++Index)
 		{
 			if (PreviewActionRequest.TreatmentMethod == Methods[Index])
 			{
@@ -312,11 +333,11 @@ void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
 			}
 		}
 		MethodIndex =
-			(MethodIndex + 1) % UE_ARRAY_COUNT(Methods);
+			(MethodIndex + 1) % Methods.Num();
 		if (MethodIndex == 0)
 		{
 			TargetIndex =
-				(TargetIndex + 1) % UE_ARRAY_COUNT(Targets);
+				(TargetIndex + 1) % Targets.Num();
 		}
 		PreviewActionRequest.TreatmentTarget = Targets[TargetIndex];
 		PreviewActionRequest.TreatmentMethod = Methods[MethodIndex];
@@ -399,7 +420,19 @@ void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
 		{
 			Mode = 1;
 		}
-		Mode = (Mode + 1) % 4;
+		TArray<int32> VisibleModes = {0, 1};
+		if (bHasStateSnapshot
+			&& FWSKnowledgePolicy::IsRelayRepairRouteVisible(StateSnapshot))
+		{
+			VisibleModes.Add(2);
+		}
+		VisibleModes.Add(3);
+		int32 ModeIndex = VisibleModes.IndexOfByKey(Mode);
+		if (ModeIndex == INDEX_NONE)
+		{
+			ModeIndex = 0;
+		}
+		Mode = VisibleModes[(ModeIndex + 1) % VisibleModes.Num()];
 		PreviewActionRequest.bHasCollaborator = Mode == 1;
 		PreviewActionRequest.Collaborator =
 			EWSCharacterId::Player;
@@ -923,9 +956,8 @@ void AWhiteoutCharacter::Settle(const FInputActionValue& Value)
 			if (AWhiteoutHUD* HUD =
 					Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 			{
-				const FString CausalChanges = Summary.Changes.IsEmpty()
-					? TEXT("人物状态无额外变化")
-					: FString::Join(Summary.Changes, TEXT("；"));
+				const FString CausalChanges =
+					UWhiteoutHUDWidget::BuildPhaseSettlementSummary(Summary, After);
 				HUD->SetSystemMessage(FString::Printf(
 					TEXT("阶段结算：%s。放弃 %d AP；下一阶段请重新选择供暖区。"),
 					*CausalChanges,
@@ -971,11 +1003,26 @@ AWSInteractableActor* AWhiteoutCharacter::FindLookedAtInteractable() const
 	{
 		return nullptr;
 	}
-	return FindInteractableFromView(
+	AWSInteractableActor* Interactable = FindInteractableFromView(
 		GetWorld(),
 		FirstPersonCamera->GetComponentLocation(),
 		FirstPersonCamera->GetForwardVector(),
 		this);
+	if (Interactable && Interactable->ActionId == TEXT("dismantle_kitchen_heater"))
+	{
+		const UGameInstance* GameInstance = GetGameInstance();
+		const UWindStationStateSubsystem* StateSubsystem = GameInstance
+			? GameInstance->GetSubsystem<UWindStationStateSubsystem>()
+			: nullptr;
+		if (!StateSubsystem
+			|| !FWSKnowledgePolicy::IsWorldActionVisible(
+				Interactable->ActionId,
+				StateSubsystem->GetStateSnapshot()))
+		{
+			return nullptr;
+		}
+	}
+	return Interactable;
 }
 
 AWSInteractableActor* AWhiteoutCharacter::FindInteractableFromView(

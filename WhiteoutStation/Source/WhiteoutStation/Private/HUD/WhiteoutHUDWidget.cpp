@@ -38,6 +38,7 @@
 #include "Player/WhiteoutCharacter.h"
 #include "Settings/WhiteoutSettingsSubsystem.h"
 #include "State/WhiteoutRulesEngine.h"
+#include "State/WSKnowledgePolicy.h"
 #include "State/WindStationStateSubsystem.h"
 #include "Styling/CoreStyle.h"
 
@@ -807,7 +808,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PromiseTitle->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_promise_title"), TEXT("选择承诺条件，再用自己的话发送")));
 	PromiseBox->AddChildToVerticalBox(PromiseTitle)->SetPadding(FMargin(0, 0, 0, 3));
 	UButton* KeepRecordsButton = MakeButton(PromiseBox, FWSPresentationText::UI(TEXT("dialogue_promise_records"), TEXT("不弃站｜保存记录")), TEXT("PromiseKeepRecords"));
-	UButton* PreventSelfHarmButton = MakeButton(PromiseBox, FWSPresentationText::UI(TEXT("dialogue_promise_medicine"), TEXT("不放任自伤｜保留药品")), TEXT("PromisePreventSelfHarm"));
+	UButton* PreventSelfHarmButton = MakeButton(PromiseBox, FText::FromString(TEXT("保留药品｜应对突发状况")), TEXT("PromisePreventSelfHarm"));
 	UButton* RepairTogetherButton = MakeButton(PromiseBox, FWSPresentationText::UI(TEXT("dialogue_promise_heat"), TEXT("配合修复｜维修间升温")), TEXT("PromiseRepairTogether"));
 	KeepRecordsButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromiseKeepRecords);
 	PreventSelfHarmButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromisePreventSelfHarm);
@@ -822,7 +823,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UVerticalBox* FreeTextBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueFreeTextBox"));
 	DialogueFreeTextBorder->SetContent(FreeTextBox);
 	DialogueFreeTextInput = WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("DialogueFreeTextInput"));
-	DialogueFreeTextInput->SetHintText(FWSPresentationText::UI(TEXT("dlg_hint_ask_v04"), TEXT("例：继电器烧了之后，还有什么能替？")));
+	DialogueFreeTextInput->SetHintText(BuildDialogueInputHint(EWSDialogueAct::Ask));
 	FEditableTextBoxStyle DialogueInputStyle = DialogueFreeTextInput->GetWidgetStyle();
 	DialogueInputStyle.SetFont(UIFont(15));
 	DialogueInputStyle.BackgroundImageNormal.TintColor = FSlateColor(WSUITokens::Color::SurfaceInput);
@@ -1044,17 +1045,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		OpeningBoxSlot->SetVerticalAlignment(VAlign_Center);
 		OpeningBorder->SetContent(OpeningOverlay);
 	}
-	OpeningLines = {
-		FText::FromString(TEXT("风雪站是高纬山区的气象与通信中继站。今天，你是三人值班组的负责人。")),
-		FText::FromString(TEXT("昨夜，暴风雪切断了外部线路；清晨八点十五分，主电源又在一次异常重启后停机。")),
-		FText::FromString(TEXT("备用电池只能撑到傍晚。届时供暖、照明和无线电会一起停止。")),
-		FText::FromString(TEXT("顾衡是站里唯一懂发电机和天线控制系统的工程师。他的右手受伤，也对停机原因有所隐瞒。")),
-		FText::FromString(TEXT("没有顾衡的判断和配合，你很难安全修好发电机、找到可用继电器并恢复天线。")),
-		FText::FromString(TEXT("叶澄是值班医生，保管仅剩的药品和保温物资。她必须决定先救谁、先给哪个房间供暖。")),
-		FText::FromString(TEXT("没有叶澄的诊断和物资分配，顾衡可能无法维修，三个人的身体状况也会迅速恶化。")),
-		FText::FromString(TEXT("两人对责任、风险和资源顺序意见不一。你需要调查现场，再用证据、帮助或承诺争取合作。")),
-		FText::FromString(TEXT("今天共有 12 点行动力，分为早晨、午后、黄昏三个阶段，每阶段 4 点。未使用的行动力不会结转。")),
-		FText::FromString(TEXT("每次行动都会推进时间并改变状态、信任与物资。风雪敲打站体——你在控制室睁开了眼。"))};
+	OpeningLines = BuildOpeningStoryLines();
 	OpeningElapsed = 0.0f;
 	OpeningPhase = EWSOpeningPhase::FadingInLine;
 	ApplyOpeningStage(0);
@@ -1689,6 +1680,166 @@ void UWhiteoutHUDWidget::ShowHoveredEvidenceDetail()
 	}
 }
 
+TArray<FText> UWhiteoutHUDWidget::BuildOpeningStoryLines()
+{
+	return {
+		FText::FromString(TEXT("风雪站是高纬山区的气象与通信中继站。今天，你是三人值班组的负责人。")),
+		FText::FromString(TEXT("昨夜，暴风雪切断了外部线路；清晨八点十五分，主电源又在一次异常重启后停机。")),
+		FText::FromString(TEXT("备用电池只能撑到傍晚。届时供暖、照明和无线电会一起停止。")),
+		FText::FromString(TEXT("顾衡是站里唯一熟悉发电机和天线控制系统的工程师。事故后，他不愿多谈昨夜的操作经过。")),
+		FText::FromString(TEXT("修复需要顾衡判断故障、核对现场并配合操作；具体条件只能通过调查和交谈确认。")),
+		FText::FromString(TEXT("叶澄是值班医生，负责医疗判断与有限物资。她还在评估三人的状态和供暖顺序。")),
+		FText::FromString(TEXT("没有可靠的状态评估和资源安排，任何维修计划都可能把三个人推向更大风险。")),
+		FText::FromString(TEXT("两人对责任、风险和资源顺序意见不一。你需要调查现场，再用证据、帮助或承诺争取合作。")),
+		FText::FromString(TEXT("今天共有 12 点行动力，分为早晨、午后、黄昏三个阶段，每阶段 4 点。未使用的行动力不会结转。")),
+		FText::FromString(TEXT("每次行动都会推进时间并改变状态、信任与物资。风雪敲打站体——你在控制室睁开了眼。"))};
+}
+
+FString UWhiteoutHUDWidget::BuildVisibleInjuryLabel(
+	const EWSCharacterId CharacterId,
+	const FWSGameState& State)
+{
+	if (CharacterId == EWSCharacterId::GuHeng
+		&& !FWSKnowledgePolicy::IsGuHengInjuryVisible(State))
+	{
+		return TEXT("未确认");
+	}
+	const FWSCharacterState* Character = State.Characters.Find(CharacterId);
+	return Character
+		? InjuryLabel(Character->InjurySeverity)
+		: TEXT("未知");
+}
+
+FString UWhiteoutHUDWidget::BuildVisibleCharacterStatus(
+	const EWSCharacterId CharacterId,
+	const FWSGameState& State)
+{
+	const FWSCharacterState* Character = State.Characters.Find(CharacterId);
+	if (!Character)
+	{
+		return TEXT("状态未知");
+	}
+	const FString Stamina = Character->Stamina >= 2
+		? TEXT("充足")
+		: Character->Stamina == 1
+			? TEXT("吃紧")
+			: TEXT("耗尽");
+	const FString Pressure = Character->Pressure >= 8.0f
+		? TEXT("高度紧绷")
+		: Character->Pressure >= 5.0f
+			? TEXT("紧张")
+			: TEXT("可控");
+	FString Result = FString::Printf(
+		TEXT("体温 %s｜体能 %s｜伤势 %s｜压力 %s"),
+		*FWSPresentationText::ConditionLevel(Character->Temperature).ToString(),
+		*Stamina,
+		*BuildVisibleInjuryLabel(CharacterId, State),
+		*Pressure);
+	if (CharacterId != EWSCharacterId::Player)
+	{
+		Result += TEXT("｜信任 ") + FWSPresentationText::TrustLevel(
+			Character->Trust).ToString();
+	}
+	return Result;
+}
+
+FString UWhiteoutHUDWidget::BuildDialogueCardSummary(
+	const EWSCharacterId CharacterId,
+	const FWSGameState& State)
+{
+	const FWSCharacterState* Character = State.Characters.Find(CharacterId);
+	const FWSCharacterState SafeState = Character ? *Character : FWSCharacterState();
+	const FString Relationship = SafeState.Trust >= 6.2f ? TEXT("信任")
+		: SafeState.Trust >= 5.0f ? TEXT("可合作")
+		: SafeState.Trust >= 4.2f ? TEXT("有所保留") : TEXT("戒备");
+	const bool bGuHeng = CharacterId == EWSCharacterId::GuHeng;
+	FString Stance;
+	if (bGuHeng)
+	{
+		Stance = State.Flags.bGuHengCooperative ? TEXT("愿意配合维修")
+			: State.Flags.bGuHengTreated ? TEXT("等待维修条件")
+			: State.Flags.bGuHengDiagnosed ? TEXT("带伤防御")
+			: TEXT("警惕并回避具体情况");
+	}
+	else
+	{
+		Stance = State.Flags.bGuHengTreated ? TEXT("持续监测人员状态")
+			: State.Flags.bMedicalRoomHeated ? TEXT("准备诊疗")
+			: TEXT("优先恢复医疗条件");
+	}
+	const FString Identity = bGuHeng
+		? TEXT("顾衡｜工程师")
+		: TEXT("叶澄｜医生");
+	return FString::Printf(
+		TEXT("%s\n\n关系　%s\n立场　%s\n\n状态概览\n%s"),
+		*Identity,
+		*Relationship,
+		*Stance,
+		*BuildVisibleCharacterStatus(CharacterId, State));
+}
+
+FText UWhiteoutHUDWidget::BuildDialogueInputHint(const EWSDialogueAct DialogueAct)
+{
+	switch (DialogueAct)
+	{
+	case EWSDialogueAct::Challenge:
+		return FText::FromString(TEXT("例：你前后的说法对不上，请解释清楚。"));
+	case EWSDialogueAct::Reassure:
+		return FText::FromString(TEXT("例：先稳住，我们一步一步处理。"));
+	case EWSDialogueAct::Promise:
+		return FText::FromString(TEXT("例：我会保留维修记录，也不会临时改口。"));
+	default:
+		return FText::FromString(TEXT("例：你现在能确认什么？"));
+	}
+}
+
+FString UWhiteoutHUDWidget::BuildPhaseSettlementSummary(
+	const FWSPhaseSummary&,
+	const FWSGameState& State)
+{
+	return FString::Printf(
+		TEXT("供暖与行动影响已结算。\n玩家：%s\n顾衡：%s\n叶澄：%s"),
+		*BuildVisibleCharacterStatus(EWSCharacterId::Player, State),
+		*BuildVisibleCharacterStatus(EWSCharacterId::GuHeng, State),
+		*BuildVisibleCharacterStatus(EWSCharacterId::YeCheng, State));
+}
+
+FString UWhiteoutHUDWidget::BuildObjectiveSummary(const FWSGameState& State)
+{
+	const FString ObjectiveFormat = TEXT(
+		"阶段：{0}｜供暖 {1}\n"
+		"任务：发电机 {2}/2｜天线 {3}/1｜求救 {4}\n"
+		"储备：燃料 {5}｜食品 {6}｜药品 {7}");
+	FString Result = FString::Format(
+		*ObjectiveFormat,
+		{DayPhaseLabel(State.DayPhase),
+		 HeatingZoneLabel(State.Heating.CurrentZone),
+		 State.Tasks.GeneratorProgress,
+		 State.Tasks.AntennaCalibration,
+		 FWSPresentationText::UI(
+			 State.Tasks.bSignalSent ? TEXT("ui_sent") : TEXT("ui_not_sent"),
+			 State.Tasks.bSignalSent ? TEXT("已发送") : TEXT("未发送")).ToString(),
+		 State.Resources.Fuel,
+		 State.Resources.Food,
+		 State.Resources.Medicine});
+	TArray<FString> KnownDetails;
+	if (FWSKnowledgePolicy::IsRelayRepairRouteVisible(State))
+	{
+		KnownDetails.Add(FString::Printf(
+			TEXT("继电器 %d"),
+			State.Resources.ReplacementRelay));
+	}
+	if (FWSKnowledgePolicy::IsHeatPackOptionVisible(State))
+	{
+		KnownDetails.Add(FString::Printf(
+			TEXT("保温包 %d"),
+			State.Resources.HeatPack));
+	}
+	KnownDetails.Add(FString::Printf(TEXT("证据 %d"), State.Evidence.Num()));
+	KnownDetails.Add(State.Flags.bKitchenHeaterIntact ? TEXT("厨房设施 完好") : TEXT("厨房设施 已拆解"));
+	return Result + TEXT("\n") + FString::Join(KnownDetails, TEXT("｜"));
+}
+
 void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 {
 	const FString PhaseCondition = !State.bDayPhaseStarted
@@ -1714,25 +1865,7 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 		TopConditionText->SetText(FText::FromString(PhaseCondition));
 	}
 
-	const FString ObjectiveFormat = TEXT(
-		"阶段：{0}｜供暖 {1}\n"
-		"任务：发电机 {2}/2｜天线 {3}/1｜求救 {4}\n"
-		"储备：燃料 {5}｜食品 {6}｜药品 {7}\n"
-		"继电器 {8}｜保温包 {9}｜证据 {10}｜厨房设施 {11}");
-	ObjectiveText->SetText(FText::FromString(FString::Format(
-		*ObjectiveFormat,
-		{DayPhaseLabel(State.DayPhase),
-		 HeatingZoneLabel(State.Heating.CurrentZone),
-		 State.Tasks.GeneratorProgress,
-		 State.Tasks.AntennaCalibration,
-		 FWSPresentationText::UI(State.Tasks.bSignalSent ? TEXT("ui_sent") : TEXT("ui_not_sent"), State.Tasks.bSignalSent ? TEXT("已发送") : TEXT("未发送")).ToString(),
-		 State.Resources.Fuel,
-		 State.Resources.Food,
-		 State.Resources.Medicine,
-		 State.Resources.ReplacementRelay,
-		 FWSPresentationText::UI(State.Flags.bHeatPackRevealed ? TEXT("ui_discovered") : TEXT("ui_unknown"), State.Flags.bHeatPackRevealed ? TEXT("已发现") : TEXT("未知")).ToString(),
-		 State.Evidence.Num(),
-		 FWSPresentationText::UI(State.Flags.bKitchenHeaterIntact ? TEXT("ui_intact") : TEXT("ui_dismantled"), State.Flags.bKitchenHeaterIntact ? TEXT("完好") : TEXT("已拆解")).ToString()})));
+	ObjectiveText->SetText(FText::FromString(BuildObjectiveSummary(State)));
 	if (TutorialTitleText)
 	{
 		int32 MinimumAP = 0;
@@ -1759,23 +1892,18 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 		const EWSCharacterId CharacterId = CharacterIds[CharacterIndex];
 		if (const FWSCharacterState* Character = State.Characters.Find(CharacterId))
 		{
+			const bool bInjuryVisible = CharacterId != EWSCharacterId::GuHeng
+				|| FWSKnowledgePolicy::IsGuHengInjuryVisible(State);
 			if (CrewCardTexts.IsValidIndex(CharacterIndex))
 			{
 				FString Card = FWSPresentationText::CharacterName(CharacterId).ToString();
 				Card += TEXT("\n");
-				Card += FString::Printf(
-					TEXT("体温 %.1f　体能 %d\n伤势 %s　压力 %.1f"),
-					Character->Temperature,
-					Character->Stamina,
-					*InjuryLabel(Character->InjurySeverity),
-					Character->Pressure);
-				if (CharacterId != EWSCharacterId::Player)
-				{
-					Card += TEXT("\n信任 ") + FWSPresentationText::TrustLevel(Character->Trust).ToString();
-				}
+				Card += BuildVisibleCharacterStatus(CharacterId, State);
 				CrewCardTexts[CharacterIndex]->SetText(FText::FromString(Card));
 			}
-			const float InjuryRatio =
+			const float InjuryRatio = !bInjuryVisible
+				? 1.0f
+				:
 				Character->InjurySeverity == EWSInjurySeverity::Normal
 				? 1.0f
 				: Character->InjurySeverity
@@ -1913,9 +2041,9 @@ FString UWhiteoutHUDWidget::BuildTaskGuide(
 	}
 	if (State.Tasks.GeneratorProgress < 2)
 	{
-		Options.Add(TEXT("• 调查：日志或控制柜，换取证据与继电器信息"));
+		Options.Add(TEXT("• 调查：检查日志或控制柜，确认停机原因和可用线索"));
 		Options.Add(TEXT("• 人员：分配食物、休整、包扎或完整治疗"));
-		Options.Add(TEXT("• 工程：维修发电机；按 Q 切换协作、继电器或强行方案"));
+		Options.Add(TEXT("• 工程：维修发电机；按 Q 切换当前已知的可行方案"));
 	}
 	else if (State.Tasks.AntennaCalibration < 1)
 	{
@@ -1951,19 +2079,11 @@ void UWhiteoutHUDWidget::UpdateGuideContext(const FWSGameState& State)
 		{
 			return FString();
 		}
-		FString Result = FString::Printf(
-			TEXT("%s　体温 %.1f｜体能 %d｜伤势 %s｜压力 %.1f｜位置 %s"),
+		return FString::Printf(
+			TEXT("%s　%s｜位置 %s"),
 			*FWSPresentationText::CharacterName(CharacterId).ToString(),
-			Character->Temperature,
-			Character->Stamina,
-			*InjuryLabel(Character->InjurySeverity),
-			Character->Pressure,
+			*BuildVisibleCharacterStatus(CharacterId, State),
 			*CharacterLocationLabel(Character->Location));
-		if (CharacterId != EWSCharacterId::Player)
-		{
-			Result += FString::Printf(TEXT("｜信任 %.1f"), Character->Trust);
-		}
-		return Result;
 	};
 	GuideContextText->SetText(FText::FromString(FString::Printf(
 		TEXT("%s即时读数｜AP %d / 4｜供暖 %s\n%s\n%s\n%s\n\n选择提示：%s"),
@@ -1986,30 +2106,8 @@ void UWhiteoutHUDWidget::UpdateDialogueCard(const FWSGameState& State)
 	const EWSCharacterId CharacterId = bGuHeng ? EWSCharacterId::GuHeng : EWSCharacterId::YeCheng;
 	const FWSCharacterState* Character = State.Characters.Find(CharacterId);
 	const FWSCharacterState SafeState = Character ? *Character : FWSCharacterState();
-	const FString Relationship = SafeState.Trust >= 6.2f ? TEXT("信任")
-		: SafeState.Trust >= 5.0f ? TEXT("可合作")
-		: SafeState.Trust >= 4.2f ? TEXT("有所保留") : TEXT("戒备");
-	FString Stance;
-	if (bGuHeng)
-	{
-		Stance = State.Flags.bGuHengCooperative ? TEXT("愿意配合维修")
-			: State.Flags.bGuHengTreated ? TEXT("等待维修条件")
-			: State.Flags.bGuHengDiagnosed ? TEXT("带伤防御")
-			: TEXT("警惕并回避伤情");
-	}
-	else
-	{
-		Stance = State.Flags.bGuHengTreated ? TEXT("持续监测伤员")
-			: State.Flags.bMedicalRoomHeated ? TEXT("准备诊疗")
-			: TEXT("优先恢复医疗条件");
-	}
-	const FString Identity = bGuHeng
-		? FWSPresentationText::UI(TEXT("character_gu_heng"), TEXT("顾衡｜工程师｜41 岁")).ToString()
-		: FWSPresentationText::UI(TEXT("character_ye_cheng"), TEXT("叶澄｜医生｜31 岁")).ToString();
-	DialogueNPCText->SetText(FText::FromString(FString::Printf(
-		TEXT("%s\n\n关系　%s（信任 %.1f / 10）\n立场　%s\n\n状态概览\n健康 %.1f　体温 %.1f\n压力 %.1f　信任 %.1f"),
-		*Identity, *Relationship, SafeState.Trust, *Stance,
-		SafeState.Health, SafeState.Temperature, SafeState.Pressure, SafeState.Trust)));
+	DialogueNPCText->SetText(FText::FromString(
+		BuildDialogueCardSummary(CharacterId, State)));
 	if (DialogueNPCBars.Num() >= 4)
 	{
 		DialogueNPCBars[0]->SetPercent(ScoreRatio(SafeState.Health, 10.0f));
@@ -2510,7 +2608,7 @@ void UWhiteoutHUDWidget::ShowActionPreview(
 	else if (Request.ActionId == TEXT("repair_generator"))
 	{
 		Selection = Request.bForce
-			? TEXT("当前方案：强迫推进（关系与伤势风险）")
+			? TEXT("当前方案：强迫推进（关系与人身风险）")
 			: Request.bUseRelay
 			? TEXT("当前方案：安装替代继电器")
 			: Request.bHasCollaborator
@@ -2840,23 +2938,7 @@ void UWhiteoutHUDWidget::OpenDialogueTextEntry(
 	if (DialogueReplyBorder) DialogueReplyBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (DialogueFreeTextInput)
 	{
-		FText Hint;
-		switch (DialogueAct)
-		{
-		case EWSDialogueAct::Challenge:
-			Hint = FWSPresentationText::UI(TEXT("dlg_hint_challenge_v04"), TEXT("例：保护装置明明被手动绕过，你怎么解释？"));
-			break;
-		case EWSDialogueAct::Reassure:
-			Hint = FWSPresentationText::UI(TEXT("dlg_hint_reassure_v04"), TEXT("例：别怕，先把暖气抢回来，一步步来。"));
-			break;
-		case EWSDialogueAct::Promise:
-			Hint = FWSPresentationText::UI(TEXT("dlg_hint_promise_v04"), TEXT("例：我保证不拆厨房加热器。"));
-			break;
-		default:
-			Hint = FWSPresentationText::UI(TEXT("dlg_hint_ask_v04"), TEXT("例：继电器烧了之后，还有什么能替？"));
-			break;
-		}
-		DialogueFreeTextInput->SetHintText(Hint);
+		DialogueFreeTextInput->SetHintText(BuildDialogueInputHint(DialogueAct));
 		DialogueFreeTextInput->SetText(FText::GetEmpty());
 		DialogueFreeTextInput->SetKeyboardFocus();
 	}
@@ -3071,6 +3153,64 @@ void UWhiteoutHUDWidget::HandleDialogueTextCommitted(const FText& Text, const ET
 	}
 }
 
+FString UWhiteoutHUDWidget::BuildDialogueStatusSummary(
+	const FWSAgentReply& Reply,
+	const bool bIncludeDebugDetails)
+{
+	const TCHAR* MovementLabel = TEXT("原地");
+	switch (Reply.MovementIntent)
+	{
+	case EWSNPCMovementIntent::StepCloser: MovementLabel = TEXT("靠近"); break;
+	case EWSNPCMovementIntent::StepBack: MovementLabel = TEXT("后退"); break;
+	case EWSNPCMovementIntent::ReturnToPost: MovementLabel = TEXT("归位"); break;
+	default: break;
+	}
+	const TCHAR* ReactionLabel = TEXT("自然");
+	switch (Reply.Reaction)
+	{
+	case EWSNPCReaction::Acknowledge: ReactionLabel = TEXT("回应"); break;
+	case EWSNPCReaction::Consider: ReactionLabel = TEXT("思考"); break;
+	case EWSNPCReaction::Reassure: ReactionLabel = TEXT("安抚"); break;
+	case EWSNPCReaction::Reject: ReactionLabel = TEXT("拒绝"); break;
+	case EWSNPCReaction::Alarmed: ReactionLabel = TEXT("警觉"); break;
+	default: break;
+	}
+	FString Status = FString::Printf(
+		TEXT("表演：%s · %s"),
+		MovementLabel,
+		ReactionLabel);
+	if (!bIncludeDebugDetails)
+	{
+		return Status;
+	}
+	const FString ProviderStatus = Reply.AnswerSource == TEXT("spine_plus_ai")
+		? FString::Printf(
+			TEXT("%s 人格尾句"),
+			*LLMProviderDisplayName(Reply.Provider))
+		: Reply.Provider == TEXT("preset")
+			? TEXT("本地语义骨架")
+			: FString::Printf(
+				TEXT("%s 尾句丢弃，保留本地骨架：%s"),
+				*LLMProviderDisplayName(Reply.Provider),
+				*LLMFallbackReasonLabel(Reply.ValidationReason));
+	Status = ProviderStatus + TEXT("　｜　") + Status;
+	Status += FString::Printf(
+		TEXT("\nSemantic: %s / %s / %s / %.2f　｜　%s　｜　%s"),
+		*StaticEnum<EWSDialogueAct>()->GetNameStringByValue(
+			static_cast<int64>(Reply.SemanticFrame.SpeechAct)),
+		*StaticEnum<EWSDialogueQueryType>()->GetNameStringByValue(
+			static_cast<int64>(Reply.SemanticFrame.QueryType)),
+		Reply.SemanticFrame.TargetActionId.IsNone()
+			? TEXT("none")
+			: *Reply.SemanticFrame.TargetActionId.ToString(),
+		Reply.SemanticFrame.Confidence,
+		Reply.SemanticFrame.Source.IsEmpty()
+			? TEXT("unspecified")
+			: *Reply.SemanticFrame.Source,
+		*Reply.AnswerSource);
+	return Status;
+}
+
 void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 {
 	if (!bDialogueVisible || Reply.ActionId != ActiveDialogueActionId || !DialogueLineText)
@@ -3091,59 +3231,12 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 	DialogueLineText->SetColorAndOpacity(FSlateColor(Body));
 	if (DialogueStatusText)
 	{
-		const FString ProviderStatus = Reply.AnswerSource == TEXT("spine_plus_ai")
-			? FString::Printf(
-				TEXT("%s 人格尾句"),
-				*LLMProviderDisplayName(Reply.Provider))
-			: Reply.Provider == TEXT("preset")
-				? TEXT("本地语义骨架")
-				: FString::Printf(
-					TEXT("%s 尾句丢弃，保留本地骨架：%s"),
-					*LLMProviderDisplayName(Reply.Provider),
-					*LLMFallbackReasonLabel(Reply.ValidationReason));
-		const TCHAR* MovementLabel = TEXT("原地");
-		switch (Reply.MovementIntent)
-		{
-		case EWSNPCMovementIntent::StepCloser: MovementLabel = TEXT("靠近"); break;
-		case EWSNPCMovementIntent::StepBack: MovementLabel = TEXT("后退"); break;
-		case EWSNPCMovementIntent::ReturnToPost: MovementLabel = TEXT("归位"); break;
-		default: break;
-		}
-		const TCHAR* ReactionLabel = TEXT("自然");
-		switch (Reply.Reaction)
-		{
-		case EWSNPCReaction::Acknowledge: ReactionLabel = TEXT("回应"); break;
-		case EWSNPCReaction::Consider: ReactionLabel = TEXT("思考"); break;
-		case EWSNPCReaction::Reassure: ReactionLabel = TEXT("安抚"); break;
-		case EWSNPCReaction::Reject: ReactionLabel = TEXT("拒绝"); break;
-		case EWSNPCReaction::Alarmed: ReactionLabel = TEXT("警觉"); break;
-		default: break;
-		}
-		FString Status = FString::Printf(
-			TEXT("%s　｜　表演：%s · %s"),
-			*ProviderStatus,
-			MovementLabel,
-			ReactionLabel);
+		bool bIncludeDebugDetails = false;
 #if !UE_BUILD_SHIPPING
-		if (CVarWhiteoutDialogueDebug.GetValueOnGameThread() != 0)
-		{
-			Status += FString::Printf(
-				TEXT("\nSemantic: %s / %s / %s / %.2f　｜　%s　｜　%s"),
-				*StaticEnum<EWSDialogueAct>()->GetNameStringByValue(
-					static_cast<int64>(Reply.SemanticFrame.SpeechAct)),
-				*StaticEnum<EWSDialogueQueryType>()->GetNameStringByValue(
-					static_cast<int64>(Reply.SemanticFrame.QueryType)),
-				Reply.SemanticFrame.TargetActionId.IsNone()
-					? TEXT("none")
-					: *Reply.SemanticFrame.TargetActionId.ToString(),
-				Reply.SemanticFrame.Confidence,
-				Reply.SemanticFrame.Source.IsEmpty()
-					? TEXT("unspecified")
-					: *Reply.SemanticFrame.Source,
-				*Reply.AnswerSource);
-		}
+		bIncludeDebugDetails = CVarWhiteoutDialogueDebug.GetValueOnGameThread() != 0;
 #endif
-		DialogueStatusText->SetText(FText::FromString(Status));
+		DialogueStatusText->SetText(FText::FromString(
+			BuildDialogueStatusSummary(Reply, bIncludeDebugDetails)));
 		DialogueStatusText->SetColorAndOpacity(FSlateColor(!Reply.bFallback ? Cyan : Secondary));
 	}
 	UpdateDialogueConditionCard(Reply);
@@ -3151,13 +3244,19 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 }
 
 FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
-	const FWSActionRequirementReport& Report) const
+	const FWSActionRequirementReport& Report)
 {
 	TArray<FString> Lines;
 	TArray<FString> Universal;
+	bool bHasDisclosableUniversal = false;
 	for (const FWSRequirementItem& Item : Report.UniversalRequirements)
 	{
-		if (Item.bDisclosable && !Item.bSatisfied)
+		if (!Item.bDisclosable)
+		{
+			continue;
+		}
+		bHasDisclosableUniversal = true;
+		if (!Item.bSatisfied)
 		{
 			Universal.Add(Item.Explanation.ToString());
 		}
@@ -3166,24 +3265,37 @@ FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
 	{
 		Lines.Add(FString::Printf(TEXT("共同：%s"), *FString::Join(Universal, TEXT("；"))));
 	}
-	else
+	else if (bHasDisclosableUniversal)
 	{
 		Lines.Add(TEXT("共同：当前基础协作条件已满足"));
 	}
-	for (int32 PlanIndex = 0; PlanIndex < Report.AlternativePlans.Num() && PlanIndex < 2; ++PlanIndex)
+	int32 VisiblePlanIndex = 0;
+	for (int32 PlanIndex = 0;
+		PlanIndex < Report.AlternativePlans.Num() && VisiblePlanIndex < 2;
+		++PlanIndex)
 	{
 		const FWSRequirementPlan& Plan = Report.AlternativePlans[PlanIndex];
 		TArray<FString> Missing;
+		bool bHasDisclosableRequirement = false;
 		for (const FWSRequirementItem& Item : Plan.Requirements)
 		{
-			if (Item.bDisclosable && !Item.bSatisfied)
+			if (!Item.bDisclosable)
+			{
+				continue;
+			}
+			bHasDisclosableRequirement = true;
+			if (!Item.bSatisfied)
 			{
 				Missing.Add(Item.Explanation.ToString());
 			}
 		}
+		if (!bHasDisclosableRequirement)
+		{
+			continue;
+		}
 		Lines.Add(FString::Printf(
 			TEXT("路线 %s：%s"),
-			PlanIndex == 0 ? TEXT("A") : TEXT("B"),
+			VisiblePlanIndex++ == 0 ? TEXT("A") : TEXT("B"),
 			Missing.IsEmpty() ? TEXT("当前已满足") : *FString::Join(Missing, TEXT("；"))));
 	}
 	for (const FWSRequirementItem& Risk : Report.Risks)

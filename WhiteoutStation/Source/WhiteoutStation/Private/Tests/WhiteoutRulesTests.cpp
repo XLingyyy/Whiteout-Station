@@ -4,8 +4,10 @@
 #include "Misc/Paths.h"
 #include "Agents/WSAgentGateway.h"
 #include "Agents/WSNPCDecisionService.h"
+#include "HUD/WhiteoutHUDWidget.h"
 #include "Presentation/WSPresentationText.h"
 #include "State/WhiteoutRulesEngine.h"
+#include "State/WSKnowledgePolicy.h"
 
 namespace WhiteoutRuleTests
 {
@@ -14,6 +16,30 @@ namespace WhiteoutRuleTests
 		FWSActionRequest Request;
 		Request.ActionId = FName(ActionId);
 		Request.TransactionId = FGuid::NewGuid();
+		return Request;
+	}
+
+	FWSActionRequest MakeGuHengDiagnosisRequest()
+	{
+		FWSActionRequest Request = MakeRequest(TEXT("talk_ye_cheng"));
+		Request.PlayerSaid = TEXT("顾衡还能不能做精细维修？");
+		const FWSDialogueIntentResult Intent = UWSAgentGateway::ClassifyLocalIntent(
+			Request.PlayerSaid,
+			TEXT("talk_ye_cheng"));
+		Request.DialogueAct = Intent.DialogueAct;
+		Request.SemanticFrame = Intent.ToSemanticFrame();
+		return Request;
+	}
+
+	FWSActionRequest MakeHeatPackInquiry()
+	{
+		FWSActionRequest Request = MakeRequest(TEXT("talk_ye_cheng"));
+		Request.DialogueAct = EWSDialogueAct::Ask;
+		Request.PlayerSaid = TEXT("还有别的处理办法吗？");
+		Request.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+		Request.SemanticFrame.QueryType = EWSDialogueQueryType::Alternative;
+		Request.SemanticFrame.TargetActionId = TEXT("treat_gu_heng");
+		Request.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
 		return Request;
 	}
 
@@ -248,11 +274,10 @@ bool FWhiteoutDialogueStageTest::RunTest(const FString& Parameters)
 			TEXT("reserve_medicine")).bCanExecute);
 
 	Engine.Reset();
-	FWSActionRequest AskYe = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
-	AskYe.DialogueAct = EWSDialogueAct::Ask;
+	FWSActionRequest AskYe = WhiteoutRuleTests::MakeGuHengDiagnosisRequest();
 	TestTrue(TEXT("Asking Ye Cheng commits"), Engine.Commit(AskYe).bCommitted);
 	TestTrue(
-		TEXT("Discovered heat pack unlocks Ye Cheng Challenge"),
+		TEXT("Targeted diagnosis unlocks Ye Cheng Challenge"),
 		DialoguePreview(TEXT("talk_ye_cheng"), EWSDialogueAct::Challenge).bCanExecute);
 	TestTrue(
 		TEXT("Diagnosis unlocks medicine Promise to Gu Heng"),
@@ -373,6 +398,9 @@ bool FWhiteoutKnowledgeTest::RunTest(const FString& Parameters)
 		BothEvidenceReply.Utterance.Contains(TEXT("确实被旁路")));
 
 	BothEvidenceState.Flags.bRelayCompatibilityKnown = true;
+	BothEvidenceState.PlayerKnowledge.Add(
+		TEXT("FACT_RELAY_COMPATIBILITY"),
+		EWSKnowledgeLevel::Confirmed);
 	const FWSAgentReply CompatibilityKnownReply =
 		UWSNPCDecisionService::BuildDeterministicReply(GuRequest, BothEvidenceState);
 	TestTrue(
@@ -391,7 +419,7 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 {
 	{
 		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
-		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")))) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeGuHengDiagnosisRequest())) return false;
 		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("heat_medical_room")))) return false;
 		FWSActionRequest Treat = WhiteoutRuleTests::MakeRequest(TEXT("treat_gu_heng"));
 		Treat.TreatmentResource = EWSResourceType::Medicine;
@@ -407,7 +435,9 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 		Engine.EndGame();
 		TestTrue(TEXT("Medical route succeeds"), Engine.GetState().Ending == EWSEndingType::TaskSuccess);
 		TestTrue(TEXT("Medical score is in range"), Engine.GetState().Score.Total >= 70.0f && Engine.GetState().Score.Total <= 89.0f);
-		TestTrue(TEXT("Medical route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 81.76f, 0.02f));
+		TestTrue(
+			FString::Printf(TEXT("Medical route score matches simulator (actual %.2f)"), Engine.GetState().Score.Total),
+			FMath::IsNearlyEqual(Engine.GetState().Score.Total, 80.76f, 0.02f));
 	}
 
 	{
@@ -425,7 +455,9 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 		Engine.EndGame();
 		TestTrue(TEXT("Technical route succeeds"), Engine.GetState().Ending == EWSEndingType::TaskSuccess);
 		TestTrue(TEXT("Technical score is in range"), Engine.GetState().Score.Total >= 65.0f && Engine.GetState().Score.Total <= 84.0f);
-		TestTrue(TEXT("Technical route score matches simulator"), FMath::IsNearlyEqual(Engine.GetState().Score.Total, 76.94f, 0.02f));
+		TestTrue(
+			FString::Printf(TEXT("Technical route score matches simulator (actual %.2f)"), Engine.GetState().Score.Total),
+			FMath::IsNearlyEqual(Engine.GetState().Score.Total, 75.94f, 0.02f));
 	}
 
 	{
@@ -477,7 +509,7 @@ bool FWhiteoutRouteTest::RunTest(const FString& Parameters)
 		}
 		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("heat_medical_room")))) return false;
 		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("heat_repair_room")))) return false;
-		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")))) return false;
+		if (!WhiteoutRuleTests::Commit(*this, Engine, WhiteoutRuleTests::MakeGuHengDiagnosisRequest())) return false;
 		FWSActionRequest Food = WhiteoutRuleTests::MakeRequest(TEXT("distribute_food"));
 		Food.FoodForPlayer = 1;
 		if (!WhiteoutRuleTests::Commit(*this, Engine, Food)) return false;
@@ -508,18 +540,50 @@ bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Preset fallback is always available"), Decision.bAccepted && Decision.bFallback && !Decision.Utterance.IsEmpty());
 	TestFalse(TEXT("Early Gu context excludes Ye's heat pack"), AllowedFacts.Contains(TEXT("FACT_HEAT_PACK")));
 	TestFalse(TEXT("Early Gu context excludes restart confession"), AllowedFacts.Contains(TEXT("FACT_FORCED_RESTART_CONFIRMED")));
+	TestFalse(
+		TEXT("Opening knowledge boundary prevents a live expression request"),
+		UWSAgentGateway::IsExpressionKnowledgeBoundaryOpen(
+			Decision.Speaker,
+			AllowedFacts));
 
 	FWSAgentReply ModelReply;
 	FString Reason;
-	const FString ValidPayload = TEXT("{\"persona_tail\":\"我听见了。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HAND_INJURY\"],\"movement_intent\":\"step_closer\",\"reaction_action\":\"consider\"}");
+	const FString ValidPayload = TEXT("{\"persona_tail\":\"我听见了。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"step_closer\",\"reaction_action\":\"consider\"}");
 	TestTrue(
 		TEXT("Schema-valid expression is accepted"),
 		UWSAgentGateway::ValidateModelPayload(ValidPayload, Decision, AllowedFacts, ModelReply, Reason));
-	TestFalse(TEXT("Accepted model line is not marked fallback"), ModelReply.bFallback);
-	TestTrue(TEXT("Accepted tail keeps deterministic spine"), ModelReply.Utterance.StartsWith(Decision.SemanticSpine));
-	TestEqual(TEXT("Accepted tail records answer source"), ModelReply.AnswerSource, FString(TEXT("spine_plus_ai")));
+	TestTrue(TEXT("Opening model tail is guarded by the knowledge boundary"), ModelReply.bFallback);
+	TestEqual(TEXT("Guarded model output keeps only the deterministic spine"), ModelReply.Utterance, Decision.SemanticSpine);
+	TestEqual(TEXT("Guarded model output records spine-only source"), ModelReply.AnswerSource, FString(TEXT("spine_only")));
+	TestEqual(TEXT("Knowledge-boundary fallback has a stable reason"), Reason, FString(TEXT("persona_tail_knowledge_boundary")));
 	TestEqual(TEXT("Movement intent is constrained"), ModelReply.MovementIntent, EWSNPCMovementIntent::StepCloser);
 	TestEqual(TEXT("Reaction action is constrained"), ModelReply.Reaction, EWSNPCReaction::Consider);
+	TArray<FName> FullyDisclosedGuFacts = AllowedFacts;
+	for (const FName FactId : {
+		FName(TEXT("FACT_GENERATOR_PROTECTION_STOP")),
+		FName(TEXT("FACT_BURNT_RELAY")),
+		FName(TEXT("FACT_HAND_INJURY")),
+		FName(TEXT("FACT_RELAY_COMPATIBILITY")),
+		FName(TEXT("FACT_FORCED_RESTART_SUSPICION")),
+		FName(TEXT("FACT_FORCED_RESTART_CONFIRMED"))})
+	{
+		FullyDisclosedGuFacts.AddUnique(FactId);
+	}
+	TestTrue(
+		TEXT("Fully disclosed Gu Heng context re-enables live expression"),
+		UWSAgentGateway::IsExpressionKnowledgeBoundaryOpen(
+			Decision.Speaker,
+			FullyDisclosedGuFacts));
+	TestTrue(
+		TEXT("Schema-valid expression is accepted after Gu Heng's protected facts are disclosed"),
+		UWSAgentGateway::ValidateModelPayload(
+			ValidPayload,
+			Decision,
+			FullyDisclosedGuFacts,
+			ModelReply,
+			Reason));
+	TestFalse(TEXT("Fully disclosed context keeps a safe model tail"), ModelReply.bFallback);
+	TestEqual(TEXT("Fully disclosed context records model expression"), ModelReply.AnswerSource, FString(TEXT("spine_plus_ai")));
 
 	const FString MutationPayload = TEXT("{\"persona_tail\":\"修好了。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"neutral\",\"ap_delta\":2}");
 	TestFalse(
@@ -538,6 +602,38 @@ bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
 		TEXT("Untagged protected claim is rejected"),
 		UWSAgentGateway::ValidateModelPayload(UntaggedLeakPayload, Decision, AllowedFacts, ModelReply, Reason));
 	TestTrue(TEXT("Semantic leak identifies protected fact"), Reason.StartsWith(TEXT("semantic_fact_permission_violation:FACT_HEAT_PACK")));
+
+	const FString UntaggedHandLeakPayload = TEXT("{\"persona_tail\":\"我的右手使不上力。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
+	TestFalse(
+		TEXT("Untagged hand-injury claim is rejected"),
+		UWSAgentGateway::ValidateModelPayload(
+			UntaggedHandLeakPayload,
+			Decision,
+			AllowedFacts,
+			ModelReply,
+			Reason));
+	TestTrue(
+		TEXT("Hand-injury leak identifies the protected fact"),
+		Reason.StartsWith(TEXT("semantic_fact_permission_violation:FACT_HAND_INJURY")));
+
+	const TArray<FString> ParaphrasedLeakPayloads = {
+		TEXT("{\"persona_tail\":\"我手上的伤口又裂了。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}"),
+		TEXT("{\"persona_tail\":\"医务柜底还有个暖袋。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}"),
+		TEXT("{\"persona_tail\":\"厨房里那枚零件正好能装上。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}")};
+	for (const FString& Payload : ParaphrasedLeakPayloads)
+	{
+		TestFalse(
+			TEXT("Paraphrased untagged secret is rejected"),
+			UWSAgentGateway::ValidateModelPayload(
+				Payload,
+				Decision,
+				AllowedFacts,
+				ModelReply,
+				Reason));
+		TestTrue(
+			TEXT("Paraphrased leak reports a semantic permission violation"),
+			Reason.StartsWith(TEXT("semantic_fact_permission_violation:")));
+	}
 
 	const FString InvalidMovementPayload = TEXT("{\"persona_tail\":\"我过去看看。\",\"emotion\":\"focused\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"walk_anywhere\",\"reaction_action\":\"acknowledge\"}");
 	TestFalse(
@@ -644,6 +740,17 @@ bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
 	const FString MockEnvelope = TEXT("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"{\\\"speech_act\\\":\\\"ask\\\",\\\"query_type\\\":\\\"unknown\\\",\\\"target_action_id\\\":\\\"none\\\",\\\"target_fact_id\\\":\\\"none\\\",\\\"target_character\\\":\\\"gu_heng\\\",\\\"confidence\\\":0.91}\"}}]}");
 	TestTrue(TEXT("OpenAI-compatible mock envelope is unwrapped"), UWSAgentGateway::ExtractProviderContent(MockEnvelope, ExtractedContent, Reason));
 	TestTrue(TEXT("Unwrapped mock intent validates"), UWSAgentGateway::ValidateIntentPayload(ExtractedContent, TEXT("发生了什么？"), StrictIntent, Reason));
+	const FString TreatmentIntentPayload = TEXT("{\"speech_act\":\"ask\",\"query_type\":\"alternative\",\"target_action_id\":\"treat_gu_heng\",\"target_fact_id\":\"none\",\"target_character\":\"gu_heng\",\"confidence\":0.93}");
+	TestTrue(
+		TEXT("Online intent schema accepts the whitelisted treatment-support route"),
+		UWSAgentGateway::ValidateIntentPayload(
+			TreatmentIntentPayload,
+			TEXT("有什么办法让他撑过一次维修？"),
+			StrictIntent,
+			Reason,
+			TEXT("talk_ye_cheng"),
+			TEXT("repair_generator")));
+	TestEqual(TEXT("Online treatment intent keeps its target action"), StrictIntent.TargetActionId, FName(TEXT("treat_gu_heng")));
 	const FString TruncatedEnvelope = TEXT("{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"content\":\"{}\"}}]}");
 	TestFalse(TEXT("Truncated provider response is rejected"), UWSAgentGateway::ExtractProviderContent(TruncatedEnvelope, ExtractedContent, Reason));
 	TestEqual(TEXT("Truncation reason is stable"), Reason, FString(TEXT("provider_finish_length")));
@@ -782,7 +889,8 @@ bool FWhiteoutDialogueAndResourceChoicesTest::RunTest(const FString& Parameters)
 
 	{
 		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
-		TestTrue(TEXT("Ye Cheng diagnosis commits"), Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"))).bCommitted);
+		TestTrue(TEXT("Ye Cheng diagnosis commits"), Engine.Commit(WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
+		TestTrue(TEXT("Heat-pack inquiry commits"), Engine.Commit(WhiteoutRuleTests::MakeHeatPackInquiry()).bCommitted);
 		TestTrue(TEXT("Medical heat commits"), Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("heat_medical_room"))).bCommitted);
 		FWSActionRequest HeatPackTreatment = WhiteoutRuleTests::MakeRequest(TEXT("treat_gu_heng"));
 		HeatPackTreatment.TreatmentResource = EWSResourceType::HeatPack;
@@ -1163,7 +1271,7 @@ bool FWhiteoutV11RouteTest::RunTest(const FString& Parameters)
 		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
 		int32 PaidAP = 0;
 		if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::MedicalRoom)) return false;
-		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")), PaidAP)) return false;
+		if (!WhiteoutRuleTests::CommitV11(*this, Engine, WhiteoutRuleTests::MakeGuHengDiagnosisRequest(), PaidAP)) return false;
 		FWSActionRequest Treat = WhiteoutRuleTests::MakeRequest(TEXT("treat_character"));
 		Treat.TreatmentTarget = EWSCharacterId::GuHeng;
 		Treat.TreatmentMethod = EWSTreatmentMethod::Full;
@@ -1525,6 +1633,1053 @@ bool FWhiteoutV12NegotiationOfferLifecycleTest::RunTest(const FString& Parameter
 			Engine.GetState().Characters.FindChecked(EWSCharacterId::GuHeng).Trust,
 			TrustBeforeExpiry - 0.5f);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV13DisclosureStopgapTest,
+	"WhiteoutStation.DialogueV13.DisclosureStopgap",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
+{
+	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, Engine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	FString OpeningStory;
+	for (const FText& Line : UWhiteoutHUDWidget::BuildOpeningStoryLines())
+	{
+		OpeningStory += Line.ToString();
+		OpeningStory += TEXT("\n");
+	}
+	for (const FString& Forbidden : {
+		FString(TEXT("右手")),
+		FString(TEXT("手伤")),
+		FString(TEXT("伤手")),
+		FString(TEXT("继电器")),
+		FString(TEXT("保温包")),
+		FString(TEXT("保温物资")),
+		FString(TEXT("诊断"))})
+	{
+		TestFalse(
+			FString::Printf(TEXT("Opening story excludes undiscovered detail %s"), *Forbidden),
+			OpeningStory.Contains(Forbidden));
+	}
+	const FString OpeningYeGreeting = FWSPresentationText::DialogueOpening(
+		EWSCharacterId::YeCheng,
+		Engine.GetState()).ToString();
+	TestFalse(
+		TEXT("Opening Ye Cheng greeting does not presuppose an injured person"),
+		OpeningYeGreeting.Contains(TEXT("伤员"))
+			|| OpeningYeGreeting.Contains(TEXT("治疗"))
+			|| OpeningYeGreeting.Contains(TEXT("手伤")));
+	FWSAgentReply ProductionStatusProbe;
+	ProductionStatusProbe.Provider = TEXT("deepseek");
+	ProductionStatusProbe.AnswerSource = TEXT("spine_only");
+	ProductionStatusProbe.ValidationReason = TEXT("persona_tail_knowledge_boundary");
+	const FString ProductionDialogueStatus =
+		UWhiteoutHUDWidget::BuildDialogueStatusSummary(ProductionStatusProbe);
+	for (const FString& Forbidden : {
+		FString(TEXT("DeepSeek")),
+		FString(TEXT("人格尾句")),
+		FString(TEXT("语义骨架")),
+		FString(TEXT("尾句丢弃")),
+		FString(TEXT("Semantic")),
+		FString(TEXT("spine_only"))})
+	{
+		TestFalse(
+			FString::Printf(TEXT("Production dialogue status hides %s"), *Forbidden),
+			ProductionDialogueStatus.Contains(Forbidden));
+	}
+	for (const EWSDialogueAct DialogueAct : {
+		EWSDialogueAct::Ask,
+		EWSDialogueAct::Challenge,
+		EWSDialogueAct::Reassure,
+		EWSDialogueAct::Promise})
+	{
+		const FString Hint = UWhiteoutHUDWidget::BuildDialogueInputHint(DialogueAct).ToString();
+		for (const FString& Forbidden : {
+			FString(TEXT("保护装置")),
+			FString(TEXT("手动绕过")),
+			FString(TEXT("厨房加热器")),
+			FString(TEXT("自伤")),
+			FString(TEXT("伤情")),
+			FString(TEXT("继电器")),
+			FString(TEXT("保温包"))})
+		{
+			TestFalse(
+				FString::Printf(TEXT("Opening dialogue hint excludes %s"), *Forbidden),
+				Hint.Contains(Forbidden));
+		}
+	}
+	const FString OpeningDialogueCard = UWhiteoutHUDWidget::BuildDialogueCardSummary(
+		EWSCharacterId::GuHeng,
+		Engine.GetState());
+	bool bOpeningDialogueCardContainsDigit = false;
+	for (const TCHAR Character : OpeningDialogueCard)
+	{
+		bOpeningDialogueCardContainsDigit |= FChar::IsDigit(Character);
+	}
+	TestFalse(
+		TEXT("Opening dialogue card hides exact internal values"),
+		bOpeningDialogueCardContainsDigit);
+	TestTrue(
+		TEXT("Opening dialogue card marks Gu Heng's injury unconfirmed"),
+		OpeningDialogueCard.Contains(TEXT("伤势 未确认")));
+	TestFalse(
+		TEXT("Opening dialogue card excludes undisclosed injury wording"),
+		OpeningDialogueCard.Contains(TEXT("受限"))
+			|| OpeningDialogueCard.Contains(TEXT("手伤"))
+			|| OpeningDialogueCard.Contains(TEXT("带伤")));
+	FWSPhaseSummary InternalPhaseSummary;
+	InternalPhaseSummary.Changes.Add(
+		TEXT("顾衡体温 5.0→4.0；伤势 Normal→Restricted（恶化标记 0→1）；压力 3.0→7.0"));
+	const FString VisiblePhaseSummary = UWhiteoutHUDWidget::BuildPhaseSettlementSummary(
+		InternalPhaseSummary,
+		Engine.GetState());
+	TestFalse(
+		TEXT("Phase settlement presentation hides internal audit changes"),
+		VisiblePhaseSummary.Contains(TEXT("Restricted"))
+			|| VisiblePhaseSummary.Contains(TEXT("恶化标记"))
+			|| VisiblePhaseSummary.Contains(TEXT("5.0"))
+			|| VisiblePhaseSummary.Contains(TEXT("4.0")));
+	TestTrue(
+		TEXT("Phase settlement presentation preserves the knowledge-gated injury label"),
+		VisiblePhaseSummary.Contains(TEXT("顾衡："))
+			&& VisiblePhaseSummary.Contains(TEXT("伤势 未确认")));
+
+	FWSActionRequest RepairRequest = WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
+	const FWSActionRequirementReport Requirements =
+		Engine.EvaluateActionRequirements(RepairRequest);
+	const FWSRequirementPlan* RelayPlan = Requirements.AlternativePlans.FindByPredicate(
+		[](const FWSRequirementPlan& Plan)
+		{
+			return Plan.PlanId == TEXT("relay_replacement");
+		});
+	TestNotNull(TEXT("Opening requirement report still contains the internal relay route"), RelayPlan);
+	if (RelayPlan && !RelayPlan->Requirements.IsEmpty())
+	{
+		TestFalse(
+			TEXT("Unknown relay route is hidden from dialogue and condition cards"),
+			RelayPlan->Requirements[0].bDisclosable);
+	}
+	const FWSRequirementItem* HandRisk = Requirements.Risks.FindByPredicate(
+		[](const FWSRequirementItem& Item)
+		{
+			return Item.RequirementId == TEXT("right_hand_injury_risk");
+		});
+	TestNotNull(TEXT("Opening requirement report still evaluates the internal hand risk"), HandRisk);
+	if (HandRisk)
+	{
+		TestFalse(
+			TEXT("Undiagnosed hand risk is hidden from dialogue and condition cards"),
+			HandRisk->bDisclosable);
+	}
+	const FString ConditionSummary = UWhiteoutHUDWidget::BuildDialogueConditionSummary(
+		Requirements);
+	TestFalse(
+		TEXT("Condition card omits the fully hidden relay route"),
+		ConditionSummary.Contains(TEXT("路线 B")));
+	TestFalse(
+		TEXT("Condition card never marks a fully hidden route as satisfied"),
+		ConditionSummary.Contains(TEXT("路线 B：当前已满足")));
+	TestFalse(
+		TEXT("Condition card omits undisclosed hand risk"),
+		ConditionSummary.Contains(TEXT("伤手"))
+			|| ConditionSummary.Contains(TEXT("右手")));
+
+	const auto TestPreviewExcludes = [this, &Engine](
+		const FName ActionId,
+		const TArray<FString>& ForbiddenPhrases)
+	{
+		const FWSActionPreview ActionPreview = Engine.Preview(
+			WhiteoutRuleTests::MakeRequest(*ActionId.ToString()));
+		const FString Preview = ActionPreview.PreviewText.ToString();
+		const FString Risk = ActionPreview.RiskText.ToString();
+		const FString Impact = FWSPresentationText::ActionImpact(ActionId).ToString();
+		const FString ResourceCost = FWSPresentationText::ActionResourceCost(ActionId).ToString();
+		for (const FString& Forbidden : ForbiddenPhrases)
+		{
+			TestFalse(
+				FString::Printf(
+					TEXT("%s preview and risk exclude %s"),
+					*ActionId.ToString(),
+					*Forbidden),
+				Preview.Contains(Forbidden)
+					|| Risk.Contains(Forbidden)
+					|| Impact.Contains(Forbidden)
+					|| ResourceCost.Contains(Forbidden));
+		}
+	};
+	TestPreviewExcludes(
+		TEXT("investigate_generator_log"),
+		{TEXT("手动旁路"), TEXT("保护系统"), TEXT("08:11")});
+	TestPreviewExcludes(TEXT("inspect_control_cabinet"), {TEXT("伤手"), TEXT("手伤")});
+	TestPreviewExcludes(TEXT("talk_ye_cheng"), {TEXT("顾衡伤势"), TEXT("诊断")});
+	TestPreviewExcludes(TEXT("treat_gu_heng"), {TEXT("保温包"), TEXT("伤手")});
+	TestPreviewExcludes(
+		TEXT("dismantle_kitchen_heater"),
+		{TEXT("继电器"), TEXT("替代件"), TEXT("电气部件"), TEXT("有助于维修"), TEXT("可用部件")});
+	TestPreviewExcludes(
+		TEXT("repair_generator"),
+		{TEXT("继电器"), TEXT("带伤"), TEXT("1—2点"), TEXT("两点体力")});
+	const FString HiddenRouteReason =
+		FWSPresentationText::ReasonCause(EWSReasonCode::NeedsRelayKnowledge).ToString()
+		+ FWSPresentationText::ReasonNextStep(EWSReasonCode::NeedsRelayKnowledge).ToString();
+	TestFalse(
+		TEXT("Unknown kitchen route rejection avoids equivalent repair hints"),
+		HiddenRouteReason.Contains(TEXT("拆解"))
+			|| HiddenRouteReason.Contains(TEXT("有助于维修"))
+			|| HiddenRouteReason.Contains(TEXT("可用部件")));
+	const FString NeedsDiagnosisCause = FWSPresentationText::ReasonCause(
+		EWSReasonCode::NeedsDiagnosis).ToString();
+	const FString NeedsDiagnosisNext = FWSPresentationText::ReasonNextStep(
+		EWSReasonCode::NeedsDiagnosis).ToString();
+	for (const FString& Forbidden : {
+		FString(TEXT("伤情")),
+		FString(TEXT("手伤")),
+		FString(TEXT("受伤")),
+		FString(TEXT("明确诊断"))})
+	{
+		TestFalse(
+			FString::Printf(TEXT("Undiagnosed treatment rejection excludes %s"), *Forbidden),
+			NeedsDiagnosisCause.Contains(Forbidden)
+				|| NeedsDiagnosisNext.Contains(Forbidden));
+	}
+	FWhiteoutRulesEngine TreatmentGateEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(
+		*this,
+		TreatmentGateEngine,
+		EWSHeatingZone::MedicalRoom))
+	{
+		return false;
+	}
+	FWSActionRequest HiddenGuTreatment = WhiteoutRuleTests::MakeRequest(TEXT("treat_character"));
+	HiddenGuTreatment.TreatmentTarget = EWSCharacterId::GuHeng;
+	HiddenGuTreatment.TreatmentMethod = EWSTreatmentMethod::Full;
+	HiddenGuTreatment.TreatmentResource = EWSResourceType::Medicine;
+	const FWSActionPreview HiddenTreatmentPreview = TreatmentGateEngine.Preview(HiddenGuTreatment);
+	const FString HeatedUndiagnosedYeGreeting = FWSPresentationText::DialogueOpening(
+		EWSCharacterId::YeCheng,
+		TreatmentGateEngine.GetState()).ToString();
+	TestFalse(
+		TEXT("Heated medical room greeting does not reveal an undiagnosed patient"),
+		HeatedUndiagnosedYeGreeting.Contains(TEXT("顾衡"))
+			|| HeatedUndiagnosedYeGreeting.Contains(TEXT("伤员"))
+			|| HeatedUndiagnosedYeGreeting.Contains(TEXT("接受治疗"))
+			|| HeatedUndiagnosedYeGreeting.Contains(TEXT("他的手")));
+	TestFalse(
+		TEXT("Gu Heng cannot be treated before his condition is diagnosed"),
+		HiddenTreatmentPreview.bCanExecute);
+	TestEqual(
+		TEXT("Undiagnosed Gu Heng treatment fails at the diagnosis gate"),
+		HiddenTreatmentPreview.ReasonCode,
+		EWSReasonCode::NeedsDiagnosis);
+	TestFalse(
+		TEXT("Crafted Gu Heng treatment request cannot bypass the diagnosis gate"),
+		TreatmentGateEngine.Commit(HiddenGuTreatment).bCommitted);
+	for (const FString& Forbidden : {
+		FString(TEXT("受限伤势")),
+		FString(TEXT("顾衡的伤")),
+		FString(TEXT("顾衡受伤"))})
+	{
+		TestFalse(
+			FString::Printf(TEXT("Undiagnosed treatment preview excludes %s"), *Forbidden),
+			HiddenTreatmentPreview.PreviewText.ToString().Contains(Forbidden)
+				|| HiddenTreatmentPreview.RiskText.ToString().Contains(Forbidden));
+	}
+	FWhiteoutRulesEngine HiddenCriticalEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(
+		*this,
+		HiddenCriticalEngine,
+		EWSHeatingZone::RepairRoom))
+	{
+		return false;
+	}
+	HiddenCriticalEngine.GetMutableStateForTesting().Characters.FindChecked(
+		EWSCharacterId::GuHeng).InjurySeverity = EWSInjurySeverity::Critical;
+	const FWSActionPreview HiddenCriticalPreview = HiddenCriticalEngine.Preview(
+		WhiteoutRuleTests::MakeRequest(TEXT("repair_generator")));
+	TestEqual(
+		TEXT("Hidden critical condition still blocks unsafe repair"),
+		HiddenCriticalPreview.ReasonCode,
+		EWSReasonCode::RelevantInjuryCritical);
+	const FString HiddenCriticalMessage =
+		FWSPresentationText::ReasonCause(HiddenCriticalPreview.ReasonCode).ToString()
+		+ FWSPresentationText::ReasonNextStep(HiddenCriticalPreview.ReasonCode).ToString();
+	TestFalse(
+		TEXT("Unknown critical condition uses a knowledge-safe rejection"),
+		HiddenCriticalMessage.Contains(TEXT("伤"))
+			|| HiddenCriticalMessage.Contains(TEXT("危重"))
+			|| HiddenCriticalMessage.Contains(TEXT("医务室"))
+			|| HiddenCriticalMessage.Contains(TEXT("治疗")));
+	const FString HiddenRefusalNextStep = FWSPresentationText::ReasonNextStep(
+		EWSReasonCode::GuHengRefused).ToString();
+	TestFalse(
+		TEXT("Unknown refusal reason does not reveal Gu Heng's injury"),
+		HiddenRefusalNextStep.Contains(TEXT("伤"))
+			|| HiddenRefusalNextStep.Contains(TEXT("治疗")));
+	TestFalse(
+		TEXT("Opening option policy hides heat-pack treatment"),
+		FWSKnowledgePolicy::IsHeatPackOptionVisible(Engine.GetState()));
+	TestFalse(
+		TEXT("Opening option policy hides the relay repair route"),
+		FWSKnowledgePolicy::IsRelayRepairRouteVisible(Engine.GetState()));
+	TestFalse(
+		TEXT("Opening world interaction hides the kitchen dismantle route"),
+		FWSKnowledgePolicy::IsWorldActionVisible(
+			TEXT("dismantle_kitchen_heater"),
+			Engine.GetState()));
+	TestFalse(
+		TEXT("Opening Gu Heng presentation hides the injury wrap"),
+		FWSKnowledgePolicy::IsGuHengInjuryWrapVisible(Engine.GetState()));
+	TestFalse(
+		TEXT("Opening crew status hides Gu Heng's injury severity"),
+		FWSKnowledgePolicy::IsGuHengInjuryVisible(Engine.GetState()));
+	TestEqual(
+		TEXT("Opening crew status labels Gu Heng's injury as unconfirmed"),
+		UWhiteoutHUDWidget::BuildVisibleInjuryLabel(
+			EWSCharacterId::GuHeng,
+			Engine.GetState()),
+		FString(TEXT("未确认")));
+	const FString OpeningGuStatus = UWhiteoutHUDWidget::BuildVisibleCharacterStatus(
+		EWSCharacterId::GuHeng,
+		Engine.GetState());
+	bool bOpeningGuStatusContainsDigit = false;
+	for (const TCHAR Character : OpeningGuStatus)
+	{
+		bOpeningGuStatusContainsDigit |= FChar::IsDigit(Character);
+	}
+	TestTrue(
+		TEXT("Opening crew status explicitly marks the hidden injury unconfirmed"),
+		OpeningGuStatus.Contains(TEXT("伤势 未确认")));
+	TestFalse(
+		TEXT("Opening crew status uses qualitative NPC readings"),
+		bOpeningGuStatusContainsDigit);
+	TestFalse(
+		TEXT("Opening treatment options hide Gu Heng until diagnosis"),
+		FWSKnowledgePolicy::IsGuHengTreatmentOptionVisible(Engine.GetState()));
+	const FString OpeningObjective = UWhiteoutHUDWidget::BuildObjectiveSummary(Engine.GetState());
+	TestFalse(
+		TEXT("Opening objective hides the heat-pack resource"),
+		OpeningObjective.Contains(TEXT("保温包")));
+	TestFalse(
+		TEXT("Opening objective hides the relay resource"),
+		OpeningObjective.Contains(TEXT("继电器")));
+	FWSGameState RevealedOptionState = Engine.GetState();
+	RevealedOptionState.PlayerKnowledge.Add(
+		TEXT("FACT_HEAT_PACK"),
+		EWSKnowledgeLevel::Confirmed);
+	RevealedOptionState.PlayerKnowledge.Add(
+		TEXT("FACT_RELAY_COMPATIBILITY"),
+		EWSKnowledgeLevel::Confirmed);
+	RevealedOptionState.PlayerKnowledge.Add(
+		TEXT("FACT_HAND_INJURY"),
+		EWSKnowledgeLevel::Confirmed);
+	RevealedOptionState.PlayerKnowledge.Add(
+		TEXT("FACT_MEDICAL_DIAGNOSIS"),
+		EWSKnowledgeLevel::Confirmed);
+	TestTrue(
+		TEXT("Disclosed heat-pack fact exposes its treatment option"),
+		FWSKnowledgePolicy::IsHeatPackOptionVisible(RevealedOptionState));
+	TestTrue(
+		TEXT("Disclosed relay fact exposes its repair route"),
+		FWSKnowledgePolicy::IsRelayRepairRouteVisible(RevealedOptionState));
+	TestTrue(
+		TEXT("Disclosed relay fact exposes the kitchen dismantle interaction"),
+		FWSKnowledgePolicy::IsWorldActionVisible(
+			TEXT("dismantle_kitchen_heater"),
+			RevealedOptionState));
+	TestTrue(
+		TEXT("Confirmed diagnosis exposes Gu Heng's treatment target"),
+		FWSKnowledgePolicy::IsGuHengTreatmentOptionVisible(RevealedOptionState));
+	TestFalse(
+		TEXT("Confirmed hand fact replaces the unconfirmed crew label"),
+		UWhiteoutHUDWidget::BuildVisibleInjuryLabel(
+			EWSCharacterId::GuHeng,
+			RevealedOptionState).Equals(TEXT("未确认")));
+	const FString RevealedObjective = UWhiteoutHUDWidget::BuildObjectiveSummary(
+		RevealedOptionState);
+	TestTrue(
+		TEXT("Disclosed heat-pack fact exposes its resource counter"),
+		RevealedObjective.Contains(TEXT("保温包")));
+	TestTrue(
+		TEXT("Disclosed relay fact exposes its resource counter"),
+		RevealedObjective.Contains(TEXT("继电器")));
+
+	const FString BurntRelayDescription = FWSPresentationText::FactDescription(
+		TEXT("FACT_BURNT_RELAY")).ToString();
+	TestFalse(
+		TEXT("Burnt-relay fact description does not reveal the kitchen route"),
+		BurntRelayDescription.Contains(TEXT("厨房"))
+			|| BurntRelayDescription.Contains(TEXT("兼容继电器")));
+	const FString ArcMarksDescription = FWSPresentationText::EvidenceLabel(
+		TEXT("EVIDENCE_ARC_MARKS")).ToString();
+	TestFalse(
+		TEXT("Cabinet-only arc evidence does not cite an unread log or bypass"),
+		ArcMarksDescription.Contains(TEXT("旁路"))
+			|| ArcMarksDescription.Contains(TEXT("08:11"))
+			|| ArcMarksDescription.Contains(TEXT("强制重启"))
+			|| ArcMarksDescription.Contains(TEXT("日志")));
+	const FString HandObservationDescription = FWSPresentationText::FactDescription(
+		TEXT("FACT_HAND_INJURY")).ToString();
+	TestFalse(
+		TEXT("Suspected hand fact does not claim a completed diagnosis"),
+		HandObservationDescription.Contains(TEXT("诊断相互印证")));
+	const FString DiagnosisDescription = FWSPresentationText::FactDescription(
+		TEXT("FACT_MEDICAL_DIAGNOSIS")).ToString();
+	TestFalse(
+		TEXT("Diagnosis fact description does not reveal the heat pack"),
+		DiagnosisDescription.Contains(TEXT("保温包")));
+	TestFalse(
+		TEXT("Diagnosis evidence description does not reveal the heat pack"),
+		FWSPresentationText::EvidenceLabel(
+			TEXT("EVIDENCE_MEDICAL_DIAGNOSIS")).ToString().Contains(TEXT("保温包")));
+	FWSActionRequest GuRequest = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+	GuRequest.DialogueAct = EWSDialogueAct::Ask;
+	GuRequest.PlayerSaid = TEXT("要怎么样你才能帮我修发电机？");
+	GuRequest.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	GuRequest.SemanticFrame.QueryType = EWSDialogueQueryType::Requirements;
+	GuRequest.SemanticFrame.TargetActionId = TEXT("repair_generator");
+	GuRequest.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	const FWSAgentReply GuReply = UWSNPCDecisionService::BuildDeterministicReply(
+		GuRequest,
+		Engine.GetState(),
+		Requirements);
+	const TArray<FName> GuAllowedFacts = UWSNPCDecisionService::BuildAllowedFacts(
+		GuRequest.ActionId,
+		GuReply.Speaker,
+		Engine.GetState());
+	TestFalse(
+		TEXT("Opening Gu Heng prompt excludes the private hand injury"),
+		GuAllowedFacts.Contains(TEXT("FACT_HAND_INJURY")));
+	for (const FString& Forbidden : {
+		FString(TEXT("手伤")),
+		FString(TEXT("伤手")),
+		FString(TEXT("右手受伤")),
+		FString(TEXT("继电器")),
+		FString(TEXT("替代件")),
+		FString(TEXT("备用件")),
+		FString(TEXT("可靠的替代继电器")),
+		FString(TEXT("至少两点")),
+		FString(TEXT("两点体力")),
+		FString(TEXT("2点")),
+		FString(TEXT("满足")),
+		FString(TEXT("否决")),
+		FString(TEXT("系统判定")),
+		FString(TEXT("bCurrentlyExecutable")),
+		FString(TEXT("RequirementId")),
+		FString(TEXT("不会单独否决"))})
+	{
+		TestFalse(
+			FString::Printf(TEXT("Opening Gu Heng line excludes %s"), *Forbidden),
+			GuReply.Utterance.Contains(Forbidden));
+	}
+
+	FWSActionRequest YeRequest = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	YeRequest.DialogueAct = EWSDialogueAct::Ask;
+	YeRequest.PlayerSaid = TEXT("现在是什么情况？");
+	YeRequest.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	YeRequest.SemanticFrame.QueryType = EWSDialogueQueryType::Unknown;
+	YeRequest.SemanticFrame.TargetCharacter = EWSCharacterId::YeCheng;
+	const FWSAgentReply YeReply = UWSNPCDecisionService::BuildDeterministicReply(
+		YeRequest,
+		Engine.GetState());
+	TestFalse(
+		TEXT("General Ye Cheng answer does not diagnose Gu Heng"),
+		YeReply.Utterance.Contains(TEXT("手伤")));
+	TestFalse(
+		TEXT("General Ye Cheng answer does not reveal the heat pack"),
+		YeReply.Utterance.Contains(TEXT("保温包")));
+	TestTrue(TEXT("General Ye Cheng question commits"), Engine.Commit(YeRequest).bCommitted);
+	TestFalse(
+		TEXT("General Ye Cheng question does not set diagnosis"),
+		Engine.GetState().Flags.bGuHengDiagnosed);
+	TestFalse(
+		TEXT("General Ye Cheng question does not reveal heat pack state"),
+		Engine.GetState().Flags.bHeatPackRevealed);
+	TestFalse(
+		TEXT("General Ye Cheng question does not grant hand-injury knowledge"),
+		Engine.GetState().PlayerKnowledge.Contains(TEXT("FACT_HAND_INJURY")));
+	TestFalse(
+		TEXT("General Ye Cheng question does not grant heat-pack knowledge"),
+		Engine.GetState().PlayerKnowledge.Contains(TEXT("FACT_HEAT_PACK")));
+	EWSReasonCode SettleReason = EWSReasonCode::UnknownAction;
+	FWSPhaseSummary SettleSummary;
+	TestTrue(
+		TEXT("Phase settles after general Ye Cheng question"),
+		Engine.SettleDayPhase(SettleReason, SettleSummary));
+	TestFalse(
+		TEXT("High trust at settlement does not reveal the heat pack off-screen"),
+		Engine.GetState().Flags.bHeatPackRevealed);
+	TestFalse(
+		TEXT("Settlement does not grant undisclosed heat-pack knowledge"),
+		Engine.GetState().PlayerKnowledge.Contains(TEXT("FACT_HEAT_PACK")));
+
+	FWhiteoutRulesEngine DisclosureEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, DisclosureEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	FWSActionRequest PrematureHeatPack = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	PrematureHeatPack.DialogueAct = EWSDialogueAct::Ask;
+	PrematureHeatPack.PlayerSaid = TEXT("还有什么医疗物资可用？");
+	PrematureHeatPack.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	PrematureHeatPack.SemanticFrame.QueryType = EWSDialogueQueryType::Unknown;
+	PrematureHeatPack.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	const FWSAgentReply PrematureReply = UWSNPCDecisionService::BuildDeterministicReply(
+		PrematureHeatPack,
+		DisclosureEngine.GetState());
+	TestFalse(
+		TEXT("Medical-supply question before diagnosis does not reveal the heat pack"),
+		PrematureReply.Utterance.Contains(TEXT("保温包")));
+	TestTrue(
+		TEXT("Pre-diagnosis medical-supply question commits"),
+		DisclosureEngine.Commit(PrematureHeatPack).bCommitted);
+	TestFalse(
+		TEXT("Medical-supply question before diagnosis does not change heat-pack state"),
+		DisclosureEngine.GetState().Flags.bHeatPackRevealed);
+
+	const FWSActionRequest Diagnosis = WhiteoutRuleTests::MakeGuHengDiagnosisRequest();
+	const FWSAgentReply DiagnosisReply = UWSNPCDecisionService::BuildDeterministicReply(
+		Diagnosis,
+		DisclosureEngine.GetState());
+	TestTrue(
+		TEXT("Targeted Gu Heng status question receives a diagnosis answer"),
+		DiagnosisReply.Utterance.Contains(TEXT("手伤")));
+	TestFalse(
+		TEXT("Completed diagnosis answer does not claim the diagnosis is still pending"),
+		DiagnosisReply.Utterance.Contains(TEXT("才能完成诊断")));
+	TestTrue(TEXT("Targeted diagnosis commits"), DisclosureEngine.Commit(Diagnosis).bCommitted);
+	TestTrue(
+		TEXT("Targeted diagnosis updates diagnosis state"),
+		DisclosureEngine.GetState().Flags.bGuHengDiagnosed);
+	TestTrue(
+		TEXT("Targeted diagnosis grants hand-injury knowledge"),
+		DisclosureEngine.GetState().PlayerKnowledge.Contains(TEXT("FACT_HAND_INJURY")));
+	TestFalse(
+		TEXT("Diagnosis alone does not reveal the heat pack"),
+		DisclosureEngine.GetState().Flags.bHeatPackRevealed);
+
+	const FWSActionRequest Alternative = WhiteoutRuleTests::MakeHeatPackInquiry();
+	TestTrue(
+		TEXT("Post-diagnosis treatment alternative commits"),
+		DisclosureEngine.Commit(Alternative).bCommitted);
+	TestTrue(
+		TEXT("Post-diagnosis treatment alternative reveals heat-pack state"),
+		DisclosureEngine.GetState().Flags.bHeatPackRevealed);
+	TestTrue(
+		TEXT("Post-diagnosis treatment alternative grants heat-pack knowledge"),
+		DisclosureEngine.GetState().PlayerKnowledge.Contains(TEXT("FACT_HEAT_PACK")));
+	const FWSAgentReply AlternativeReply = UWSNPCDecisionService::BuildDeterministicReply(
+		Alternative,
+		DisclosureEngine.GetState());
+	TestTrue(
+		TEXT("Revealed treatment alternative can name the heat pack"),
+		AlternativeReply.Utterance.Contains(TEXT("保温包")));
+
+	FWhiteoutRulesEngine ExplicitEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, ExplicitEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Explicit-path diagnosis commits"),
+		ExplicitEngine.Commit(WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
+	FWSActionRequest ExplicitHeatPack = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	ExplicitHeatPack.DialogueAct = EWSDialogueAct::Ask;
+	ExplicitHeatPack.PlayerSaid = TEXT("还有什么医疗物资可用？");
+	ExplicitHeatPack.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	ExplicitHeatPack.SemanticFrame.QueryType = EWSDialogueQueryType::Unknown;
+	ExplicitHeatPack.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	TestTrue(
+		TEXT("Explicit medical-supply inquiry commits after diagnosis"),
+		ExplicitEngine.Commit(ExplicitHeatPack).bCommitted);
+	TestTrue(
+		TEXT("Explicit medical-supply inquiry reveals the heat pack after diagnosis"),
+		ExplicitEngine.GetState().Flags.bHeatPackRevealed);
+
+	FWhiteoutRulesEngine SurvivalEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, SurvivalEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Survival-path diagnosis commits"),
+		SurvivalEngine.Commit(WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
+	FWSActionRequest SurvivalQuestion = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	SurvivalQuestion.DialogueAct = EWSDialogueAct::Ask;
+	SurvivalQuestion.PlayerSaid = TEXT("顾衡能撑过暴雪吗？");
+	SurvivalQuestion.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	SurvivalQuestion.SemanticFrame.QueryType = EWSDialogueQueryType::Unknown;
+	SurvivalQuestion.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	TestTrue(
+		TEXT("General survival question commits"),
+		SurvivalEngine.Commit(SurvivalQuestion).bCommitted);
+	TestFalse(
+		TEXT("General survival question does not reveal the heat pack"),
+		SurvivalEngine.GetState().Flags.bHeatPackRevealed);
+
+	FWhiteoutRulesEngine AntennaAlternativeEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(
+		*this,
+		AntennaAlternativeEngine,
+		EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Antenna false-positive route diagnosis commits"),
+		AntennaAlternativeEngine.Commit(
+			WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
+	const FString AntennaAlternativeQuestion = TEXT("天线还有别的办法吗？");
+	const FWSDialogueIntentResult AntennaAlternativeIntent =
+		UWSAgentGateway::ClassifyLocalIntent(
+			AntennaAlternativeQuestion,
+			TEXT("talk_ye_cheng"),
+			TEXT("repair_generator"));
+	TestTrue(
+		TEXT("Explicit antenna wording overrides the stale generator topic"),
+		AntennaAlternativeIntent.bMapped);
+	TestEqual(
+		TEXT("Antenna alternative retains the antenna target"),
+		AntennaAlternativeIntent.TargetActionId,
+		FName(TEXT("calibrate_antenna")));
+	FWSActionRequest AntennaAlternative = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	AntennaAlternative.DialogueAct = AntennaAlternativeIntent.DialogueAct;
+	AntennaAlternative.PlayerSaid = AntennaAlternativeQuestion;
+	AntennaAlternative.SemanticFrame = AntennaAlternativeIntent.ToSemanticFrame();
+	TestTrue(
+		TEXT("Antenna alternative question commits"),
+		AntennaAlternativeEngine.Commit(AntennaAlternative).bCommitted);
+	TestFalse(
+		TEXT("Unrelated antenna alternative does not reveal the heat pack"),
+		AntennaAlternativeEngine.GetState().Flags.bHeatPackRevealed
+			|| AntennaAlternativeEngine.GetState().PlayerKnowledge.Contains(
+				TEXT("FACT_HEAT_PACK")));
+
+	FWhiteoutRulesEngine FalsePositiveEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, FalsePositiveEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	FWSActionRequest YeStatus = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	YeStatus.DialogueAct = EWSDialogueAct::Ask;
+	YeStatus.PlayerSaid = TEXT("叶澄，你的手怎么了？");
+	YeStatus.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	YeStatus.SemanticFrame.QueryType = EWSDialogueQueryType::Status;
+	YeStatus.SemanticFrame.TargetFactId = TEXT("FACT_MEDICAL_DIAGNOSIS");
+	YeStatus.SemanticFrame.TargetCharacter = EWSCharacterId::YeCheng;
+	TestTrue(TEXT("Ye Cheng status false-positive probe commits"), FalsePositiveEngine.Commit(YeStatus).bCommitted);
+	TestFalse(
+		TEXT("Diagnosis fact tag cannot override a Ye Cheng target"),
+		FalsePositiveEngine.GetState().Flags.bGuHengDiagnosed);
+	FWSActionRequest ConsequenceProbe = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	ConsequenceProbe.DialogueAct = EWSDialogueAct::Ask;
+	ConsequenceProbe.PlayerSaid = TEXT("如果顾衡不参加维修，会有什么后果？");
+	ConsequenceProbe.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	ConsequenceProbe.SemanticFrame.QueryType = EWSDialogueQueryType::Consequence;
+	ConsequenceProbe.SemanticFrame.TargetFactId = TEXT("FACT_HAND_INJURY");
+	ConsequenceProbe.SemanticFrame.TargetActionId = TEXT("repair_generator");
+	ConsequenceProbe.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	TestTrue(TEXT("Consequence false-positive probe commits"), FalsePositiveEngine.Commit(ConsequenceProbe).bCommitted);
+	TestFalse(
+		TEXT("Consequence query cannot trigger a diagnosis"),
+		FalsePositiveEngine.GetState().Flags.bGuHengDiagnosed);
+	const FString GeneratorQuestion = TEXT("顾衡知道发电机现在是什么情况吗？");
+	const FWSDialogueIntentResult GeneratorIntent = UWSAgentGateway::ClassifyLocalIntent(
+		GeneratorQuestion,
+		TEXT("talk_ye_cheng"),
+		TEXT("repair_generator"));
+	FWSActionRequest GeneratorProbe = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	GeneratorProbe.DialogueAct = GeneratorIntent.DialogueAct;
+	GeneratorProbe.PlayerSaid = GeneratorQuestion;
+	GeneratorProbe.SemanticFrame = GeneratorIntent.ToSemanticFrame();
+	TestTrue(TEXT("Generator-status false-positive probe commits"), FalsePositiveEngine.Commit(GeneratorProbe).bCommitted);
+	TestFalse(
+		TEXT("Generator wording containing Gu Heng and situation does not diagnose him"),
+		FalsePositiveEngine.GetState().Flags.bGuHengDiagnosed);
+	FWhiteoutRulesEngine GloveEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, GloveEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	const FString GloveQuestion = TEXT("顾衡的手套放在哪里？");
+	const FWSDialogueIntentResult GloveIntent = UWSAgentGateway::ClassifyLocalIntent(
+		GloveQuestion,
+		TEXT("talk_ye_cheng"));
+	FWSActionRequest GloveProbe = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	GloveProbe.DialogueAct = GloveIntent.DialogueAct;
+	GloveProbe.PlayerSaid = GloveQuestion;
+	GloveProbe.SemanticFrame = GloveIntent.ToSemanticFrame();
+	TestTrue(TEXT("Gu Heng glove question commits"), GloveEngine.Commit(GloveProbe).bCommitted);
+	TestFalse(
+		TEXT("A question about Gu Heng's gloves does not diagnose an injury"),
+		GloveEngine.GetState().Flags.bGuHengDiagnosed);
+	FWSActionRequest FineWorkToolProbe = WhiteoutRuleTests::MakeRequest(
+		TEXT("talk_ye_cheng"));
+	FineWorkToolProbe.DialogueAct = EWSDialogueAct::Ask;
+	FineWorkToolProbe.PlayerSaid = TEXT("顾衡做精细维修用哪把工具？");
+	FineWorkToolProbe.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	FineWorkToolProbe.SemanticFrame.QueryType = EWSDialogueQueryType::Status;
+	FineWorkToolProbe.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	FineWorkToolProbe.SemanticFrame.TargetFactId = TEXT("FACT_MEDICAL_DIAGNOSIS");
+	TestTrue(
+		TEXT("Fine-work tool false-positive probe commits"),
+		GloveEngine.Commit(FineWorkToolProbe).bCommitted);
+	TestFalse(
+		TEXT("Technical fine-work wording without an ability predicate does not diagnose"),
+		GloveEngine.GetState().Flags.bGuHengDiagnosed
+			|| GloveEngine.GetState().PlayerKnowledge.Contains(
+				TEXT("FACT_MEDICAL_DIAGNOSIS"))
+			|| GloveEngine.GetState().PlayerKnowledge.Contains(
+				TEXT("FACT_HAND_INJURY")));
+	FWhiteoutRulesEngine GeneralStatusEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, GeneralStatusEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	const FString GeneralGuStatusQuestion = TEXT("顾衡现在怎么样？");
+	const FWSDialogueIntentResult GeneralGuStatusIntent = UWSAgentGateway::ClassifyLocalIntent(
+		GeneralGuStatusQuestion,
+		TEXT("talk_ye_cheng"));
+	FWSActionRequest GeneralGuStatus = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	GeneralGuStatus.DialogueAct = GeneralGuStatusIntent.DialogueAct;
+	GeneralGuStatus.PlayerSaid = GeneralGuStatusQuestion;
+	GeneralGuStatus.SemanticFrame = GeneralGuStatusIntent.ToSemanticFrame();
+	const FWSAgentReply GeneralGuStatusReply = UWSNPCDecisionService::BuildDeterministicReply(
+		GeneralGuStatus,
+		GeneralStatusEngine.GetState());
+	TestFalse(
+		TEXT("General Gu Heng status reply does not claim a hand diagnosis"),
+		GeneralGuStatusReply.Utterance.Contains(TEXT("右手伤"))
+			|| GeneralGuStatusReply.Utterance.Contains(TEXT("手伤")));
+	TestTrue(TEXT("General Gu Heng status question commits"), GeneralStatusEngine.Commit(GeneralGuStatus).bCommitted);
+	TestFalse(
+		TEXT("General Gu Heng status question does not complete diagnosis"),
+		GeneralStatusEngine.GetState().Flags.bGuHengDiagnosed);
+	TestFalse(
+		TEXT("General Gu Heng status question does not confirm hand injury"),
+		FWSKnowledgePolicy::PlayerKnows(
+			GeneralStatusEngine.GetState(),
+			TEXT("FACT_HAND_INJURY"),
+			EWSKnowledgeLevel::Confirmed));
+	FWhiteoutRulesEngine EvidenceDiagnosisEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(
+		*this,
+		EvidenceDiagnosisEngine,
+		EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	const FString EvidenceQuestion = TEXT("你怎么知道顾衡的右手会影响精细维修？");
+	const FWSDialogueIntentResult EvidenceIntent = UWSAgentGateway::ClassifyLocalIntent(
+		EvidenceQuestion,
+		TEXT("talk_ye_cheng"),
+		TEXT("repair_generator"));
+	FWSActionRequest EvidenceDiagnosis = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	EvidenceDiagnosis.DialogueAct = EvidenceIntent.DialogueAct;
+	EvidenceDiagnosis.PlayerSaid = EvidenceQuestion;
+	EvidenceDiagnosis.SemanticFrame = EvidenceIntent.ToSemanticFrame();
+	TestTrue(
+		TEXT("Named Gu Heng evidence question commits through the production classifier"),
+		EvidenceDiagnosisEngine.Commit(EvidenceDiagnosis).bCommitted);
+	TestTrue(
+		TEXT("Named Gu Heng evidence question reaches the diagnosis policy"),
+		EvidenceDiagnosisEngine.GetState().Flags.bGuHengDiagnosed);
+
+	FWhiteoutRulesEngine CompoundEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, CompoundEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	FWSActionRequest CompoundQuestion = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	CompoundQuestion.DialogueAct = EWSDialogueAct::Ask;
+	CompoundQuestion.PlayerSaid = TEXT("顾衡的手怎么样，还有什么医疗物资？");
+	CompoundQuestion.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	CompoundQuestion.SemanticFrame.QueryType = EWSDialogueQueryType::Status;
+	CompoundQuestion.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	TestTrue(TEXT("Compound diagnosis and supplies question commits"), CompoundEngine.Commit(CompoundQuestion).bCommitted);
+	TestTrue(TEXT("Compound question may complete the targeted diagnosis"), CompoundEngine.GetState().Flags.bGuHengDiagnosed);
+	TestFalse(
+		TEXT("Compound question cannot use its own diagnosis to reveal the heat pack"),
+		CompoundEngine.GetState().Flags.bHeatPackRevealed);
+
+	FWhiteoutRulesEngine TrustBoundaryEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, TrustBoundaryEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	TrustBoundaryEngine.GetMutableStateForTesting().Flags.bGuHengDiagnosed = true;
+	TrustBoundaryEngine.GetMutableStateForTesting().PlayerKnowledge.Add(
+		TEXT("FACT_MEDICAL_DIAGNOSIS"),
+		EWSKnowledgeLevel::Confirmed);
+	TrustBoundaryEngine.GetMutableStateForTesting().Characters.FindChecked(
+		EWSCharacterId::YeCheng).Trust = 5.2f;
+	TestTrue(
+		TEXT("Trust-boundary support inquiry commits"),
+		TrustBoundaryEngine.Commit(WhiteoutRuleTests::MakeHeatPackInquiry()).bCommitted);
+	TestFalse(
+		TEXT("Current dialogue trust gain cannot unlock its own heat-pack disclosure"),
+		TrustBoundaryEngine.GetState().Flags.bHeatPackRevealed);
+
+	FWhiteoutRulesEngine WorkSupportEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, WorkSupportEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	FWSActionRequest GeneralQuestion = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	GeneralQuestion.DialogueAct = EWSDialogueAct::Ask;
+	GeneralQuestion.PlayerSaid = TEXT("现在是什么情况？");
+	GeneralQuestion.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	GeneralQuestion.SemanticFrame.QueryType = EWSDialogueQueryType::Unknown;
+	GeneralQuestion.SemanticFrame.TargetCharacter = EWSCharacterId::YeCheng;
+	TestTrue(TEXT("Work-support route permits an initial general question"), WorkSupportEngine.Commit(GeneralQuestion).bCommitted);
+	TestTrue(TEXT("Work-support route targeted diagnosis commits"), WorkSupportEngine.Commit(WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
+	const FString WorkSupportQuestion = TEXT("有什么办法让他撑过一次维修？");
+	const FWSDialogueIntentResult WorkSupportIntent = UWSAgentGateway::ClassifyLocalIntent(
+		WorkSupportQuestion,
+		TEXT("talk_ye_cheng"),
+		TEXT("repair_generator"));
+	TestTrue(TEXT("Document K07 wording maps locally"), WorkSupportIntent.bMapped);
+	TestEqual(TEXT("Document K07 wording maps to Alternative"), WorkSupportIntent.QueryType, EWSDialogueQueryType::Alternative);
+	TestEqual(TEXT("Document K07 wording targets Gu Heng"), WorkSupportIntent.TargetCharacter, EWSCharacterId::GuHeng);
+	TestEqual(TEXT("Document K07 wording retains the repair topic"), WorkSupportIntent.TargetActionId, FName(TEXT("repair_generator")));
+	FWSActionRequest WorkSupportRequest = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	WorkSupportRequest.DialogueAct = WorkSupportIntent.DialogueAct;
+	WorkSupportRequest.PlayerSaid = WorkSupportQuestion;
+	WorkSupportRequest.SemanticFrame = WorkSupportIntent.ToSemanticFrame();
+	TestTrue(
+		TEXT("General question, diagnosis, then K07 all fit the dialogue use limit"),
+		WorkSupportEngine.Commit(WorkSupportRequest).bCommitted);
+	TestTrue(
+		TEXT("Document K07 wording reveals the heat pack after prior diagnosis and trust"),
+		WorkSupportEngine.GetState().Flags.bHeatPackRevealed);
+
+	FWhiteoutRulesEngine ObservationEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, ObservationEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Cabinet observation commits"),
+		ObservationEngine.Commit(
+			WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet"))).bCommitted);
+	TestFalse(
+		TEXT("Cabinet observation alone does not set a medical diagnosis"),
+		ObservationEngine.GetState().Flags.bGuHengDiagnosed);
+	TestTrue(
+		TEXT("A suspected hand observation may expose the matching visual wrap"),
+		FWSKnowledgePolicy::IsGuHengInjuryWrapVisible(
+			ObservationEngine.GetState()));
+	const FWSActionRequirementReport SuspectedRequirements =
+		ObservationEngine.EvaluateActionRequirements(
+			WhiteoutRuleTests::MakeRequest(TEXT("repair_generator")));
+	const FWSRequirementItem* SuspectedHandRisk = SuspectedRequirements.Risks.FindByPredicate(
+		[](const FWSRequirementItem& Item)
+		{
+			return Item.RequirementId == TEXT("right_hand_injury_risk");
+		});
+	TestNotNull(TEXT("Suspected observation still evaluates the internal hand risk"), SuspectedHandRisk);
+	if (SuspectedHandRisk)
+	{
+		TestFalse(
+			TEXT("Suspected hand observation does not disclose a confirmed injury risk"),
+			SuspectedHandRisk->bDisclosable);
+	}
+	const FString SuspectedHandLabel = FWSPresentationText::FactLabel(
+		TEXT("FACT_HAND_INJURY")).ToString();
+	TestFalse(
+		TEXT("Suspected hand fact label avoids a confirmed injury claim"),
+		SuspectedHandLabel.Contains(TEXT("伤手"))
+			|| SuspectedHandLabel.Contains(TEXT("已经受伤")));
+	ObservationEngine.GetMutableStateForTesting().PlayerKnowledge.Add(
+		TEXT("FACT_HAND_INJURY"),
+		EWSKnowledgeLevel::Confirmed);
+	const FWSActionRequirementReport ConfirmedRequirements =
+		ObservationEngine.EvaluateActionRequirements(
+			WhiteoutRuleTests::MakeRequest(TEXT("repair_generator")));
+	const FWSRequirementItem* ConfirmedHandRisk = ConfirmedRequirements.Risks.FindByPredicate(
+		[](const FWSRequirementItem& Item)
+		{
+			return Item.RequirementId == TEXT("right_hand_injury_risk");
+		});
+	TestNotNull(TEXT("Confirmed hand risk remains in the requirement report"), ConfirmedHandRisk);
+	if (ConfirmedHandRisk)
+	{
+		TestTrue(
+			TEXT("Confirmed hand injury may be disclosed in the requirement report"),
+			ConfirmedHandRisk->bDisclosable);
+	}
+	FWSActionRequest ReassureYe = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
+	ReassureYe.DialogueAct = EWSDialogueAct::Reassure;
+	ReassureYe.SemanticFrame.SpeechAct = EWSDialogueAct::Reassure;
+	ReassureYe.SemanticFrame.TargetCharacter = EWSCharacterId::YeCheng;
+	const FWSAgentReply ObservationReply = UWSNPCDecisionService::BuildDeterministicReply(
+		ReassureYe,
+		ObservationEngine.GetState());
+	const TArray<FName> ObservationAllowedFacts = UWSNPCDecisionService::BuildAllowedFacts(
+		ReassureYe.ActionId,
+		ObservationReply.Speaker,
+		ObservationEngine.GetState());
+	TestFalse(
+		TEXT("Suspected hand observation does not authorize a medical diagnosis"),
+		ObservationAllowedFacts.Contains(TEXT("FACT_MEDICAL_DIAGNOSIS")));
+	TestFalse(
+		TEXT("Ye Cheng does not state a diagnosis from observation alone"),
+		ObservationReply.Utterance.Contains(TEXT("诊断")));
+
+	FWSActionRequest EvidenceChallenge = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+	EvidenceChallenge.DialogueAct = EWSDialogueAct::Challenge;
+	EvidenceChallenge.PlayerSaid = TEXT("你前后的说法对不上，请解释清楚。");
+	EvidenceChallenge.SemanticFrame.SpeechAct = EWSDialogueAct::Challenge;
+	EvidenceChallenge.SemanticFrame.TargetActionId = TEXT("repair_generator");
+	EvidenceChallenge.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	FWhiteoutRulesEngine CabinetOnlyChallengeEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(
+		*this,
+		CabinetOnlyChallengeEngine,
+		EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Cabinet-only challenge route inspects the cabinet"),
+		CabinetOnlyChallengeEngine.Commit(
+			WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet"))).bCommitted);
+	TestTrue(
+		TEXT("Cabinet-only challenge commits as dialogue"),
+		CabinetOnlyChallengeEngine.Commit(EvidenceChallenge).bCommitted);
+	TestFalse(
+		TEXT("Cabinet evidence alone cannot grant relay compatibility"),
+		CabinetOnlyChallengeEngine.GetState().Flags.bRelayCompatibilityKnown
+			|| CabinetOnlyChallengeEngine.GetState().PlayerKnowledge.Contains(
+				TEXT("FACT_RELAY_COMPATIBILITY"))
+			|| CabinetOnlyChallengeEngine.GetState().PlayerKnowledge.Contains(
+				TEXT("FACT_FORCED_RESTART_CONFIRMED")));
+
+	FWhiteoutRulesEngine TwoEvidenceChallengeEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(
+		*this,
+		TwoEvidenceChallengeEngine,
+		EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Two-evidence route investigates the generator log"),
+		TwoEvidenceChallengeEngine.Commit(
+			WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
+	TestTrue(
+		TEXT("Two-evidence route inspects the cabinet"),
+		TwoEvidenceChallengeEngine.Commit(
+			WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet"))).bCommitted);
+	EvidenceChallenge.TransactionId = FGuid::NewGuid();
+	TestTrue(
+		TEXT("Two-evidence challenge commits"),
+		TwoEvidenceChallengeEngine.Commit(EvidenceChallenge).bCommitted);
+	TestTrue(
+		TEXT("Only the two-evidence challenge confirms the technical route"),
+		TwoEvidenceChallengeEngine.GetState().Flags.bRelayCompatibilityKnown
+			&& FWSKnowledgePolicy::PlayerKnows(
+				TwoEvidenceChallengeEngine.GetState(),
+				TEXT("FACT_RELAY_COMPATIBILITY"),
+				EWSKnowledgeLevel::Confirmed)
+			&& FWSKnowledgePolicy::PlayerKnows(
+				TwoEvidenceChallengeEngine.GetState(),
+				TEXT("FACT_FORCED_RESTART_CONFIRMED"),
+				EWSKnowledgeLevel::Confirmed));
+	const FWSAgentReply TwoEvidenceReply =
+		UWSNPCDecisionService::BuildDeterministicReply(
+			EvidenceChallenge,
+			TwoEvidenceChallengeEngine.GetState());
+	TestTrue(
+		TEXT("Confirmed technical route is voiced with matching fact references"),
+		TwoEvidenceReply.ReferencedFactIds.Contains(TEXT("FACT_RELAY_COMPATIBILITY"))
+			&& TwoEvidenceReply.ReferencedFactIds.Contains(
+				TEXT("FACT_FORCED_RESTART_CONFIRMED"))
+			&& TwoEvidenceReply.Utterance.Contains(TEXT("可以确认"))
+			&& TwoEvidenceReply.Utterance.Contains(TEXT("厨房加热器")));
+
+	FWSActionRequest ForcedSelfRepair = WhiteoutRuleTests::MakeRequest(
+		TEXT("forced_self_repair"));
+	FWSGameState UnknownProtectionState;
+	const FWSAgentReply UnknownProtectionReply =
+		UWSNPCDecisionService::BuildDeterministicReply(
+			ForcedSelfRepair,
+			UnknownProtectionState);
+	TestFalse(
+		TEXT("Forced repair feedback does not reveal an unknown protection stop"),
+		UnknownProtectionReply.ReferencedFactIds.Contains(
+			TEXT("FACT_GENERATOR_PROTECTION_STOP"))
+			|| UnknownProtectionReply.Utterance.Contains(TEXT("保护停机")));
+	UnknownProtectionState.PlayerKnowledge.Add(
+		TEXT("FACT_GENERATOR_PROTECTION_STOP"),
+		EWSKnowledgeLevel::Confirmed);
+	const FWSAgentReply KnownProtectionReply =
+		UWSNPCDecisionService::BuildDeterministicReply(
+			ForcedSelfRepair,
+			UnknownProtectionState);
+	TestTrue(
+		TEXT("Known protection stop may be referenced in forced repair feedback"),
+		KnownProtectionReply.ReferencedFactIds.Contains(
+			TEXT("FACT_GENERATOR_PROTECTION_STOP"))
+			&& KnownProtectionReply.Utterance.Contains(TEXT("保护停机")));
+
+	FWhiteoutRulesEngine RefusalEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, RefusalEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	FWSCharacterState& RefusingYe = RefusalEngine.GetMutableStateForTesting().Characters.FindChecked(
+		EWSCharacterId::YeCheng);
+	RefusingYe.Trust = 2.0f;
+	RefusingYe.Pressure = 9.2f;
+	FWSActionRequest RefusedDiagnosis = WhiteoutRuleTests::MakeGuHengDiagnosisRequest();
+	RefusedDiagnosis.DialogueAct = EWSDialogueAct::Command;
+	RefusedDiagnosis.SemanticFrame.SpeechAct = EWSDialogueAct::Command;
+	RefusedDiagnosis.SemanticFrame.TargetFactId = TEXT("FACT_MEDICAL_DIAGNOSIS");
+	const FWSAgentReply RefusalReply = UWSNPCDecisionService::BuildDeterministicReply(
+		RefusedDiagnosis,
+		RefusalEngine.GetState());
+	TestTrue(
+		TEXT("Low-trust diagnosis command is refused"),
+		RefusalReply.ResponseType == EWSResponseType::Refuse);
+	TestFalse(
+		TEXT("Refused diagnosis command does not disclose the hand injury"),
+		RefusalReply.Utterance.Contains(TEXT("手伤")));
+	TestTrue(
+		TEXT("Refused diagnosis command still settles as dialogue"),
+		RefusalEngine.Commit(RefusedDiagnosis).bCommitted);
+	TestFalse(
+		TEXT("Refused diagnosis command does not upgrade diagnosis state"),
+		RefusalEngine.GetState().Flags.bGuHengDiagnosed);
+	TestFalse(
+		TEXT("Refused diagnosis command grants no medical knowledge"),
+		RefusalEngine.GetState().PlayerKnowledge.Contains(TEXT("FACT_MEDICAL_DIAGNOSIS")));
+
+	FWhiteoutRulesEngine StrainedEngine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(*this, StrainedEngine, EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	StrainedEngine.GetMutableStateForTesting().Characters.FindChecked(
+		EWSCharacterId::YeCheng).Pressure = 9.4f;
+	const FWSActionRequest StrainedDiagnosis = WhiteoutRuleTests::MakeGuHengDiagnosisRequest();
+	const FWSAgentReply StrainedReply = UWSNPCDecisionService::BuildDeterministicReply(
+		StrainedDiagnosis,
+		StrainedEngine.GetState());
+	TestTrue(
+		TEXT("Strained targeted answer still voices the diagnosis it will commit"),
+		StrainedReply.Utterance.Contains(TEXT("手伤")));
+	TestTrue(
+		TEXT("Strained targeted diagnosis commits"),
+		StrainedEngine.Commit(StrainedDiagnosis).bCommitted);
+	TestTrue(
+		TEXT("Strained voiced diagnosis updates state"),
+		StrainedEngine.GetState().Flags.bGuHengDiagnosed);
 	return true;
 }
 

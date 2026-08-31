@@ -594,16 +594,6 @@ void UWindStationStateSubsystem::RequestActionExpression(const FWSActionRequest&
 		return;
 	}
 
-	const bool bUseLiveProvider =
-		LLMConfigurationError.IsEmpty()
-		&& AgentGateway->HasLiveProvider()
-		&& RulesEngine.TryRecordModelCall();
-	if (bUseLiveProvider)
-	{
-		SaveSnapshot();
-		BroadcastState();
-	}
-	TWeakObjectPtr<UWindStationStateSubsystem> WeakThis(this);
 	FWSActionRequirementReport RequirementReport;
 	if (ActionRequest.SemanticFrame.TargetActionId == TEXT("repair_generator"))
 	{
@@ -611,6 +601,29 @@ void UWindStationStateSubsystem::RequestActionExpression(const FWSActionRequest&
 		TargetRequest.ActionId = TEXT("repair_generator");
 		RequirementReport = RulesEngine.EvaluateActionRequirements(TargetRequest);
 	}
+	const FWSAgentReply Decision = UWSNPCDecisionService::BuildDeterministicReply(
+		ActionRequest,
+		RulesEngine.GetState(),
+		RequirementReport);
+	const TArray<FName> AllowedFacts = UWSNPCDecisionService::BuildAllowedFacts(
+		ActionRequest.ActionId,
+		Decision.Speaker,
+		RulesEngine.GetState());
+	const bool bKnowledgeBoundaryOpen =
+		UWSAgentGateway::IsExpressionKnowledgeBoundaryOpen(
+			Decision.Speaker,
+			AllowedFacts);
+	const bool bUseLiveProvider =
+		LLMConfigurationError.IsEmpty()
+		&& AgentGateway->HasLiveProvider()
+		&& bKnowledgeBoundaryOpen
+		&& RulesEngine.TryRecordModelCall();
+	if (bUseLiveProvider)
+	{
+		SaveSnapshot();
+		BroadcastState();
+	}
+	TWeakObjectPtr<UWindStationStateSubsystem> WeakThis(this);
 	AgentGateway->RequestExpression(
 		ActionRequest,
 		RulesEngine.GetState(),
