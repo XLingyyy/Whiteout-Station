@@ -74,6 +74,8 @@ public:
 	void SetDialogueCommitDispatchTestHook(
 		FWSDialogueCommitDispatchTestHook Hook);
 	void SetAutomationSaveSlot(FString InSaveSlot);
+	void SetDialogueAuditPathForTest(FString InPath);
+	void SetEventLogExportPathForTest(FString InPath);
 	int32 GetDialogueLineBroadcastCountForTest() const
 	{
 		return DialogueLineBroadcastCountForTest;
@@ -159,6 +161,8 @@ private:
 	FWSDialogueRealizeTestHook DialogueRealizeTestHook;
 	FWSDialogueCommitDispatchTestHook DialogueCommitDispatchTestHook;
 	FString AutomationSaveSlot;
+	FString DialogueAuditPathForTest;
+	FString EventLogExportPathForTest;
 	int32 DialogueLineBroadcastCountForTest = 0;
 #endif
 
@@ -180,6 +184,10 @@ private:
 		const FWSPreparedDialogue& Prepared,
 		const FWSDialogueOutcome& Outcome,
 		FWSActionResult& OutResult);
+	bool AppendDialogueAudit(
+		const FWSPreparedDialogue& Prepared,
+		const FWSDialogueOutcome& Outcome) const;
+	FString GetDialogueAuditPath() const;
 	void AbortPendingDialogue(
 		EWSReasonCode Reason,
 		bool bNotifyCompletion,

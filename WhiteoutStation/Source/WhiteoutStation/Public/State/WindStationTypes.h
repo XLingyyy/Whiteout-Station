@@ -1303,4 +1303,13 @@ struct FWSDialogueOutcome
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FString AnswerSource;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString ValidationOutcome = TEXT("unknown");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 PromptTokens = -1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 CompletionTokens = -1;
 };

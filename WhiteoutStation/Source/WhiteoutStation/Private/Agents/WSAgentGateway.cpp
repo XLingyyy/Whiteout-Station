@@ -492,6 +492,37 @@ namespace
 		return false;
 	}
 
+	FString MakeFallbackValidationOutcome(const FString& Reason)
+	{
+		FString Suffix = Reason.TrimStartAndEnd().ToLower();
+		for (TCHAR& Character : Suffix)
+		{
+			const bool bAsciiLetter = Character >= TEXT('a')
+				&& Character <= TEXT('z');
+			const bool bAsciiDigit = Character >= TEXT('0')
+				&& Character <= TEXT('9');
+			if (!bAsciiLetter && !bAsciiDigit && Character != TEXT('_'))
+			{
+				Character = TEXT('_');
+			}
+		}
+		while (Suffix.Contains(TEXT("__")))
+		{
+			Suffix.ReplaceInline(TEXT("__"), TEXT("_"));
+		}
+		while (Suffix.RemoveFromStart(TEXT("_")))
+		{
+		}
+		while (Suffix.RemoveFromEnd(TEXT("_")))
+		{
+		}
+		if (Suffix.IsEmpty())
+		{
+			Suffix = TEXT("unknown");
+		}
+		return FString::Printf(TEXT("fallback_%s"), *Suffix).Left(96);
+	}
+
 	FWSDialogueOutcome MakePreparedFallbackOutcome(
 		const FWSPreparedDialogue& Prepared,
 		const FString& Provider,
@@ -512,6 +543,7 @@ namespace
 		Outcome.RealizedAtomIds =
 			Prepared.LocalFallback.RealizedAtomIds;
 		Outcome.AnswerSource = TEXT("local_natural_fallback");
+		Outcome.ValidationOutcome = MakeFallbackValidationOutcome(Reason);
 		Outcome.FinalReply.ReferencedFactIds = Outcome.DisclosedFactIds;
 		Outcome.FinalReply.DisclosedFactIds = Outcome.DisclosedFactIds;
 		Outcome.FinalReply.RealizedAtomIds = Outcome.RealizedAtomIds;
@@ -1317,6 +1349,9 @@ void UWSAgentGateway::RequestDialogueRealization(
 					Reason))
 			{
 				Outcome.FinalReply.Provider = AuditProvider;
+				Outcome.ValidationOutcome = TEXT("accepted");
+				Outcome.PromptTokens = PromptTokens;
+				Outcome.CompletionTokens = CompletionTokens;
 				Gateway->AppendAuditRecord(
 					TEXT("dialogue_expression_v3"),
 					AuditProvider,
@@ -1348,6 +1383,8 @@ void UWSAgentGateway::RequestDialogueRealization(
 				Prepared,
 				AuditProvider,
 				FailureReason);
+			Fallback.PromptTokens = PromptTokens;
+			Fallback.CompletionTokens = CompletionTokens;
 			Gateway->AppendAuditRecord(
 				TEXT("dialogue_expression_v3"),
 				AuditProvider,
@@ -1935,6 +1972,7 @@ bool UWSAgentGateway::ValidateDialogueOutcomePayload(
 	Outcome.DisclosedFactIds = DisclosedFactIds;
 	Outcome.RealizedAtomIds = RealizedAtomIds;
 	Outcome.AnswerSource = TEXT("online_full_line");
+	Outcome.ValidationOutcome = TEXT("accepted");
 	if (!ValidateDialogueOutcome(Prepared, Outcome, OutReason))
 	{
 		return false;

@@ -3,7 +3,9 @@
 #include "Actions/WSActionResolver.h"
 #include "Agents/WSAgentGateway.h"
 #include "Agents/WSNPCDecisionService.h"
+#include "CoreGlobals.h"
 #include "Dom/JsonObject.h"
+#include "HAL/FileManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -14,6 +16,112 @@
 
 namespace
 {
+	FString DialogueSpeakerId(const EWSCharacterId Speaker)
+	{
+		switch (Speaker)
+		{
+		case EWSCharacterId::GuHeng:
+			return TEXT("gu_heng");
+		case EWSCharacterId::YeCheng:
+			return TEXT("ye_cheng");
+		default:
+			return TEXT("player");
+		}
+	}
+
+	TArray<TSharedPtr<FJsonValue>> NameIdArray(
+		const TArray<FName>& Names,
+		const bool bSort = true)
+	{
+		TArray<FString> Values;
+		Values.Reserve(Names.Num());
+		for (const FName Name : Names)
+		{
+			if (!Name.IsNone())
+			{
+				Values.Add(Name.ToString());
+			}
+		}
+		if (bSort)
+		{
+			Values.Sort([](const FString& Left, const FString& Right)
+			{
+				return Left.Compare(Right, ESearchCase::CaseSensitive) < 0;
+			});
+		}
+		TArray<TSharedPtr<FJsonValue>> Result;
+		Result.Reserve(Values.Num());
+		for (const FString& Value : Values)
+		{
+			Result.Add(MakeShared<FJsonValueString>(Value));
+		}
+		return Result;
+	}
+
+	FString NormalizeValidationOutcome(
+		const FString& Value,
+		const bool bFallback,
+		const FString& FallbackReason)
+	{
+		FString Result = Value.TrimStartAndEnd().ToLower();
+		if (Result.IsEmpty() || Result == TEXT("unknown"))
+		{
+			Result = bFallback
+				? FString::Printf(
+					TEXT("fallback_%s"),
+					FallbackReason.IsEmpty()
+						? TEXT("unknown")
+						: *FallbackReason)
+				: TEXT("accepted");
+		}
+		for (TCHAR& Character : Result)
+		{
+			const bool bAsciiLetter = Character >= TEXT('a')
+				&& Character <= TEXT('z');
+			const bool bAsciiDigit = Character >= TEXT('0')
+				&& Character <= TEXT('9');
+			if (!bAsciiLetter && !bAsciiDigit && Character != TEXT('_'))
+			{
+				Character = TEXT('_');
+			}
+		}
+		while (Result.Contains(TEXT("__")))
+		{
+			Result.ReplaceInline(TEXT("__"), TEXT("_"));
+		}
+		while (Result.RemoveFromStart(TEXT("_")))
+		{
+		}
+		while (Result.RemoveFromEnd(TEXT("_")))
+		{
+		}
+		if (Result.IsEmpty()
+			|| Result[0] < TEXT('a')
+			|| Result[0] > TEXT('z'))
+		{
+			Result = TEXT("outcome_") + Result;
+		}
+		const bool bContainsSensitiveTraceLabel =
+			Result.Contains(TEXT("prompt"))
+			|| Result.Contains(TEXT("request"))
+			|| Result.Contains(TEXT("response"))
+			|| Result.Contains(TEXT("player_said"))
+			|| Result.Contains(TEXT("player_input"))
+			|| Result.Contains(TEXT("player_text"))
+			|| Result.Contains(TEXT("npc_line"))
+			|| Result.Contains(TEXT("utterance"))
+			|| Result.Contains(TEXT("api_key"))
+			|| Result.Contains(TEXT("credential"))
+			|| Result.Contains(TEXT("authorization"))
+			|| Result.Contains(TEXT("bearer"))
+			|| Result.Contains(TEXT("secret"));
+		if (bContainsSensitiveTraceLabel)
+		{
+			Result = TEXT("fallback_external_failure");
+		}
+		return Result.Left(96);
+	}
+
 	bool HeatingZoneForAction(
 		const FName ActionId,
 		EWSHeatingZone& OutHeatingZone)
@@ -498,6 +606,16 @@ void UWindStationStateSubsystem::SetAutomationSaveSlot(FString InSaveSlot)
 {
 	AutomationSaveSlot = MoveTemp(InSaveSlot);
 }
+
+void UWindStationStateSubsystem::SetDialogueAuditPathForTest(FString InPath)
+{
+	DialogueAuditPathForTest = MoveTemp(InPath);
+}
+
+void UWindStationStateSubsystem::SetEventLogExportPathForTest(FString InPath)
+{
+	EventLogExportPathForTest = MoveTemp(InPath);
+}
 #endif
 
 FWSActionResult UWindStationStateSubsystem::SubmitDialogueAction(
@@ -766,6 +884,10 @@ void UWindStationStateSubsystem::HandlePreparedDialogueOutcome(
 
 	const FWSPreparedDialogue Prepared = PendingDialogue;
 	FWSDialogueOutcome Outcome = RealizedOutcome;
+	Outcome.ValidationOutcome = NormalizeValidationOutcome(
+		Outcome.ValidationOutcome,
+		Outcome.FinalReply.bFallback,
+		Outcome.FinalReply.ValidationReason);
 	FString ValidationReason;
 	if (!UWSAgentGateway::ValidateDialogueOutcome(
 			Prepared,
@@ -786,6 +908,8 @@ void UWindStationStateSubsystem::HandlePreparedDialogueOutcome(
 			Prepared.LocalFallback.RealizedAtomIds;
 		Outcome.AnswerSource =
 			Prepared.LocalFallback.AnswerSource;
+		Outcome.ValidationOutcome =
+			TEXT("fallback_prepared_outcome_validation_failed");
 	}
 	Outcome.FinalReply.PlannedDisclosureFacts =
 		Prepared.PlannedDisclosureFacts;
@@ -815,6 +939,14 @@ void UWindStationStateSubsystem::HandlePreparedDialogueOutcome(
 		}
 		CompleteDialogueSubmission(Result, MoveTemp(Completion));
 		return;
+	}
+	if (!AppendDialogueAudit(Prepared, Outcome))
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("Failed to append committed dialogue audit for %s"),
+			*Prepared.TransactionId.ToString(EGuidFormats::DigitsWithHyphens));
 	}
 
 	TFunction<void(const FWSActionResult&)> Completion =
@@ -882,6 +1014,98 @@ bool UWindStationStateSubsystem::CommitDialogueOutcome(
 	}
 	OutResult = RulesEngine.CommitDialogueOutcome(Prepared, Outcome);
 	return OutResult.bCommitted;
+}
+
+FString UWindStationStateSubsystem::GetDialogueAuditPath() const
+{
+#if WITH_DEV_AUTOMATION_TESTS
+	if (!DialogueAuditPathForTest.IsEmpty())
+	{
+		return DialogueAuditPathForTest;
+	}
+	if (GIsAutomationTesting)
+	{
+		return FPaths::ProjectSavedDir()
+			/ TEXT("Automation/WhiteoutStation_DialogueAudit.jsonl");
+	}
+#endif
+	return FPaths::ProjectSavedDir()
+		/ TEXT("Logs/WhiteoutStation_DialogueAudit.jsonl");
+}
+
+bool UWindStationStateSubsystem::AppendDialogueAudit(
+	const FWSPreparedDialogue& Prepared,
+	const FWSDialogueOutcome& Outcome) const
+{
+	TArray<FName> RequiredAtomIds;
+	RequiredAtomIds.Reserve(Prepared.Contract.MustRealize.Num());
+	for (const FWSDialogueSemanticAtom& Atom : Prepared.Contract.MustRealize)
+	{
+		RequiredAtomIds.Add(Atom.AtomId);
+	}
+
+	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetStringField(TEXT("kind"), TEXT("dialogue_expression"));
+	Root->SetStringField(
+		TEXT("transaction_id"),
+		Prepared.TransactionId.ToString(EGuidFormats::DigitsWithHyphens).ToLower());
+	Root->SetStringField(
+		TEXT("speaker"),
+		DialogueSpeakerId(Outcome.FinalReply.Speaker));
+	Root->SetStringField(
+		TEXT("query_type"),
+		StaticEnum<EWSDialogueQueryType>()->GetNameStringByValue(
+			static_cast<int64>(Prepared.OriginalRequest.SemanticFrame.QueryType)).ToLower());
+	const FName TargetActionId =
+		Prepared.OriginalRequest.SemanticFrame.TargetActionId.IsNone()
+			? Prepared.OriginalRequest.ActionId
+			: Prepared.OriginalRequest.SemanticFrame.TargetActionId;
+	Root->SetStringField(TEXT("target_action_id"), TargetActionId.ToString());
+	Root->SetArrayField(
+		TEXT("planned_disclosure_fact_ids"),
+		NameIdArray(Prepared.PlannedDisclosureFacts));
+	Root->SetArrayField(
+		TEXT("final_disclosed_fact_ids"),
+		NameIdArray(Outcome.DisclosedFactIds));
+	Root->SetArrayField(
+		TEXT("required_atom_ids"),
+		NameIdArray(RequiredAtomIds));
+	Root->SetArrayField(
+		TEXT("realized_atom_ids"),
+		NameIdArray(Outcome.RealizedAtomIds));
+	const FString AnswerSource =
+		!Outcome.FinalReply.bFallback
+			&& Outcome.AnswerSource == TEXT("online_full_line")
+			? TEXT("online_full_line")
+			: TEXT("local_natural_fallback");
+	Root->SetStringField(TEXT("answer_source"), AnswerSource);
+	Root->SetStringField(
+		TEXT("validation_outcome"),
+		NormalizeValidationOutcome(
+			Outcome.ValidationOutcome,
+			Outcome.FinalReply.bFallback,
+			Outcome.FinalReply.ValidationReason));
+	Root->SetNumberField(TEXT("prompt_tokens"), Outcome.PromptTokens);
+	Root->SetNumberField(TEXT("completion_tokens"), Outcome.CompletionTokens);
+
+	FString Json;
+	const TSharedRef<
+		TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+		TJsonWriterFactory<
+			TCHAR,
+			TCondensedJsonPrintPolicy<TCHAR>>::Create(&Json);
+	if (!FJsonSerializer::Serialize(Root, Writer))
+	{
+		return false;
+	}
+	const FString AuditPath = GetDialogueAuditPath();
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(AuditPath), true);
+	return FFileHelper::SaveStringToFile(
+		Json + LINE_TERMINATOR,
+		*AuditPath,
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM,
+		&IFileManager::Get(),
+		FILEWRITE_Append);
 }
 
 void UWindStationStateSubsystem::AbortPendingDialogue(
@@ -1158,6 +1382,21 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 			Event.PromiseCondition.IsNone() ? TEXT("none") : Event.PromiseCondition.ToString());
 		Object->SetBoolField(TEXT("promise_recorded"), Event.bPromiseRecorded);
 		Object->SetBoolField(TEXT("crisis_triggered"), Event.bCrisisTriggered);
+		Object->SetStringField(
+			TEXT("speaker"),
+			DialogueSpeakerId(Event.DialogueSpeaker));
+		Object->SetArrayField(
+			TEXT("planned_disclosure_fact_ids"),
+			NameIdArray(Event.PlannedDisclosureFacts));
+		Object->SetArrayField(
+			TEXT("final_disclosed_fact_ids"),
+			NameIdArray(Event.DisclosedFactIds));
+		Object->SetArrayField(
+			TEXT("realized_atom_ids"),
+			NameIdArray(Event.RealizedAtomIds));
+		Object->SetStringField(
+			TEXT("answer_source"),
+			Event.DialogueAnswerSource);
 		TArray<TSharedPtr<FJsonValue>> Changes;
 		for (const FString& Change : Event.Changes)
 		{
@@ -1171,7 +1410,18 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 	const FWSGameState& Snapshot = RulesEngine.GetState();
 	Root->SetStringField(TEXT("rules_version"), Snapshot.RulesVersion);
 	Root->SetArrayField(TEXT("events"), Events);
-	Root->SetNumberField(TEXT("remaining_ap"), Snapshot.ActionPoints);
+	Root->SetNumberField(
+		TEXT("remaining_ap"),
+		RulesEngine.IsV11()
+			? Snapshot.PhaseActionPoints
+			: Snapshot.ActionPoints);
+	Root->SetNumberField(
+		TEXT("phase_action_points"),
+		Snapshot.PhaseActionPoints);
+	Root->SetStringField(
+		TEXT("phase"),
+		StaticEnum<EWSGamePhase>()->GetNameStringByValue(
+			static_cast<int64>(Snapshot.Phase)));
 	Root->SetStringField(
 		TEXT("day_phase"),
 		StaticEnum<EWSDayPhase>()->GetNameStringByValue(
@@ -1179,11 +1429,277 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 	Root->SetBoolField(
 		TEXT("day_phase_started"),
 		Snapshot.bDayPhaseStarted);
+	Root->SetBoolField(TEXT("day_window_closed"), Snapshot.bDayWindowClosed);
+	Root->SetBoolField(
+		TEXT("mid_crisis_triggered"),
+		Snapshot.bMidCrisisTriggered);
+	TSharedRef<FJsonObject> Heating = MakeShared<FJsonObject>();
+	Heating->SetStringField(
+		TEXT("current_zone"),
+		StaticEnum<EWSHeatingZone>()->GetNameStringByValue(
+			static_cast<int64>(Snapshot.Heating.CurrentZone)));
+	Heating->SetBoolField(TEXT("locked"), Snapshot.Heating.bLocked);
+	TArray<TSharedPtr<FJsonValue>> HeatingHistory;
+	for (const FWSHeatingSelectionRecord& Selection : Snapshot.Heating.History)
+	{
+		TSharedRef<FJsonObject> SelectionObject = MakeShared<FJsonObject>();
+		SelectionObject->SetStringField(
+			TEXT("phase"),
+			StaticEnum<EWSDayPhase>()->GetNameStringByValue(
+				static_cast<int64>(Selection.Phase)));
+		SelectionObject->SetStringField(
+			TEXT("zone"),
+			StaticEnum<EWSHeatingZone>()->GetNameStringByValue(
+				static_cast<int64>(Selection.Zone)));
+		HeatingHistory.Add(MakeShared<FJsonValueObject>(SelectionObject));
+	}
+	Heating->SetArrayField(TEXT("history"), HeatingHistory);
+	Root->SetObjectField(TEXT("heating"), Heating);
 	Root->SetBoolField(TEXT("signal_sent"), Snapshot.Tasks.bSignalSent);
 	Root->SetStringField(TEXT("ending"), StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(Snapshot.Ending)));
 	Root->SetNumberField(TEXT("score"), Snapshot.Score.Total);
 	Root->SetStringField(TEXT("rating"), Snapshot.Score.Rating);
 	Root->SetNumberField(TEXT("model_calls"), Snapshot.ModelCalls);
+
+	TSharedRef<FJsonObject> ScoreBreakdown = MakeShared<FJsonObject>();
+	ScoreBreakdown->SetNumberField(TEXT("task_quality"), Snapshot.Score.TaskQuality);
+	ScoreBreakdown->SetNumberField(TEXT("people"), Snapshot.Score.People);
+	ScoreBreakdown->SetNumberField(
+		TEXT("effective_reserves"),
+		Snapshot.Score.EffectiveReserves);
+	ScoreBreakdown->SetNumberField(
+		TEXT("social_stability"),
+		Snapshot.Score.SocialStability);
+	ScoreBreakdown->SetNumberField(
+		TEXT("information_responsibility"),
+		Snapshot.Score.InformationResponsibility);
+	ScoreBreakdown->SetNumberField(TEXT("total"), Snapshot.Score.Total);
+	ScoreBreakdown->SetStringField(TEXT("rating"), Snapshot.Score.Rating);
+	Root->SetObjectField(TEXT("score_breakdown"), ScoreBreakdown);
+
+	TSharedRef<FJsonObject> PlayerKnowledge = MakeShared<FJsonObject>();
+	TArray<FName> KnowledgeFactIds;
+	Snapshot.PlayerKnowledge.GenerateKeyArray(KnowledgeFactIds);
+	KnowledgeFactIds.Sort([](const FName Left, const FName Right)
+	{
+		return Left.ToString().Compare(
+			Right.ToString(),
+			ESearchCase::CaseSensitive) < 0;
+	});
+	for (const FName FactId : KnowledgeFactIds)
+	{
+		const EWSKnowledgeLevel Level = Snapshot.PlayerKnowledge.FindChecked(FactId);
+		PlayerKnowledge->SetStringField(
+			FactId.ToString(),
+			StaticEnum<EWSKnowledgeLevel>()->GetNameStringByValue(
+				static_cast<int64>(Level)));
+	}
+	Root->SetObjectField(TEXT("player_knowledge"), PlayerKnowledge);
+	TArray<FName> DisclosedFactIds;
+	for (const FWSEventRecord& Event : Snapshot.EventLog)
+	{
+		for (const FName FactId : Event.DisclosedFactIds)
+		{
+			DisclosedFactIds.AddUnique(FactId);
+		}
+	}
+	Root->SetArrayField(
+		TEXT("disclosed_fact_ids"),
+		NameIdArray(DisclosedFactIds));
+
+	TSharedRef<FJsonObject> Resources = MakeShared<FJsonObject>();
+	Resources->SetNumberField(TEXT("fuel"), Snapshot.Resources.Fuel);
+	Resources->SetNumberField(TEXT("food"), Snapshot.Resources.Food);
+	Resources->SetNumberField(TEXT("medicine"), Snapshot.Resources.Medicine);
+	Resources->SetNumberField(TEXT("heat_pack"), Snapshot.Resources.HeatPack);
+	Resources->SetNumberField(
+		TEXT("replacement_relay"),
+		Snapshot.Resources.ReplacementRelay);
+	Root->SetObjectField(TEXT("resources"), Resources);
+
+	TSharedRef<FJsonObject> RelatedFlags = MakeShared<FJsonObject>();
+	RelatedFlags->SetBoolField(
+		TEXT("kitchen_heater_intact"),
+		Snapshot.Flags.bKitchenHeaterIntact);
+	RelatedFlags->SetBoolField(
+		TEXT("heat_pack_revealed"),
+		Snapshot.Flags.bHeatPackRevealed);
+	RelatedFlags->SetBoolField(
+		TEXT("repair_room_heated"),
+		Snapshot.Flags.bRepairRoomHeated);
+	RelatedFlags->SetBoolField(
+		TEXT("medical_room_heated"),
+		Snapshot.Flags.bMedicalRoomHeated);
+	RelatedFlags->SetBoolField(
+		TEXT("gu_heng_diagnosed"),
+		Snapshot.Flags.bGuHengDiagnosed);
+	RelatedFlags->SetBoolField(
+		TEXT("gu_heng_treated"),
+		Snapshot.Flags.bGuHengTreated);
+	RelatedFlags->SetBoolField(TEXT("gu_heng_fed"), Snapshot.Flags.bGuHengFed);
+	RelatedFlags->SetBoolField(
+		TEXT("gu_heng_cooperative"),
+		Snapshot.Flags.bGuHengCooperative);
+	RelatedFlags->SetBoolField(
+		TEXT("relay_compatibility_known"),
+		Snapshot.Flags.bRelayCompatibilityKnown);
+	RelatedFlags->SetBoolField(
+		TEXT("relay_installed"),
+		Snapshot.Flags.bRelayInstalled);
+	RelatedFlags->SetBoolField(
+		TEXT("self_repair_used"),
+		Snapshot.Flags.bSelfRepairUsed);
+	RelatedFlags->SetBoolField(
+		TEXT("records_preserved"),
+		Snapshot.Flags.bRecordsPreserved);
+	RelatedFlags->SetBoolField(TEXT("player_fed"), Snapshot.Flags.bPlayerFed);
+	RelatedFlags->SetBoolField(
+		TEXT("ye_cheng_fed"),
+		Snapshot.Flags.bYeChengFed);
+	RelatedFlags->SetBoolField(
+		TEXT("cabinet_inspected"),
+		Snapshot.Flags.bCabinetInspected);
+	RelatedFlags->SetBoolField(
+		TEXT("log_penalty_active"),
+		Snapshot.Flags.bLogPenaltyActive);
+	RelatedFlags->SetNumberField(
+		TEXT("forced_action_count"),
+		Snapshot.Flags.ForcedActionCount);
+	RelatedFlags->SetNumberField(
+		TEXT("risky_repair_count"),
+		Snapshot.Flags.RiskyRepairCount);
+	Root->SetObjectField(TEXT("related_flags"), RelatedFlags);
+
+	TSharedRef<FJsonObject> Tasks = MakeShared<FJsonObject>();
+	Tasks->SetNumberField(
+		TEXT("generator_progress"),
+		Snapshot.Tasks.GeneratorProgress);
+	Tasks->SetNumberField(
+		TEXT("antenna_calibration"),
+		Snapshot.Tasks.AntennaCalibration);
+	Tasks->SetBoolField(TEXT("signal_sent"), Snapshot.Tasks.bSignalSent);
+	Tasks->SetBoolField(
+		TEXT("generator_stable"),
+		Snapshot.Tasks.bGeneratorStable);
+	Root->SetObjectField(TEXT("tasks"), Tasks);
+
+	TSharedRef<FJsonObject> Characters = MakeShared<FJsonObject>();
+	const TArray<EWSCharacterId> CharacterIds = {
+		EWSCharacterId::Player,
+		EWSCharacterId::GuHeng,
+		EWSCharacterId::YeCheng};
+	for (const EWSCharacterId CharacterId : CharacterIds)
+	{
+		const FWSCharacterState Character =
+			Snapshot.Characters.FindRef(CharacterId);
+		TSharedRef<FJsonObject> CharacterObject = MakeShared<FJsonObject>();
+		CharacterObject->SetNumberField(TEXT("health"), Character.Health);
+		CharacterObject->SetNumberField(
+			TEXT("temperature"),
+			Character.Temperature);
+		CharacterObject->SetNumberField(TEXT("hunger"), Character.Hunger);
+		CharacterObject->SetNumberField(TEXT("fatigue"), Character.Fatigue);
+		CharacterObject->SetNumberField(TEXT("pressure"), Character.Pressure);
+		CharacterObject->SetNumberField(TEXT("trust"), Character.Trust);
+		CharacterObject->SetNumberField(TEXT("stamina"), Character.Stamina);
+		CharacterObject->SetStringField(
+			TEXT("injury_severity"),
+			StaticEnum<EWSInjurySeverity>()->GetNameStringByValue(
+				static_cast<int64>(Character.InjurySeverity)));
+		CharacterObject->SetStringField(
+			TEXT("injury_id"),
+			Character.InjuryId.IsNone()
+				? TEXT("none")
+				: Character.InjuryId.ToString());
+		CharacterObject->SetNumberField(
+			TEXT("injury_worsening_marks"),
+			Character.InjuryWorseningMarks);
+		CharacterObject->SetNumberField(
+			TEXT("bandage_protection"),
+			Character.BandageProtection);
+		CharacterObject->SetNumberField(
+			TEXT("temporary_support_uses"),
+			Character.TemporarySupportUses);
+		CharacterObject->SetStringField(
+			TEXT("temporary_support_phase"),
+			StaticEnum<EWSDayPhase>()->GetNameStringByValue(
+				static_cast<int64>(Character.TemporarySupportPhase)));
+		CharacterObject->SetStringField(
+			TEXT("location"),
+			StaticEnum<EWSCharacterLocation>()->GetNameStringByValue(
+				static_cast<int64>(Character.Location)));
+		Characters->SetObjectField(
+			DialogueSpeakerId(CharacterId),
+			CharacterObject);
+	}
+	Root->SetObjectField(TEXT("characters"), Characters);
+
+	struct FRequirementCardExport
+	{
+		FString ActionId;
+		FString RequirementId;
+		bool bMet = false;
+		FString PlayerFacingDetail;
+	};
+	TArray<FRequirementCardExport> RequirementCardRecords;
+	const TArray<FName> RequirementActions = {TEXT("repair_generator")};
+	for (const FName ActionId : RequirementActions)
+	{
+		const FWSActionRequirementReport Report =
+			EvaluateActionRequirements(ActionId);
+		const auto AddRequirement =
+			[&RequirementCardRecords, ActionId](const FWSRequirementItem& Item)
+			{
+				FRequirementCardExport Card;
+				Card.ActionId = ActionId.ToString();
+				Card.RequirementId = Item.RequirementId.ToString();
+				Card.bMet = Item.bSatisfied;
+				Card.PlayerFacingDetail = Item.PlayerFacingDetail.ToString();
+				RequirementCardRecords.Add(MoveTemp(Card));
+			};
+		for (const FWSRequirementItem& Item : Report.UniversalRequirements)
+		{
+			AddRequirement(Item);
+		}
+		for (const FWSRequirementPlan& Plan : Report.AlternativePlans)
+		{
+			for (const FWSRequirementItem& Item : Plan.Requirements)
+			{
+				AddRequirement(Item);
+			}
+		}
+		for (const FWSRequirementItem& Item : Report.Risks)
+		{
+			AddRequirement(Item);
+		}
+	}
+	RequirementCardRecords.Sort(
+		[](const FRequirementCardExport& Left, const FRequirementCardExport& Right)
+		{
+			const int32 ActionComparison = Left.ActionId.Compare(
+				Right.ActionId,
+				ESearchCase::CaseSensitive);
+			return ActionComparison == 0
+				? Left.RequirementId.Compare(
+					Right.RequirementId,
+					ESearchCase::CaseSensitive) < 0
+				: ActionComparison < 0;
+		});
+	TArray<TSharedPtr<FJsonValue>> RequirementCards;
+	for (const FRequirementCardExport& Card : RequirementCardRecords)
+	{
+		TSharedRef<FJsonObject> CardObject = MakeShared<FJsonObject>();
+		CardObject->SetStringField(TEXT("action_id"), Card.ActionId);
+		CardObject->SetStringField(
+			TEXT("requirement_id"),
+			Card.RequirementId);
+		CardObject->SetBoolField(TEXT("met"), Card.bMet);
+		CardObject->SetStringField(
+			TEXT("player_facing_detail"),
+			Card.PlayerFacingDetail);
+		RequirementCards.Add(MakeShared<FJsonValueObject>(CardObject));
+	}
+	Root->SetArrayField(TEXT("requirement_cards"), RequirementCards);
 	TArray<TSharedPtr<FJsonValue>> PhaseSummaries;
 	for (const FWSPhaseSummary& Summary : Snapshot.PhaseSummaries)
 	{
@@ -1237,7 +1753,15 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 		return false;
 	}
 
-	OutFilePath = FPaths::ProjectSavedDir() / TEXT("Logs/WhiteoutStation_EventLog.json");
+	OutFilePath = FPaths::ProjectSavedDir()
+		/ TEXT("Logs/WhiteoutStation_EventLog.json");
+#if WITH_DEV_AUTOMATION_TESTS
+	if (!EventLogExportPathForTest.IsEmpty())
+	{
+		OutFilePath = EventLogExportPathForTest;
+	}
+#endif
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(OutFilePath), true);
 	return FFileHelper::SaveStringToFile(Json, *OutFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }
 
