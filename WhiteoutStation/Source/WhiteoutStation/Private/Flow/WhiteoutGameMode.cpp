@@ -2442,7 +2442,17 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 	if (RouteName.Equals(TEXT("medical"), ESearchCase::IgnoreCase))
 	{
 		AddBeginPhase(EWSHeatingZone::MedicalRoom);
-		AddAction(TEXT("talk_ye_cheng"));
+		AddAction(TEXT("talk_ye_cheng"), [](FWSActionRequest& Request)
+		{
+			Request.DialogueAct = EWSDialogueAct::Ask;
+			Request.PlayerSaid = TEXT("顾衡的手怎么样，会影响精细维修吗？");
+			Request.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+			Request.SemanticFrame.QueryType = EWSDialogueQueryType::Status;
+			Request.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+			Request.SemanticFrame.TargetFactId = TEXT("FACT_HAND_INJURY");
+			Request.SemanticFrame.Confidence = 0.99f;
+			Request.SemanticFrame.Source = TEXT("shipping_auto_route");
+		});
 		AddAction(TEXT("treat_character"), [](FWSActionRequest& Request)
 		{
 			Request.TreatmentTarget = EWSCharacterId::GuHeng;
