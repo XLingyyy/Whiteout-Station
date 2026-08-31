@@ -8,6 +8,7 @@
 #include "Presentation/WSPresentationText.h"
 #include "State/WhiteoutRulesEngine.h"
 #include "State/WSKnowledgePolicy.h"
+#include "State/WindStationStateSubsystem.h"
 
 namespace WhiteoutRuleTests
 {
@@ -389,10 +390,10 @@ bool FWhiteoutKnowledgeTest::RunTest(const FString& Parameters)
 	GuRequest.DialogueAct = EWSDialogueAct::Challenge;
 	const FWSAgentReply BothEvidenceReply =
 		UWSNPCDecisionService::BuildDeterministicReply(GuRequest, BothEvidenceState);
-	TestFalse(
-		TEXT("Two-evidence challenge does not reveal undiscovered compatibility"),
+	TestTrue(
+		TEXT("Two-evidence challenge may disclose relay compatibility"),
 		BothEvidenceReply.ReferencedFactIds.Contains(TEXT("FACT_RELAY_COMPATIBILITY"))
-			|| BothEvidenceReply.Utterance.Contains(TEXT("厨房加热器")));
+			&& BothEvidenceReply.Utterance.Contains(TEXT("厨房加热器")));
 	TestFalse(
 		TEXT("Suspicion is not upgraded to confirmed bypass by dialogue"),
 		BothEvidenceReply.Utterance.Contains(TEXT("确实被旁路")));
@@ -584,6 +585,32 @@ bool FWhiteoutDialogueBoundaryTest::RunTest(const FString& Parameters)
 			Reason));
 	TestFalse(TEXT("Fully disclosed context keeps a safe model tail"), ModelReply.bFallback);
 	TestEqual(TEXT("Fully disclosed context records model expression"), ModelReply.AnswerSource, FString(TEXT("spine_plus_ai")));
+	const FString UnplannedKnownFactPayload = TEXT("{\"persona_tail\":\"我这只手有点不稳。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[\"FACT_HAND_INJURY\"],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
+	TestFalse(
+		TEXT("A model cannot add a known but unplanned fact"),
+		UWSAgentGateway::ValidateModelPayload(
+			UnplannedKnownFactPayload,
+			Decision,
+			FullyDisclosedGuFacts,
+			ModelReply,
+			Reason));
+	TestEqual(
+		TEXT("Unplanned disclosure rejection is explicit"),
+		Reason,
+		FString(TEXT("unplanned_fact_reference")));
+	const FString UntaggedUnplannedKnownFactPayload = TEXT("{\"persona_tail\":\"我的右手使不上力。\",\"emotion\":\"guarded\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"consider\"}");
+	TestFalse(
+		TEXT("A model cannot hide an unplanned known fact from its fact list"),
+		UWSAgentGateway::ValidateModelPayload(
+			UntaggedUnplannedKnownFactPayload,
+			Decision,
+			FullyDisclosedGuFacts,
+			ModelReply,
+			Reason));
+	TestTrue(
+		TEXT("An untagged unplanned disclosure identifies the semantic fact"),
+		Reason.StartsWith(
+			TEXT("semantic_unplanned_fact_reference:FACT_HAND_INJURY")));
 
 	const FString MutationPayload = TEXT("{\"persona_tail\":\"修好了。\",\"emotion\":\"calm\",\"used_action_id\":\"talk_gu_heng\",\"referenced_fact_ids\":[],\"movement_intent\":\"stay\",\"reaction_action\":\"neutral\",\"ap_delta\":2}");
 	TestFalse(
@@ -983,7 +1010,7 @@ bool FWhiteoutV11ConfigAndPhaseTest::RunTest(const FString& Parameters)
 
 	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
 	TestTrue(TEXT("v1.1 schema branch is active"), Engine.IsV11());
-	TestEqual(TEXT("v1.1 schema is 4"), Engine.GetConfig().SchemaVersion, 4);
+	TestEqual(TEXT("v1.3 knowledge schema is 6"), Engine.GetConfig().SchemaVersion, 6);
 	TestEqual(TEXT("v1.1 rules version loads"), Engine.GetConfig().RulesVersion, FString(TEXT("1.1.0")));
 	TestEqual(TEXT("Morning starts with four AP"), Engine.GetState().PhaseActionPoints, 4);
 
@@ -1753,35 +1780,59 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	FWSActionRequest RepairRequest = WhiteoutRuleTests::MakeRequest(TEXT("repair_generator"));
 	const FWSActionRequirementReport Requirements =
 		Engine.EvaluateActionRequirements(RepairRequest);
-	const FWSRequirementPlan* RelayPlan = Requirements.AlternativePlans.FindByPredicate(
+	FWSActionRequest RequirementDialogue = WhiteoutRuleTests::MakeRequest(
+		TEXT("talk_gu_heng"));
+	RequirementDialogue.SemanticFrame.QueryType =
+		EWSDialogueQueryType::Requirements;
+	RequirementDialogue.SemanticFrame.TargetActionId = TEXT("repair_generator");
+	RequirementDialogue.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	const FWSActionRequirementReport VisibleRequirements =
+		UWSNPCDecisionService::ResolveRequirementVisibility(
+			Requirements,
+			UWSNPCDecisionService::BuildDisclosureContext(
+				RequirementDialogue,
+				EWSCharacterId::GuHeng,
+				Engine.GetState()));
+	const FWSRequirementPlan* RelayPlan = VisibleRequirements.AlternativePlans.FindByPredicate(
 		[](const FWSRequirementPlan& Plan)
 		{
-			return Plan.PlanId == TEXT("relay_replacement");
+			return Plan.PlanId == TEXT("investigate_technical_alternative");
 		});
 	TestNotNull(TEXT("Opening requirement report still contains the internal relay route"), RelayPlan);
 	if (RelayPlan && !RelayPlan->Requirements.IsEmpty())
 	{
-		TestFalse(
-			TEXT("Unknown relay route is hidden from dialogue and condition cards"),
-			RelayPlan->Requirements[0].bDisclosable);
+		TestTrue(
+			TEXT("Unknown relay route is represented as an investigation-safe card"),
+			RelayPlan->Requirements[0].DisclosureLevel == EWSDisclosureLevel::Hidden
+				&& RelayPlan->Requirements[0].PlayerFacingDetail.ToString().Contains(
+					TEXT("需调查"))
+				&& RelayPlan->Requirements[0].InternalExplanation.IsEmpty()
+				&& !RelayPlan->Requirements[0].RequirementId.ToString().Contains(
+					TEXT("relay"))
+				&& RelayPlan->Requirements[0].RemediationActionId
+					== TEXT("inspect_control_cabinet"));
 	}
-	const FWSRequirementItem* HandRisk = Requirements.Risks.FindByPredicate(
+	const FWSRequirementItem* HandRisk = VisibleRequirements.Risks.FindByPredicate(
 		[](const FWSRequirementItem& Item)
 		{
-			return Item.RequirementId == TEXT("right_hand_injury_risk");
+			return Item.RequirementId == TEXT("unknown_fine_work_risk");
 		});
 	TestNotNull(TEXT("Opening requirement report still evaluates the internal hand risk"), HandRisk);
 	if (HandRisk)
 	{
-		TestFalse(
-			TEXT("Undiagnosed hand risk is hidden from dialogue and condition cards"),
-			HandRisk->bDisclosable);
+		TestTrue(
+			TEXT("Undiagnosed risk uses a non-diagnostic investigation label"),
+			HandRisk->DisclosureLevel < EWSDisclosureLevel::Partial
+				&& HandRisk->PlayerFacingDetail.ToString().Contains(TEXT("需调查"))
+				&& HandRisk->InternalExplanation.IsEmpty()
+				&& !HandRisk->RequirementId.ToString().Contains(TEXT("hand")));
 	}
 	const FString ConditionSummary = UWhiteoutHUDWidget::BuildDialogueConditionSummary(
-		Requirements);
-	TestFalse(
-		TEXT("Condition card omits the fully hidden relay route"),
-		ConditionSummary.Contains(TEXT("路线 B")));
+		VisibleRequirements);
+	TestTrue(
+		TEXT("Condition card keeps an investigation-safe unknown route"),
+		ConditionSummary.Contains(TEXT("路线 B"))
+			&& ConditionSummary.Contains(TEXT("需调查")));
 	TestFalse(
 		TEXT("Condition card never marks a fully hidden route as satisfied"),
 		ConditionSummary.Contains(TEXT("路线 B：当前已满足")));
@@ -2477,17 +2528,28 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	const FWSActionRequirementReport SuspectedRequirements =
 		ObservationEngine.EvaluateActionRequirements(
 			WhiteoutRuleTests::MakeRequest(TEXT("repair_generator")));
-	const FWSRequirementItem* SuspectedHandRisk = SuspectedRequirements.Risks.FindByPredicate(
+	FWSActionRequest GuRequirementQuestion = WhiteoutRuleTests::MakeRequest(TEXT("talk_gu_heng"));
+	GuRequirementQuestion.SemanticFrame.QueryType = EWSDialogueQueryType::Requirements;
+	GuRequirementQuestion.SemanticFrame.TargetActionId = TEXT("repair_generator");
+	GuRequirementQuestion.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+	const FWSActionRequirementReport SuspectedVisibleRequirements =
+		UWSNPCDecisionService::ResolveRequirementVisibility(
+			SuspectedRequirements,
+			UWSNPCDecisionService::BuildDisclosureContext(
+				GuRequirementQuestion,
+				EWSCharacterId::GuHeng,
+				ObservationEngine.GetState()));
+	const FWSRequirementItem* SuspectedHandRisk = SuspectedVisibleRequirements.Risks.FindByPredicate(
 		[](const FWSRequirementItem& Item)
 		{
-			return Item.RequirementId == TEXT("right_hand_injury_risk");
+			return Item.RequirementId == TEXT("unknown_fine_work_risk");
 		});
 	TestNotNull(TEXT("Suspected observation still evaluates the internal hand risk"), SuspectedHandRisk);
 	if (SuspectedHandRisk)
 	{
-		TestFalse(
-			TEXT("Suspected hand observation does not disclose a confirmed injury risk"),
-			SuspectedHandRisk->bDisclosable);
+		TestTrue(
+			TEXT("Suspected hand observation remains a hint in the condition view"),
+			SuspectedHandRisk->DisclosureLevel == EWSDisclosureLevel::Hint);
 	}
 	const FString SuspectedHandLabel = FWSPresentationText::FactLabel(
 		TEXT("FACT_HAND_INJURY")).ToString();
@@ -2501,7 +2563,14 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	const FWSActionRequirementReport ConfirmedRequirements =
 		ObservationEngine.EvaluateActionRequirements(
 			WhiteoutRuleTests::MakeRequest(TEXT("repair_generator")));
-	const FWSRequirementItem* ConfirmedHandRisk = ConfirmedRequirements.Risks.FindByPredicate(
+	const FWSActionRequirementReport ConfirmedVisibleRequirements =
+		UWSNPCDecisionService::ResolveRequirementVisibility(
+			ConfirmedRequirements,
+			UWSNPCDecisionService::BuildDisclosureContext(
+				GuRequirementQuestion,
+				EWSCharacterId::GuHeng,
+				ObservationEngine.GetState()));
+	const FWSRequirementItem* ConfirmedHandRisk = ConfirmedVisibleRequirements.Risks.FindByPredicate(
 		[](const FWSRequirementItem& Item)
 		{
 			return Item.RequirementId == TEXT("right_hand_injury_risk");
@@ -2510,8 +2579,8 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	if (ConfirmedHandRisk)
 	{
 		TestTrue(
-			TEXT("Confirmed hand injury may be disclosed in the requirement report"),
-			ConfirmedHandRisk->bDisclosable);
+			TEXT("Confirmed hand injury may be explicit in the safe requirement view"),
+			ConfirmedHandRisk->DisclosureLevel == EWSDisclosureLevel::Explicit);
 	}
 	FWSActionRequest ReassureYe = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
 	ReassureYe.DialogueAct = EWSDialogueAct::Reassure;
@@ -2680,6 +2749,245 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Strained voiced diagnosis updates state"),
 		StrainedEngine.GetState().Flags.bGuHengDiagnosed);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV13SaveMigrationTest,
+	"WhiteoutStation.DialogueV13.SaveMigration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV13SaveMigrationTest::RunTest(const FString& Parameters)
+{
+	for (const FString SourceVersion : {FString(TEXT("1.1.0")), FString(TEXT("1.2.0"))})
+	{
+		FWSGameState Legacy;
+		Legacy.RulesSchemaVersion = 4;
+		Legacy.Flags.bHeatPackRevealed = true;
+		Legacy.Flags.bGuHengDiagnosed = true;
+		Legacy.Flags.bRelayCompatibilityKnown = true;
+		Legacy.PlayerKnowledge.Add(
+			TEXT("FACT_HEAT_PACK"),
+			EWSKnowledgeLevel::Claimed);
+		Legacy.PlayerKnowledge.Add(
+			TEXT("FACT_BURNT_RELAY"),
+			EWSKnowledgeLevel::Suspected);
+		const FWSGameState Migrated =
+			UWindStationStateSubsystem::MigrateSaveStateForV13(
+				Legacy,
+				SourceVersion,
+				6,
+				TEXT("1.1.0"));
+		TestEqual(
+			FString::Printf(TEXT("%s migrates to schema 6"), *SourceVersion),
+			Migrated.RulesSchemaVersion,
+			6);
+		TestTrue(
+			FString::Printf(TEXT("%s preserves and confirms visible legacy facts"), *SourceVersion),
+			Migrated.PlayerKnowledge.FindRef(TEXT("FACT_HEAT_PACK"))
+				== EWSKnowledgeLevel::Confirmed
+				&& Migrated.PlayerKnowledge.FindRef(TEXT("FACT_HAND_INJURY"))
+					== EWSKnowledgeLevel::Confirmed
+				&& Migrated.PlayerKnowledge.FindRef(TEXT("FACT_MEDICAL_DIAGNOSIS"))
+					== EWSKnowledgeLevel::Confirmed
+				&& Migrated.PlayerKnowledge.FindRef(TEXT("FACT_RELAY_COMPATIBILITY"))
+					== EWSKnowledgeLevel::Confirmed);
+		TestTrue(
+			FString::Printf(TEXT("%s preserves unrelated knowledge"), *SourceVersion),
+			Migrated.PlayerKnowledge.FindRef(TEXT("FACT_BURNT_RELAY"))
+				== EWSKnowledgeLevel::Suspected);
+	}
+
+	FWSGameState CurrentVersion;
+	CurrentVersion.Flags.bHeatPackRevealed = true;
+	const FWSGameState UnchangedKnowledge =
+		UWindStationStateSubsystem::MigrateSaveStateForV13(
+			CurrentVersion,
+			TEXT("1.3.0"),
+			6,
+			TEXT("1.1.0"));
+	TestFalse(
+		TEXT("A v1.3 save does not infer knowledge from legacy flags"),
+		UnchangedKnowledge.PlayerKnowledge.Contains(TEXT("FACT_HEAT_PACK")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV13KnowledgeUpgradeTest,
+	"WhiteoutStation.DialogueV13.KnowledgeUpgrade",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV13KnowledgeUpgradeTest::RunTest(const FString& Parameters)
+{
+	FWhiteoutRulesEngine EmptyEngine;
+	EmptyEngine.UpgradePlayerKnowledgeFromUtterance(
+		{},
+		EWSCharacterId::GuHeng);
+	TestTrue(
+		TEXT("An empty utterance does not create knowledge"),
+		EmptyEngine.GetState().PlayerKnowledge.IsEmpty());
+
+	FWhiteoutRulesEngine HandEngine;
+	HandEngine.UpgradePlayerKnowledgeFromUtterance(
+		{TEXT("FACT_HAND_INJURY")},
+		EWSCharacterId::GuHeng);
+	TestTrue(
+		TEXT("An uncorroborated hand disclosure remains suspected"),
+		HandEngine.GetState().PlayerKnowledge.FindRef(TEXT("FACT_HAND_INJURY"))
+			== EWSKnowledgeLevel::Suspected);
+	TestFalse(
+		TEXT("A hand disclosure alone does not set the diagnosis flag"),
+		HandEngine.GetState().Flags.bGuHengDiagnosed);
+
+	FWhiteoutRulesEngine DiagnosisEngine;
+	DiagnosisEngine.UpgradePlayerKnowledgeFromUtterance(
+		{TEXT("FACT_HAND_INJURY"), TEXT("FACT_MEDICAL_DIAGNOSIS")},
+		EWSCharacterId::YeCheng);
+	TestTrue(
+		TEXT("A medical diagnosis confirms the hand injury"),
+		DiagnosisEngine.GetState().Flags.bGuHengDiagnosed
+			&& DiagnosisEngine.GetState().PlayerKnowledge.FindRef(
+				TEXT("FACT_HAND_INJURY")) == EWSKnowledgeLevel::Confirmed
+			&& DiagnosisEngine.GetState().PlayerKnowledge.FindRef(
+				TEXT("FACT_MEDICAL_DIAGNOSIS")) == EWSKnowledgeLevel::Confirmed
+			&& DiagnosisEngine.GetState().Evidence.Contains(
+				TEXT("EVIDENCE_MEDICAL_DIAGNOSIS")));
+
+	FWhiteoutRulesEngine HeatPackEngine;
+	HeatPackEngine.UpgradePlayerKnowledgeFromUtterance(
+		{TEXT("FACT_HEAT_PACK")},
+		EWSCharacterId::YeCheng);
+	TestTrue(
+		TEXT("A heat-pack disclosure updates only its own legacy state"),
+		HeatPackEngine.GetState().Flags.bHeatPackRevealed
+			&& HeatPackEngine.GetState().PlayerKnowledge.FindRef(
+				TEXT("FACT_HEAT_PACK")) == EWSKnowledgeLevel::Confirmed
+			&& HeatPackEngine.GetState().Evidence.Contains(TEXT("EVIDENCE_HEAT_PACK"))
+			&& !HeatPackEngine.GetState().PlayerKnowledge.Contains(
+				TEXT("FACT_RELAY_COMPATIBILITY")));
+
+	FWhiteoutRulesEngine RelayEngine;
+	RelayEngine.UpgradePlayerKnowledgeFromUtterance(
+		{TEXT("FACT_RELAY_COMPATIBILITY")},
+		EWSCharacterId::GuHeng);
+	TestTrue(
+		TEXT("A relay disclosure updates only its own legacy state"),
+		RelayEngine.GetState().Flags.bRelayCompatibilityKnown
+			&& RelayEngine.GetState().PlayerKnowledge.FindRef(
+				TEXT("FACT_RELAY_COMPATIBILITY")) == EWSKnowledgeLevel::Confirmed
+			&& RelayEngine.GetState().Evidence.Contains(
+				TEXT("EVIDENCE_HEATER_SERVICE_LABEL"))
+			&& !RelayEngine.GetState().PlayerKnowledge.Contains(TEXT("FACT_HEAT_PACK")));
+
+	FWhiteoutRulesEngine CrossPersonaEngine;
+	CrossPersonaEngine.UpgradePlayerKnowledgeFromUtterance(
+		{TEXT("FACT_HEAT_PACK"), TEXT("FACT_RELAY_COMPATIBILITY")},
+		EWSCharacterId::GuHeng);
+	TestFalse(
+		TEXT("A speaker cannot upgrade facts outside their disclosure profile"),
+		CrossPersonaEngine.GetState().PlayerKnowledge.Contains(TEXT("FACT_HEAT_PACK")));
+	TestTrue(
+		TEXT("The same utterance still upgrades a fact owned by the speaker"),
+		CrossPersonaEngine.GetState().PlayerKnowledge.FindRef(
+			TEXT("FACT_RELAY_COMPATIBILITY")) == EWSKnowledgeLevel::Confirmed);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV13DisclosureMatrixTest,
+	"WhiteoutStation.DialogueV13.DisclosureMatrix",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV13DisclosureMatrixTest::RunTest(const FString& Parameters)
+{
+	struct FCase
+	{
+		const TCHAR* Name;
+		FName FactId;
+		FWSDialogueDisclosureContext Context;
+		EWSDisclosureLevel Expected;
+	};
+
+	FWSDialogueDisclosureContext GuOpening;
+	GuOpening.Speaker = EWSCharacterId::GuHeng;
+	GuOpening.Trust = 4.0f;
+	GuOpening.Pressure = 5.0f;
+
+	FWSDialogueDisclosureContext GuObserved = GuOpening;
+	GuObserved.PlayerEvidence.Add(TEXT("EVIDENCE_HAND_OBSERVATION"));
+
+	FWSDialogueDisclosureContext GuChallenged = GuObserved;
+	GuChallenged.SemanticFrame.SpeechAct = EWSDialogueAct::Challenge;
+	GuChallenged.SemanticFrame.QueryType = EWSDialogueQueryType::Evidence;
+
+	FWSDialogueDisclosureContext GuHighTrust = GuOpening;
+	GuHighTrust.Trust = 6.5f;
+	GuHighTrust.Pressure = 4.0f;
+
+	FWSDialogueDisclosureContext YeDiagnosis;
+	YeDiagnosis.Speaker = EWSCharacterId::YeCheng;
+	YeDiagnosis.Trust = 6.0f;
+	YeDiagnosis.Pressure = 4.0f;
+	YeDiagnosis.SemanticFrame.QueryType = EWSDialogueQueryType::Status;
+	YeDiagnosis.SemanticFrame.TargetFactId = TEXT("FACT_HAND_INJURY");
+
+	FWSDialogueDisclosureContext YeHeatPack = YeDiagnosis;
+	YeHeatPack.SemanticFrame.QueryType = EWSDialogueQueryType::Alternative;
+	YeHeatPack.SemanticFrame.TargetActionId = TEXT("treat_gu_heng");
+	YeHeatPack.SemanticFrame.TargetFactId = TEXT("FACT_HEAT_PACK");
+	YeHeatPack.PlayerKnownFacts.Add(TEXT("FACT_MEDICAL_DIAGNOSIS"));
+
+	FWSDialogueDisclosureContext GuRelayChallenge = GuOpening;
+	GuRelayChallenge.SemanticFrame.SpeechAct = EWSDialogueAct::Challenge;
+	GuRelayChallenge.PlayerKnownFacts = {
+		TEXT("FACT_FORCED_RESTART_SUSPICION"),
+		TEXT("FACT_BURNT_RELAY")};
+
+	FWSDialogueDisclosureContext GuUnrelatedEvidence = GuOpening;
+	GuUnrelatedEvidence.SemanticFrame.QueryType = EWSDialogueQueryType::Evidence;
+	GuUnrelatedEvidence.SemanticFrame.TargetFactId =
+		TEXT("FACT_FORCED_RESTART_SUSPICION");
+
+	FWSDialogueDisclosureContext YeUnrelatedAlternative = YeHeatPack;
+	YeUnrelatedAlternative.SemanticFrame.TargetFactId = NAME_None;
+	YeUnrelatedAlternative.SemanticFrame.TargetActionId = TEXT("calibrate_antenna");
+
+	FWSDialogueDisclosureContext GuKnowsHeatPack = GuOpening;
+	GuKnowsHeatPack.PlayerKnownFacts.Add(TEXT("FACT_HEAT_PACK"));
+
+	FWSDialogueDisclosureContext YeKnowsRelay = YeDiagnosis;
+	YeKnowsRelay.PlayerKnownFacts.Add(TEXT("FACT_RELAY_COMPATIBILITY"));
+
+	const TArray<FCase> Cases = {
+		{TEXT("Gu opening evades hand injury"), TEXT("FACT_HAND_INJURY"), GuOpening, EWSDisclosureLevel::Evasive},
+		{TEXT("Observed hand is a hint"), TEXT("FACT_HAND_INJURY"), GuObserved, EWSDisclosureLevel::Hint},
+		{TEXT("Evidence challenge permits partial admission"), TEXT("FACT_HAND_INJURY"), GuChallenged, EWSDisclosureLevel::Partial},
+		{TEXT("High trust permits partial admission"), TEXT("FACT_HAND_INJURY"), GuHighTrust, EWSDisclosureLevel::Partial},
+		{TEXT("Ye targeted diagnosis is explicit"), TEXT("FACT_HAND_INJURY"), YeDiagnosis, EWSDisclosureLevel::Explicit},
+		{TEXT("Ye heat pack remains hidden without diagnosis context"), TEXT("FACT_HEAT_PACK"), YeDiagnosis, EWSDisclosureLevel::Hidden},
+		{TEXT("Ye can explicitly disclose heat pack after diagnosis"), TEXT("FACT_HEAT_PACK"), YeHeatPack, EWSDisclosureLevel::Explicit},
+		{TEXT("Unrelated alternative keeps heat pack hidden"), TEXT("FACT_HEAT_PACK"), YeUnrelatedAlternative, EWSDisclosureLevel::Hidden},
+		{TEXT("Two-evidence Gu challenge discloses relay compatibility"), TEXT("FACT_RELAY_COMPATIBILITY"), GuRelayChallenge, EWSDisclosureLevel::Explicit},
+		{TEXT("Unrelated evidence does not authorize hand injury"), TEXT("FACT_HAND_INJURY"), GuUnrelatedEvidence, EWSDisclosureLevel::Evasive},
+		{TEXT("Gu cannot disclose Ye's heat pack even when player knows it"), TEXT("FACT_HEAT_PACK"), GuKnowsHeatPack, EWSDisclosureLevel::Hidden},
+		{TEXT("Ye cannot disclose relay compatibility"), TEXT("FACT_RELAY_COMPATIBILITY"), YeKnowsRelay, EWSDisclosureLevel::Hidden}};
+
+	for (const FCase& Case : Cases)
+	{
+		const FWSFactDisclosureDecision Decision =
+			UWSNPCDecisionService::ResolveFactDisclosure(
+				Case.FactId,
+				Case.Context);
+		TestTrue(Case.Name, Decision.Level == Case.Expected);
+		TestTrue(
+			FString::Printf(TEXT("%s has a safe atom"), Case.Name),
+			!Decision.SafeAtomId.IsNone());
+		TestTrue(
+			FString::Printf(TEXT("%s prompt permission matches level"), Case.Name),
+			Decision.bMayEnterPrompt
+				== (Case.Expected == EWSDisclosureLevel::Partial
+					|| Case.Expected == EWSDisclosureLevel::Explicit));
+	}
 	return true;
 }
 

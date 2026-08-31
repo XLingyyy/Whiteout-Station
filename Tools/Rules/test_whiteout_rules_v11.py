@@ -30,10 +30,10 @@ def started(zone: str = "repair_room") -> WhiteoutSimulatorV11:
 
 
 class V11ConfigTests(unittest.TestCase):
-    def test_schema_four_config_is_valid_and_v10_shape_is_not_reused(self) -> None:
+    def test_v13_schema_config_is_valid_and_v10_shape_is_not_reused(self) -> None:
         rules = load_rules()
         self.assertEqual([], validate_rules(rules))
-        self.assertEqual(4, rules["schema_version"])
+        self.assertEqual(6, rules["schema_version"])
         self.assertEqual(4, rules["gameplay"]["action_points_per_phase"])
         self.assertEqual(["morning", "afternoon", "dusk"], rules["gameplay"]["phases"])
         self.assertEqual(

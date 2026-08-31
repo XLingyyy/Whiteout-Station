@@ -1137,9 +1137,6 @@ EWSReasonCode FWhiteoutRulesEngine::EvaluateRepairGeneratorReason(
 		FWSRequirementItem Relay;
 		Relay.RequirementId = TEXT("replacement_relay_available");
 		Relay.bSatisfied = bReplacementRelayAvailable;
-		Relay.bDisclosable = bReplacementRelayAvailable
-			|| State.Flags.bRelayCompatibilityKnown
-			|| Knows(FactRelayCompatibility);
 		Relay.RemediationActionId = State.Flags.bRelayCompatibilityKnown
 			? DismantleKitchenHeater
 			: InspectControlCabinet;
@@ -1155,14 +1152,36 @@ EWSReasonCode FWhiteoutRulesEngine::EvaluateRepairGeneratorReason(
 		FWSRequirementItem HandRisk;
 		HandRisk.RequirementId = TEXT("right_hand_injury_risk");
 		HandRisk.bSatisfied = GuHeng.InjurySeverity == EWSInjurySeverity::Normal;
-		HandRisk.bDisclosable = State.Flags.bGuHengDiagnosed
-			|| Knows(FactHandInjury, EWSKnowledgeLevel::Confirmed);
 		HandRisk.RemediationActionId = TreatCharacter;
 		HandRisk.Explanation = FText::FromString(
 			HandRisk.bSatisfied
 				? TEXT("伤手不会额外增加维修风险")
 				: TEXT("伤手会增加耗时和恶化风险，但不是绝对禁令"));
 		Report.Risks.Add(HandRisk);
+
+		const auto FinalizeMechanicalItem = [](FWSRequirementItem& Item)
+		{
+			Item.MechanicalVisibility =
+				EWSRequirementMechanicalVisibility::Visible;
+			Item.DisclosureLevel = EWSDisclosureLevel::Hidden;
+			Item.InternalExplanation = Item.Explanation;
+			Item.PlayerFacingDetail = FText::GetEmpty();
+		};
+		for (FWSRequirementItem& Item : Report.UniversalRequirements)
+		{
+			FinalizeMechanicalItem(Item);
+		}
+		for (FWSRequirementPlan& Plan : Report.AlternativePlans)
+		{
+			for (FWSRequirementItem& Item : Plan.Requirements)
+			{
+				FinalizeMechanicalItem(Item);
+			}
+		}
+		for (FWSRequirementItem& Risk : Report.Risks)
+		{
+			FinalizeMechanicalItem(Risk);
+		}
 	}
 	return Result;
 }
@@ -2518,6 +2537,73 @@ bool FWhiteoutRulesEngine::TryRecordModelCall()
 	return true;
 }
 
+void FWhiteoutRulesEngine::UpgradePlayerKnowledgeFromUtterance(
+	const TArray<FName>& DisclosedFactIds,
+	const EWSCharacterId Speaker,
+	TArray<FString>* OutChanges)
+{
+	using namespace WhiteoutRules;
+	const bool bMedicalDiagnosisDisclosed =
+		Speaker == EWSCharacterId::YeCheng
+		&& DisclosedFactIds.Contains(FactMedicalDiagnosis);
+	if (Speaker != EWSCharacterId::GuHeng
+		&& Speaker != EWSCharacterId::YeCheng)
+	{
+		return;
+	}
+	for (const FName FactId : DisclosedFactIds)
+	{
+		const bool bRequiresYeCheng =
+			FactId == FactMedicalDiagnosis || FactId == FactHeatPack;
+		const bool bRequiresGuHeng =
+			FactId == FactRelayCompatibility
+			|| FactId == FactGeneratorProtectionStop
+			|| FactId == FactForcedRestartSuspicion
+			|| FactId == FactBurntRelay
+			|| FactId == FactForcedRestartConfirmed;
+		if ((bRequiresYeCheng && Speaker != EWSCharacterId::YeCheng)
+			|| (bRequiresGuHeng && Speaker != EWSCharacterId::GuHeng))
+		{
+			continue;
+		}
+		if (FactId == FactHandInjury)
+		{
+			DiscoverFact(
+				FactId,
+				bMedicalDiagnosisDisclosed
+					? EWSKnowledgeLevel::Confirmed
+					: EWSKnowledgeLevel::Suspected,
+				OutChanges);
+		}
+		else if (FactId == FactMedicalDiagnosis)
+		{
+			State.Flags.bGuHengDiagnosed = true;
+			DiscoverFact(FactId, EWSKnowledgeLevel::Confirmed, OutChanges);
+			DiscoverFact(FactHandInjury, EWSKnowledgeLevel::Confirmed, OutChanges);
+			AddEvidence(TEXT("EVIDENCE_MEDICAL_DIAGNOSIS"), OutChanges);
+		}
+		else if (FactId == FactHeatPack)
+		{
+			State.Flags.bHeatPackRevealed = true;
+			DiscoverFact(FactId, EWSKnowledgeLevel::Confirmed, OutChanges);
+			AddEvidence(TEXT("EVIDENCE_HEAT_PACK"), OutChanges);
+		}
+		else if (FactId == FactRelayCompatibility)
+		{
+			State.Flags.bRelayCompatibilityKnown = true;
+			DiscoverFact(FactId, EWSKnowledgeLevel::Confirmed, OutChanges);
+			AddEvidence(TEXT("EVIDENCE_HEATER_SERVICE_LABEL"), OutChanges);
+		}
+		else if (FactId == FactGeneratorProtectionStop
+			|| FactId == FactForcedRestartSuspicion
+			|| FactId == FactBurntRelay
+			|| FactId == FactForcedRestartConfirmed)
+		{
+			DiscoverFact(FactId, EWSKnowledgeLevel::Confirmed, OutChanges);
+		}
+	}
+}
+
 bool FWhiteoutRulesEngine::SetRequirementPinned(
 	const FName ActionId,
 	const bool bPinned)
@@ -2573,7 +2659,10 @@ bool FWhiteoutRulesEngine::AcceptNegotiationOffer(
 	Offer.bAccepted = true;
 	for (const FWSRequirementItem& Item : Reply.RequirementReport.UniversalRequirements)
 	{
-		if (Item.bDisclosable)
+		if (Item.MechanicalVisibility
+			== EWSRequirementMechanicalVisibility::Visible
+			&& static_cast<uint8>(Item.DisclosureLevel)
+				>= static_cast<uint8>(EWSDisclosureLevel::Partial))
 		{
 			Offer.RequiredConditionIds.AddUnique(Item.RequirementId);
 		}
@@ -2581,6 +2670,19 @@ bool FWhiteoutRulesEngine::AcceptNegotiationOffer(
 	const FWSRequirementPlan* SelectedPlan = nullptr;
 	for (const FWSRequirementPlan& Plan : Reply.RequirementReport.AlternativePlans)
 	{
+		const bool bHasDisclosedRequirement =
+			Plan.Requirements.ContainsByPredicate(
+				[](const FWSRequirementItem& Item)
+				{
+					return Item.MechanicalVisibility
+							== EWSRequirementMechanicalVisibility::Visible
+						&& static_cast<uint8>(Item.DisclosureLevel)
+							>= static_cast<uint8>(EWSDisclosureLevel::Partial);
+				});
+		if (!bHasDisclosedRequirement)
+		{
+			continue;
+		}
 		if (!SelectedPlan
 			|| Plan.EstimatedAP < SelectedPlan->EstimatedAP
 			|| (Plan.EstimatedAP == SelectedPlan->EstimatedAP
@@ -2593,7 +2695,10 @@ bool FWhiteoutRulesEngine::AcceptNegotiationOffer(
 	{
 		for (const FWSRequirementItem& Item : SelectedPlan->Requirements)
 		{
-			if (Item.bDisclosable)
+			if (Item.MechanicalVisibility
+				== EWSRequirementMechanicalVisibility::Visible
+				&& static_cast<uint8>(Item.DisclosureLevel)
+					>= static_cast<uint8>(EWSDisclosureLevel::Partial))
 			{
 				Offer.RequiredConditionIds.AddUnique(Item.RequirementId);
 			}

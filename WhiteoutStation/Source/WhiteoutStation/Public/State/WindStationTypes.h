@@ -89,6 +89,23 @@ enum class EWSKnowledgeLevel : uint8
 };
 
 UENUM(BlueprintType)
+enum class EWSDisclosureLevel : uint8
+{
+	Hidden,
+	Evasive,
+	Hint,
+	Partial,
+	Explicit
+};
+
+UENUM(BlueprintType)
+enum class EWSRequirementMechanicalVisibility : uint8
+{
+	Hidden,
+	Visible
+};
+
+UENUM(BlueprintType)
 enum class EWSResourceType : uint8
 {
 	Medicine,
@@ -461,6 +478,54 @@ struct FWSDialogueIntentResult
 };
 
 USTRUCT(BlueprintType)
+struct FWSDialogueDisclosureContext
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSCharacterId Speaker = EWSCharacterId::GuHeng;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSDialogueSemanticFrame SemanticFrame;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float Trust = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float Pressure = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> PlayerKnownFacts;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> PlayerEvidence;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> PublicFacts;
+};
+
+USTRUCT(BlueprintType)
+struct FWSFactDisclosureDecision
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName FactId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSDisclosureLevel Level = EWSDisclosureLevel::Hidden;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bMayEnterPrompt = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bMayEnterConditionCard = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName SafeAtomId;
+};
+
+USTRUCT(BlueprintType)
 struct FWSRequirementItem
 {
 	GENERATED_BODY()
@@ -471,14 +536,33 @@ struct FWSRequirementItem
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bSatisfied = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		meta = (DeprecatedProperty, DeprecationMessage = "Use MechanicalVisibility and disclosure policy."))
 	bool bDisclosable = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSRequirementMechanicalVisibility MechanicalVisibility =
+		EWSRequirementMechanicalVisibility::Visible;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSDisclosureLevel DisclosureLevel = EWSDisclosureLevel::Explicit;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName RemediationActionId;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		meta = (DeprecatedProperty, DeprecationMessage = "Use PlayerFacingDetail or InternalExplanation."))
 	FText Explanation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FText PlayerFacingDetail;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FText InternalExplanation;
 };
 
 USTRUCT(BlueprintType)
@@ -1052,6 +1136,12 @@ struct FWSAgentReply
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FName> ReferencedFactIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> PlannedDisclosureFacts;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> DisclosedFactIds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	EWSNPCMovementIntent MovementIntent = EWSNPCMovementIntent::Stay;

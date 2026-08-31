@@ -68,6 +68,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Save")
 	bool HasSnapshot() const;
 
+	static FWSGameState MigrateSaveStateForV13(
+		const FWSGameState& SourceState,
+		const FString& SourceSaveVersion,
+		int32 TargetRulesSchemaVersion,
+		const FString& TargetRulesVersion);
+
 	UFUNCTION(BlueprintCallable, Category = "Whiteout Station|Save")
 	bool ExportEventLog(FString& OutFilePath) const;
 
@@ -93,7 +99,8 @@ public:
 
 private:
 	static const FString SaveSlot;
-	static const FString LegacySaveSlot;
+	static const FString LegacySaveSlotV12;
+	static const FString LegacySaveSlotV11;
 	FWhiteoutRulesEngine RulesEngine;
 
 	UPROPERTY()

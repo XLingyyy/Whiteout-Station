@@ -3251,14 +3251,16 @@ FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
 	bool bHasDisclosableUniversal = false;
 	for (const FWSRequirementItem& Item : Report.UniversalRequirements)
 	{
-		if (!Item.bDisclosable)
+		if (Item.MechanicalVisibility
+			== EWSRequirementMechanicalVisibility::Hidden
+			|| Item.PlayerFacingDetail.IsEmpty())
 		{
 			continue;
 		}
 		bHasDisclosableUniversal = true;
 		if (!Item.bSatisfied)
 		{
-			Universal.Add(Item.Explanation.ToString());
+			Universal.Add(Item.PlayerFacingDetail.ToString());
 		}
 	}
 	if (!Universal.IsEmpty())
@@ -3279,14 +3281,16 @@ FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
 		bool bHasDisclosableRequirement = false;
 		for (const FWSRequirementItem& Item : Plan.Requirements)
 		{
-			if (!Item.bDisclosable)
+			if (Item.MechanicalVisibility
+				== EWSRequirementMechanicalVisibility::Hidden
+				|| Item.PlayerFacingDetail.IsEmpty())
 			{
 				continue;
 			}
 			bHasDisclosableRequirement = true;
 			if (!Item.bSatisfied)
 			{
-				Missing.Add(Item.Explanation.ToString());
+				Missing.Add(Item.PlayerFacingDetail.ToString());
 			}
 		}
 		if (!bHasDisclosableRequirement)
@@ -3300,9 +3304,14 @@ FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
 	}
 	for (const FWSRequirementItem& Risk : Report.Risks)
 	{
-		if (Risk.bDisclosable && !Risk.bSatisfied)
+		if (Risk.MechanicalVisibility
+				== EWSRequirementMechanicalVisibility::Visible
+			&& !Risk.PlayerFacingDetail.IsEmpty()
+			&& !Risk.bSatisfied)
 		{
-			Lines.Add(FString::Printf(TEXT("风险：%s"), *Risk.Explanation.ToString()));
+			Lines.Add(FString::Printf(
+				TEXT("风险：%s"),
+				*Risk.PlayerFacingDetail.ToString()));
 			break;
 		}
 	}

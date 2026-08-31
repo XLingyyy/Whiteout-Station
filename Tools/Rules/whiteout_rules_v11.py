@@ -179,8 +179,8 @@ def load_rules(path: Path | str | None = None) -> dict[str, Any]:
 
 def validate_rules(rules: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if rules.get("schema_version") != 4:
-        errors.append("v1.1 requires schema_version 4")
+    if rules.get("schema_version") not in {4, 6}:
+        errors.append("v1.1 mechanics require schema_version 4 or 6")
 
     gameplay = rules.get("gameplay", {})
     phases = gameplay.get("phases", [])

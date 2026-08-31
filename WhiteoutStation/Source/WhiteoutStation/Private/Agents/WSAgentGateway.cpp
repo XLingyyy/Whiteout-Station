@@ -851,7 +851,7 @@ void UWSAgentGateway::RequestExpression(
 		State,
 		RequirementReport);
 	const TArray<FName> AllowedFacts =
-		UWSNPCDecisionService::BuildAllowedFacts(ActionRequest.ActionId, Decision.Speaker, State);
+		UWSNPCDecisionService::BuildAllowedFacts(ActionRequest, Decision.Speaker, State);
 	const bool bKnowledgeBoundaryOpen = IsExpressionKnowledgeBoundaryOpen(
 		Decision.Speaker,
 		AllowedFacts);
@@ -1344,10 +1344,29 @@ bool UWSAgentGateway::ValidateModelPayload(
 	{
 		return false;
 	}
+	for (const FName FactId : ReferencedFacts)
+	{
+		if (!Decision.PlannedDisclosureFacts.Contains(FactId))
+		{
+			OutReason = TEXT("unplanned_fact_reference");
+			return false;
+		}
+	}
 	FString UnauthorizedFactId;
 	if (WhiteoutAgentValidation::ContainsProtectedUnauthorizedClaim(PersonaTail, AllowedFactIds, UnauthorizedFactId))
 	{
 		OutReason = FString::Printf(TEXT("semantic_fact_permission_violation:%s"), *UnauthorizedFactId);
+		return false;
+	}
+	FString UnplannedFactId;
+	if (WhiteoutAgentValidation::ContainsProtectedUnauthorizedClaim(
+		PersonaTail,
+		Decision.PlannedDisclosureFacts,
+		UnplannedFactId))
+	{
+		OutReason = FString::Printf(
+			TEXT("semantic_unplanned_fact_reference:%s"),
+			*UnplannedFactId);
 		return false;
 	}
 	for (const FName FactId : AllowedFactIds)
@@ -1362,6 +1381,7 @@ bool UWSAgentGateway::ValidateModelPayload(
 	OutReply = Decision;
 	OutReply.Emotion = Emotion;
 	OutReply.ReferencedFactIds = CombinedFacts;
+	OutReply.DisclosedFactIds = CombinedFacts;
 	OutReply.MovementIntent = ParsedMovement;
 	OutReply.Reaction = ParsedReaction;
 	FString DropReason;
@@ -1371,6 +1391,8 @@ bool UWSAgentGateway::ValidateModelPayload(
 		OutReply.PersonaTail.Reset();
 		OutReply.AnswerSource = TEXT("spine_only");
 		OutReply.bFallback = true;
+		OutReply.ReferencedFactIds = Decision.ReferencedFactIds;
+		OutReply.DisclosedFactIds = Decision.DisclosedFactIds;
 		OutReply.ValidationReason = DropReason;
 		OutReason = DropReason;
 		return true;
@@ -1384,6 +1406,8 @@ bool UWSAgentGateway::ValidateModelPayload(
 		OutReply.PersonaTail.Reset();
 		OutReply.AnswerSource = TEXT("spine_only");
 		OutReply.bFallback = true;
+		OutReply.ReferencedFactIds = Decision.ReferencedFactIds;
+		OutReply.DisclosedFactIds = Decision.DisclosedFactIds;
 		OutReply.ValidationReason = TEXT("persona_tail_knowledge_boundary");
 		OutReason = OutReply.ValidationReason;
 		return true;

@@ -14,6 +14,381 @@ namespace WhiteoutAgentFacts
 	const FName ForcedRestartConfirmed(TEXT("FACT_FORCED_RESTART_CONFIRMED"));
 }
 
+namespace
+{
+	struct FPersonaDisclosureProfile
+	{
+		EWSCharacterId Speaker = EWSCharacterId::GuHeng;
+		float VoluntaryTrust = 10.0f;
+		float PressureCeiling = 0.0f;
+		TArray<FName> PrivateFacts;
+	};
+
+	const FPersonaDisclosureProfile& DisclosureProfile(
+		const EWSCharacterId Speaker)
+	{
+		static const FPersonaDisclosureProfile GuHengProfile{
+			EWSCharacterId::GuHeng,
+			6.0f,
+			8.0f,
+			{
+				WhiteoutAgentFacts::HandInjury,
+				WhiteoutAgentFacts::RelayCompatibility,
+				WhiteoutAgentFacts::ForcedRestartConfirmed}};
+		static const FPersonaDisclosureProfile YeChengProfile{
+			EWSCharacterId::YeCheng,
+			5.5f,
+			9.0f,
+			{
+				WhiteoutAgentFacts::HandInjury,
+				WhiteoutAgentFacts::MedicalDiagnosis,
+				WhiteoutAgentFacts::HeatPack}};
+		return Speaker == EWSCharacterId::YeCheng
+			? YeChengProfile
+			: GuHengProfile;
+	}
+
+	bool DisclosureAtLeast(
+		const EWSDisclosureLevel Level,
+		const EWSDisclosureLevel Minimum)
+	{
+		return static_cast<uint8>(Level) >= static_cast<uint8>(Minimum);
+	}
+
+	FWSFactDisclosureDecision DisclosureDecision(
+		const FName FactId,
+		const EWSDisclosureLevel Level,
+		const FName SafeAtomId)
+	{
+		FWSFactDisclosureDecision Decision;
+		Decision.FactId = FactId;
+		Decision.Level = Level;
+		Decision.bMayEnterPrompt = DisclosureAtLeast(
+			Level,
+			EWSDisclosureLevel::Partial);
+		Decision.bMayEnterConditionCard = Decision.bMayEnterPrompt;
+		Decision.SafeAtomId = SafeAtomId;
+		return Decision;
+	}
+
+	bool HasContextFact(
+		const FWSDialogueDisclosureContext& Context,
+		const FName FactId)
+	{
+		return Context.PlayerKnownFacts.Contains(FactId)
+			|| Context.PublicFacts.Contains(FactId);
+	}
+}
+
+FWSDialogueDisclosureContext UWSNPCDecisionService::BuildDisclosureContext(
+	const FWSActionRequest& Request,
+	const EWSCharacterId Speaker,
+	const FWSGameState& State)
+{
+	FWSDialogueDisclosureContext Context;
+	Context.Speaker = Speaker;
+	Context.SemanticFrame = Request.SemanticFrame;
+	Context.SemanticFrame.SpeechAct = Request.DialogueAct;
+	if (WSDialogueDisclosurePolicy::IsTargetedGuHengDiagnosisQuestion(Request))
+	{
+		Context.SemanticFrame.TargetFactId = WhiteoutAgentFacts::HandInjury;
+	}
+	else if (WSDialogueDisclosurePolicy::IsHeatPackDisclosureQuestion(Request))
+	{
+		Context.SemanticFrame.TargetFactId = WhiteoutAgentFacts::HeatPack;
+	}
+	const FWSCharacterState Character = State.Characters.FindRef(Speaker);
+	Context.Trust = Character.Trust;
+	Context.Pressure = Character.Pressure;
+	for (const TPair<FName, EWSKnowledgeLevel>& Pair : State.PlayerKnowledge)
+	{
+		if (Pair.Value == EWSKnowledgeLevel::Confirmed)
+		{
+			Context.PlayerKnownFacts.AddUnique(Pair.Key);
+		}
+	}
+	if (State.Flags.bGuHengDiagnosed)
+	{
+		Context.PlayerKnownFacts.AddUnique(WhiteoutAgentFacts::MedicalDiagnosis);
+		Context.PlayerKnownFacts.AddUnique(WhiteoutAgentFacts::HandInjury);
+	}
+	if (State.Flags.bHeatPackRevealed)
+	{
+		Context.PlayerKnownFacts.AddUnique(WhiteoutAgentFacts::HeatPack);
+	}
+	if (State.Flags.bRelayCompatibilityKnown
+		|| State.Resources.ReplacementRelay > 0)
+	{
+		Context.PlayerKnownFacts.AddUnique(
+			WhiteoutAgentFacts::RelayCompatibility);
+	}
+	Context.PlayerEvidence = State.Evidence;
+	Context.PublicFacts = State.PublicFacts;
+	return Context;
+}
+
+FWSFactDisclosureDecision UWSNPCDecisionService::ResolveFactDisclosure(
+	const FName FactId,
+	const FWSDialogueDisclosureContext& Context)
+{
+	using namespace WhiteoutAgentFacts;
+	const FPersonaDisclosureProfile& Profile =
+		DisclosureProfile(Context.Speaker);
+	const bool bPersonaProtectedFact =
+		FactId == HandInjury
+		|| FactId == MedicalDiagnosis
+		|| FactId == HeatPack
+		|| FactId == RelayCompatibility;
+	if (bPersonaProtectedFact && !Profile.PrivateFacts.Contains(FactId))
+	{
+		return DisclosureDecision(
+			FactId,
+			EWSDisclosureLevel::Hidden,
+			TEXT("fact_hidden"));
+	}
+	if (HasContextFact(Context, FactId))
+	{
+		return DisclosureDecision(
+			FactId,
+			EWSDisclosureLevel::Explicit,
+			TEXT("known_fact_explicit"));
+	}
+
+	if (FactId == HandInjury)
+	{
+		if (Context.Speaker == EWSCharacterId::YeCheng)
+		{
+			const bool bTargetedDiagnosis =
+				Context.SemanticFrame.TargetFactId == HandInjury
+				&& (Context.SemanticFrame.QueryType == EWSDialogueQueryType::Status
+					|| Context.SemanticFrame.QueryType == EWSDialogueQueryType::Evidence);
+			if (bTargetedDiagnosis)
+			{
+				return DisclosureDecision(
+					FactId,
+					EWSDisclosureLevel::Explicit,
+					TEXT("ye_hand_diagnosis"));
+			}
+			if (Context.PlayerEvidence.Contains(TEXT("EVIDENCE_HAND_OBSERVATION")))
+			{
+				return DisclosureDecision(
+					FactId,
+					EWSDisclosureLevel::Hint,
+					TEXT("hand_observation_hint"));
+			}
+			return DisclosureDecision(
+				FactId,
+				EWSDisclosureLevel::Hidden,
+				TEXT("hand_unexamined"));
+		}
+
+		if (Context.PlayerEvidence.Contains(TEXT("EVIDENCE_MEDICAL_DIAGNOSIS")))
+		{
+			return DisclosureDecision(
+				FactId,
+				EWSDisclosureLevel::Explicit,
+				TEXT("gu_hand_public_diagnosis"));
+		}
+		if (Context.PlayerEvidence.Contains(TEXT("EVIDENCE_HAND_OBSERVATION")))
+		{
+			const bool bDirectChallenge =
+				Context.SemanticFrame.SpeechAct == EWSDialogueAct::Challenge
+				|| Context.SemanticFrame.QueryType == EWSDialogueQueryType::Evidence;
+			return DisclosureDecision(
+				FactId,
+				bDirectChallenge
+					? EWSDisclosureLevel::Partial
+					: EWSDisclosureLevel::Hint,
+				bDirectChallenge
+					? FName(TEXT("gu_hand_partial_admission"))
+					: FName(TEXT("gu_hand_unsteady_hint")));
+		}
+		const bool bTargetsHandEvidence =
+			Context.SemanticFrame.QueryType == EWSDialogueQueryType::Evidence
+			&& (Context.SemanticFrame.TargetFactId == HandInjury
+				|| Context.SemanticFrame.TargetFactId == MedicalDiagnosis);
+		if (bTargetsHandEvidence
+			|| (Context.Trust >= Profile.VoluntaryTrust
+				&& Context.Pressure < Profile.PressureCeiling))
+		{
+			return DisclosureDecision(
+				FactId,
+				EWSDisclosureLevel::Partial,
+				TEXT("gu_hand_partial_admission"));
+		}
+		return DisclosureDecision(
+			FactId,
+			EWSDisclosureLevel::Evasive,
+			TEXT("gu_hand_evasive"));
+	}
+
+	if (FactId == MedicalDiagnosis)
+	{
+		const bool bTargetedDiagnosis =
+			Context.Speaker == EWSCharacterId::YeCheng
+			&& Context.SemanticFrame.TargetFactId == HandInjury
+			&& (Context.SemanticFrame.QueryType == EWSDialogueQueryType::Status
+				|| Context.SemanticFrame.QueryType == EWSDialogueQueryType::Evidence);
+		return DisclosureDecision(
+			FactId,
+			bTargetedDiagnosis
+				? EWSDisclosureLevel::Explicit
+				: EWSDisclosureLevel::Hidden,
+			bTargetedDiagnosis
+				? FName(TEXT("ye_medical_diagnosis"))
+				: FName(TEXT("diagnosis_hidden")));
+	}
+
+	if (FactId == HeatPack)
+	{
+		const bool bDiagnosisKnown =
+			Context.PlayerKnownFacts.Contains(MedicalDiagnosis)
+			|| Context.PlayerEvidence.Contains(TEXT("EVIDENCE_MEDICAL_DIAGNOSIS"));
+		const bool bRelevantQuestion =
+			Context.SemanticFrame.TargetFactId == HeatPack
+			|| (Context.SemanticFrame.QueryType == EWSDialogueQueryType::Alternative
+				&& Context.SemanticFrame.TargetCharacter == EWSCharacterId::GuHeng
+				&& (Context.SemanticFrame.TargetActionId == TEXT("repair_generator")
+					|| Context.SemanticFrame.TargetActionId == TEXT("treat_gu_heng")
+					|| Context.SemanticFrame.TargetActionId == TEXT("treat_character")));
+		const bool bMayDisclose =
+			Context.Speaker == EWSCharacterId::YeCheng
+			&& bDiagnosisKnown
+			&& bRelevantQuestion
+			&& Context.Trust >= Profile.VoluntaryTrust
+			&& Context.Pressure < Profile.PressureCeiling;
+		return DisclosureDecision(
+			FactId,
+			bMayDisclose
+				? EWSDisclosureLevel::Explicit
+				: EWSDisclosureLevel::Hidden,
+			bMayDisclose
+				? FName(TEXT("ye_heat_pack_explicit"))
+				: FName(TEXT("heat_pack_hidden")));
+	}
+
+	if (FactId == RelayCompatibility)
+	{
+		if (Context.Speaker != EWSCharacterId::GuHeng)
+		{
+			return DisclosureDecision(
+				FactId,
+				EWSDisclosureLevel::Hidden,
+				TEXT("relay_route_hidden"));
+		}
+		const bool bHasLogEvidence =
+			Context.PlayerKnownFacts.Contains(ForcedRestartSuspicion)
+			|| Context.PlayerEvidence.Contains(TEXT("EVIDENCE_DEEP_GENERATOR_LOG"));
+		const bool bHasRelayEvidence =
+			Context.PlayerKnownFacts.Contains(BurntRelay)
+			|| Context.PlayerEvidence.Contains(TEXT("EVIDENCE_BURNT_RELAY"));
+		if (Context.SemanticFrame.SpeechAct == EWSDialogueAct::Challenge
+			&& bHasLogEvidence
+			&& bHasRelayEvidence)
+		{
+			return DisclosureDecision(
+				FactId,
+				EWSDisclosureLevel::Explicit,
+				TEXT("gu_relay_compatibility"));
+		}
+		if (bHasRelayEvidence)
+		{
+			return DisclosureDecision(
+				FactId,
+				EWSDisclosureLevel::Hint,
+				TEXT("relay_specification_hint"));
+		}
+		return DisclosureDecision(
+			FactId,
+			EWSDisclosureLevel::Hidden,
+			TEXT("relay_route_investigate"));
+	}
+
+	return DisclosureDecision(
+		FactId,
+		EWSDisclosureLevel::Hidden,
+		TEXT("fact_hidden"));
+}
+
+FWSActionRequirementReport UWSNPCDecisionService::ResolveRequirementVisibility(
+	const FWSActionRequirementReport& MechanicalReport,
+	const FWSDialogueDisclosureContext& Context)
+{
+	using namespace WhiteoutAgentFacts;
+	FWSActionRequirementReport Result = MechanicalReport;
+	const auto ResolveItem = [&Context](FWSRequirementItem& Item)
+	{
+		const FText MechanicalExplanation = Item.InternalExplanation.IsEmpty()
+			? Item.Explanation
+			: Item.InternalExplanation;
+		Item.MechanicalVisibility = EWSRequirementMechanicalVisibility::Visible;
+		Item.DisclosureLevel = EWSDisclosureLevel::Explicit;
+		Item.PlayerFacingDetail = MechanicalExplanation;
+		if (Item.RequirementId == TEXT("replacement_relay_available"))
+		{
+			const FWSFactDisclosureDecision Decision =
+				UWSNPCDecisionService::ResolveFactDisclosure(
+					RelayCompatibility,
+					Context);
+			Item.DisclosureLevel = Decision.Level;
+			if (!Decision.bMayEnterConditionCard)
+			{
+				Item.PlayerFacingDetail = FText::FromString(
+					Decision.Level == EWSDisclosureLevel::Hint
+						? TEXT("替代件路线未确认。")
+						: TEXT("未知技术路线：需调查设备故障。"));
+				Item.RequirementId = TEXT("technical_alternative_unconfirmed");
+				Item.RemediationActionId = TEXT("inspect_control_cabinet");
+			}
+		}
+		else if (Item.RequirementId == TEXT("right_hand_injury_risk"))
+		{
+			const FWSFactDisclosureDecision Decision =
+				UWSNPCDecisionService::ResolveFactDisclosure(
+					HandInjury,
+					Context);
+			Item.DisclosureLevel = Decision.Level;
+			if (!Decision.bMayEnterConditionCard)
+			{
+				Item.PlayerFacingDetail = FText::FromString(
+					TEXT("当前额外风险仍需调查。"));
+				Item.RequirementId = TEXT("unknown_fine_work_risk");
+				Item.RemediationActionId = TEXT("talk_ye_cheng");
+			}
+		}
+		Item.bDisclosable =
+			Item.MechanicalVisibility == EWSRequirementMechanicalVisibility::Visible;
+		Item.Explanation = Item.PlayerFacingDetail;
+		Item.InternalExplanation = FText::GetEmpty();
+	};
+	for (FWSRequirementItem& Item : Result.UniversalRequirements)
+	{
+		ResolveItem(Item);
+	}
+	for (FWSRequirementPlan& Plan : Result.AlternativePlans)
+	{
+		for (FWSRequirementItem& Item : Plan.Requirements)
+		{
+			ResolveItem(Item);
+		}
+		if (Plan.PlanId == TEXT("relay_replacement")
+			&& Plan.Requirements.ContainsByPredicate(
+				[](const FWSRequirementItem& Item)
+				{
+					return Item.RequirementId
+						== TEXT("technical_alternative_unconfirmed");
+				}))
+		{
+			Plan.PlanId = TEXT("investigate_technical_alternative");
+		}
+	}
+	for (FWSRequirementItem& Risk : Result.Risks)
+	{
+		ResolveItem(Risk);
+	}
+	return Result;
+}
+
 bool UWSNPCDecisionService::RequiresExpression(const FName ActionId)
 {
 	return ActionId == TEXT("talk_gu_heng")
@@ -94,6 +469,13 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 			WSDialogueDisclosurePolicy::IsGuHengConditionObservationQuestion(Request);
 		const bool bHeatPackQuestion =
 			WSDialogueDisclosurePolicy::IsHeatPackDisclosureQuestion(Request);
+		const FWSDialogueDisclosureContext DisclosureContext =
+			BuildDisclosureContext(Request, Reply.Speaker, State);
+		const bool bMayDiscloseHeatPack = DisclosureAtLeast(
+			ResolveFactDisclosure(
+				WhiteoutAgentFacts::HeatPack,
+				DisclosureContext).Level,
+			EWSDisclosureLevel::Partial);
 		if (
 			Request.DialogueAct == EWSDialogueAct::Command
 			&& (
@@ -110,7 +492,7 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		{
 			Reply.ResponseType = EWSResponseType::ConditionalAccept;
 			Reply.Emotion = TEXT("strained");
-			if (bHeatPackQuestion && bDiagnosisKnown && State.Flags.bHeatPackRevealed)
+			if (bHeatPackQuestion && bDiagnosisKnown && bMayDiscloseHeatPack)
 			{
 				Reply.ReferencedFactIds = {
 					WhiteoutAgentFacts::HandInjury,
@@ -168,7 +550,7 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 			Reply.Emotion = TEXT("reserved");
 			Reply.Utterance = TEXT("先别把承诺给我。把可执行的方案说清楚，再去和顾衡确认条件。");
 		}
-		else if (bHeatPackQuestion && bDiagnosisKnown && State.Flags.bHeatPackRevealed)
+		else if (bHeatPackQuestion && bDiagnosisKnown && bMayDiscloseHeatPack)
 		{
 			Reply.ReferencedFactIds = {
 				WhiteoutAgentFacts::HandInjury,
@@ -206,10 +588,16 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 	else if (Request.ActionId == TEXT("talk_gu_heng"))
 	{
 		Reply.Speaker = EWSCharacterId::GuHeng;
+		const FWSDialogueDisclosureContext DisclosureContext =
+			BuildDisclosureContext(Request, Reply.Speaker, State);
 		const bool bKnowsRestartSuspicion =
 			PlayerKnows(State, WhiteoutAgentFacts::ForcedRestartSuspicion);
 		const bool bKnowsBurntRelay = PlayerKnows(State, WhiteoutAgentFacts::BurntRelay);
-		const bool bKnowsRelayCompatibility = State.Flags.bRelayCompatibilityKnown;
+		const bool bKnowsRelayCompatibility = DisclosureAtLeast(
+			ResolveFactDisclosure(
+				WhiteoutAgentFacts::RelayCompatibility,
+				DisclosureContext).Level,
+			EWSDisclosureLevel::Partial);
 		const bool bKnowsRestartConfirmed =
 			PlayerKnows(State, WhiteoutAgentFacts::ForcedRestartConfirmed);
 		const bool bHasBothEvidence = bKnowsRestartSuspicion && bKnowsBurntRelay;
@@ -223,16 +611,28 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 			Request.SemanticFrame.QueryType == EWSDialogueQueryType::Requirements
 			&& Request.SemanticFrame.TargetActionId == TEXT("repair_generator"))
 		{
-			const FWSNPCDialoguePlan Plan = BuildDialoguePlan(Request, State, RequirementReport);
+			const FWSActionRequirementReport VisibleRequirementReport =
+				ResolveRequirementVisibility(
+					RequirementReport,
+					DisclosureContext);
+			const FWSNPCDialoguePlan Plan = BuildDialoguePlan(
+				Request,
+				State,
+				VisibleRequirementReport);
 			Reply.Speaker = Plan.Speaker;
 			Reply.ResponseType = Plan.Stance;
 			Reply.Emotion = TEXT("measured");
 			Reply.Utterance = Plan.SemanticSpine;
 			Reply.SemanticSpine = Plan.SemanticSpine;
 			Reply.AnswerContract = Plan.Contract;
-			Reply.RequirementReport = RequirementReport;
+			Reply.RequirementReport = VisibleRequirementReport;
 			Reply.CoveredConditionIds = Plan.Contract.MustCoverConditionIds;
-			if (GuHeng.InjurySeverity != EWSInjurySeverity::Normal)
+			if (GuHeng.InjurySeverity != EWSInjurySeverity::Normal
+				&& DisclosureAtLeast(
+					ResolveFactDisclosure(
+						WhiteoutAgentFacts::HandInjury,
+						DisclosureContext).Level,
+					EWSDisclosureLevel::Partial))
 			{
 				Reply.ReferencedFactIds = {WhiteoutAgentFacts::HandInjury};
 			}
@@ -471,9 +871,11 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 		}
 	}
 
-	const TArray<FName> AllowedFacts = BuildAllowedFacts(Request.ActionId, Reply.Speaker, State);
+	const TArray<FName> AllowedFacts = BuildAllowedFacts(Request, Reply.Speaker, State);
 	Reply.ReferencedFactIds = Reply.ReferencedFactIds.FilterByPredicate(
 		[&AllowedFacts](const FName FactId) { return AllowedFacts.Contains(FactId); });
+	Reply.PlannedDisclosureFacts = Reply.ReferencedFactIds;
+	Reply.DisclosedFactIds = Reply.ReferencedFactIds;
 	if (Reply.SemanticSpine.IsEmpty())
 	{
 		Reply.SemanticSpine = Reply.Utterance;
@@ -483,11 +885,12 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 }
 
 TArray<FName> UWSNPCDecisionService::BuildAllowedFacts(
-	const FName ActionId,
+	const FWSActionRequest& Request,
 	const EWSCharacterId Speaker,
 	const FWSGameState& State)
 {
 	using namespace WhiteoutAgentFacts;
+	const FName ActionId = Request.ActionId;
 	TArray<FName> Result = State.PublicFacts;
 	if (Speaker == EWSCharacterId::YeCheng)
 	{
@@ -537,7 +940,36 @@ TArray<FName> UWSNPCDecisionService::BuildAllowedFacts(
 			}
 		}
 	}
+	const FWSDialogueDisclosureContext DisclosureContext =
+		BuildDisclosureContext(Request, Speaker, State);
+	for (const FName ProtectedFact : {
+		HandInjury,
+		MedicalDiagnosis,
+		HeatPack,
+		RelayCompatibility})
+	{
+		const FWSFactDisclosureDecision Decision =
+			ResolveFactDisclosure(ProtectedFact, DisclosureContext);
+		if (Decision.bMayEnterPrompt)
+		{
+			Result.AddUnique(ProtectedFact);
+		}
+		else
+		{
+			Result.Remove(ProtectedFact);
+		}
+	}
 	return Result;
+}
+
+TArray<FName> UWSNPCDecisionService::BuildAllowedFacts(
+	const FName ActionId,
+	const EWSCharacterId Speaker,
+	const FWSGameState& State)
+{
+	FWSActionRequest Request;
+	Request.ActionId = ActionId;
+	return BuildAllowedFacts(Request, Speaker, State);
 }
 
 FWSNPCDialoguePlan UWSNPCDecisionService::BuildDialoguePlan(
@@ -557,7 +989,7 @@ FWSNPCDialoguePlan UWSNPCDecisionService::BuildDialoguePlan(
 	Plan.Contract.QueryType = Request.SemanticFrame.QueryType;
 	Plan.Contract.TargetActionId = Request.SemanticFrame.TargetActionId;
 	Plan.Contract.MaxSentences = 3;
-	Plan.AllowedFactIds = BuildAllowedFacts(Request.ActionId, Plan.Speaker, State);
+	Plan.AllowedFactIds = BuildAllowedFacts(Request, Plan.Speaker, State);
 
 	if (Request.SemanticFrame.QueryType != EWSDialogueQueryType::Requirements
 		|| Request.SemanticFrame.TargetActionId != TEXT("repair_generator"))
@@ -579,7 +1011,8 @@ FWSNPCDialoguePlan UWSNPCDecisionService::BuildDialoguePlan(
 	bool bCollaborationSatisfied = true;
 	for (const FWSRequirementItem& Item : RequirementReport.UniversalRequirements)
 	{
-		if (!Item.bDisclosable)
+		if (Item.MechanicalVisibility
+			== EWSRequirementMechanicalVisibility::Hidden)
 		{
 			continue;
 		}
@@ -612,7 +1045,11 @@ FWSNPCDialoguePlan UWSNPCDecisionService::BuildDialoguePlan(
 	{
 		for (const FWSRequirementItem& Item : RequirementPlan.Requirements)
 		{
-			if (!Item.bDisclosable)
+			if (Item.MechanicalVisibility
+					== EWSRequirementMechanicalVisibility::Hidden
+				|| !DisclosureAtLeast(
+					Item.DisclosureLevel,
+					EWSDisclosureLevel::Partial))
 			{
 				continue;
 			}
@@ -645,7 +1082,11 @@ FWSNPCDialoguePlan UWSNPCDecisionService::BuildDialoguePlan(
 	}
 	for (const FWSRequirementItem& Risk : RequirementReport.Risks)
 	{
-		if (Risk.bDisclosable)
+		if (Risk.MechanicalVisibility
+			== EWSRequirementMechanicalVisibility::Visible
+			&& DisclosureAtLeast(
+				Risk.DisclosureLevel,
+				EWSDisclosureLevel::Partial))
 		{
 			Plan.Contract.AllowedRiskIds.AddUnique(Risk.RequirementId);
 		}

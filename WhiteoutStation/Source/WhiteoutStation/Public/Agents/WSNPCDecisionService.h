@@ -22,6 +22,20 @@ public:
 		const FWSActionRequest& Request,
 		const FWSGameState& State,
 		const FWSActionRequirementReport& RequirementReport);
+	static FWSDialogueDisclosureContext BuildDisclosureContext(
+		const FWSActionRequest& Request,
+		EWSCharacterId Speaker,
+		const FWSGameState& State);
+	static FWSFactDisclosureDecision ResolveFactDisclosure(
+		FName FactId,
+		const FWSDialogueDisclosureContext& Context);
+	static FWSActionRequirementReport ResolveRequirementVisibility(
+		const FWSActionRequirementReport& MechanicalReport,
+		const FWSDialogueDisclosureContext& Context);
+	static TArray<FName> BuildAllowedFacts(
+		const FWSActionRequest& Request,
+		EWSCharacterId Speaker,
+		const FWSGameState& State);
 	static TArray<FName> BuildAllowedFacts(FName ActionId, EWSCharacterId Speaker, const FWSGameState& State);
 	static FString SpeakerLabel(EWSCharacterId Speaker);
 

@@ -79,8 +79,10 @@ namespace
 }
 
 const FString UWindStationStateSubsystem::SaveSlot(
+	TEXT("WhiteoutStation_Autosave_v1_3"));
+const FString UWindStationStateSubsystem::LegacySaveSlotV12(
 	TEXT("WhiteoutStation_Autosave_v1_2"));
-const FString UWindStationStateSubsystem::LegacySaveSlot(
+const FString UWindStationStateSubsystem::LegacySaveSlotV11(
 	TEXT("WhiteoutStation_Autosave_v1_1"));
 
 void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -314,7 +316,23 @@ FWSActionRequirementReport UWindStationStateSubsystem::EvaluateActionRequirement
 {
 	FWSActionRequest Request;
 	Request.ActionId = ActionId;
-	return RulesEngine.EvaluateActionRequirements(Request);
+	const FWSActionRequirementReport MechanicalReport =
+		RulesEngine.EvaluateActionRequirements(Request);
+	FWSActionRequest DialogueContextRequest;
+	DialogueContextRequest.ActionId = TEXT("talk_gu_heng");
+	DialogueContextRequest.DialogueAct = EWSDialogueAct::Ask;
+	DialogueContextRequest.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	DialogueContextRequest.SemanticFrame.QueryType =
+		EWSDialogueQueryType::Requirements;
+	DialogueContextRequest.SemanticFrame.TargetActionId = ActionId;
+	DialogueContextRequest.SemanticFrame.TargetCharacter =
+		EWSCharacterId::GuHeng;
+	return UWSNPCDecisionService::ResolveRequirementVisibility(
+		MechanicalReport,
+		UWSNPCDecisionService::BuildDisclosureContext(
+			DialogueContextRequest,
+			EWSCharacterId::GuHeng,
+			RulesEngine.GetState()));
 }
 
 FWSActionResult UWindStationStateSubsystem::CommitAction(const FWSActionRequest& Request)
@@ -446,15 +464,53 @@ bool UWindStationStateSubsystem::SaveSnapshot()
 	return UGameplayStatics::SaveGameToSlot(Save, SaveSlot, 0);
 }
 
+FWSGameState UWindStationStateSubsystem::MigrateSaveStateForV13(
+	const FWSGameState& SourceState,
+	const FString& SourceSaveVersion,
+	const int32 TargetRulesSchemaVersion,
+	const FString& TargetRulesVersion)
+{
+	FWSGameState MigratedState = SourceState;
+	if (SourceSaveVersion != TEXT("1.3.0"))
+	{
+		if (MigratedState.Flags.bHeatPackRevealed)
+		{
+			MigratedState.PlayerKnowledge.FindOrAdd(
+				TEXT("FACT_HEAT_PACK")) = EWSKnowledgeLevel::Confirmed;
+		}
+		if (MigratedState.Flags.bGuHengDiagnosed)
+		{
+			MigratedState.PlayerKnowledge.FindOrAdd(
+				TEXT("FACT_HAND_INJURY")) = EWSKnowledgeLevel::Confirmed;
+			MigratedState.PlayerKnowledge.FindOrAdd(
+				TEXT("FACT_MEDICAL_DIAGNOSIS")) = EWSKnowledgeLevel::Confirmed;
+		}
+		if (MigratedState.Flags.bRelayCompatibilityKnown)
+		{
+			MigratedState.PlayerKnowledge.FindOrAdd(
+				TEXT("FACT_RELAY_COMPATIBILITY")) = EWSKnowledgeLevel::Confirmed;
+		}
+	}
+	MigratedState.RulesSchemaVersion = TargetRulesSchemaVersion;
+	MigratedState.RulesVersion = TargetRulesVersion;
+	return MigratedState;
+}
+
 bool UWindStationStateSubsystem::LoadSnapshot()
 {
-	const bool bLoadLegacySlot = !UGameplayStatics::DoesSaveGameExist(SaveSlot, 0)
-		&& UGameplayStatics::DoesSaveGameExist(LegacySaveSlot, 0);
-	const FString& SlotToLoad = bLoadLegacySlot ? LegacySaveSlot : SaveSlot;
+	FString SlotToLoad = SaveSlot;
+	if (!UGameplayStatics::DoesSaveGameExist(SlotToLoad, 0))
+	{
+		SlotToLoad = UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV12, 0)
+			? LegacySaveSlotV12
+			: LegacySaveSlotV11;
+	}
+	const bool bLoadLegacySlot = SlotToLoad != SaveSlot;
 	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(
 		UGameplayStatics::LoadGameFromSlot(SlotToLoad, 0));
 	if (!Save
-		|| (Save->SaveVersion != TEXT("1.2.0")
+		|| (Save->SaveVersion != TEXT("1.3.0")
+			&& Save->SaveVersion != TEXT("1.2.0")
 			&& Save->SaveVersion != TEXT("1.1.0")))
 	{
 		return false;
@@ -463,9 +519,14 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	{
 		AgentGateway->ResetSession();
 	}
-	RulesEngine.SetState(Save->State);
+	const FWSGameState MigratedState = MigrateSaveStateForV13(
+		Save->State,
+		Save->SaveVersion,
+		RulesEngine.GetConfig().SchemaVersion,
+		RulesEngine.GetConfig().RulesVersion);
+	RulesEngine.SetState(MigratedState);
 	LatestDialogue = FWSAgentReply();
-	if (bLoadLegacySlot || Save->SaveVersion == TEXT("1.1.0"))
+	if (bLoadLegacySlot || Save->SaveVersion != TEXT("1.3.0"))
 	{
 		SaveSnapshot();
 	}
@@ -476,7 +537,8 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 bool UWindStationStateSubsystem::HasSnapshot() const
 {
 	return UGameplayStatics::DoesSaveGameExist(SaveSlot, 0)
-		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlot, 0);
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV12, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV11, 0);
 }
 
 bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
@@ -606,7 +668,7 @@ void UWindStationStateSubsystem::RequestActionExpression(const FWSActionRequest&
 		RulesEngine.GetState(),
 		RequirementReport);
 	const TArray<FName> AllowedFacts = UWSNPCDecisionService::BuildAllowedFacts(
-		ActionRequest.ActionId,
+		ActionRequest,
 		Decision.Speaker,
 		RulesEngine.GetState());
 	const bool bKnowledgeBoundaryOpen =

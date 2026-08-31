@@ -66,6 +66,10 @@ public:
 	void EndGame();
 	bool TryRecordModelCall();
 	FWSActionRequirementReport EvaluateActionRequirements(const FWSActionRequest& Request) const;
+	void UpgradePlayerKnowledgeFromUtterance(
+		const TArray<FName>& DisclosedFactIds,
+		EWSCharacterId Speaker,
+		TArray<FString>* OutChanges = nullptr);
 	bool SetRequirementPinned(FName ActionId, bool bPinned);
 	bool AcceptNegotiationOffer(const FWSAgentReply& Reply, FString& OutMessage);
 	void UpdateNegotiationOffersForCommittedAction(
