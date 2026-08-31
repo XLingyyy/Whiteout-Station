@@ -45,7 +45,7 @@
 namespace
 {
 	TAutoConsoleVariable<int32> CVarWhiteoutDialogueDebug(
-		TEXT("Whiteout.DialogueDebug"),
+		TEXT("ws.DialogueDebug"),
 		0,
 		TEXT("Shows the local dialogue semantic frame and answer source in Development builds."),
 		ECVF_Default);
@@ -725,7 +725,8 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	DialogueLineText->SetLineHeightPercentage(1.2f);
 	DialogueText = DialogueLineText;
 	DialogueStatusText = MakeText(TEXT("DialogueStatusText"), 12, Secondary);
-	DialogueStatusText->SetText(FText::FromString(TEXT("本地预设")));
+	DialogueStatusText->SetText(FText::GetEmpty());
+	DialogueStatusText->SetVisibility(ESlateVisibility::Collapsed);
 	UVerticalBoxSlot* DialogueNameSlot = DialogueBarBox->AddChildToVerticalBox(DialogueNameText);
 	DialogueNameSlot->SetPadding(FMargin(0, 0, 0, 3));
 	DialogueNameSlot->SetHorizontalAlignment(HAlign_Fill);
@@ -1131,7 +1132,11 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	SettingsTitle->SetJustification(ETextJustify::Center);
 	SettingsBox->AddChildToVerticalBox(SettingsTitle)->SetPadding(FMargin(0, 0, 0, 8));
 	UTextBlock* SettingsHint = MakeText(TEXT("SettingsHint"), 13, Secondary);
+#if UE_BUILD_SHIPPING
+	SettingsHint->SetText(FText::FromString(TEXT("显示与音频设置会实时保存。")));
+#else
 	SettingsHint->SetText(FText::FromString(TEXT("显示与音频实时保存；API Key 只保留到本次运行结束。")));
+#endif
 	SettingsHint->SetJustification(ETextJustify::Center);
 	SettingsBox->AddChildToVerticalBox(SettingsHint)->SetPadding(FMargin(0, 0, 0, 10));
 	USizeBox* SettingsScrollSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("SettingsScrollSize"));
@@ -1210,12 +1215,21 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 
 	UTextBlock* LLMTitle = MakeText(TEXT("LLMSettingsTitle"), 20, Cyan, false);
 	LLMTitle->SetFont(UIFont(20, true));
+#if UE_BUILD_SHIPPING
+	LLMTitle->SetText(FText::FromString(TEXT("在线角色表达")));
+#else
 	LLMTitle->SetText(FText::FromString(TEXT("语言模型（可选）")));
+#endif
 	SettingsContent->AddChildToVerticalBox(LLMTitle)->SetPadding(FMargin(8, 8, 8, 4));
 	UTextBlock* LLMIntro = MakeText(TEXT("LLMSettingsIntro"), 12, Secondary);
+#if UE_BUILD_SHIPPING
+	LLMIntro->SetText(FText::FromString(TEXT("可用时仅改善 NPC 表达；规则状态与结局始终由本地系统决定。")));
+#else
 	LLMIntro->SetText(FText::FromString(TEXT("模型只理解自由文本并组织 NPC 表达；规则、行动点和结局仍由本地系统决定。")));
+#endif
 	SettingsContent->AddChildToVerticalBox(LLMIntro)->SetPadding(FMargin(8, 0, 8, 10));
 
+#if !UE_BUILD_SHIPPING
 	auto AddLLMControlRow = [this, SettingsContent](const FName Name, const FString& Label, UWidget* Control)
 	{
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
@@ -1307,8 +1321,12 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		FText::FromString(TEXT("应用模型设置")),
 		TEXT("LLMApplyButton"));
 	LLMApplyButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ApplyLLMSettings);
+#endif
 	LLMStatusText = MakeText(TEXT("LLMStatus"), 12, Secondary);
 	LLMStatusText->SetJustification(ETextJustify::Center);
+#if UE_BUILD_SHIPPING
+	LLMStatusText->SetText(FText::FromString(TEXT("在线角色表达：不可用")));
+#endif
 	SettingsContent->AddChildToVerticalBox(LLMStatusText)->SetPadding(FMargin(8, 8, 8, 12));
 
 	UButton* SettingsBackButton = MakeButton(SettingsBox, FText::FromString(TEXT("返回暂停菜单")), TEXT("SettingsBackButton"));
@@ -2117,6 +2135,61 @@ void UWhiteoutHUDWidget::UpdateDialogueCard(const FWSGameState& State)
 	}
 }
 
+FString UWhiteoutHUDWidget::BuildKnowledgeSourceLabel(
+	const FName FactId,
+	const FWSGameState& State)
+{
+	for (int32 Index = State.EventLog.Num() - 1; Index >= 0; --Index)
+	{
+		const FWSEventRecord& Event = State.EventLog[Index];
+		const bool bDirectDisclosure = Event.DisclosedFactIds.Contains(FactId);
+		const bool bDiagnosisImpliesHandInjury = FactId == TEXT("FACT_HAND_INJURY")
+			&& Event.DisclosedFactIds.Contains(TEXT("FACT_MEDICAL_DIAGNOSIS"));
+		if (!bDirectDisclosure && !bDiagnosisImpliesHandInjury)
+		{
+			continue;
+		}
+		if (Event.DialogueSpeaker == EWSCharacterId::GuHeng
+			|| Event.ActionId == TEXT("talk_gu_heng"))
+		{
+			return TEXT("顾衡承认");
+		}
+		if (Event.DialogueSpeaker == EWSCharacterId::YeCheng
+			|| Event.ActionId == TEXT("talk_ye_cheng"))
+		{
+			return TEXT("叶澄诊断");
+		}
+	}
+	if ((FactId == TEXT("FACT_MEDICAL_DIAGNOSIS")
+			|| FactId == TEXT("FACT_HAND_INJURY"))
+		&& State.Flags.bGuHengDiagnosed)
+	{
+		return TEXT("叶澄诊断");
+	}
+	if (FactId == TEXT("FACT_HEAT_PACK")
+		&& State.Flags.bHeatPackRevealed)
+	{
+		return TEXT("叶澄诊断");
+	}
+	const bool bFieldEvidence =
+		(FactId == TEXT("FACT_BURNT_RELAY")
+			&& State.Evidence.Contains(TEXT("EVIDENCE_BURNT_RELAY")))
+		|| (FactId == TEXT("FACT_HAND_INJURY")
+			&& State.Evidence.Contains(TEXT("EVIDENCE_HAND_OBSERVATION")))
+		|| ((FactId == TEXT("FACT_GENERATOR_PROTECTION_STOP")
+				|| FactId == TEXT("FACT_FORCED_RESTART_SUSPICION"))
+			&& State.Evidence.Contains(TEXT("EVIDENCE_DEEP_GENERATOR_LOG")))
+		|| (FactId == TEXT("FACT_RELAY_COMPATIBILITY")
+			&& State.Evidence.Contains(TEXT("EVIDENCE_HEATER_SERVICE_LABEL")));
+	if (bFieldEvidence)
+	{
+		return TEXT("现场观察");
+	}
+	return State.PlayerKnowledge.Contains(FactId)
+		? TEXT("来源未记录")
+		: TEXT("现场观察");
+}
+
 void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 {
 	if (!EvidenceTitleText || !EvidenceFilterText || !EvidenceCardGrid || !EvidenceProgressText)
@@ -2125,14 +2198,29 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 	}
 	int32 ClaimCount = 0;
 	int32 ConfirmedCount = 0;
+	int32 DialogueKnowledgeCount = 0;
+	int32 WitnessKnowledgeCount = 0;
 	for (const TPair<FName, EWSKnowledgeLevel>& Pair : State.PlayerKnowledge)
 	{
 		ClaimCount += Pair.Value == EWSKnowledgeLevel::Claimed || Pair.Value == EWSKnowledgeLevel::Suspected ? 1 : 0;
 		ConfirmedCount += Pair.Value == EWSKnowledgeLevel::Confirmed ? 1 : 0;
+		if (Pair.Value == EWSKnowledgeLevel::Unknown)
+		{
+			continue;
+		}
+		const FString Source = BuildKnowledgeSourceLabel(Pair.Key, State);
+		if (Source == TEXT("顾衡承认") || Source == TEXT("叶澄诊断"))
+		{
+			++DialogueKnowledgeCount;
+		}
+		else
+		{
+			++WitnessKnowledgeCount;
+		}
 	}
 	int32 FileCount = 0;
 	int32 ItemCount = 0;
-	int32 WitnessCount = ConfirmedCount;
+	int32 WitnessCount = WitnessKnowledgeCount;
 	for (const FName EvidenceId : State.Evidence)
 	{
 		const FString Id = EvidenceId.ToString();
@@ -2149,7 +2237,7 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 			++ItemCount;
 		}
 	}
-	const int32 DialogueCount = ClaimCount + State.Promises.Num();
+	const int32 DialogueCount = DialogueKnowledgeCount + State.Promises.Num();
 	const int32 TotalCards = FileCount + ItemCount + WitnessCount + DialogueCount;
 	EvidenceTitleText->SetText(FText::FromString(FString::Printf(TEXT("证据板　%02d 条记录"), TotalCards)));
 	const TArray<int32> FilterCounts = {TotalCards, FileCount, ItemCount, WitnessCount, DialogueCount};
@@ -2247,34 +2335,24 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 	}
 	for (const TPair<FName, EWSKnowledgeLevel>& Pair : State.PlayerKnowledge)
 	{
-		if (Pair.Value == EWSKnowledgeLevel::Claimed || Pair.Value == EWSKnowledgeLevel::Suspected)
+		if (Pair.Value == EWSKnowledgeLevel::Unknown)
 		{
-			AddCard(
-				FWSPresentationText::FactLabel(Pair.Key).ToString(),
-				TEXT("对话记录"),
-				FString::Printf(
-					TEXT("核验状态：%s。%s"),
-					*FWSPresentationText::KnowledgeLevel(Pair.Value).ToString(),
-					*FWSPresentationText::FactDescription(Pair.Key).ToString()),
-				Amber,
-				TEXT("I_Evidence_Dialogue"),
-				4);
+			continue;
 		}
-	}
-	for (const TPair<FName, EWSKnowledgeLevel>& Pair : State.PlayerKnowledge)
-	{
-		if (Pair.Value == EWSKnowledgeLevel::Confirmed)
-		{
-			AddCard(
-				FWSPresentationText::FactLabel(Pair.Key).ToString(),
-				TEXT("目击信息"),
-				FString::Printf(
-					TEXT("已确认。%s"),
-					*FWSPresentationText::FactDescription(Pair.Key).ToString()),
-				Danger,
-				TEXT("I_Evidence_Witness"),
-				3);
-		}
+		const FString Source = BuildKnowledgeSourceLabel(Pair.Key, State);
+		const bool bDialogueSource = Source == TEXT("顾衡承认")
+			|| Source == TEXT("叶澄诊断");
+		AddCard(
+			FWSPresentationText::FactLabel(Pair.Key).ToString(),
+			bDialogueSource ? TEXT("对话记录") : TEXT("目击信息"),
+			FString::Printf(
+				TEXT("来源：%s｜核验状态：%s。%s"),
+				*Source,
+				*FWSPresentationText::KnowledgeLevel(Pair.Value).ToString(),
+				*FWSPresentationText::FactDescription(Pair.Key).ToString()),
+			Pair.Value == EWSKnowledgeLevel::Confirmed ? Danger : Amber,
+			bDialogueSource ? TEXT("I_Evidence_Dialogue") : TEXT("I_Evidence_Witness"),
+			bDialogueSource ? 4 : 3);
 	}
 	for (const FWSPromiseRecord& Promise : State.Promises)
 	{
@@ -2881,6 +2959,11 @@ void UWhiteoutHUDWidget::ShowDialogueReplyForCapture(const FString& Speaker, con
 		DialogueLineText->SetText(FText::FromString(Line));
 		DialogueLineText->SetColorAndOpacity(FSlateColor(Body));
 	}
+	if (DialogueStatusText)
+	{
+		DialogueStatusText->SetText(FText::GetEmpty());
+		DialogueStatusText->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	ShowDialogueReplyActions();
 }
 
@@ -2890,6 +2973,8 @@ void UWhiteoutHUDWidget::SetDialogueIntentStatus(const FString& Message, const b
 	{
 		DialogueStatusText->SetText(FText::FromString(Message));
 		DialogueStatusText->SetColorAndOpacity(FSlateColor(bProcessing ? Amber : Secondary));
+		DialogueStatusText->SetVisibility(
+			Message.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 	}
 	if (bProcessing)
 	{
@@ -3081,6 +3166,7 @@ void UWhiteoutHUDWidget::RefreshDialogueAvailability()
 			TEXT("当前可谈 %d 项｜意向会随证据、伤情、关系和局势变化"),
 			AvailableButtons.Num())));
 		DialogueStatusText->SetColorAndOpacity(FSlateColor(Secondary));
+		DialogueStatusText->SetVisibility(ESlateVisibility::Visible);
 	}
 	if (AvailableButtons.IsEmpty() && DialogueLineText)
 	{
@@ -3157,6 +3243,10 @@ FString UWhiteoutHUDWidget::BuildDialogueStatusSummary(
 	const FWSAgentReply& Reply,
 	const bool bIncludeDebugDetails)
 {
+	if (!bIncludeDebugDetails)
+	{
+		return FString();
+	}
 	const TCHAR* MovementLabel = TEXT("原地");
 	switch (Reply.MovementIntent)
 	{
@@ -3175,27 +3265,21 @@ FString UWhiteoutHUDWidget::BuildDialogueStatusSummary(
 	case EWSNPCReaction::Alarmed: ReactionLabel = TEXT("警觉"); break;
 	default: break;
 	}
+	const FString Provider = Reply.Provider.IsEmpty()
+		? TEXT("本地")
+		: LLMProviderDisplayName(Reply.Provider);
+	const FString Validation = Reply.ValidationReason.IsEmpty()
+		? TEXT("通过")
+		: LLMFallbackReasonLabel(Reply.ValidationReason);
 	FString Status = FString::Printf(
-		TEXT("表演：%s · %s"),
+		TEXT("调试｜表达来源 %s｜提交来源 %s｜校验 %s｜表演 %s · %s"),
+		*Provider,
+		Reply.AnswerSource.IsEmpty() ? TEXT("未标记") : *Reply.AnswerSource,
+		*Validation,
 		MovementLabel,
 		ReactionLabel);
-	if (!bIncludeDebugDetails)
-	{
-		return Status;
-	}
-	const FString ProviderStatus = Reply.AnswerSource == TEXT("spine_plus_ai")
-		? FString::Printf(
-			TEXT("%s 人格尾句"),
-			*LLMProviderDisplayName(Reply.Provider))
-		: Reply.Provider == TEXT("preset")
-			? TEXT("本地语义骨架")
-			: FString::Printf(
-				TEXT("%s 尾句丢弃，保留本地骨架：%s"),
-				*LLMProviderDisplayName(Reply.Provider),
-				*LLMFallbackReasonLabel(Reply.ValidationReason));
-	Status = ProviderStatus + TEXT("　｜　") + Status;
 	Status += FString::Printf(
-		TEXT("\nSemantic: %s / %s / %s / %.2f　｜　%s　｜　%s"),
+		TEXT("\n语义：%s / %s / %s / %.2f　｜　%s"),
 		*StaticEnum<EWSDialogueAct>()->GetNameStringByValue(
 			static_cast<int64>(Reply.SemanticFrame.SpeechAct)),
 		*StaticEnum<EWSDialogueQueryType>()->GetNameStringByValue(
@@ -3206,8 +3290,7 @@ FString UWhiteoutHUDWidget::BuildDialogueStatusSummary(
 		Reply.SemanticFrame.Confidence,
 		Reply.SemanticFrame.Source.IsEmpty()
 			? TEXT("unspecified")
-			: *Reply.SemanticFrame.Source,
-		*Reply.AnswerSource);
+			: *Reply.SemanticFrame.Source);
 	return Status;
 }
 
@@ -3238,6 +3321,8 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 		DialogueStatusText->SetText(FText::FromString(
 			BuildDialogueStatusSummary(Reply, bIncludeDebugDetails)));
 		DialogueStatusText->SetColorAndOpacity(FSlateColor(!Reply.bFallback ? Cyan : Secondary));
+		DialogueStatusText->SetVisibility(
+			bIncludeDebugDetails ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 	UpdateDialogueConditionCard(Reply);
 	ShowDialogueReplyActions();
@@ -3246,21 +3331,36 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
 	const FWSActionRequirementReport& Report)
 {
+	const auto ResolveCardDetail = [](const FWSRequirementItem& Item, bool& bOutUnknown)
+	{
+		const FString Detail = Item.PlayerFacingDetail.ToString().TrimStartAndEnd();
+		bOutUnknown = Item.DisclosureLevel == EWSDisclosureLevel::Hidden
+			|| Item.DisclosureLevel == EWSDisclosureLevel::Evasive;
+		if (bOutUnknown)
+		{
+			return FString(TEXT("需调查"));
+		}
+		if (Item.MechanicalVisibility == EWSRequirementMechanicalVisibility::Hidden)
+		{
+			return FString();
+		}
+		return Detail;
+	};
 	TArray<FString> Lines;
 	TArray<FString> Universal;
 	bool bHasDisclosableUniversal = false;
 	for (const FWSRequirementItem& Item : Report.UniversalRequirements)
 	{
-		if (Item.MechanicalVisibility
-			== EWSRequirementMechanicalVisibility::Hidden
-			|| Item.PlayerFacingDetail.IsEmpty())
+		bool bUnknown = false;
+		const FString Detail = ResolveCardDetail(Item, bUnknown);
+		if (Detail.IsEmpty())
 		{
 			continue;
 		}
 		bHasDisclosableUniversal = true;
-		if (!Item.bSatisfied)
+		if (bUnknown || !Item.bSatisfied)
 		{
-			Universal.Add(Item.PlayerFacingDetail.ToString());
+			Universal.Add(Detail);
 		}
 	}
 	if (!Universal.IsEmpty())
@@ -3281,16 +3381,16 @@ FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
 		bool bHasDisclosableRequirement = false;
 		for (const FWSRequirementItem& Item : Plan.Requirements)
 		{
-			if (Item.MechanicalVisibility
-				== EWSRequirementMechanicalVisibility::Hidden
-				|| Item.PlayerFacingDetail.IsEmpty())
+			bool bUnknown = false;
+			const FString Detail = ResolveCardDetail(Item, bUnknown);
+			if (Detail.IsEmpty())
 			{
 				continue;
 			}
 			bHasDisclosableRequirement = true;
-			if (!Item.bSatisfied)
+			if (bUnknown || !Item.bSatisfied)
 			{
-				Missing.Add(Item.PlayerFacingDetail.ToString());
+				Missing.Add(Detail);
 			}
 		}
 		if (!bHasDisclosableRequirement)
@@ -3304,14 +3404,13 @@ FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
 	}
 	for (const FWSRequirementItem& Risk : Report.Risks)
 	{
-		if (Risk.MechanicalVisibility
-				== EWSRequirementMechanicalVisibility::Visible
-			&& !Risk.PlayerFacingDetail.IsEmpty()
-			&& !Risk.bSatisfied)
+		bool bUnknown = false;
+		const FString Detail = ResolveCardDetail(Risk, bUnknown);
+		if (!Detail.IsEmpty() && (bUnknown || !Risk.bSatisfied))
 		{
 			Lines.Add(FString::Printf(
 				TEXT("风险：%s"),
-				*Risk.PlayerFacingDetail.ToString()));
+				*Detail));
 			break;
 		}
 	}
@@ -4159,7 +4258,7 @@ void UWhiteoutHUDWidget::LoadGame()
 		const bool bLoaded = StateSubsystem->LoadSnapshot();
 		SystemMessage = bLoaded
 			? TEXT("已恢复最近保存的本轮状态。")
-			: TEXT("没有可读取的 v1.2 或兼容 v1.1 本轮存档。");
+			: TEXT("没有可读取的 v1.3 或兼容 v1.2 本轮存档。");
 		if (bLoaded)
 		{
 			ResumeGame();
@@ -4353,7 +4452,14 @@ void UWhiteoutHUDWidget::ApplyLLMSettings()
 	{
 		if (LLMStatusText)
 		{
+#if UE_BUILD_SHIPPING
+			LLMStatusText->SetText(FText::FromString(
+				State->HasLiveLLMProvider()
+					? TEXT("在线角色表达：可用")
+					: TEXT("在线角色表达：不可用")));
+#else
 			LLMStatusText->SetText(FText::FromString(State->GetLLMRuntimeStatus()));
+#endif
 			LLMStatusText->SetColorAndOpacity(
 				FSlateColor(State->HasLiveLLMProvider() ? Cyan : Amber));
 		}
@@ -4435,7 +4541,14 @@ void UWhiteoutHUDWidget::RefreshSettingsUI()
 	{
 		if (LLMStatusText)
 		{
+#if UE_BUILD_SHIPPING
+			LLMStatusText->SetText(FText::FromString(
+				State->HasLiveLLMProvider()
+					? TEXT("在线角色表达：可用")
+					: TEXT("在线角色表达：不可用")));
+#else
 			LLMStatusText->SetText(FText::FromString(State->GetLLMRuntimeStatus()));
+#endif
 			LLMStatusText->SetColorAndOpacity(
 				FSlateColor(State->HasLiveLLMProvider() ? Cyan : Amber));
 		}

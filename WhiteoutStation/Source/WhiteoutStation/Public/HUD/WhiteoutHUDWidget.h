@@ -113,6 +113,9 @@ public:
 	static FString BuildDialogueStatusSummary(
 		const FWSAgentReply& Reply,
 		bool bIncludeDebugDetails = false);
+	static FString BuildKnowledgeSourceLabel(
+		FName FactId,
+		const FWSGameState& State);
 	bool AdvanceOpening();
 	bool IsOpeningVisible() const;
 	void DismissOpening();
