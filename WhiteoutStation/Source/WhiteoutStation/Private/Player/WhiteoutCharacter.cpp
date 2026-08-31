@@ -593,11 +593,63 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->SetDialogueIntentStatus(TEXT("交涉已提交，正在组织回应……按 Esc 或“离开”取消等待。"), true);
+			HUD->SetDialogueIntentStatus(TEXT("正在组织回应……按 Esc 或“离开”取消等待。"), true);
 		}
 	}
 	ActiveDialogueTransactionId = Request.TransactionId;
-	ActiveDialogueTarget->InteractRequest(this, Request);
+	const FGuid ExpectedTransactionId = Request.TransactionId;
+	const FGuid ExpectedSessionId = ActiveDialogueSessionId;
+	TWeakObjectPtr<AWhiteoutCharacter> WeakThis(this);
+	const FWSActionResult Result = ActiveDialogueTarget->InteractRequest(
+		this,
+		Request,
+		[WeakThis, ExpectedTransactionId, ExpectedSessionId](
+			const FWSActionResult& FinalResult)
+		{
+			if (!WeakThis.IsValid())
+			{
+				return;
+			}
+			AWhiteoutCharacter* Character = WeakThis.Get();
+			if (FinalResult.bCommitted
+				|| Character->ActiveDialogueSessionId != ExpectedSessionId
+				|| Character->ActiveDialogueTransactionId
+					!= ExpectedTransactionId)
+			{
+				return;
+			}
+			Character->bDialogueChoiceCommitted = false;
+			Character->ActiveDialogueTransactionId.Invalidate();
+			if (APlayerController* PlayerController =
+				Cast<APlayerController>(Character->Controller))
+			{
+				if (AWhiteoutHUD* HUD =
+					Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+				{
+					HUD->SetDialogueIntentStatus(FString::Printf(
+						TEXT("%s %s"),
+						*FWSPresentationText::ReasonCause(
+							FinalResult.ReasonCode).ToString(),
+						*FWSPresentationText::ReasonNextStep(
+							FinalResult.ReasonCode).ToString()), false);
+				}
+			}
+		});
+	if (!Result.bCommitted && !Result.bPendingDialogue)
+	{
+		bDialogueChoiceCommitted = false;
+		ActiveDialogueTransactionId.Invalidate();
+		if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+		{
+			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+			{
+				HUD->SetDialogueIntentStatus(FString::Printf(
+					TEXT("%s %s"),
+					*FWSPresentationText::ReasonCause(Result.ReasonCode).ToString(),
+					*FWSPresentationText::ReasonNextStep(Result.ReasonCode).ToString()), false);
+			}
+		}
+	}
 	PendingPlayerSaid.Reset();
 }
 

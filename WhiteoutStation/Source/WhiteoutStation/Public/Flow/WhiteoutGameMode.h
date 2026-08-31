@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
+#include "State/WindStationTypes.h"
 #include "WhiteoutGameMode.generated.h"
 
 class UAudioComponent;
@@ -9,6 +10,21 @@ class ACameraActor;
 class APointLight;
 class AStaticMeshActor;
 class UWSAgentGateway;
+
+enum class EWhiteoutAutomationRouteStepType : uint8
+{
+	BeginPhase,
+	CommitAction,
+	SettlePhase
+};
+
+struct FWhiteoutAutomationRouteStep
+{
+	EWhiteoutAutomationRouteStepType Type =
+		EWhiteoutAutomationRouteStepType::CommitAction;
+	EWSHeatingZone HeatingZone = EWSHeatingZone::None;
+	FWSActionRequest Request;
+};
 
 UCLASS()
 class WHITEOUTSTATION_API AWhiteoutGameMode : public AGameModeBase
@@ -54,8 +70,21 @@ private:
 	bool bJumpOverlapDetected = false;
 	TArray<float> JumpHeightSamples;
 	FGuid DialogueHistoryProbeSessionId;
+	TArray<FWhiteoutAutomationRouteStep> AutomationRouteSteps;
+	FString ActiveAutomationRouteName;
+	int32 AutomationRouteStepIndex = 0;
+	EWSEndingType AutomationRouteExpectedEnding = EWSEndingType::TaskSuccess;
+	bool bAutomationRouteExpectSignal = true;
+	bool bAutomationRouteSucceeded = true;
+	bool bAutomationRouteActive = false;
+	FGuid AutomationRouteRunId;
+	FTimerHandle AutomationRouteContinuationTimer;
 
 	void RunAutomationRoute(const FString& RouteName);
+	void ContinueAutomationRoute();
+	void ScheduleAutomationRouteContinuation(FGuid RunId);
+	void FinishAutomationRoute(FGuid RunId);
+	void ScheduleAutomationRouteCaptureAndExit(bool bOutcomeMatches, int32 FailureStatus = 1);
 	void RunDialogueHistoryProbeStep(int32 Step);
 	void SetupInputSmokeTarget(const FString& ActionId);
 	void CompletePerformanceTest();

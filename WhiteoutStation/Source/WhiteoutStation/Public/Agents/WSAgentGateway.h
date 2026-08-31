@@ -83,6 +83,9 @@ public:
 		const FString& UserText,
 		bool bAllowLiveProvider,
 		FWSDialogueIntentCallback Completion);
+	void RecordCommittedDialogueTurn(
+		const FWSActionRequest& ActionRequest,
+		const FWSAgentReply& Reply);
 	void RequestDialogueIntent(
 		const FString& UserText,
 		FName CurrentDialogueActionId,

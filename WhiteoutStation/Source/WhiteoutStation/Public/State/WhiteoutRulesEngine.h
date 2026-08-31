@@ -56,6 +56,9 @@ public:
 
 	FWSActionPreview Preview(const FWSActionRequest& Request) const;
 	FWSActionResult Commit(FWSActionRequest Request);
+	FWSActionResult CommitDialogueOutcome(
+		const FWSPreparedDialogue& Prepared,
+		const FWSDialogueOutcome& Outcome);
 	bool BeginDayPhase(
 		EWSHeatingZone HeatingZone,
 		EWSReasonCode& OutReason,
@@ -96,11 +99,18 @@ private:
 
 	EWSReasonCode CanExecute(const FWSActionRequest& Request) const;
 	EWSReasonCode CanExecuteV11(const FWSActionRequest& Request) const;
+	FWSActionResult CommitInternal(
+		FWSActionRequest Request,
+		const FWSPreparedDialogue* Prepared,
+		const FWSDialogueOutcome* Outcome);
 	EWSReasonCode EvaluateRepairGeneratorReason(
 		const FWSActionRequest& Request,
 		FWSActionRequirementReport* OutReport) const;
 	FWSActionPreview BuildV11Preview(const FWSActionRequest& Request) const;
-	FWSActionResult CommitV11(FWSActionRequest Request);
+	FWSActionResult CommitV11(
+		FWSActionRequest Request,
+		const FWSPreparedDialogue* Prepared,
+		const FWSDialogueOutcome* Outcome);
 	void ApplyEffect(const FWSActionRequest& Request, TArray<FString>& OutChanges);
 	void ApplyV11Effect(
 		const FWSActionRequest& Request,

@@ -862,7 +862,6 @@ void UWSAgentGateway::RequestExpression(
 		{
 			Fallback.ValidationReason = TEXT("persona_tail_knowledge_boundary");
 		}
-		RecordDialogueTurn(ActionRequest, Fallback);
 		Completion.ExecuteIfBound(Fallback);
 		return;
 	}
@@ -871,7 +870,6 @@ void UWSAgentGateway::RequestExpression(
 		FWSAgentReply Fallback = Decision;
 		Fallback.Provider = ProviderName;
 		Fallback.ValidationReason = TEXT("retry_manager_unavailable");
-		RecordDialogueTurn(ActionRequest, Fallback);
 		Completion.ExecuteIfBound(Fallback);
 		return;
 	}
@@ -969,7 +967,6 @@ void UWSAgentGateway::RequestExpression(
 					SpineHash,
 					Reply.ValidationReason,
 					Reply.AnswerSource);
-				Gateway->RecordDialogueTurn(ActionRequest, Reply);
 				Completion.ExecuteIfBound(Reply);
 				return;
 			}
@@ -996,7 +993,6 @@ void UWSAgentGateway::RequestExpression(
 				SpineHash,
 				Fallback.ValidationReason,
 				Fallback.AnswerSource);
-			Gateway->RecordDialogueTurn(ActionRequest, Fallback);
 			Completion.ExecuteIfBound(Fallback);
 		});
 	ActiveRequests.Add(Request);
@@ -1026,7 +1022,6 @@ void UWSAgentGateway::RequestExpression(
 			SpineHash,
 			Fallback.ValidationReason,
 			Fallback.AnswerSource);
-		RecordDialogueTurn(ActionRequest, Fallback);
 		Completion.ExecuteIfBound(Fallback);
 	}
 }
@@ -1139,6 +1134,11 @@ void UWSAgentGateway::RequestDialogueIntent(
 			Gateway->UntrackRequest(CompletedRequest);
 			if (RequestGeneration != Gateway->SessionGeneration)
 			{
+				FWSDialogueIntentResult CancelledIntent = LocalIntent;
+				CancelledIntent.Reason = CancelledIntent.bMapped
+					? TEXT("session_reset_local_dictionary")
+					: TEXT("session_reset_wheel_only");
+				Completion.ExecuteIfBound(CancelledIntent);
 				return;
 			}
 			const FString ProviderPayload = Response.IsValid() ? Response->GetContentAsString() : FString();
@@ -2501,6 +2501,13 @@ FString UWSAgentGateway::BuildHistoryUserJson(
 		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Json);
 	FJsonSerializer::Serialize(Root, Writer);
 	return Json;
+}
+
+void UWSAgentGateway::RecordCommittedDialogueTurn(
+	const FWSActionRequest& ActionRequest,
+	const FWSAgentReply& Reply)
+{
+	RecordDialogueTurn(ActionRequest, Reply);
 }
 
 void UWSAgentGateway::RecordDialogueTurn(

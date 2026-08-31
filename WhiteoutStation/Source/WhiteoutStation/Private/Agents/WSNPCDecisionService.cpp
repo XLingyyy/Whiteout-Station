@@ -138,7 +138,8 @@ FWSFactDisclosureDecision UWSNPCDecisionService::ResolveFactDisclosure(
 		FactId == HandInjury
 		|| FactId == MedicalDiagnosis
 		|| FactId == HeatPack
-		|| FactId == RelayCompatibility;
+		|| FactId == RelayCompatibility
+		|| FactId == ForcedRestartConfirmed;
 	if (bPersonaProtectedFact && !Profile.PrivateFacts.Contains(FactId))
 	{
 		return DisclosureDecision(
@@ -267,7 +268,7 @@ FWSFactDisclosureDecision UWSNPCDecisionService::ResolveFactDisclosure(
 				: FName(TEXT("heat_pack_hidden")));
 	}
 
-	if (FactId == RelayCompatibility)
+	if (FactId == RelayCompatibility || FactId == ForcedRestartConfirmed)
 	{
 		if (Context.Speaker != EWSCharacterId::GuHeng)
 		{
@@ -289,9 +290,11 @@ FWSFactDisclosureDecision UWSNPCDecisionService::ResolveFactDisclosure(
 			return DisclosureDecision(
 				FactId,
 				EWSDisclosureLevel::Explicit,
-				TEXT("gu_relay_compatibility"));
+				FactId == RelayCompatibility
+					? FName(TEXT("gu_relay_compatibility"))
+					: FName(TEXT("gu_forced_restart_confirmed")));
 		}
-		if (bHasRelayEvidence)
+		if (FactId == RelayCompatibility && bHasRelayEvidence)
 		{
 			return DisclosureDecision(
 				FactId,
@@ -599,7 +602,11 @@ FWSAgentReply UWSNPCDecisionService::BuildDeterministicReply(
 				DisclosureContext).Level,
 			EWSDisclosureLevel::Partial);
 		const bool bKnowsRestartConfirmed =
-			PlayerKnows(State, WhiteoutAgentFacts::ForcedRestartConfirmed);
+			DisclosureAtLeast(
+				ResolveFactDisclosure(
+					WhiteoutAgentFacts::ForcedRestartConfirmed,
+					DisclosureContext).Level,
+				EWSDisclosureLevel::Partial);
 		const bool bHasBothEvidence = bKnowsRestartSuspicion && bKnowsBurntRelay;
 		const FWSCharacterState GuHeng =
 			State.Characters.FindRef(EWSCharacterId::GuHeng);
@@ -946,7 +953,8 @@ TArray<FName> UWSNPCDecisionService::BuildAllowedFacts(
 		HandInjury,
 		MedicalDiagnosis,
 		HeatPack,
-		RelayCompatibility})
+		RelayCompatibility,
+		ForcedRestartConfirmed})
 	{
 		const FWSFactDisclosureDecision Decision =
 			ResolveFactDisclosure(ProtectedFact, DisclosureContext);

@@ -8,6 +8,16 @@
 class UWSActionResolver;
 class UWSAgentGateway;
 
+#if WITH_DEV_AUTOMATION_TESTS
+using FWSDialogueRealizeTestCallback =
+	TFunction<void(const FWSAgentReply&)>;
+using FWSDialogueRealizeTestHook =
+	TFunction<void(
+		const FWSPreparedDialogue&,
+		FWSDialogueRealizeTestCallback)>;
+using FWSDialogueCommitDispatchTestHook = TFunction<void()>;
+#endif
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWSStateChangedSignature, const FWSGameState&, State);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWSActionCommittedSignature, const FWSActionResult&, Result);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWSDialogueLineSignature, const FWSAgentReply&, Reply);
@@ -44,6 +54,31 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Whiteout Station|Actions")
 	FWSActionResult CommitAction(const FWSActionRequest& Request);
+	FWSActionResult SubmitDialogueAction(
+		const FWSActionRequest& Request,
+		TFunction<void(const FWSActionResult&)> Completion = {});
+
+	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Dialogue")
+	bool HasPendingDialogue() const { return bHasPendingDialogue; }
+
+	int64 GetStateRevision() const { return StateRevision; }
+	static bool CanCommitPreparedDialogue(
+		const FWSPreparedDialogue& Candidate,
+		const FWSPreparedDialogue& Pending,
+		int64 CurrentStateRevision,
+		int64 CurrentGeneration,
+		const TArray<FGuid>& CommittedTransactions);
+
+#if WITH_DEV_AUTOMATION_TESTS
+	void SetDialogueRealizeTestHook(FWSDialogueRealizeTestHook Hook);
+	void SetDialogueCommitDispatchTestHook(
+		FWSDialogueCommitDispatchTestHook Hook);
+	void SetAutomationSaveSlot(FString InSaveSlot);
+	int32 GetDialogueLineBroadcastCountForTest() const
+	{
+		return DialogueLineBroadcastCountForTest;
+	}
+#endif
 
 	UFUNCTION(BlueprintCallable, Category = "Whiteout Station|Flow")
 	bool BeginDayPhase(
@@ -112,11 +147,45 @@ private:
 	UPROPERTY()
 	FWSAgentReply LatestDialogue;
 
+	FWSPreparedDialogue PendingDialogue;
+	bool bHasPendingDialogue = false;
+	bool bCommitDispatchActive = false;
+	bool bLifecycleTransitionActive = false;
+	TFunction<void(const FWSActionResult&)> PendingDialogueCompletion;
+	int64 StateRevision = 1;
+	int64 DialogueGeneration = 1;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	FWSDialogueRealizeTestHook DialogueRealizeTestHook;
+	FWSDialogueCommitDispatchTestHook DialogueCommitDispatchTestHook;
+	FString AutomationSaveSlot;
+	int32 DialogueLineBroadcastCountForTest = 0;
+#endif
+
 	FDelegateHandle LLMSettingsChangedHandle;
 	FString LLMConfigurationError;
 
 	void BroadcastState();
+	FWSActionResult PrepareDialogue(const FWSActionRequest& ActionRequest);
+	void RealizePreparedDialogue();
+	void HandlePreparedDialogueReply(
+		const FWSAgentReply& Reply,
+		FGuid TransactionId,
+		int64 Generation);
+	bool CommitDialogueOutcome(
+		const FWSPreparedDialogue& Prepared,
+		const FWSDialogueOutcome& Outcome,
+		FWSActionResult& OutResult);
+	void AbortPendingDialogue(
+		EWSReasonCode Reason,
+		bool bNotifyCompletion,
+		bool bResetGateway);
+	void CompleteDialogueSubmission(
+		const FWSActionResult& Result,
+		TFunction<void(const FWSActionResult&)> Completion);
+	void BroadcastDialogueLine(const FWSAgentReply& Reply);
 	void RequestActionExpression(const FWSActionRequest& ActionRequest);
 	void HandleAgentReply(const FWSAgentReply& Reply);
 	void HandleLLMSettingsChanged();
+	const FString& GetActiveSaveSlot() const;
 };

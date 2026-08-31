@@ -81,7 +81,10 @@ public:
 		const FString& PlayerSaid = FString(),
 		FGuid DialogueSessionId = FGuid()) const;
 	FWSActionPreview PreviewRequest(const FWSActionRequest& Request) const;
-	FWSActionResult InteractRequest(APawn* InstigatorPawn, FWSActionRequest Request);
+	FWSActionResult InteractRequest(
+		APawn* InstigatorPawn,
+		FWSActionRequest Request,
+		TFunction<void(const FWSActionResult&)> DialogueCompletion = {});
 
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	FWSActionResult Interact(

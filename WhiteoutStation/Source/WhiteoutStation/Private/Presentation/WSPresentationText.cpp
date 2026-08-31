@@ -145,6 +145,11 @@ FText FWSPresentationText::ReasonCause(const EWSReasonCode Reason)
 	case EWSReasonCode::GuHengRefused: return Text(TEXT("顾衡当前无法或拒绝继续维修。"));
 	case EWSReasonCode::NeedsGuHengConditions: return Text(TEXT("当前配合与现场条件还不足以安全推进维修。"));
 	case EWSReasonCode::NeedsReplacementRelay: return Text(TEXT("当前选择的维修方案缺少必要部件。"));
+	case EWSReasonCode::DialoguePending: return Text(TEXT("另一轮回应仍在处理中。"));
+	case EWSReasonCode::DialogueStateChanged: return Text(TEXT("等待期间现场状态已经变化。"));
+	case EWSReasonCode::DialogueCancelled: return Text(TEXT("本轮对话已取消。"));
+	case EWSReasonCode::DialogueOutcomeRequired: return Text(TEXT("对话必须在最终台词确定后提交。"));
+	case EWSReasonCode::DialogueOutcomeInvalid: return Text(TEXT("最终对话结果未通过事务校验。"));
 	default: return TableText(TEXT("reason_default_cause"), TEXT("当前条件不满足。"));
 	}
 }
@@ -186,6 +191,11 @@ FText FWSPresentationText::ReasonNextStep(const EWSReasonCode Reason)
 	case EWSReasonCode::GuHengRefused: return Text(TEXT("恢复顾衡状态、改善配合，或改用其他已知方案。"));
 	case EWSReasonCode::NeedsGuHengConditions: return Text(TEXT("与顾衡确认条件，并改善维修环境或人员状态。"));
 	case EWSReasonCode::NeedsReplacementRelay: return Text(TEXT("检查已公开方案所需条件，或切换到已知可行的方案。"));
+	case EWSReasonCode::DialoguePending: return Text(TEXT("等待当前回应完成，或离开对话取消等待。"));
+	case EWSReasonCode::DialogueStateChanged: return Text(TEXT("按当前现场状态重新提问。"));
+	case EWSReasonCode::DialogueCancelled: return Text(TEXT("重新进入对话后再提交。"));
+	case EWSReasonCode::DialogueOutcomeRequired: return Text(TEXT("通过对话事务入口提交。"));
+	case EWSReasonCode::DialogueOutcomeInvalid: return Text(TEXT("使用本地安全回退重新生成结果。"));
 	default: return TableText(TEXT("reason_default_next"), TEXT("检查目标、资源、证据和队员状态后选择下一步。"));
 	}
 }

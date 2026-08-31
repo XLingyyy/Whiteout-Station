@@ -528,9 +528,83 @@ FWSActionPreview FWhiteoutRulesEngine::Preview(const FWSActionRequest& Request) 
 
 FWSActionResult FWhiteoutRulesEngine::Commit(FWSActionRequest Request)
 {
+	if (Request.ActionId == WhiteoutRules::TalkGuHeng
+		|| Request.ActionId == WhiteoutRules::TalkYeCheng)
+	{
+		FWSActionResult Result;
+		Result.ActionId = Request.ActionId;
+		Result.DialogueAct = Request.DialogueAct;
+		Result.PromiseCondition = Request.PromiseCondition;
+		Result.TransactionId = Request.TransactionId.IsValid()
+			? Request.TransactionId
+			: FGuid::NewGuid();
+		Result.APBefore = IsV11() ? State.PhaseActionPoints : State.ActionPoints;
+		Result.APAfter = Result.APBefore;
+		Result.ReasonCode = EWSReasonCode::DialogueOutcomeRequired;
+		return Result;
+	}
+	return CommitInternal(MoveTemp(Request), nullptr, nullptr);
+}
+
+FWSActionResult FWhiteoutRulesEngine::CommitDialogueOutcome(
+	const FWSPreparedDialogue& Prepared,
+	const FWSDialogueOutcome& Outcome)
+{
+	const FWSActionRequest& Request = Prepared.OriginalRequest;
+	const FWSAgentReply& Reply = Outcome.FinalReply;
+	const bool bDialogueAction =
+		Request.ActionId == WhiteoutRules::TalkGuHeng
+		|| Request.ActionId == WhiteoutRules::TalkYeCheng;
+	const EWSCharacterId ExpectedSpeaker =
+		Request.ActionId == WhiteoutRules::TalkYeCheng
+			? EWSCharacterId::YeCheng
+			: EWSCharacterId::GuHeng;
+	const auto IsSubset = [](const TArray<FName>& Candidate, const TArray<FName>& Allowed)
+	{
+		return Candidate.ContainsByPredicate(
+			[&Allowed](const FName FactId)
+			{
+				return !Allowed.Contains(FactId);
+			}) == false;
+	};
+	const bool bSameDisclosures =
+		IsSubset(Outcome.DisclosedFactIds, Reply.DisclosedFactIds)
+		&& IsSubset(Reply.DisclosedFactIds, Outcome.DisclosedFactIds);
+	const bool bValid = bDialogueAction
+		&& Prepared.TransactionId.IsValid()
+		&& Prepared.TransactionId == Request.TransactionId
+		&& Prepared.TransactionId == Reply.TransactionId
+		&& Request.ActionId == Reply.ActionId
+		&& Request.DialogueSessionId == Reply.DialogueSessionId
+		&& Reply.Speaker == ExpectedSpeaker
+		&& IsSubset(Prepared.PlannedDisclosureFacts, Prepared.AllowedFactIds)
+		&& IsSubset(Outcome.DisclosedFactIds, Prepared.PlannedDisclosureFacts)
+		&& IsSubset(Reply.ReferencedFactIds, Prepared.PlannedDisclosureFacts)
+		&& IsSubset(Reply.DisclosedFactIds, Prepared.PlannedDisclosureFacts)
+		&& bSameDisclosures;
+	if (!bValid)
+	{
+		FWSActionResult Result;
+		Result.ActionId = Request.ActionId;
+		Result.DialogueAct = Request.DialogueAct;
+		Result.PromiseCondition = Request.PromiseCondition;
+		Result.TransactionId = Prepared.TransactionId;
+		Result.APBefore = IsV11() ? State.PhaseActionPoints : State.ActionPoints;
+		Result.APAfter = Result.APBefore;
+		Result.ReasonCode = EWSReasonCode::DialogueOutcomeInvalid;
+		return Result;
+	}
+	return CommitInternal(Request, &Prepared, &Outcome);
+}
+
+FWSActionResult FWhiteoutRulesEngine::CommitInternal(
+	FWSActionRequest Request,
+	const FWSPreparedDialogue* Prepared,
+	const FWSDialogueOutcome* Outcome)
+{
 	if (IsV11())
 	{
-		return CommitV11(MoveTemp(Request));
+		return CommitV11(MoveTemp(Request), Prepared, Outcome);
 	}
 
 	FWSActionResult Result;
@@ -560,6 +634,13 @@ FWSActionResult FWhiteoutRulesEngine::Commit(FWSActionRequest Request)
 	State.Phase = EWSGamePhase::ResolvingAction;
 	const int32 PromiseCountBefore = State.Promises.Num();
 	ApplyEffect(Request, Result.Changes);
+	if (Prepared && Outcome)
+	{
+		UpgradePlayerKnowledgeFromUtterance(
+			Outcome->DisclosedFactIds,
+			Outcome->FinalReply.Speaker,
+			&Result.Changes);
+	}
 	Result.bPromiseRecorded = State.Promises.Num() > PromiseCountBefore;
 	const int32 Cost = GetActionCost(Request.ActionId);
 	ApplyEnvironment(Cost, Request.ActionId == WhiteoutRules::CalibrateAntenna, Result.Changes);
@@ -604,6 +685,14 @@ FWSActionResult FWhiteoutRulesEngine::Commit(FWSActionRequest Request)
 	Event.bPromiseRecorded = Result.bPromiseRecorded;
 	Event.Changes = Result.Changes;
 	Event.bCrisisTriggered = Result.bCrisisTriggered;
+	if (Prepared && Outcome)
+	{
+		Event.DialogueSpeaker = Outcome->FinalReply.Speaker;
+		Event.PlannedDisclosureFacts = Prepared->PlannedDisclosureFacts;
+		Event.DisclosedFactIds = Outcome->DisclosedFactIds;
+		Event.RealizedAtomIds = Outcome->RealizedAtomIds;
+		Event.DialogueAnswerSource = Outcome->AnswerSource;
+	}
 	State.EventLog.Add(MoveTemp(Event));
 
 	Result.bCommitted = true;
@@ -1463,7 +1552,10 @@ FWSActionPreview FWhiteoutRulesEngine::BuildV11Preview(
 	return Result;
 }
 
-FWSActionResult FWhiteoutRulesEngine::CommitV11(FWSActionRequest Request)
+FWSActionResult FWhiteoutRulesEngine::CommitV11(
+	FWSActionRequest Request,
+	const FWSPreparedDialogue* Prepared,
+	const FWSDialogueOutcome* Outcome)
 {
 	FWSActionResult Result;
 	Result.ActionId = Request.ActionId;
@@ -1508,6 +1600,13 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(FWSActionRequest Request)
 		ConsumeV11Stamina(Executor);
 	}
 	ApplyV11Effect(Request, ActionPreview, Result.Changes);
+	if (Prepared && Outcome)
+	{
+		UpgradePlayerKnowledgeFromUtterance(
+			Outcome->DisclosedFactIds,
+			Outcome->FinalReply.Speaker,
+			&Result.Changes);
+	}
 	Result.bPromiseRecorded = State.Promises.Num() > PromiseCountBefore;
 	UpdateNegotiationOffersForCommittedAction(Request, Result.Changes);
 
@@ -1538,6 +1637,14 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(FWSActionRequest Request)
 	Event.ActualAP = ActionPreview.APCost;
 	Event.WorkReadiness = ActionPreview.WorkReadiness;
 	Event.CostModifiers = ActionPreview.CostModifiers;
+	if (Prepared && Outcome)
+	{
+		Event.DialogueSpeaker = Outcome->FinalReply.Speaker;
+		Event.PlannedDisclosureFacts = Prepared->PlannedDisclosureFacts;
+		Event.DisclosedFactIds = Outcome->DisclosedFactIds;
+		Event.RealizedAtomIds = Outcome->RealizedAtomIds;
+		Event.DialogueAnswerSource = Outcome->AnswerSource;
+	}
 	State.EventLog.Add(MoveTemp(Event));
 
 	Result.bCommitted = true;
@@ -1862,25 +1969,7 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 	}
 	else if (Request.ActionId == TalkYeCheng)
 	{
-		const bool bDiagnosisKnownBefore = State.Flags.bGuHengDiagnosed
-			|| Knows(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed);
-		const float TrustBefore = Character(EWSCharacterId::YeCheng).Trust;
 		ChangeCharacter(EWSCharacterId::YeCheng, 0, 0, 0, 0, -0.4f, 0.4f);
-		if (WSDialogueDisclosurePolicy::IsTargetedGuHengDiagnosisQuestion(Request))
-		{
-			State.Flags.bGuHengDiagnosed = true;
-			AddEvidence(TEXT("EVIDENCE_MEDICAL_DIAGNOSIS"), &OutChanges);
-			DiscoverFact(FactHandInjury, EWSKnowledgeLevel::Confirmed, &OutChanges);
-			DiscoverFact(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed, &OutChanges);
-		}
-		if (WSDialogueDisclosurePolicy::IsHeatPackDisclosureQuestion(Request)
-			&& bDiagnosisKnownBefore
-			&& TrustBefore >= 6.0f)
-		{
-			State.Flags.bHeatPackRevealed = true;
-			AddEvidence(TEXT("EVIDENCE_HEAT_PACK"), &OutChanges);
-			DiscoverFact(FactHeatPack, EWSKnowledgeLevel::Confirmed, &OutChanges);
-		}
 		OutChanges.Add(TEXT("Ye Cheng trust +0.4, pressure -0.4"));
 		if (Request.DialogueAct == EWSDialogueAct::Challenge)
 		{
@@ -1906,11 +1995,7 @@ void FWhiteoutRulesEngine::ApplyEffect(const FWSActionRequest& Request, TArray<F
 		{
 			ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0.3f, 0.8f);
 			State.Flags.bGuHengCooperative = true;
-			State.Flags.bRelayCompatibilityKnown = true;
-			AddEvidence(TEXT("EVIDENCE_HEATER_SERVICE_LABEL"), &OutChanges);
-			DiscoverFact(FactRelayCompatibility, EWSKnowledgeLevel::Confirmed, &OutChanges);
-			DiscoverFact(FactForcedRestartConfirmed, EWSKnowledgeLevel::Confirmed, &OutChanges);
-			OutChanges.Add(TEXT("Gu Heng confirms the technical route"));
+			OutChanges.Add(TEXT("Gu Heng accepts an evidence-backed challenge"));
 		}
 		else
 		{
@@ -2073,26 +2158,9 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 	else if (Request.ActionId == TalkYeCheng)
 	{
 		FWSCharacterState& YeCheng = Character(EWSCharacterId::YeCheng);
-		const bool bDiagnosisKnownBefore = State.Flags.bGuHengDiagnosed
-			|| Knows(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed);
-		const float TrustBefore = YeCheng.Trust;
 		YeCheng.Trust = FMath::Clamp(YeCheng.Trust + 0.4f, 0.0f, 10.0f);
 		YeCheng.Pressure = FMath::Clamp(YeCheng.Pressure - 0.4f, 0.0f, 10.0f);
-		if (WSDialogueDisclosurePolicy::IsTargetedGuHengDiagnosisQuestion(Request))
-		{
-			State.Flags.bGuHengDiagnosed = true;
-			DiscoverFact(FactMedicalDiagnosis, EWSKnowledgeLevel::Confirmed, &OutChanges);
-			DiscoverFact(FactHandInjury, EWSKnowledgeLevel::Confirmed, &OutChanges);
-			OutChanges.Add(TEXT("叶澄披露顾衡的诊断结论"));
-		}
-		if (WSDialogueDisclosurePolicy::IsHeatPackDisclosureQuestion(Request)
-			&& bDiagnosisKnownBefore
-			&& TrustBefore >= 5.5f)
-		{
-			State.Flags.bHeatPackRevealed = true;
-			DiscoverFact(FactHeatPack, EWSKnowledgeLevel::Confirmed, &OutChanges);
-			OutChanges.Add(TEXT("叶澄披露保温包信息"));
-		}
+		OutChanges.Add(TEXT("叶澄立场由确定性规则结算"));
 	}
 	else if (Request.ActionId == TalkGuHeng)
 	{
@@ -2104,15 +2172,6 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 		{
 			GuHeng.Trust = FMath::Clamp(GuHeng.Trust + 0.8f, 0.0f, 10.0f);
 			GuHeng.Pressure = FMath::Clamp(GuHeng.Pressure + 0.2f, 0.0f, 10.0f);
-			State.Flags.bRelayCompatibilityKnown = true;
-			DiscoverFact(FactRelayCompatibility, EWSKnowledgeLevel::Confirmed, &OutChanges);
-			if (Knows(FactForcedRestartSuspicion))
-			{
-				DiscoverFact(
-					FactForcedRestartConfirmed,
-					EWSKnowledgeLevel::Confirmed,
-					&OutChanges);
-			}
 		}
 		else if (Request.DialogueAct == EWSDialogueAct::Command)
 		{
@@ -2594,8 +2653,11 @@ void FWhiteoutRulesEngine::UpgradePlayerKnowledgeFromUtterance(
 			DiscoverFact(FactId, EWSKnowledgeLevel::Confirmed, OutChanges);
 			AddEvidence(TEXT("EVIDENCE_HEATER_SERVICE_LABEL"), OutChanges);
 		}
+		else if (FactId == FactForcedRestartSuspicion)
+		{
+			DiscoverFact(FactId, EWSKnowledgeLevel::Suspected, OutChanges);
+		}
 		else if (FactId == FactGeneratorProtectionStop
-			|| FactId == FactForcedRestartSuspicion
 			|| FactId == FactBurntRelay
 			|| FactId == FactForcedRestartConfirmed)
 		{

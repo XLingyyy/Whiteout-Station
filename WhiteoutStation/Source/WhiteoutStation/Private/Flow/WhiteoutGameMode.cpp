@@ -282,10 +282,6 @@ void AWhiteoutGameMode::BeginPlay()
 			if (AWhiteoutHUD* RouteHUD = Cast<AWhiteoutHUD>(RouteController->GetHUD()))
 			{
 				RouteHUD->DismissOpening();
-				if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
-				{
-					RouteHUD->SetEndingCaptureStage(StateSubsystem->GetStateSnapshot().Ending, true);
-				}
 			}
 		}
 	}
@@ -594,7 +590,8 @@ void AWhiteoutGameMode::BeginPlay()
 			false);
 	}
 
-	if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoCapture")))
+	if (AutoRoute.IsEmpty()
+		&& FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoCapture")))
 	{
 		FTimerHandle CaptureTimer;
 		GetWorldTimerManager().SetTimer(
@@ -2348,48 +2345,271 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 	if (!StateSubsystem)
 	{
 		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: state subsystem is unavailable"));
-		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoRouteExit")))
-		{
-			FPlatformMisc::RequestExitWithStatus(false, 2);
-		}
+		ScheduleAutomationRouteCaptureAndExit(false, 2);
 		return;
 	}
-	const auto Commit = [StateSubsystem](const TCHAR* ActionId, const TFunction<void(FWSActionRequest&)>& Configure = nullptr)
+	if (bAutomationRouteActive)
 	{
-		FWSActionRequest Request;
-		Request.ActionId = FName(ActionId);
-		Request.TransactionId = FGuid::NewGuid();
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: a route is already running"));
+		return;
+	}
+
+	AutomationRouteSteps.Reset();
+	ActiveAutomationRouteName = RouteName;
+	AutomationRouteStepIndex = 0;
+	AutomationRouteExpectedEnding = EWSEndingType::TaskSuccess;
+	bAutomationRouteExpectSignal = true;
+	bAutomationRouteSucceeded = true;
+	AutomationRouteRunId = FGuid::NewGuid();
+
+	const auto AddBeginPhase = [this](const EWSHeatingZone Zone)
+	{
+		FWhiteoutAutomationRouteStep& Step = AutomationRouteSteps.AddDefaulted_GetRef();
+		Step.Type = EWhiteoutAutomationRouteStepType::BeginPhase;
+		Step.HeatingZone = Zone;
+	};
+	const auto AddAction = [this](
+		const TCHAR* ActionId,
+		const TFunction<void(FWSActionRequest&)>& Configure = nullptr)
+	{
+		FWhiteoutAutomationRouteStep& Step = AutomationRouteSteps.AddDefaulted_GetRef();
+		Step.Type = EWhiteoutAutomationRouteStepType::CommitAction;
+		Step.Request.ActionId = FName(ActionId);
+		Step.Request.TransactionId = FGuid::NewGuid();
 		if (Configure)
 		{
-			Configure(Request);
+			Configure(Step.Request);
 		}
-		const FWSActionResult Result = StateSubsystem->CommitAction(Request);
-		UE_LOG(LogTemp, Display, TEXT("WhiteoutStation AutoRoute: %s committed=%d AP=%d->%d"), ActionId, Result.bCommitted, Result.APBefore, Result.APAfter);
-		return Result.bCommitted;
 	};
-	const auto BeginPhase = [StateSubsystem](const EWSHeatingZone Zone)
+	const auto AddSettlePhase = [this]()
+	{
+		FWhiteoutAutomationRouteStep& Step = AutomationRouteSteps.AddDefaulted_GetRef();
+		Step.Type = EWhiteoutAutomationRouteStepType::SettlePhase;
+	};
+
+	if (RouteName.Equals(TEXT("medical"), ESearchCase::IgnoreCase))
+	{
+		AddBeginPhase(EWSHeatingZone::MedicalRoom);
+		AddAction(TEXT("talk_ye_cheng"));
+		AddAction(TEXT("treat_character"), [](FWSActionRequest& Request)
+		{
+			Request.TreatmentTarget = EWSCharacterId::GuHeng;
+			Request.TreatmentMethod = EWSTreatmentMethod::Full;
+			Request.bHasCollaborator = true;
+			Request.Collaborator = EWSCharacterId::Player;
+		});
+		AddAction(TEXT("distribute_food"), [](FWSActionRequest& Request)
+		{
+			Request.FoodForPlayer = 1;
+			Request.FoodForGuHeng = 1;
+		});
+		AddAction(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
+		{
+			Request.DialogueAct = EWSDialogueAct::Promise;
+			Request.PromiseCondition = TEXT("heat_repair_room");
+		});
+		AddSettlePhase();
+		AddBeginPhase(EWSHeatingZone::RepairRoom);
+		AddAction(TEXT("repair_generator"), [](FWSActionRequest& Request)
+		{
+			Request.bHasCollaborator = true;
+			Request.Collaborator = EWSCharacterId::Player;
+		});
+		AddAction(TEXT("inspect_control_cabinet"));
+		AddAction(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
+		{
+			Request.DialogueAct = EWSDialogueAct::Challenge;
+		});
+		AddAction(TEXT("rest"), [](FWSActionRequest& Request)
+		{
+			Request.RestTarget = EWSCharacterId::Player;
+			Request.RestLocation = EWSCharacterLocation::RepairRoom;
+		});
+		AddSettlePhase();
+		AddBeginPhase(EWSHeatingZone::ControlRoom);
+		AddAction(TEXT("calibrate_antenna"));
+		AddAction(TEXT("send_signal"));
+	}
+	else if (RouteName.Equals(TEXT("technical"), ESearchCase::IgnoreCase))
+	{
+		AddBeginPhase(EWSHeatingZone::Kitchen);
+		AddAction(TEXT("investigate_generator_log"));
+		AddAction(TEXT("inspect_control_cabinet"));
+		AddAction(TEXT("distribute_food"), [](FWSActionRequest& Request)
+		{
+			Request.FoodForPlayer = 1;
+			Request.FoodForGuHeng = 1;
+			Request.bHotMeal = true;
+		});
+		AddAction(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
+		{
+			Request.DialogueAct = EWSDialogueAct::Challenge;
+		});
+		AddSettlePhase();
+		AddBeginPhase(EWSHeatingZone::RepairRoom);
+		AddAction(TEXT("dismantle_kitchen_heater"), [](FWSActionRequest& Request)
+		{
+			Request.bHasCollaborator = true;
+			Request.Collaborator = EWSCharacterId::Player;
+		});
+		AddAction(TEXT("repair_generator"), [](FWSActionRequest& Request)
+		{
+			Request.bHasCollaborator = true;
+			Request.Collaborator = EWSCharacterId::Player;
+			Request.bUseRelay = true;
+		});
+		AddAction(TEXT("talk_ye_cheng"));
+		AddSettlePhase();
+		AddBeginPhase(EWSHeatingZone::ControlRoom);
+		AddAction(TEXT("calibrate_antenna"));
+		AddAction(TEXT("send_signal"));
+	}
+	else if (
+		RouteName.Equals(TEXT("quick"), ESearchCase::IgnoreCase)
+		|| RouteName.Equals(TEXT("cost"), ESearchCase::IgnoreCase))
+	{
+		AutomationRouteExpectedEnding = EWSEndingType::CostUncontrolled;
+		AddBeginPhase(EWSHeatingZone::RepairRoom);
+		AddAction(TEXT("distribute_food"), [](FWSActionRequest& Request)
+		{
+			Request.FoodForPlayer = 1;
+			Request.FoodForGuHeng = 1;
+		});
+		AddAction(TEXT("repair_generator"), [](FWSActionRequest& Request)
+		{
+			Request.bForce = true;
+			Request.bHasCollaborator = true;
+			Request.Collaborator = EWSCharacterId::Player;
+		});
+		AddAction(TEXT("inspect_control_cabinet"));
+		AddAction(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
+		{
+			Request.DialogueAct = EWSDialogueAct::Command;
+		});
+		AddSettlePhase();
+		AddBeginPhase(EWSHeatingZone::RepairRoom);
+		AddAction(TEXT("repair_generator"), [](FWSActionRequest& Request)
+		{
+			Request.bForce = true;
+			Request.bHasCollaborator = true;
+			Request.Collaborator = EWSCharacterId::Player;
+		});
+		AddSettlePhase();
+		AddBeginPhase(EWSHeatingZone::ControlRoom);
+		AddAction(TEXT("calibrate_antenna"));
+		AddAction(TEXT("send_signal"));
+	}
+	else if (RouteName.Equals(TEXT("wait"), ESearchCase::IgnoreCase))
+	{
+		AutomationRouteExpectedEnding = EWSEndingType::SurvivalWait;
+		bAutomationRouteExpectSignal = false;
+		AddBeginPhase(EWSHeatingZone::Kitchen);
+		AddAction(TEXT("distribute_food"), [](FWSActionRequest& Request)
+		{
+			Request.FoodForPlayer = 1;
+			Request.FoodForGuHeng = 1;
+			Request.bHotMeal = true;
+		});
+		AddSettlePhase();
+		AddBeginPhase(EWSHeatingZone::MedicalRoom);
+		AddAction(TEXT("rest"), [](FWSActionRequest& Request)
+		{
+			Request.RestTarget = EWSCharacterId::YeCheng;
+			Request.RestLocation = EWSCharacterLocation::MedicalRoom;
+		});
+		AddSettlePhase();
+		AddBeginPhase(EWSHeatingZone::ControlRoom);
+		AddSettlePhase();
+	}
+	else if (RouteName.Equals(TEXT("collapse"), ESearchCase::IgnoreCase))
+	{
+		AutomationRouteExpectedEnding = EWSEndingType::TotalCollapse;
+		bAutomationRouteExpectSignal = false;
+		AddBeginPhase(EWSHeatingZone::RepairRoom);
+		AddAction(TEXT("distribute_food"), [](FWSActionRequest& Request)
+		{
+			Request.FoodForPlayer = 1;
+			Request.FoodForGuHeng = 1;
+		});
+		AddAction(TEXT("repair_generator"), [](FWSActionRequest& Request)
+		{
+			Request.bForce = true;
+			Request.bHasCollaborator = true;
+			Request.Collaborator = EWSCharacterId::Player;
+		});
+		AddSettlePhase();
+		AddBeginPhase(EWSHeatingZone::RepairRoom);
+		AddAction(TEXT("repair_generator"), [](FWSActionRequest& Request)
+		{
+			Request.bForce = true;
+			Request.bHasCollaborator = true;
+			Request.Collaborator = EWSCharacterId::Player;
+		});
+		AddSettlePhase();
+		AddBeginPhase(EWSHeatingZone::ControlRoom);
+		AddSettlePhase();
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: unknown route '%s'"), *RouteName);
+		ScheduleAutomationRouteCaptureAndExit(false, 2);
+		return;
+	}
+
+	bAutomationRouteActive = true;
+	ScheduleAutomationRouteContinuation(AutomationRouteRunId);
+}
+
+void AWhiteoutGameMode::ContinueAutomationRoute()
+{
+	if (!bAutomationRouteActive)
+	{
+		return;
+	}
+	const FGuid RunId = AutomationRouteRunId;
+	UWindStationStateSubsystem* StateSubsystem =
+		GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	if (!StateSubsystem)
+	{
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: state subsystem became unavailable"));
+		bAutomationRouteSucceeded = false;
+		FinishAutomationRoute(RunId);
+		return;
+	}
+	if (!AutomationRouteSteps.IsValidIndex(AutomationRouteStepIndex))
+	{
+		FinishAutomationRoute(RunId);
+		return;
+	}
+
+	const FWhiteoutAutomationRouteStep Step =
+		AutomationRouteSteps[AutomationRouteStepIndex++];
+	if (Step.Type == EWhiteoutAutomationRouteStepType::BeginPhase)
 	{
 		EWSReasonCode Reason = EWSReasonCode::PhaseLocked;
 		TArray<FString> Changes;
 		const bool bStarted =
-			StateSubsystem->BeginDayPhase(Zone, Reason, Changes);
+			StateSubsystem->BeginDayPhase(Step.HeatingZone, Reason, Changes);
+		bAutomationRouteSucceeded &= bStarted;
 		UE_LOG(
 			LogTemp,
 			Display,
 			TEXT("WhiteoutStation AutoRoute: begin_phase zone=%s started=%d reason=%s"),
 			*StaticEnum<EWSHeatingZone>()->GetNameStringByValue(
-				static_cast<int64>(Zone)),
+				static_cast<int64>(Step.HeatingZone)),
 			bStarted,
 			*StaticEnum<EWSReasonCode>()->GetNameStringByValue(
 				static_cast<int64>(Reason)));
-		return bStarted;
-	};
-	const auto SettlePhase = [StateSubsystem]()
+		ScheduleAutomationRouteContinuation(RunId);
+		return;
+	}
+	if (Step.Type == EWhiteoutAutomationRouteStepType::SettlePhase)
 	{
 		EWSReasonCode Reason = EWSReasonCode::PhaseLocked;
 		FWSPhaseSummary Summary;
 		const bool bSettled =
 			StateSubsystem->SettleCurrentDayPhase(Reason, Summary);
+		bAutomationRouteSucceeded &= bSettled;
 		UE_LOG(
 			LogTemp,
 			Display,
@@ -2400,196 +2620,107 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 			Summary.UnusedAPDiscarded,
 			*StaticEnum<EWSReasonCode>()->GetNameStringByValue(
 				static_cast<int64>(Reason)));
-		return bSettled;
-	};
+		ScheduleAutomationRouteContinuation(RunId);
+		return;
+	}
 
-	bool bSucceeded = true;
-	EWSEndingType ExpectedEnding = EWSEndingType::TaskSuccess;
-	bool bExpectSignal = true;
-	if (RouteName.Equals(TEXT("medical"), ESearchCase::IgnoreCase))
+	const bool bDialogueAction = Step.Request.ActionId == TEXT("talk_gu_heng")
+		|| Step.Request.ActionId == TEXT("talk_ye_cheng");
+	if (bDialogueAction)
 	{
-		bSucceeded &= BeginPhase(EWSHeatingZone::MedicalRoom);
-		bSucceeded &= Commit(TEXT("talk_ye_cheng"));
-		bSucceeded &= Commit(TEXT("treat_character"), [](FWSActionRequest& Request)
-		{
-			Request.TreatmentTarget = EWSCharacterId::GuHeng;
-			Request.TreatmentMethod = EWSTreatmentMethod::Full;
-			Request.bHasCollaborator = true;
-			Request.Collaborator = EWSCharacterId::Player;
-		});
-		bSucceeded &= Commit(TEXT("distribute_food"), [](FWSActionRequest& Request)
-		{
-			Request.FoodForPlayer = 1;
-			Request.FoodForGuHeng = 1;
-		});
-		bSucceeded &= Commit(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
-		{
-			Request.DialogueAct = EWSDialogueAct::Promise;
-			Request.PromiseCondition = TEXT("heat_repair_room");
-		});
-		bSucceeded &= SettlePhase();
-		bSucceeded &= BeginPhase(EWSHeatingZone::RepairRoom);
-		bSucceeded &= Commit(TEXT("repair_generator"), [](FWSActionRequest& Request)
-		{
-			Request.bHasCollaborator = true;
-			Request.Collaborator = EWSCharacterId::Player;
-		});
-		bSucceeded &= Commit(TEXT("inspect_control_cabinet"));
-		bSucceeded &= Commit(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
-		{
-			Request.DialogueAct = EWSDialogueAct::Challenge;
-		});
-		bSucceeded &= Commit(TEXT("rest"), [](FWSActionRequest& Request)
-		{
-			Request.RestTarget = EWSCharacterId::Player;
-			Request.RestLocation = EWSCharacterLocation::RepairRoom;
-		});
-		bSucceeded &= SettlePhase();
-		bSucceeded &= BeginPhase(EWSHeatingZone::ControlRoom);
-		bSucceeded &= Commit(TEXT("calibrate_antenna"));
-		bSucceeded &= Commit(TEXT("send_signal"));
+		TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
+		const FName ActionId = Step.Request.ActionId;
+		StateSubsystem->SubmitDialogueAction(
+			Step.Request,
+			[WeakThis, RunId, ActionId](const FWSActionResult& Result)
+			{
+				if (!WeakThis.IsValid()
+					|| !WeakThis->bAutomationRouteActive
+					|| WeakThis->AutomationRouteRunId != RunId)
+				{
+					return;
+				}
+				WeakThis->bAutomationRouteSucceeded &= Result.bCommitted;
+				UE_LOG(
+					LogTemp,
+					Display,
+					TEXT("WhiteoutStation AutoRoute: %s committed=%d AP=%d->%d reason=%s"),
+					*ActionId.ToString(),
+					Result.bCommitted,
+					Result.APBefore,
+					Result.APAfter,
+					*StaticEnum<EWSReasonCode>()->GetNameStringByValue(
+						static_cast<int64>(Result.ReasonCode)));
+				WeakThis->ScheduleAutomationRouteContinuation(RunId);
+			});
+		return;
 	}
-	else if (RouteName.Equals(TEXT("technical"), ESearchCase::IgnoreCase))
+
+	const FWSActionResult Result = StateSubsystem->CommitAction(Step.Request);
+	bAutomationRouteSucceeded &= Result.bCommitted;
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("WhiteoutStation AutoRoute: %s committed=%d AP=%d->%d reason=%s"),
+		*Step.Request.ActionId.ToString(),
+		Result.bCommitted,
+		Result.APBefore,
+		Result.APAfter,
+		*StaticEnum<EWSReasonCode>()->GetNameStringByValue(
+			static_cast<int64>(Result.ReasonCode)));
+	ScheduleAutomationRouteContinuation(RunId);
+}
+
+void AWhiteoutGameMode::ScheduleAutomationRouteContinuation(const FGuid RunId)
+{
+	if (!bAutomationRouteActive || AutomationRouteRunId != RunId)
 	{
-		bSucceeded &= BeginPhase(EWSHeatingZone::Kitchen);
-		bSucceeded &= Commit(TEXT("investigate_generator_log"));
-		bSucceeded &= Commit(TEXT("inspect_control_cabinet"));
-		bSucceeded &= Commit(TEXT("distribute_food"), [](FWSActionRequest& Request)
-		{
-			Request.FoodForPlayer = 1;
-			Request.FoodForGuHeng = 1;
-			Request.bHotMeal = true;
-		});
-		bSucceeded &= Commit(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
-		{
-			Request.DialogueAct = EWSDialogueAct::Challenge;
-		});
-		bSucceeded &= SettlePhase();
-		bSucceeded &= BeginPhase(EWSHeatingZone::RepairRoom);
-		bSucceeded &= Commit(TEXT("dismantle_kitchen_heater"), [](FWSActionRequest& Request)
-		{
-			Request.bHasCollaborator = true;
-			Request.Collaborator = EWSCharacterId::Player;
-		});
-		bSucceeded &= Commit(TEXT("repair_generator"), [](FWSActionRequest& Request)
-		{
-			Request.bHasCollaborator = true;
-			Request.Collaborator = EWSCharacterId::Player;
-			Request.bUseRelay = true;
-		});
-		bSucceeded &= Commit(TEXT("talk_ye_cheng"));
-		bSucceeded &= SettlePhase();
-		bSucceeded &= BeginPhase(EWSHeatingZone::ControlRoom);
-		bSucceeded &= Commit(TEXT("calibrate_antenna"));
-		bSucceeded &= Commit(TEXT("send_signal"));
+		return;
 	}
-	else if (
-		RouteName.Equals(TEXT("quick"), ESearchCase::IgnoreCase)
-		|| RouteName.Equals(TEXT("cost"), ESearchCase::IgnoreCase))
+	GetWorldTimerManager().ClearTimer(AutomationRouteContinuationTimer);
+	AutomationRouteContinuationTimer = GetWorldTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateWeakLambda(
+			this,
+			[this, RunId]()
+			{
+				if (bAutomationRouteActive && AutomationRouteRunId == RunId)
+				{
+					ContinueAutomationRoute();
+				}
+			}));
+}
+
+void AWhiteoutGameMode::FinishAutomationRoute(const FGuid RunId)
+{
+	if (!bAutomationRouteActive || AutomationRouteRunId != RunId)
 	{
-		ExpectedEnding = EWSEndingType::CostUncontrolled;
-		bSucceeded &= BeginPhase(EWSHeatingZone::RepairRoom);
-		bSucceeded &= Commit(TEXT("distribute_food"), [](FWSActionRequest& Request)
-		{
-			Request.FoodForPlayer = 1;
-			Request.FoodForGuHeng = 1;
-		});
-		bSucceeded &= Commit(TEXT("repair_generator"), [](FWSActionRequest& Request)
-		{
-			Request.bForce = true;
-			Request.bHasCollaborator = true;
-			Request.Collaborator = EWSCharacterId::Player;
-		});
-		bSucceeded &= Commit(TEXT("inspect_control_cabinet"));
-		bSucceeded &= Commit(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
-		{
-			Request.DialogueAct = EWSDialogueAct::Command;
-		});
-		bSucceeded &= SettlePhase();
-		bSucceeded &= BeginPhase(EWSHeatingZone::RepairRoom);
-		bSucceeded &= Commit(TEXT("repair_generator"), [](FWSActionRequest& Request)
-		{
-			Request.bForce = true;
-			Request.bHasCollaborator = true;
-			Request.Collaborator = EWSCharacterId::Player;
-		});
-		bSucceeded &= SettlePhase();
-		bSucceeded &= BeginPhase(EWSHeatingZone::ControlRoom);
-		bSucceeded &= Commit(TEXT("calibrate_antenna"));
-		bSucceeded &= Commit(TEXT("send_signal"));
+		return;
 	}
-	else if (RouteName.Equals(TEXT("wait"), ESearchCase::IgnoreCase))
+	bAutomationRouteActive = false;
+	GetWorldTimerManager().ClearTimer(AutomationRouteContinuationTimer);
+
+	UWindStationStateSubsystem* StateSubsystem =
+		GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	if (!StateSubsystem)
 	{
-		ExpectedEnding = EWSEndingType::SurvivalWait;
-		bExpectSignal = false;
-		bSucceeded &= BeginPhase(EWSHeatingZone::Kitchen);
-		bSucceeded &= Commit(TEXT("distribute_food"), [](FWSActionRequest& Request)
-		{
-			Request.FoodForPlayer = 1;
-			Request.FoodForGuHeng = 1;
-			Request.bHotMeal = true;
-		});
-		bSucceeded &= SettlePhase();
-		bSucceeded &= BeginPhase(EWSHeatingZone::MedicalRoom);
-		bSucceeded &= Commit(TEXT("rest"), [](FWSActionRequest& Request)
-		{
-			Request.RestTarget = EWSCharacterId::YeCheng;
-			Request.RestLocation = EWSCharacterLocation::MedicalRoom;
-		});
-		bSucceeded &= SettlePhase();
-		bSucceeded &= BeginPhase(EWSHeatingZone::ControlRoom);
-		bSucceeded &= SettlePhase();
-	}
-	else if (RouteName.Equals(TEXT("collapse"), ESearchCase::IgnoreCase))
-	{
-		ExpectedEnding = EWSEndingType::TotalCollapse;
-		bExpectSignal = false;
-		bSucceeded &= BeginPhase(EWSHeatingZone::RepairRoom);
-		bSucceeded &= Commit(TEXT("distribute_food"), [](FWSActionRequest& Request)
-		{
-			Request.FoodForPlayer = 1;
-			Request.FoodForGuHeng = 1;
-		});
-		bSucceeded &= Commit(TEXT("repair_generator"), [](FWSActionRequest& Request)
-		{
-			Request.bForce = true;
-			Request.bHasCollaborator = true;
-			Request.Collaborator = EWSCharacterId::Player;
-		});
-		bSucceeded &= SettlePhase();
-		bSucceeded &= BeginPhase(EWSHeatingZone::RepairRoom);
-		bSucceeded &= Commit(TEXT("repair_generator"), [](FWSActionRequest& Request)
-		{
-			Request.bForce = true;
-			Request.bHasCollaborator = true;
-			Request.Collaborator = EWSCharacterId::Player;
-		});
-		bSucceeded &= SettlePhase();
-		bSucceeded &= BeginPhase(EWSHeatingZone::ControlRoom);
-		bSucceeded &= SettlePhase();
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: unknown route '%s'"), *RouteName);
-		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoRouteExit")))
-		{
-			FPlatformMisc::RequestExitWithStatus(false, 2);
-		}
+		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: cannot finish without state subsystem"));
+		ScheduleAutomationRouteCaptureAndExit(false, 2);
 		return;
 	}
 
 	const FWSGameState Results = StateSubsystem->EndGame();
 	FString EventLogPath;
 	StateSubsystem->ExportEventLog(EventLogPath);
-	const bool bOutcomeMatches = bSucceeded
-		&& Results.Ending == ExpectedEnding
-		&& Results.Tasks.bSignalSent == bExpectSignal;
+	const bool bOutcomeMatches = bAutomationRouteSucceeded
+		&& Results.Ending == AutomationRouteExpectedEnding
+		&& Results.Tasks.bSignalSent == bAutomationRouteExpectSignal;
 	const FString Summary = FString::Printf(
 		TEXT("route=%s success=%d ending=%s expected=%s signal=%d score=%.2f log=%s"),
-		*RouteName,
+		*ActiveAutomationRouteName,
 		bOutcomeMatches,
 		*StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(Results.Ending)),
-		*StaticEnum<EWSEndingType>()->GetNameStringByValue(static_cast<int64>(ExpectedEnding)),
+		*StaticEnum<EWSEndingType>()->GetNameStringByValue(
+			static_cast<int64>(AutomationRouteExpectedEnding)),
 		Results.Tasks.bSignalSent ? 1 : 0,
 		Results.Score.Total,
 		*EventLogPath);
@@ -2601,10 +2732,65 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 	{
 		UE_LOG(LogTemp, Error, TEXT("WhiteoutStation AutoRoute: %s"), *Summary);
 	}
-	if (FParse::Param(
-			FCommandLine::Get(),
-			TEXT("WhiteoutAutoRouteExit")))
+	if (APlayerController* RouteController = UGameplayStatics::GetPlayerController(this, 0))
 	{
-		FPlatformMisc::RequestExitWithStatus(false, bOutcomeMatches ? 0 : 1);
+		if (AWhiteoutHUD* RouteHUD = Cast<AWhiteoutHUD>(RouteController->GetHUD()))
+		{
+			RouteHUD->DismissOpening();
+			RouteHUD->SetEndingCaptureStage(Results.Ending, true);
+		}
+	}
+	ScheduleAutomationRouteCaptureAndExit(bOutcomeMatches);
+}
+
+void AWhiteoutGameMode::ScheduleAutomationRouteCaptureAndExit(
+	const bool bOutcomeMatches,
+	const int32 FailureStatus)
+{
+	const bool bAutoCapture = FParse::Param(
+		FCommandLine::Get(),
+		TEXT("WhiteoutAutoCapture"));
+	const bool bRouteExit = FParse::Param(
+		FCommandLine::Get(),
+		TEXT("WhiteoutAutoRouteExit"));
+	const int32 ExitStatus = bOutcomeMatches ? 0 : FailureStatus;
+	if (bAutoCapture)
+	{
+		FTimerHandle CaptureTimer;
+		GetWorldTimerManager().SetTimer(
+			CaptureTimer,
+			[]()
+			{
+				const FString ScreenshotPath =
+					FPaths::ProjectSavedDir() / TEXT("WhiteoutRuntimeSmoke.png");
+				FScreenshotRequest::RequestScreenshot(
+					ScreenshotPath,
+					true,
+					false,
+					false,
+					FIntRect(),
+					true);
+				UE_LOG(
+					LogTemp,
+					Display,
+					TEXT("WhiteoutStation: requested runtime screenshot %s"),
+					*ScreenshotPath);
+			},
+			2.0f,
+			false);
+		FTimerHandle ExitTimer;
+		GetWorldTimerManager().SetTimer(
+			ExitTimer,
+			[ExitStatus]()
+			{
+				FPlatformMisc::RequestExitWithStatus(false, ExitStatus);
+			},
+			4.0f,
+			false);
+		return;
+	}
+	if (bRouteExit)
+	{
+		FPlatformMisc::RequestExitWithStatus(false, ExitStatus);
 	}
 }

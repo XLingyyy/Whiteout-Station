@@ -224,7 +224,12 @@ enum class EWSReasonCode : uint8
 	NeedsRelayKnowledge,
 	GuHengRefused,
 	NeedsGuHengConditions,
-	NeedsReplacementRelay
+	NeedsReplacementRelay,
+	DialoguePending,
+	DialogueStateChanged,
+	DialogueCancelled,
+	DialogueOutcomeRequired,
+	DialogueOutcomeInvalid
 };
 
 UENUM(BlueprintType)
@@ -812,6 +817,21 @@ struct FWSEventRecord
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	TArray<FWSActionCostModifier> CostModifiers;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	EWSCharacterId DialogueSpeaker = EWSCharacterId::Player;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FName> PlannedDisclosureFacts;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FName> DisclosedFactIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FName> RealizedAtomIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	FString DialogueAnswerSource;
 };
 
 USTRUCT(BlueprintType)
@@ -1048,6 +1068,9 @@ struct FWSActionResult
 	bool bCommitted = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bPendingDialogue = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	EWSReasonCode ReasonCode = EWSReasonCode::UnknownAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -1160,4 +1183,121 @@ struct FWSAgentReply
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FString ValidationReason = TEXT("preset");
+};
+
+USTRUCT(BlueprintType)
+struct FWSDialogueSemanticAtom
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName AtomId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FText NaturalFallback;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FString> RequiredConceptTokens;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FString> ForbiddenSurfaceForms;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> RelatedFactIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bRequired = true;
+};
+
+USTRUCT(BlueprintType)
+struct FWSDialogueRealizationContract
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FWSDialogueSemanticAtom> MustRealize;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FWSDialogueSemanticAtom> MayRealize;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> ForbiddenFactIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FString> ForbiddenPhrases;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString PersonaStyleId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 MaxSentences = 2;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 MaxCharacters = 96;
+};
+
+USTRUCT(BlueprintType)
+struct FWSPreparedDialogue
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FGuid TransactionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int64 StateRevision = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int64 Generation = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSActionRequest OriginalRequest;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSGameState ReadSnapshot;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSDialogueRealizationContract Contract;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSAgentReply LocalFallback;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> AllowedFactIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> PlannedDisclosureFacts;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> PlannedKnowledgeUpgrades;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float PlannedTrustDelta = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float PlannedPressureDelta = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 APCost = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bModelCallAttempted = false;
+};
+
+USTRUCT(BlueprintType)
+struct FWSDialogueOutcome
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSAgentReply FinalReply;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> DisclosedFactIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> RealizedAtomIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString AnswerSource;
 };

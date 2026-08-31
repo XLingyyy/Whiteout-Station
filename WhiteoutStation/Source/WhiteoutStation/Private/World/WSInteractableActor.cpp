@@ -1021,7 +1021,10 @@ FWSActionResult AWSInteractableActor::Interact(
 	return InteractRequest(InstigatorPawn, BuildActionRequest(DialogueAct, PromiseCondition));
 }
 
-FWSActionResult AWSInteractableActor::InteractRequest(APawn* InstigatorPawn, FWSActionRequest Request)
+FWSActionResult AWSInteractableActor::InteractRequest(
+	APawn* InstigatorPawn,
+	FWSActionRequest Request,
+	TFunction<void(const FWSActionResult&)> DialogueCompletion)
 {
 	FWSActionResult Empty;
 	if (!InstigatorPawn || !GetGameInstance())
@@ -1044,7 +1047,13 @@ FWSActionResult AWSInteractableActor::InteractRequest(APawn* InstigatorPawn, FWS
 	FWSActionResult Result;
 	if (Preview.bCanExecute)
 	{
-		Result = StateSubsystem->CommitAction(Request);
+		const bool bDialogueAction = Request.ActionId == TEXT("talk_gu_heng")
+			|| Request.ActionId == TEXT("talk_ye_cheng");
+		Result = bDialogueAction
+			? StateSubsystem->SubmitDialogueAction(
+				Request,
+				MoveTemp(DialogueCompletion))
+			: StateSubsystem->CommitAction(Request);
 	}
 	else
 	{
@@ -1057,15 +1066,18 @@ FWSActionResult AWSInteractableActor::InteractRequest(APawn* InstigatorPawn, FWS
 		Result.APAfter = Result.APBefore;
 	}
 
-	if (APlayerController* PlayerController = Cast<APlayerController>(InstigatorPawn->GetController()))
+	if (!Result.bPendingDialogue)
 	{
-		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		if (APlayerController* PlayerController = Cast<APlayerController>(InstigatorPawn->GetController()))
 		{
-			HUD->SetActionFeedback(
-				DisplayName,
-				Result,
-				Preview,
-				Result.bPromiseRecorded);
+			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+			{
+				HUD->SetActionFeedback(
+					DisplayName,
+					Result,
+					Preview,
+					Result.bPromiseRecorded);
+			}
 		}
 	}
 	return Result;

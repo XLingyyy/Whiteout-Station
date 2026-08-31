@@ -44,9 +44,84 @@ namespace WhiteoutRuleTests
 		return Request;
 	}
 
+	FWSPreparedDialogue PrepareDialogue(
+		FWhiteoutRulesEngine& Engine,
+		FWSActionRequest Request)
+	{
+		if (!Request.TransactionId.IsValid())
+		{
+			Request.TransactionId = FGuid::NewGuid();
+		}
+
+		FWSActionRequirementReport RequirementReport;
+		if (Request.SemanticFrame.TargetActionId == TEXT("repair_generator"))
+		{
+			FWSActionRequest TargetRequest;
+			TargetRequest.ActionId = TEXT("repair_generator");
+			RequirementReport = Engine.EvaluateActionRequirements(TargetRequest);
+		}
+
+		FWSPreparedDialogue Prepared;
+		Prepared.TransactionId = Request.TransactionId;
+		Prepared.OriginalRequest = Request;
+		Prepared.ReadSnapshot = Engine.GetState();
+		Prepared.LocalFallback = UWSNPCDecisionService::BuildDeterministicReply(
+			Request,
+			Prepared.ReadSnapshot,
+			RequirementReport);
+		Prepared.AllowedFactIds = UWSNPCDecisionService::BuildAllowedFacts(
+			Request,
+			Prepared.LocalFallback.Speaker,
+			Prepared.ReadSnapshot);
+		Prepared.PlannedDisclosureFacts =
+			Prepared.LocalFallback.PlannedDisclosureFacts;
+		Prepared.PlannedKnowledgeUpgrades =
+			Prepared.LocalFallback.DisclosedFactIds;
+
+		FWSDialogueSemanticAtom FallbackAtom;
+		FallbackAtom.AtomId = TEXT("test_deterministic_fallback");
+		FallbackAtom.NaturalFallback = FText::FromString(
+			Prepared.LocalFallback.Utterance);
+		FallbackAtom.RelatedFactIds = Prepared.PlannedDisclosureFacts;
+		Prepared.Contract.MustRealize.Add(FallbackAtom);
+		return Prepared;
+	}
+
+	FWSDialogueOutcome MakeDialogueOutcome(const FWSPreparedDialogue& Prepared)
+	{
+		FWSDialogueOutcome Outcome;
+		Outcome.FinalReply = Prepared.LocalFallback;
+		Outcome.DisclosedFactIds = Prepared.LocalFallback.DisclosedFactIds;
+		if (!Prepared.Contract.MustRealize.IsEmpty())
+		{
+			Outcome.RealizedAtomIds = {
+				Prepared.Contract.MustRealize[0].AtomId};
+		}
+		Outcome.AnswerSource = Prepared.LocalFallback.AnswerSource;
+		return Outcome;
+	}
+
+	FWSActionResult CommitRequest(
+		FWhiteoutRulesEngine& Engine,
+		FWSActionRequest Request)
+	{
+		const bool bDialogueAction = Request.ActionId == TEXT("talk_gu_heng")
+			|| Request.ActionId == TEXT("talk_ye_cheng");
+		if (!bDialogueAction)
+		{
+			return Engine.Commit(MoveTemp(Request));
+		}
+		const FWSPreparedDialogue Prepared = PrepareDialogue(
+			Engine,
+			MoveTemp(Request));
+		return Engine.CommitDialogueOutcome(
+			Prepared,
+			MakeDialogueOutcome(Prepared));
+	}
+
 	bool Commit(FAutomationTestBase& Test, FWhiteoutRulesEngine& Engine, FWSActionRequest Request)
 	{
-		const FWSActionResult Result = Engine.Commit(MoveTemp(Request));
+		const FWSActionResult Result = CommitRequest(Engine, MoveTemp(Request));
 		Test.TestTrue(FString::Printf(TEXT("%s commits"), *Result.ActionId.ToString()), Result.bCommitted);
 		if (!Result.bCommitted)
 		{
@@ -133,7 +208,7 @@ namespace WhiteoutRuleTests
 		FWSActionRequest Request,
 		int32& InOutPaidAP)
 	{
-		const FWSActionResult Result = Engine.Commit(MoveTemp(Request));
+		const FWSActionResult Result = CommitRequest(Engine, MoveTemp(Request));
 		Test.TestTrue(
 			FString::Printf(TEXT("v1.1 %s commits"), *Result.ActionId.ToString()),
 			Result.bCommitted);
@@ -276,7 +351,9 @@ bool FWhiteoutDialogueStageTest::RunTest(const FString& Parameters)
 
 	Engine.Reset();
 	FWSActionRequest AskYe = WhiteoutRuleTests::MakeGuHengDiagnosisRequest();
-	TestTrue(TEXT("Asking Ye Cheng commits"), Engine.Commit(AskYe).bCommitted);
+	TestTrue(
+		TEXT("Asking Ye Cheng commits"),
+		WhiteoutRuleTests::CommitRequest(Engine, AskYe).bCommitted);
 	TestTrue(
 		TEXT("Targeted diagnosis unlocks Ye Cheng Challenge"),
 		DialoguePreview(TEXT("talk_ye_cheng"), EWSDialogueAct::Challenge).bCanExecute);
@@ -833,7 +910,8 @@ bool FWhiteoutDialogueAndResourceChoicesTest::RunTest(const FString& Parameters)
 		YePromise.DialogueAct = EWSDialogueAct::Promise;
 		YePromise.PromiseCondition = TEXT("keep_records");
 		const FWSGameState Before = Engine.GetState();
-		const FWSActionResult Rejected = Engine.Commit(YePromise);
+		const FWSActionResult Rejected =
+			WhiteoutRuleTests::CommitRequest(Engine, YePromise);
 		TestFalse(TEXT("Ye Cheng promise is rejected"), Rejected.bCommitted);
 		TestTrue(TEXT("Ye Cheng promise has explicit reason"), Rejected.ReasonCode == EWSReasonCode::DialogueActUnavailable);
 		TestEqual(TEXT("Rejected promise spends no AP"), Engine.GetState().ActionPoints, Before.ActionPoints);
@@ -854,7 +932,8 @@ bool FWhiteoutDialogueAndResourceChoicesTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Records evidence creates promise context"),
 			Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
-		const FWSActionResult PromiseResult = Engine.Commit(Promise);
+		const FWSActionResult PromiseResult =
+			WhiteoutRuleTests::CommitRequest(Engine, Promise);
 		TestTrue(TEXT("Whitelisted Gu Heng promise commits"), PromiseResult.bCommitted);
 		TestTrue(TEXT("Result reports a recorded promise"), PromiseResult.bPromiseRecorded);
 		TestTrue(TEXT("Result preserves dialogue act"), PromiseResult.DialogueAct == EWSDialogueAct::Promise);
@@ -868,7 +947,8 @@ bool FWhiteoutDialogueAndResourceChoicesTest::RunTest(const FString& Parameters)
 		Duplicate.DialogueAct = EWSDialogueAct::Promise;
 		Duplicate.PromiseCondition = TEXT("keep_records");
 		const int32 APBefore = Engine.GetState().ActionPoints;
-		const FWSActionResult DuplicateResult = Engine.Commit(Duplicate);
+		const FWSActionResult DuplicateResult =
+			WhiteoutRuleTests::CommitRequest(Engine, Duplicate);
 		TestFalse(TEXT("Duplicate promise is rejected"), DuplicateResult.bCommitted);
 		TestTrue(TEXT("Duplicate promise has explicit reason"), DuplicateResult.ReasonCode == EWSReasonCode::DuplicatePromise);
 		TestEqual(TEXT("Duplicate promise spends no AP"), Engine.GetState().ActionPoints, APBefore);
@@ -886,9 +966,15 @@ bool FWhiteoutDialogueAndResourceChoicesTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Ask comparison gains context"), AskEngine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
 		TestTrue(TEXT("Challenge comparison gains context"), ChallengeEngine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
 		TestTrue(TEXT("Reassure comparison gains context"), ReassureEngine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("investigate_generator_log"))).bCommitted);
-		TestTrue(TEXT("Ask commits"), AskEngine.Commit(Ask).bCommitted);
-		TestTrue(TEXT("Challenge commits"), ChallengeEngine.Commit(Challenge).bCommitted);
-		TestTrue(TEXT("Reassure commits"), ReassureEngine.Commit(Reassure).bCommitted);
+		TestTrue(
+			TEXT("Ask commits"),
+			WhiteoutRuleTests::CommitRequest(AskEngine, Ask).bCommitted);
+		TestTrue(
+			TEXT("Challenge commits"),
+			WhiteoutRuleTests::CommitRequest(ChallengeEngine, Challenge).bCommitted);
+		TestTrue(
+			TEXT("Reassure commits"),
+			WhiteoutRuleTests::CommitRequest(ReassureEngine, Reassure).bCommitted);
 		const float AskTrust = AskEngine.GetState().Characters.FindChecked(EWSCharacterId::GuHeng).Trust;
 		const float ChallengeTrust = ChallengeEngine.GetState().Characters.FindChecked(EWSCharacterId::GuHeng).Trust;
 		const float ReassureTrust = ReassureEngine.GetState().Characters.FindChecked(EWSCharacterId::GuHeng).Trust;
@@ -916,8 +1002,16 @@ bool FWhiteoutDialogueAndResourceChoicesTest::RunTest(const FString& Parameters)
 
 	{
 		FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedEngine(*this);
-		TestTrue(TEXT("Ye Cheng diagnosis commits"), Engine.Commit(WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
-		TestTrue(TEXT("Heat-pack inquiry commits"), Engine.Commit(WhiteoutRuleTests::MakeHeatPackInquiry()).bCommitted);
+		TestTrue(
+			TEXT("Ye Cheng diagnosis commits"),
+			WhiteoutRuleTests::CommitRequest(
+				Engine,
+				WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
+		TestTrue(
+			TEXT("Heat-pack inquiry commits"),
+			WhiteoutRuleTests::CommitRequest(
+				Engine,
+				WhiteoutRuleTests::MakeHeatPackInquiry()).bCommitted);
 		TestTrue(TEXT("Medical heat commits"), Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("heat_medical_room"))).bCommitted);
 		FWSActionRequest HeatPackTreatment = WhiteoutRuleTests::MakeRequest(TEXT("treat_gu_heng"));
 		HeatPackTreatment.TreatmentResource = EWSResourceType::HeatPack;
@@ -1015,8 +1109,9 @@ bool FWhiteoutV11ConfigAndPhaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Morning starts with four AP"), Engine.GetState().PhaseActionPoints, 4);
 
 	const FWSGameState BeforeStart = Engine.GetState();
-	const FWSActionResult TooEarly =
-		Engine.Commit(WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")));
+	const FWSActionResult TooEarly = WhiteoutRuleTests::CommitRequest(
+		Engine,
+		WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng")));
 	TestFalse(TEXT("Actions require a selected heating zone"), TooEarly.bCommitted);
 	TestTrue(
 		TEXT("Pre-phase rejection is explicit"),
@@ -2144,7 +2239,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("General Ye Cheng answer does not reveal the heat pack"),
 		YeReply.Utterance.Contains(TEXT("保温包")));
-	TestTrue(TEXT("General Ye Cheng question commits"), Engine.Commit(YeRequest).bCommitted);
+	TestTrue(
+		TEXT("General Ye Cheng question commits"),
+		WhiteoutRuleTests::CommitRequest(Engine, YeRequest).bCommitted);
 	TestFalse(
 		TEXT("General Ye Cheng question does not set diagnosis"),
 		Engine.GetState().Flags.bGuHengDiagnosed);
@@ -2188,7 +2285,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 		PrematureReply.Utterance.Contains(TEXT("保温包")));
 	TestTrue(
 		TEXT("Pre-diagnosis medical-supply question commits"),
-		DisclosureEngine.Commit(PrematureHeatPack).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			DisclosureEngine,
+			PrematureHeatPack).bCommitted);
 	TestFalse(
 		TEXT("Medical-supply question before diagnosis does not change heat-pack state"),
 		DisclosureEngine.GetState().Flags.bHeatPackRevealed);
@@ -2203,7 +2302,11 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("Completed diagnosis answer does not claim the diagnosis is still pending"),
 		DiagnosisReply.Utterance.Contains(TEXT("才能完成诊断")));
-	TestTrue(TEXT("Targeted diagnosis commits"), DisclosureEngine.Commit(Diagnosis).bCommitted);
+	TestTrue(
+		TEXT("Targeted diagnosis commits"),
+		WhiteoutRuleTests::CommitRequest(
+			DisclosureEngine,
+			Diagnosis).bCommitted);
 	TestTrue(
 		TEXT("Targeted diagnosis updates diagnosis state"),
 		DisclosureEngine.GetState().Flags.bGuHengDiagnosed);
@@ -2217,7 +2320,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	const FWSActionRequest Alternative = WhiteoutRuleTests::MakeHeatPackInquiry();
 	TestTrue(
 		TEXT("Post-diagnosis treatment alternative commits"),
-		DisclosureEngine.Commit(Alternative).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			DisclosureEngine,
+			Alternative).bCommitted);
 	TestTrue(
 		TEXT("Post-diagnosis treatment alternative reveals heat-pack state"),
 		DisclosureEngine.GetState().Flags.bHeatPackRevealed);
@@ -2238,7 +2343,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(
 		TEXT("Explicit-path diagnosis commits"),
-		ExplicitEngine.Commit(WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			ExplicitEngine,
+			WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
 	FWSActionRequest ExplicitHeatPack = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
 	ExplicitHeatPack.DialogueAct = EWSDialogueAct::Ask;
 	ExplicitHeatPack.PlayerSaid = TEXT("还有什么医疗物资可用？");
@@ -2247,7 +2354,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	ExplicitHeatPack.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
 	TestTrue(
 		TEXT("Explicit medical-supply inquiry commits after diagnosis"),
-		ExplicitEngine.Commit(ExplicitHeatPack).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			ExplicitEngine,
+			ExplicitHeatPack).bCommitted);
 	TestTrue(
 		TEXT("Explicit medical-supply inquiry reveals the heat pack after diagnosis"),
 		ExplicitEngine.GetState().Flags.bHeatPackRevealed);
@@ -2259,7 +2368,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(
 		TEXT("Survival-path diagnosis commits"),
-		SurvivalEngine.Commit(WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			SurvivalEngine,
+			WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
 	FWSActionRequest SurvivalQuestion = WhiteoutRuleTests::MakeRequest(TEXT("talk_ye_cheng"));
 	SurvivalQuestion.DialogueAct = EWSDialogueAct::Ask;
 	SurvivalQuestion.PlayerSaid = TEXT("顾衡能撑过暴雪吗？");
@@ -2268,7 +2379,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	SurvivalQuestion.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
 	TestTrue(
 		TEXT("General survival question commits"),
-		SurvivalEngine.Commit(SurvivalQuestion).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			SurvivalEngine,
+			SurvivalQuestion).bCommitted);
 	TestFalse(
 		TEXT("General survival question does not reveal the heat pack"),
 		SurvivalEngine.GetState().Flags.bHeatPackRevealed);
@@ -2283,7 +2396,8 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(
 		TEXT("Antenna false-positive route diagnosis commits"),
-		AntennaAlternativeEngine.Commit(
+		WhiteoutRuleTests::CommitRequest(
+			AntennaAlternativeEngine,
 			WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
 	const FString AntennaAlternativeQuestion = TEXT("天线还有别的办法吗？");
 	const FWSDialogueIntentResult AntennaAlternativeIntent =
@@ -2304,7 +2418,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	AntennaAlternative.SemanticFrame = AntennaAlternativeIntent.ToSemanticFrame();
 	TestTrue(
 		TEXT("Antenna alternative question commits"),
-		AntennaAlternativeEngine.Commit(AntennaAlternative).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			AntennaAlternativeEngine,
+			AntennaAlternative).bCommitted);
 	TestFalse(
 		TEXT("Unrelated antenna alternative does not reveal the heat pack"),
 		AntennaAlternativeEngine.GetState().Flags.bHeatPackRevealed
@@ -2323,7 +2439,11 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	YeStatus.SemanticFrame.QueryType = EWSDialogueQueryType::Status;
 	YeStatus.SemanticFrame.TargetFactId = TEXT("FACT_MEDICAL_DIAGNOSIS");
 	YeStatus.SemanticFrame.TargetCharacter = EWSCharacterId::YeCheng;
-	TestTrue(TEXT("Ye Cheng status false-positive probe commits"), FalsePositiveEngine.Commit(YeStatus).bCommitted);
+	TestTrue(
+		TEXT("Ye Cheng status false-positive probe commits"),
+		WhiteoutRuleTests::CommitRequest(
+			FalsePositiveEngine,
+			YeStatus).bCommitted);
 	TestFalse(
 		TEXT("Diagnosis fact tag cannot override a Ye Cheng target"),
 		FalsePositiveEngine.GetState().Flags.bGuHengDiagnosed);
@@ -2335,7 +2455,11 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	ConsequenceProbe.SemanticFrame.TargetFactId = TEXT("FACT_HAND_INJURY");
 	ConsequenceProbe.SemanticFrame.TargetActionId = TEXT("repair_generator");
 	ConsequenceProbe.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
-	TestTrue(TEXT("Consequence false-positive probe commits"), FalsePositiveEngine.Commit(ConsequenceProbe).bCommitted);
+	TestTrue(
+		TEXT("Consequence false-positive probe commits"),
+		WhiteoutRuleTests::CommitRequest(
+			FalsePositiveEngine,
+			ConsequenceProbe).bCommitted);
 	TestFalse(
 		TEXT("Consequence query cannot trigger a diagnosis"),
 		FalsePositiveEngine.GetState().Flags.bGuHengDiagnosed);
@@ -2348,7 +2472,11 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	GeneratorProbe.DialogueAct = GeneratorIntent.DialogueAct;
 	GeneratorProbe.PlayerSaid = GeneratorQuestion;
 	GeneratorProbe.SemanticFrame = GeneratorIntent.ToSemanticFrame();
-	TestTrue(TEXT("Generator-status false-positive probe commits"), FalsePositiveEngine.Commit(GeneratorProbe).bCommitted);
+	TestTrue(
+		TEXT("Generator-status false-positive probe commits"),
+		WhiteoutRuleTests::CommitRequest(
+			FalsePositiveEngine,
+			GeneratorProbe).bCommitted);
 	TestFalse(
 		TEXT("Generator wording containing Gu Heng and situation does not diagnose him"),
 		FalsePositiveEngine.GetState().Flags.bGuHengDiagnosed);
@@ -2365,7 +2493,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	GloveProbe.DialogueAct = GloveIntent.DialogueAct;
 	GloveProbe.PlayerSaid = GloveQuestion;
 	GloveProbe.SemanticFrame = GloveIntent.ToSemanticFrame();
-	TestTrue(TEXT("Gu Heng glove question commits"), GloveEngine.Commit(GloveProbe).bCommitted);
+	TestTrue(
+		TEXT("Gu Heng glove question commits"),
+		WhiteoutRuleTests::CommitRequest(GloveEngine, GloveProbe).bCommitted);
 	TestFalse(
 		TEXT("A question about Gu Heng's gloves does not diagnose an injury"),
 		GloveEngine.GetState().Flags.bGuHengDiagnosed);
@@ -2379,7 +2509,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	FineWorkToolProbe.SemanticFrame.TargetFactId = TEXT("FACT_MEDICAL_DIAGNOSIS");
 	TestTrue(
 		TEXT("Fine-work tool false-positive probe commits"),
-		GloveEngine.Commit(FineWorkToolProbe).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			GloveEngine,
+			FineWorkToolProbe).bCommitted);
 	TestFalse(
 		TEXT("Technical fine-work wording without an ability predicate does not diagnose"),
 		GloveEngine.GetState().Flags.bGuHengDiagnosed
@@ -2407,7 +2539,11 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 		TEXT("General Gu Heng status reply does not claim a hand diagnosis"),
 		GeneralGuStatusReply.Utterance.Contains(TEXT("右手伤"))
 			|| GeneralGuStatusReply.Utterance.Contains(TEXT("手伤")));
-	TestTrue(TEXT("General Gu Heng status question commits"), GeneralStatusEngine.Commit(GeneralGuStatus).bCommitted);
+	TestTrue(
+		TEXT("General Gu Heng status question commits"),
+		WhiteoutRuleTests::CommitRequest(
+			GeneralStatusEngine,
+			GeneralGuStatus).bCommitted);
 	TestFalse(
 		TEXT("General Gu Heng status question does not complete diagnosis"),
 		GeneralStatusEngine.GetState().Flags.bGuHengDiagnosed);
@@ -2436,7 +2572,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	EvidenceDiagnosis.SemanticFrame = EvidenceIntent.ToSemanticFrame();
 	TestTrue(
 		TEXT("Named Gu Heng evidence question commits through the production classifier"),
-		EvidenceDiagnosisEngine.Commit(EvidenceDiagnosis).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			EvidenceDiagnosisEngine,
+			EvidenceDiagnosis).bCommitted);
 	TestTrue(
 		TEXT("Named Gu Heng evidence question reaches the diagnosis policy"),
 		EvidenceDiagnosisEngine.GetState().Flags.bGuHengDiagnosed);
@@ -2452,7 +2590,11 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	CompoundQuestion.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
 	CompoundQuestion.SemanticFrame.QueryType = EWSDialogueQueryType::Status;
 	CompoundQuestion.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
-	TestTrue(TEXT("Compound diagnosis and supplies question commits"), CompoundEngine.Commit(CompoundQuestion).bCommitted);
+	TestTrue(
+		TEXT("Compound diagnosis and supplies question commits"),
+		WhiteoutRuleTests::CommitRequest(
+			CompoundEngine,
+			CompoundQuestion).bCommitted);
 	TestTrue(TEXT("Compound question may complete the targeted diagnosis"), CompoundEngine.GetState().Flags.bGuHengDiagnosed);
 	TestFalse(
 		TEXT("Compound question cannot use its own diagnosis to reveal the heat pack"),
@@ -2471,7 +2613,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 		EWSCharacterId::YeCheng).Trust = 5.2f;
 	TestTrue(
 		TEXT("Trust-boundary support inquiry commits"),
-		TrustBoundaryEngine.Commit(WhiteoutRuleTests::MakeHeatPackInquiry()).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			TrustBoundaryEngine,
+			WhiteoutRuleTests::MakeHeatPackInquiry()).bCommitted);
 	TestFalse(
 		TEXT("Current dialogue trust gain cannot unlock its own heat-pack disclosure"),
 		TrustBoundaryEngine.GetState().Flags.bHeatPackRevealed);
@@ -2487,8 +2631,16 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	GeneralQuestion.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
 	GeneralQuestion.SemanticFrame.QueryType = EWSDialogueQueryType::Unknown;
 	GeneralQuestion.SemanticFrame.TargetCharacter = EWSCharacterId::YeCheng;
-	TestTrue(TEXT("Work-support route permits an initial general question"), WorkSupportEngine.Commit(GeneralQuestion).bCommitted);
-	TestTrue(TEXT("Work-support route targeted diagnosis commits"), WorkSupportEngine.Commit(WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
+	TestTrue(
+		TEXT("Work-support route permits an initial general question"),
+		WhiteoutRuleTests::CommitRequest(
+			WorkSupportEngine,
+			GeneralQuestion).bCommitted);
+	TestTrue(
+		TEXT("Work-support route targeted diagnosis commits"),
+		WhiteoutRuleTests::CommitRequest(
+			WorkSupportEngine,
+			WhiteoutRuleTests::MakeGuHengDiagnosisRequest()).bCommitted);
 	const FString WorkSupportQuestion = TEXT("有什么办法让他撑过一次维修？");
 	const FWSDialogueIntentResult WorkSupportIntent = UWSAgentGateway::ClassifyLocalIntent(
 		WorkSupportQuestion,
@@ -2504,7 +2656,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	WorkSupportRequest.SemanticFrame = WorkSupportIntent.ToSemanticFrame();
 	TestTrue(
 		TEXT("General question, diagnosis, then K07 all fit the dialogue use limit"),
-		WorkSupportEngine.Commit(WorkSupportRequest).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			WorkSupportEngine,
+			WorkSupportRequest).bCommitted);
 	TestTrue(
 		TEXT("Document K07 wording reveals the heat pack after prior diagnosis and trust"),
 		WorkSupportEngine.GetState().Flags.bHeatPackRevealed);
@@ -2620,7 +2774,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 			WhiteoutRuleTests::MakeRequest(TEXT("inspect_control_cabinet"))).bCommitted);
 	TestTrue(
 		TEXT("Cabinet-only challenge commits as dialogue"),
-		CabinetOnlyChallengeEngine.Commit(EvidenceChallenge).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			CabinetOnlyChallengeEngine,
+			EvidenceChallenge).bCommitted);
 	TestFalse(
 		TEXT("Cabinet evidence alone cannot grant relay compatibility"),
 		CabinetOnlyChallengeEngine.GetState().Flags.bRelayCompatibilityKnown
@@ -2648,7 +2804,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 	EvidenceChallenge.TransactionId = FGuid::NewGuid();
 	TestTrue(
 		TEXT("Two-evidence challenge commits"),
-		TwoEvidenceChallengeEngine.Commit(EvidenceChallenge).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			TwoEvidenceChallengeEngine,
+			EvidenceChallenge).bCommitted);
 	TestTrue(
 		TEXT("Only the two-evidence challenge confirms the technical route"),
 		TwoEvidenceChallengeEngine.GetState().Flags.bRelayCompatibilityKnown
@@ -2660,6 +2818,11 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 				TwoEvidenceChallengeEngine.GetState(),
 				TEXT("FACT_FORCED_RESTART_CONFIRMED"),
 				EWSKnowledgeLevel::Confirmed));
+	TestEqual(
+		TEXT("The suspicion fact remains suspected after the confirmed admission"),
+		TwoEvidenceChallengeEngine.GetState().PlayerKnowledge.FindRef(
+			TEXT("FACT_FORCED_RESTART_SUSPICION")),
+		EWSKnowledgeLevel::Suspected);
 	const FWSAgentReply TwoEvidenceReply =
 		UWSNPCDecisionService::BuildDeterministicReply(
 			EvidenceChallenge,
@@ -2721,7 +2884,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 		RefusalReply.Utterance.Contains(TEXT("手伤")));
 	TestTrue(
 		TEXT("Refused diagnosis command still settles as dialogue"),
-		RefusalEngine.Commit(RefusedDiagnosis).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			RefusalEngine,
+			RefusedDiagnosis).bCommitted);
 	TestFalse(
 		TEXT("Refused diagnosis command does not upgrade diagnosis state"),
 		RefusalEngine.GetState().Flags.bGuHengDiagnosed);
@@ -2745,7 +2910,9 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 		StrainedReply.Utterance.Contains(TEXT("手伤")));
 	TestTrue(
 		TEXT("Strained targeted diagnosis commits"),
-		StrainedEngine.Commit(StrainedDiagnosis).bCommitted);
+		WhiteoutRuleTests::CommitRequest(
+			StrainedEngine,
+			StrainedDiagnosis).bCommitted);
 	TestTrue(
 		TEXT("Strained voiced diagnosis updates state"),
 		StrainedEngine.GetState().Flags.bGuHengDiagnosed);
@@ -2968,6 +3135,7 @@ bool FWhiteoutV13DisclosureMatrixTest::RunTest(const FString& Parameters)
 		{TEXT("Ye can explicitly disclose heat pack after diagnosis"), TEXT("FACT_HEAT_PACK"), YeHeatPack, EWSDisclosureLevel::Explicit},
 		{TEXT("Unrelated alternative keeps heat pack hidden"), TEXT("FACT_HEAT_PACK"), YeUnrelatedAlternative, EWSDisclosureLevel::Hidden},
 		{TEXT("Two-evidence Gu challenge discloses relay compatibility"), TEXT("FACT_RELAY_COMPATIBILITY"), GuRelayChallenge, EWSDisclosureLevel::Explicit},
+		{TEXT("Two-evidence Gu challenge confirms the forced restart"), TEXT("FACT_FORCED_RESTART_CONFIRMED"), GuRelayChallenge, EWSDisclosureLevel::Explicit},
 		{TEXT("Unrelated evidence does not authorize hand injury"), TEXT("FACT_HAND_INJURY"), GuUnrelatedEvidence, EWSDisclosureLevel::Evasive},
 		{TEXT("Gu cannot disclose Ye's heat pack even when player knows it"), TEXT("FACT_HEAT_PACK"), GuKnowsHeatPack, EWSDisclosureLevel::Hidden},
 		{TEXT("Ye cannot disclose relay compatibility"), TEXT("FACT_RELAY_COMPATIBILITY"), YeKnowsRelay, EWSDisclosureLevel::Hidden}};
@@ -2988,6 +3156,337 @@ bool FWhiteoutV13DisclosureMatrixTest::RunTest(const FString& Parameters)
 				== (Case.Expected == EWSDisclosureLevel::Partial
 					|| Case.Expected == EWSDisclosureLevel::Explicit));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV13DialogueOutcomeTransactionTest,
+	"WhiteoutStation.DialogueV13.OutcomeTransaction",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV13DialogueOutcomeTransactionTest::RunTest(
+	const FString& Parameters)
+{
+	FWhiteoutRulesEngine Engine = WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(
+		*this,
+		Engine,
+		EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+
+	FWSActionRequest Request = WhiteoutRuleTests::MakeRequest(
+		TEXT("talk_ye_cheng"));
+	Request.DialogueAct = EWSDialogueAct::Ask;
+	Request.PlayerSaid = TEXT("现在是什么情况？");
+	Request.SemanticFrame.SpeechAct = EWSDialogueAct::Ask;
+	Request.SemanticFrame.QueryType = EWSDialogueQueryType::Unknown;
+	Request.SemanticFrame.TargetCharacter = EWSCharacterId::YeCheng;
+
+	const FWSGameState InitialState = Engine.GetState();
+	const FWSActionResult DirectCommit = Engine.Commit(Request);
+	TestFalse(TEXT("A dialogue cannot bypass its outcome transaction"), DirectCommit.bCommitted);
+	TestTrue(
+		TEXT("The direct dialogue rejection names the missing outcome"),
+		DirectCommit.ReasonCode == EWSReasonCode::DialogueOutcomeRequired);
+	TestEqual(
+		TEXT("A rejected direct dialogue spends no AP"),
+		Engine.GetState().PhaseActionPoints,
+		InitialState.PhaseActionPoints);
+	TestEqual(
+		TEXT("A rejected direct dialogue writes no event"),
+		Engine.GetState().EventLog.Num(),
+		InitialState.EventLog.Num());
+
+	const FWSPreparedDialogue Prepared =
+		WhiteoutRuleTests::PrepareDialogue(Engine, Request);
+	TestEqual(
+		TEXT("Prepare does not spend AP"),
+		Engine.GetState().PhaseActionPoints,
+		InitialState.PhaseActionPoints);
+	TestEqual(
+		TEXT("Prepare does not write an event"),
+		Engine.GetState().EventLog.Num(),
+		InitialState.EventLog.Num());
+	TestEqual(
+		TEXT("Prepare does not record a committed transaction"),
+		Engine.GetState().CommittedTransactions.Num(),
+		InitialState.CommittedTransactions.Num());
+
+	FWSDialogueOutcome InvalidOutcome =
+		WhiteoutRuleTests::MakeDialogueOutcome(Prepared);
+	InvalidOutcome.DisclosedFactIds.Add(TEXT("FACT_HEAT_PACK"));
+	InvalidOutcome.FinalReply.DisclosedFactIds.Add(TEXT("FACT_HEAT_PACK"));
+	InvalidOutcome.FinalReply.ReferencedFactIds.Add(TEXT("FACT_HEAT_PACK"));
+	const FWSActionResult InvalidCommit =
+		Engine.CommitDialogueOutcome(Prepared, InvalidOutcome);
+	TestFalse(TEXT("An unplanned disclosure rejects the whole outcome"), InvalidCommit.bCommitted);
+	TestTrue(
+		TEXT("An unplanned disclosure has a stable reason"),
+		InvalidCommit.ReasonCode == EWSReasonCode::DialogueOutcomeInvalid);
+	TestEqual(
+		TEXT("An invalid outcome spends no AP"),
+		Engine.GetState().PhaseActionPoints,
+		InitialState.PhaseActionPoints);
+	TestEqual(
+		TEXT("An invalid outcome writes no event"),
+		Engine.GetState().EventLog.Num(),
+		InitialState.EventLog.Num());
+	TestEqual(
+		TEXT("An invalid outcome records no transaction"),
+		Engine.GetState().CommittedTransactions.Num(),
+		InitialState.CommittedTransactions.Num());
+	TestEqual(
+		TEXT("An invalid outcome consumes no model call"),
+		Engine.GetState().ModelCalls,
+		InitialState.ModelCalls);
+	TestEqual(
+		TEXT("An invalid outcome grants no knowledge"),
+		Engine.GetState().PlayerKnowledge.Num(),
+		InitialState.PlayerKnowledge.Num());
+	TestEqual(
+		TEXT("An invalid outcome does not change Ye Cheng trust"),
+		Engine.GetState().Characters.FindChecked(EWSCharacterId::YeCheng).Trust,
+		InitialState.Characters.FindChecked(EWSCharacterId::YeCheng).Trust);
+	TestEqual(
+		TEXT("An invalid outcome does not change Ye Cheng pressure"),
+		Engine.GetState().Characters.FindChecked(EWSCharacterId::YeCheng).Pressure,
+		InitialState.Characters.FindChecked(EWSCharacterId::YeCheng).Pressure);
+
+	FWSPreparedDialogue ModelPrepared = Prepared;
+	ModelPrepared.bModelCallAttempted = true;
+	TestTrue(
+		TEXT("Realize reserves the live model call before final commit"),
+		Engine.TryRecordModelCall());
+	const FWSDialogueOutcome ValidOutcome =
+		WhiteoutRuleTests::MakeDialogueOutcome(ModelPrepared);
+	const FWSActionResult Committed =
+		Engine.CommitDialogueOutcome(ModelPrepared, ValidOutcome);
+	TestTrue(TEXT("A validated dialogue outcome commits"), Committed.bCommitted);
+	TestEqual(
+		TEXT("The committed outcome spends its reported AP once"),
+		Engine.GetState().PhaseActionPoints,
+		InitialState.PhaseActionPoints - Committed.ActualAP);
+	TestEqual(
+		TEXT("The committed outcome writes one event"),
+		Engine.GetState().EventLog.Num(),
+		InitialState.EventLog.Num() + 1);
+	TestEqual(
+		TEXT("The reserved live model call is retained after commit"),
+		Engine.GetState().ModelCalls,
+		InitialState.ModelCalls + 1);
+	if (!Engine.GetState().EventLog.IsEmpty())
+	{
+		const FWSEventRecord& Event = Engine.GetState().EventLog.Last();
+		TestTrue(
+			TEXT("The dialogue event records the speaker"),
+			Event.DialogueSpeaker == ValidOutcome.FinalReply.Speaker);
+		TestTrue(
+			TEXT("The dialogue event records the frozen plan"),
+			Event.PlannedDisclosureFacts == ModelPrepared.PlannedDisclosureFacts);
+		TestTrue(
+			TEXT("The dialogue event records actual disclosures"),
+			Event.DisclosedFactIds == ValidOutcome.DisclosedFactIds);
+		TestEqual(
+			TEXT("The dialogue event records its answer source"),
+			Event.DialogueAnswerSource,
+			ValidOutcome.AnswerSource);
+	}
+
+	const int32 APAfterCommit = Engine.GetState().PhaseActionPoints;
+	const int32 EventsAfterCommit = Engine.GetState().EventLog.Num();
+	const int32 CallsAfterCommit = Engine.GetState().ModelCalls;
+	const FWSActionResult Duplicate =
+		Engine.CommitDialogueOutcome(ModelPrepared, ValidOutcome);
+	TestFalse(TEXT("A repeated outcome callback is rejected"), Duplicate.bCommitted);
+	TestTrue(
+		TEXT("A repeated outcome is identified as a duplicate transaction"),
+		Duplicate.ReasonCode == EWSReasonCode::DuplicateTransaction);
+	TestEqual(
+		TEXT("A duplicate outcome spends no additional AP"),
+		Engine.GetState().PhaseActionPoints,
+		APAfterCommit);
+	TestEqual(
+		TEXT("A duplicate outcome writes no additional event"),
+		Engine.GetState().EventLog.Num(),
+		EventsAfterCommit);
+	TestEqual(
+		TEXT("A duplicate outcome consumes no additional model call"),
+		Engine.GetState().ModelCalls,
+		CallsAfterCommit);
+
+	FWhiteoutRulesEngine PartialDisclosureEngine =
+		WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(
+		*this,
+		PartialDisclosureEngine,
+		EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	const FWSPreparedDialogue DiagnosisPrepared =
+		WhiteoutRuleTests::PrepareDialogue(
+			PartialDisclosureEngine,
+			WhiteoutRuleTests::MakeGuHengDiagnosisRequest());
+	TestTrue(
+		TEXT("The diagnosis plan contains both protected medical facts"),
+		DiagnosisPrepared.PlannedDisclosureFacts.Contains(
+			TEXT("FACT_HAND_INJURY"))
+			&& DiagnosisPrepared.PlannedDisclosureFacts.Contains(
+				TEXT("FACT_MEDICAL_DIAGNOSIS")));
+	FWSDialogueOutcome PartialDisclosure =
+		WhiteoutRuleTests::MakeDialogueOutcome(DiagnosisPrepared);
+	PartialDisclosure.DisclosedFactIds = {TEXT("FACT_HAND_INJURY")};
+	PartialDisclosure.FinalReply.DisclosedFactIds = {
+		TEXT("FACT_HAND_INJURY")};
+	PartialDisclosure.FinalReply.ReferencedFactIds = {
+		TEXT("FACT_HAND_INJURY")};
+	const FWSActionResult PartialCommitted =
+		PartialDisclosureEngine.CommitDialogueOutcome(
+			DiagnosisPrepared,
+			PartialDisclosure);
+	TestTrue(TEXT("A valid actual-disclosure subset commits"), PartialCommitted.bCommitted);
+	TestTrue(
+		TEXT("Only the spoken hand injury is added as suspected knowledge"),
+		PartialDisclosureEngine.GetState().PlayerKnowledge.FindRef(
+			TEXT("FACT_HAND_INJURY")) == EWSKnowledgeLevel::Suspected);
+	TestFalse(
+		TEXT("An unspoken medical diagnosis does not update the diagnosis flag"),
+		PartialDisclosureEngine.GetState().Flags.bGuHengDiagnosed);
+	TestFalse(
+		TEXT("An unspoken medical diagnosis grants no diagnosis knowledge"),
+		PartialDisclosureEngine.GetState().PlayerKnowledge.Contains(
+			TEXT("FACT_MEDICAL_DIAGNOSIS")));
+	if (!PartialDisclosureEngine.GetState().EventLog.IsEmpty())
+	{
+		const FWSEventRecord& Event =
+			PartialDisclosureEngine.GetState().EventLog.Last();
+		TestTrue(
+			TEXT("The event retains both planned facts for audit"),
+			Event.PlannedDisclosureFacts.Contains(TEXT("FACT_HAND_INJURY"))
+				&& Event.PlannedDisclosureFacts.Contains(
+					TEXT("FACT_MEDICAL_DIAGNOSIS")));
+		TestTrue(
+			TEXT("The event records only the actually disclosed fact"),
+			Event.DisclosedFactIds.Num() == 1
+				&& Event.DisclosedFactIds.Contains(TEXT("FACT_HAND_INJURY")));
+	}
+
+	FWhiteoutRulesEngine EmptyDisclosureEngine =
+		WhiteoutRuleTests::LoadedV11Engine(*this);
+	if (!WhiteoutRuleTests::BeginV11(
+		*this,
+		EmptyDisclosureEngine,
+		EWSHeatingZone::ControlRoom))
+	{
+		return false;
+	}
+	const FWSPreparedDialogue EmptyPrepared =
+		WhiteoutRuleTests::PrepareDialogue(
+			EmptyDisclosureEngine,
+			WhiteoutRuleTests::MakeGuHengDiagnosisRequest());
+	FWSDialogueOutcome EmptyDisclosure =
+		WhiteoutRuleTests::MakeDialogueOutcome(EmptyPrepared);
+	EmptyDisclosure.DisclosedFactIds.Reset();
+	EmptyDisclosure.FinalReply.DisclosedFactIds.Reset();
+	EmptyDisclosure.FinalReply.ReferencedFactIds.Reset();
+	const FWSActionResult EmptyCommitted =
+		EmptyDisclosureEngine.CommitDialogueOutcome(
+			EmptyPrepared,
+			EmptyDisclosure);
+	TestTrue(TEXT("A valid empty actual-disclosure set commits"), EmptyCommitted.bCommitted);
+	TestTrue(
+		TEXT("An empty actual-disclosure set grants no knowledge"),
+		EmptyDisclosureEngine.GetState().PlayerKnowledge.IsEmpty());
+	TestFalse(
+		TEXT("An empty actual-disclosure set does not update diagnosis state"),
+		EmptyDisclosureEngine.GetState().Flags.bGuHengDiagnosed);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV13DialogueCommitGuardTest,
+	"WhiteoutStation.DialogueV13.CommitGuard",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV13DialogueCommitGuardTest::RunTest(const FString& Parameters)
+{
+	FWSPreparedDialogue Pending;
+	Pending.TransactionId = FGuid::NewGuid();
+	Pending.OriginalRequest.ActionId = TEXT("talk_ye_cheng");
+	Pending.OriginalRequest.TransactionId = Pending.TransactionId;
+	Pending.OriginalRequest.DialogueSessionId = FGuid::NewGuid();
+	Pending.StateRevision = 17;
+	Pending.Generation = 23;
+	const TArray<FGuid> NoCommittedTransactions;
+
+	TestTrue(
+		TEXT("A matching pending outcome passes the commit guard"),
+		UWindStationStateSubsystem::CanCommitPreparedDialogue(
+			Pending,
+			Pending,
+			17,
+			23,
+			NoCommittedTransactions));
+
+	FWSPreparedDialogue WrongRevision = Pending;
+	WrongRevision.StateRevision = 18;
+	TestFalse(
+		TEXT("A stale read revision fails the commit guard"),
+		UWindStationStateSubsystem::CanCommitPreparedDialogue(
+			WrongRevision,
+			Pending,
+			17,
+			23,
+			NoCommittedTransactions));
+	TestFalse(
+		TEXT("A state change after Prepare fails the commit guard"),
+		UWindStationStateSubsystem::CanCommitPreparedDialogue(
+			Pending,
+			Pending,
+			18,
+			23,
+			NoCommittedTransactions));
+	TestFalse(
+		TEXT("A cancelled generation fails the commit guard"),
+		UWindStationStateSubsystem::CanCommitPreparedDialogue(
+			Pending,
+			Pending,
+			17,
+			24,
+			NoCommittedTransactions));
+
+	FWSPreparedDialogue WrongTransaction = Pending;
+	WrongTransaction.TransactionId = FGuid::NewGuid();
+	WrongTransaction.OriginalRequest.TransactionId =
+		WrongTransaction.TransactionId;
+	TestFalse(
+		TEXT("A callback for another transaction fails the commit guard"),
+		UWindStationStateSubsystem::CanCommitPreparedDialogue(
+			WrongTransaction,
+			Pending,
+			17,
+			23,
+			NoCommittedTransactions));
+	TestFalse(
+		TEXT("A cleared pending descriptor fails the commit guard"),
+		UWindStationStateSubsystem::CanCommitPreparedDialogue(
+			Pending,
+			FWSPreparedDialogue(),
+			17,
+			23,
+			NoCommittedTransactions));
+
+	const TArray<FGuid> AlreadyCommitted = {Pending.TransactionId};
+	TestFalse(
+		TEXT("An already committed transaction fails the commit guard"),
+		UWindStationStateSubsystem::CanCommitPreparedDialogue(
+			Pending,
+			Pending,
+			17,
+			23,
+			AlreadyCommitted));
 	return true;
 }
 

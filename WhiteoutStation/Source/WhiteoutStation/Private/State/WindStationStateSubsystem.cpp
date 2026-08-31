@@ -88,6 +88,9 @@ const FString UWindStationStateSubsystem::LegacySaveSlotV11(
 void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	StateRevision = 1;
+	DialogueGeneration = 1;
+	bHasPendingDialogue = false;
 	Collection.InitializeDependency<UWhiteoutSettingsSubsystem>();
 	FString Error;
 	const FString ConfigPath =
@@ -118,10 +121,10 @@ void UWindStationStateSubsystem::Deinitialize()
 		Settings->OnLLMSettingsChanged.Remove(LLMSettingsChangedHandle);
 	}
 	LLMSettingsChangedHandle.Reset();
-	if (AgentGateway)
-	{
-		AgentGateway->ResetSession();
-	}
+	AbortPendingDialogue(
+		EWSReasonCode::DialogueCancelled,
+		false,
+		true);
 	ActionResolver = nullptr;
 	AgentGateway = nullptr;
 	Super::Deinitialize();
@@ -129,6 +132,16 @@ void UWindStationStateSubsystem::Deinitialize()
 
 bool UWindStationStateSubsystem::ApplyLLMRuntimeConfiguration(FString& OutError)
 {
+	if (bLifecycleTransitionActive || bCommitDispatchActive)
+	{
+		OutError = TEXT("状态切换期间不能重配模型运行时。");
+		return false;
+	}
+	TGuardValue<bool> LifecycleGuard(bLifecycleTransitionActive, true);
+	AbortPendingDialogue(
+		EWSReasonCode::DialogueCancelled,
+		true,
+		true);
 	UWhiteoutSettingsSubsystem* Settings =
 		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>();
 	if (!Settings || !AgentGateway)
@@ -183,6 +196,10 @@ bool UWindStationStateSubsystem::SetRequirementPinned(
 	const FName ActionId,
 	const bool bPinned)
 {
+	if (bLifecycleTransitionActive || bCommitDispatchActive)
+	{
+		return false;
+	}
 	if (!RulesEngine.SetRequirementPinned(ActionId, bPinned))
 	{
 		return false;
@@ -192,6 +209,7 @@ bool UWindStationStateSubsystem::SetRequirementPinned(
 		ActionId,
 		nullptr,
 		RulesEngine.GetState());
+	++StateRevision;
 	SaveSnapshot();
 	BroadcastState();
 	return true;
@@ -199,6 +217,11 @@ bool UWindStationStateSubsystem::SetRequirementPinned(
 
 bool UWindStationStateSubsystem::AcceptLatestNegotiationOffer(FString& OutMessage)
 {
+	if (bLifecycleTransitionActive || bCommitDispatchActive)
+	{
+		OutMessage = TEXT("状态正在切换，请稍后再操作。");
+		return false;
+	}
 	if (!RulesEngine.AcceptNegotiationOffer(LatestDialogue, OutMessage))
 	{
 		return false;
@@ -211,6 +234,7 @@ bool UWindStationStateSubsystem::AcceptLatestNegotiationOffer(FString& OutMessag
 		LatestDialogue.RequirementReport.ActionId,
 		AcceptedOffer,
 		RulesEngine.GetState());
+	++StateRevision;
 	SaveSnapshot();
 	BroadcastState();
 	return true;
@@ -222,6 +246,17 @@ void UWindStationStateSubsystem::RequestDialogueIntent(
 	const FName CurrentTopicActionId,
 	TFunction<void(const FWSDialogueIntentResult&)> Completion)
 {
+	if (bLifecycleTransitionActive || bCommitDispatchActive)
+	{
+		FWSDialogueIntentResult LocalIntent =
+			UWSAgentGateway::ClassifyLocalIntent(
+				UserText,
+				CurrentDialogueActionId,
+				CurrentTopicActionId);
+		LocalIntent.Reason = TEXT("lifecycle_transition_local");
+		Completion(LocalIntent);
+		return;
+	}
 	if (!AgentGateway)
 	{
 		Completion(UWSAgentGateway::ClassifyLocalIntent(
@@ -252,11 +287,17 @@ void UWindStationStateSubsystem::HandleLLMSettingsChanged()
 
 void UWindStationStateSubsystem::NewGame()
 {
-	if (AgentGateway)
+	if (bLifecycleTransitionActive || bCommitDispatchActive)
 	{
-		AgentGateway->ResetSession();
+		return;
 	}
+	TGuardValue<bool> LifecycleGuard(bLifecycleTransitionActive, true);
+	AbortPendingDialogue(
+		EWSReasonCode::DialogueCancelled,
+		true,
+		true);
 	RulesEngine.Reset();
+	++StateRevision;
 	LatestDialogue = FWSAgentReply();
 	BroadcastState();
 }
@@ -268,10 +309,10 @@ FWSGameState UWindStationStateSubsystem::GetStateSnapshot() const
 
 void UWindStationStateSubsystem::CancelPendingDialogue()
 {
-	if (AgentGateway)
-	{
-		AgentGateway->ResetSession();
-	}
+	AbortPendingDialogue(
+		EWSReasonCode::DialogueCancelled,
+		true,
+		true);
 }
 
 FWSActionPreview UWindStationStateSubsystem::PreviewAction(const FWSActionRequest& Request) const
@@ -337,6 +378,25 @@ FWSActionRequirementReport UWindStationStateSubsystem::EvaluateActionRequirement
 
 FWSActionResult UWindStationStateSubsystem::CommitAction(const FWSActionRequest& Request)
 {
+	if (bLifecycleTransitionActive || bCommitDispatchActive)
+	{
+		FWSActionResult Result;
+		Result.ActionId = Request.ActionId;
+		Result.TransactionId = Request.TransactionId.IsValid()
+			? Request.TransactionId
+			: FGuid::NewGuid();
+		Result.DialogueAct = Request.DialogueAct;
+		Result.PromiseCondition = Request.PromiseCondition;
+		Result.APBefore = RulesEngine.GetState().ActionPoints;
+		Result.APAfter = Result.APBefore;
+		Result.ReasonCode = EWSReasonCode::DialogueCancelled;
+		return Result;
+	}
+	if (Request.ActionId == TEXT("talk_gu_heng")
+		|| Request.ActionId == TEXT("talk_ye_cheng"))
+	{
+		return SubmitDialogueAction(Request);
+	}
 	EWSHeatingZone HeatingZone = EWSHeatingZone::None;
 	if (RulesEngine.IsV11()
 		&& HeatingZoneForAction(Request.ActionId, HeatingZone))
@@ -358,6 +418,7 @@ FWSActionResult UWindStationStateSubsystem::CommitAction(const FWSActionRequest&
 		if (Result.bCommitted)
 		{
 			Result.APAfter = RulesEngine.GetState().ActionPoints;
+			++StateRevision;
 			SaveSnapshot();
 			OnActionCommitted.Broadcast(Result);
 			BroadcastState();
@@ -386,14 +447,531 @@ FWSActionResult UWindStationStateSubsystem::CommitAction(const FWSActionRequest&
 					RulesEngine.GetState());
 			}
 		}
+		++StateRevision;
+		const int64 CommittedRevision = StateRevision;
 		SaveSnapshot();
 		OnActionCommitted.Broadcast(Result);
 		BroadcastState();
 		FWSActionRequest CommittedRequest = Request;
 		CommittedRequest.TransactionId = Result.TransactionId;
-		RequestActionExpression(CommittedRequest);
+		if (StateRevision == CommittedRevision)
+		{
+			RequestActionExpression(CommittedRequest);
+		}
 	}
 	return Result;
+}
+
+bool UWindStationStateSubsystem::CanCommitPreparedDialogue(
+	const FWSPreparedDialogue& Candidate,
+	const FWSPreparedDialogue& Pending,
+	const int64 CurrentStateRevision,
+	const int64 CurrentGeneration,
+	const TArray<FGuid>& CommittedTransactions)
+{
+	return Candidate.TransactionId.IsValid()
+		&& Candidate.TransactionId == Pending.TransactionId
+		&& Candidate.OriginalRequest.ActionId == Pending.OriginalRequest.ActionId
+		&& Candidate.OriginalRequest.DialogueSessionId
+			== Pending.OriginalRequest.DialogueSessionId
+		&& Candidate.StateRevision == Pending.StateRevision
+		&& Candidate.StateRevision == CurrentStateRevision
+		&& Candidate.Generation == Pending.Generation
+		&& Candidate.Generation == CurrentGeneration
+		&& !CommittedTransactions.Contains(Candidate.TransactionId);
+}
+
+#if WITH_DEV_AUTOMATION_TESTS
+void UWindStationStateSubsystem::SetDialogueRealizeTestHook(
+	FWSDialogueRealizeTestHook Hook)
+{
+	DialogueRealizeTestHook = MoveTemp(Hook);
+}
+
+void UWindStationStateSubsystem::SetDialogueCommitDispatchTestHook(
+	FWSDialogueCommitDispatchTestHook Hook)
+{
+	DialogueCommitDispatchTestHook = MoveTemp(Hook);
+}
+
+void UWindStationStateSubsystem::SetAutomationSaveSlot(FString InSaveSlot)
+{
+	AutomationSaveSlot = MoveTemp(InSaveSlot);
+}
+#endif
+
+FWSActionResult UWindStationStateSubsystem::SubmitDialogueAction(
+	const FWSActionRequest& Request,
+	TFunction<void(const FWSActionResult&)> Completion)
+{
+	FWSActionRequest NormalizedRequest = Request;
+	if (!NormalizedRequest.TransactionId.IsValid())
+	{
+		NormalizedRequest.TransactionId = FGuid::NewGuid();
+	}
+	const TSharedRef<TOptional<FWSActionResult>> SynchronousResult =
+		MakeShared<TOptional<FWSActionResult>>();
+	TFunction<void(const FWSActionResult&)> CapturingCompletion =
+		[SynchronousResult, UserCompletion = MoveTemp(Completion)](
+			const FWSActionResult& CompletedResult) mutable
+		{
+			*SynchronousResult = CompletedResult;
+			if (UserCompletion)
+			{
+				UserCompletion(CompletedResult);
+			}
+		};
+	FWSActionResult Result = PrepareDialogue(NormalizedRequest);
+	if (!Result.bPendingDialogue)
+	{
+		CompleteDialogueSubmission(Result, MoveTemp(CapturingCompletion));
+		return Result;
+	}
+
+	PendingDialogueCompletion = MoveTemp(CapturingCompletion);
+	RealizePreparedDialogue();
+	if (SynchronousResult->IsSet())
+	{
+		Result = SynchronousResult->GetValue();
+	}
+	return Result;
+}
+
+FWSActionResult UWindStationStateSubsystem::PrepareDialogue(
+	const FWSActionRequest& ActionRequest)
+{
+	FWSActionResult Result;
+	Result.ActionId = ActionRequest.ActionId;
+	Result.TransactionId = ActionRequest.TransactionId;
+	Result.DialogueAct = ActionRequest.DialogueAct;
+	Result.PromiseCondition = ActionRequest.PromiseCondition;
+	Result.APBefore = RulesEngine.GetState().ActionPoints;
+	Result.APAfter = Result.APBefore;
+	if (bCommitDispatchActive || bLifecycleTransitionActive)
+	{
+		Result.ReasonCode = EWSReasonCode::DialogueCancelled;
+		return Result;
+	}
+	if (ActionRequest.ActionId != TEXT("talk_gu_heng")
+		&& ActionRequest.ActionId != TEXT("talk_ye_cheng"))
+	{
+		Result.ReasonCode = EWSReasonCode::DialogueOutcomeRequired;
+		return Result;
+	}
+	if (bHasPendingDialogue)
+	{
+		Result.ReasonCode = PendingDialogue.TransactionId == ActionRequest.TransactionId
+			? EWSReasonCode::DuplicateTransaction
+			: EWSReasonCode::DialoguePending;
+		return Result;
+	}
+	if (RulesEngine.GetState().CommittedTransactions.Contains(
+		ActionRequest.TransactionId))
+	{
+		Result.ReasonCode = EWSReasonCode::DuplicateTransaction;
+		return Result;
+	}
+
+	const FWSActionPreview Preview = RulesEngine.Preview(ActionRequest);
+	Result.ReasonCode = Preview.ReasonCode;
+	Result.BaseAP = Preview.BaseAP;
+	Result.ActualAP = Preview.APCost;
+	Result.CostModifiers = Preview.CostModifiers;
+	Result.WorkReadiness = Preview.WorkReadiness;
+	if (!Preview.bCanExecute)
+	{
+		return Result;
+	}
+
+	FWSPreparedDialogue Prepared;
+	Prepared.TransactionId = ActionRequest.TransactionId;
+	Prepared.StateRevision = StateRevision;
+	Prepared.Generation = ++DialogueGeneration;
+	Prepared.OriginalRequest = ActionRequest;
+	Prepared.ReadSnapshot = RulesEngine.GetState();
+	Prepared.APCost = Preview.APCost;
+
+	FWSActionRequirementReport RequirementReport;
+	if (ActionRequest.SemanticFrame.TargetActionId == TEXT("repair_generator"))
+	{
+		FWSActionRequest TargetRequest;
+		TargetRequest.ActionId = TEXT("repair_generator");
+		RequirementReport = RulesEngine.EvaluateActionRequirements(TargetRequest);
+	}
+	Prepared.LocalFallback = UWSNPCDecisionService::BuildDeterministicReply(
+		ActionRequest,
+		Prepared.ReadSnapshot,
+		RequirementReport);
+	Prepared.AllowedFactIds = UWSNPCDecisionService::BuildAllowedFacts(
+		ActionRequest,
+		Prepared.LocalFallback.Speaker,
+		Prepared.ReadSnapshot);
+	Prepared.PlannedDisclosureFacts =
+		Prepared.LocalFallback.PlannedDisclosureFacts;
+	Prepared.PlannedKnowledgeUpgrades =
+		Prepared.LocalFallback.DisclosedFactIds;
+
+	FWSDialogueSemanticAtom FallbackAtom;
+	FallbackAtom.AtomId = FName(*FString::Printf(
+		TEXT("prepared_%s"),
+		*ActionRequest.ActionId.ToString()));
+	FallbackAtom.NaturalFallback = FText::FromString(
+		Prepared.LocalFallback.Utterance);
+	FallbackAtom.RelatedFactIds = Prepared.PlannedDisclosureFacts;
+	Prepared.Contract.MustRealize.Add(FallbackAtom);
+	Prepared.Contract.PersonaStyleId =
+		Prepared.LocalFallback.Speaker == EWSCharacterId::YeCheng
+			? TEXT("ye_cheng_clinical")
+			: TEXT("gu_heng_guarded");
+	for (const FName ProtectedFactId : {
+		FName(TEXT("FACT_HAND_INJURY")),
+		FName(TEXT("FACT_MEDICAL_DIAGNOSIS")),
+		FName(TEXT("FACT_HEAT_PACK")),
+		FName(TEXT("FACT_RELAY_COMPATIBILITY")),
+		FName(TEXT("FACT_FORCED_RESTART_CONFIRMED"))})
+	{
+		if (!Prepared.AllowedFactIds.Contains(ProtectedFactId))
+		{
+			Prepared.Contract.ForbiddenFactIds.Add(ProtectedFactId);
+		}
+	}
+
+	FWSDialogueOutcome SimulationOutcome;
+	SimulationOutcome.FinalReply = Prepared.LocalFallback;
+	SimulationOutcome.DisclosedFactIds =
+		Prepared.LocalFallback.DisclosedFactIds;
+	SimulationOutcome.RealizedAtomIds = {FallbackAtom.AtomId};
+	SimulationOutcome.AnswerSource =
+		Prepared.LocalFallback.AnswerSource;
+	FWhiteoutRulesEngine Simulation = RulesEngine;
+	const FWSActionResult SimulationResult =
+		Simulation.CommitDialogueOutcome(Prepared, SimulationOutcome);
+	if (SimulationResult.bCommitted)
+	{
+		const EWSCharacterId Speaker = Prepared.LocalFallback.Speaker;
+		const FWSCharacterState Before =
+			Prepared.ReadSnapshot.Characters.FindRef(Speaker);
+		const FWSCharacterState After =
+			Simulation.GetState().Characters.FindRef(Speaker);
+		Prepared.PlannedTrustDelta = After.Trust - Before.Trust;
+		Prepared.PlannedPressureDelta = After.Pressure - Before.Pressure;
+	}
+
+	PendingDialogue = MoveTemp(Prepared);
+	bHasPendingDialogue = true;
+	Result.bPendingDialogue = true;
+	Result.ReasonCode = EWSReasonCode::Ok;
+	return Result;
+}
+
+void UWindStationStateSubsystem::RealizePreparedDialogue()
+{
+	if (!bHasPendingDialogue)
+	{
+		return;
+	}
+	FWSActionRequirementReport RequirementReport;
+	if (PendingDialogue.OriginalRequest.SemanticFrame.TargetActionId
+		== TEXT("repair_generator"))
+	{
+		FWSActionRequest TargetRequest;
+		TargetRequest.ActionId = TEXT("repair_generator");
+		RequirementReport = RulesEngine.EvaluateActionRequirements(TargetRequest);
+	}
+	const FGuid TransactionId = PendingDialogue.TransactionId;
+	const int64 Generation = PendingDialogue.Generation;
+#if WITH_DEV_AUTOMATION_TESTS
+	if (DialogueRealizeTestHook)
+	{
+		const FWSPreparedDialogue Prepared = PendingDialogue;
+		TWeakObjectPtr<UWindStationStateSubsystem> WeakThis(this);
+		DialogueRealizeTestHook(
+			Prepared,
+			[WeakThis, TransactionId, Generation](const FWSAgentReply& Reply)
+			{
+				if (WeakThis.IsValid())
+				{
+					WeakThis->HandlePreparedDialogueReply(
+						Reply,
+						TransactionId,
+						Generation);
+				}
+			});
+		return;
+	}
+#endif
+	const bool bKnowledgeBoundaryOpen =
+		UWSAgentGateway::IsExpressionKnowledgeBoundaryOpen(
+			PendingDialogue.LocalFallback.Speaker,
+			PendingDialogue.AllowedFactIds);
+	const bool bLiveProviderEligible =
+		LLMConfigurationError.IsEmpty()
+		&& AgentGateway
+		&& AgentGateway->HasLiveProvider()
+		&& bKnowledgeBoundaryOpen
+		&& RulesEngine.GetState().ModelCalls
+			< RulesEngine.GetConfig().ModelCallHardLimit;
+	const bool bUseLiveProvider =
+		bLiveProviderEligible && RulesEngine.TryRecordModelCall();
+	PendingDialogue.bModelCallAttempted = bUseLiveProvider;
+	if (bUseLiveProvider)
+	{
+		if (!bHasPendingDialogue
+			|| PendingDialogue.TransactionId != TransactionId
+			|| PendingDialogue.Generation != Generation)
+		{
+			return;
+		}
+		if (PendingDialogue.StateRevision != StateRevision)
+		{
+			HandlePreparedDialogueReply(
+				PendingDialogue.LocalFallback,
+				TransactionId,
+				Generation);
+			return;
+		}
+	}
+	if (!AgentGateway)
+	{
+		HandlePreparedDialogueReply(
+			PendingDialogue.LocalFallback,
+			TransactionId,
+			Generation);
+		return;
+	}
+
+	const FWSPreparedDialogue Prepared = PendingDialogue;
+	TWeakObjectPtr<UWindStationStateSubsystem> WeakThis(this);
+	AgentGateway->RequestExpression(
+		Prepared.OriginalRequest,
+		Prepared.ReadSnapshot,
+		RequirementReport,
+		bUseLiveProvider,
+		FWSAgentReplyCallback::CreateLambda(
+			[WeakThis, TransactionId, Generation](const FWSAgentReply& Reply)
+			{
+				if (WeakThis.IsValid())
+				{
+					WeakThis->HandlePreparedDialogueReply(
+						Reply,
+						TransactionId,
+						Generation);
+				}
+			}));
+	if (bUseLiveProvider
+		&& bHasPendingDialogue
+		&& PendingDialogue.TransactionId == TransactionId
+		&& PendingDialogue.Generation == Generation)
+	{
+		SaveSnapshot();
+		BroadcastState();
+	}
+}
+
+void UWindStationStateSubsystem::HandlePreparedDialogueReply(
+	const FWSAgentReply& Reply,
+	const FGuid TransactionId,
+	const int64 Generation)
+{
+	if (!bHasPendingDialogue
+		|| PendingDialogue.TransactionId != TransactionId
+		|| PendingDialogue.Generation != Generation)
+	{
+		return;
+	}
+
+	const FWSPreparedDialogue Prepared = PendingDialogue;
+	FWSAgentReply FinalReply = Reply;
+	const auto IsSubset = [](const TArray<FName>& Candidate, const TArray<FName>& Allowed)
+	{
+		return !Candidate.ContainsByPredicate(
+			[&Allowed](const FName FactId)
+			{
+				return !Allowed.Contains(FactId);
+			});
+	};
+	const EWSCharacterId ExpectedSpeaker =
+		Prepared.OriginalRequest.ActionId == TEXT("talk_ye_cheng")
+			? EWSCharacterId::YeCheng
+			: EWSCharacterId::GuHeng;
+	const bool bReplyIdentityValid =
+		FinalReply.TransactionId == Prepared.TransactionId
+		&& FinalReply.ActionId == Prepared.OriginalRequest.ActionId
+		&& FinalReply.DialogueSessionId
+			== Prepared.OriginalRequest.DialogueSessionId
+		&& FinalReply.Speaker == ExpectedSpeaker;
+	const bool bReplyDisclosureValid =
+		IsSubset(
+			FinalReply.ReferencedFactIds,
+			Prepared.PlannedDisclosureFacts)
+		&& IsSubset(
+			FinalReply.DisclosedFactIds,
+			Prepared.PlannedDisclosureFacts);
+	if (!bReplyIdentityValid || !bReplyDisclosureValid)
+	{
+		const FString FailureReason = FinalReply.ValidationReason;
+		FinalReply = Prepared.LocalFallback;
+		FinalReply.Provider = Reply.Provider;
+		FinalReply.ValidationReason = FailureReason.IsEmpty()
+			? TEXT("prepared_outcome_validation_failed")
+			: FailureReason;
+		FinalReply.bFallback = true;
+	}
+	FinalReply.PlannedDisclosureFacts =
+		Prepared.PlannedDisclosureFacts;
+
+	FWSDialogueOutcome Outcome;
+	Outcome.FinalReply = FinalReply;
+	Outcome.DisclosedFactIds = FinalReply.DisclosedFactIds;
+	for (const FWSDialogueSemanticAtom& Atom : Prepared.Contract.MustRealize)
+	{
+		Outcome.RealizedAtomIds.AddUnique(Atom.AtomId);
+	}
+	Outcome.AnswerSource = FinalReply.AnswerSource;
+
+	FWSActionResult Result;
+	if (!CommitDialogueOutcome(Prepared, Outcome, Result))
+	{
+		TFunction<void(const FWSActionResult&)> Completion =
+			MoveTemp(PendingDialogueCompletion);
+		bHasPendingDialogue = false;
+		PendingDialogue = FWSPreparedDialogue();
+		++DialogueGeneration;
+		if (Result.ReasonCode == EWSReasonCode::DialogueStateChanged)
+		{
+			FWSAgentReply RetryReply = Prepared.LocalFallback;
+			RetryReply.Utterance = TEXT("情况刚刚有变化。按现在的状态再问一次。");
+			RetryReply.SemanticSpine = RetryReply.Utterance;
+			RetryReply.PersonaTail.Reset();
+			RetryReply.ReferencedFactIds.Reset();
+			RetryReply.PlannedDisclosureFacts.Reset();
+			RetryReply.DisclosedFactIds.Reset();
+			RetryReply.AnswerSource = TEXT("stale_retry");
+			RetryReply.Provider = TEXT("preset");
+			RetryReply.ValidationReason = TEXT("state_revision_changed");
+			LatestDialogue = RetryReply;
+			BroadcastDialogueLine(LatestDialogue);
+		}
+		CompleteDialogueSubmission(Result, MoveTemp(Completion));
+		return;
+	}
+
+	TFunction<void(const FWSActionResult&)> Completion =
+		MoveTemp(PendingDialogueCompletion);
+	bHasPendingDialogue = false;
+	PendingDialogue = FWSPreparedDialogue();
+	++DialogueGeneration;
+	++StateRevision;
+	const FWSAgentReply CommittedReply = Outcome.FinalReply;
+	LatestDialogue = CommittedReply;
+	if (AgentGateway)
+	{
+		AgentGateway->RecordCommittedDialogueTurn(
+			Prepared.OriginalRequest,
+			Outcome.FinalReply);
+	}
+	SaveSnapshot();
+	const int64 BroadcastGeneration = DialogueGeneration;
+	const int64 CommittedRevision = StateRevision;
+	{
+		TGuardValue<bool> DispatchGuard(bCommitDispatchActive, true);
+		OnActionCommitted.Broadcast(Result);
+#if WITH_DEV_AUTOMATION_TESTS
+		if (DialogueCommitDispatchTestHook)
+		{
+			DialogueCommitDispatchTestHook();
+		}
+#endif
+		BroadcastDialogueLine(CommittedReply);
+		if (DialogueGeneration == BroadcastGeneration
+			&& StateRevision == CommittedRevision)
+		{
+			BroadcastState();
+		}
+	}
+	CompleteDialogueSubmission(Result, MoveTemp(Completion));
+}
+
+bool UWindStationStateSubsystem::CommitDialogueOutcome(
+	const FWSPreparedDialogue& Prepared,
+	const FWSDialogueOutcome& Outcome,
+	FWSActionResult& OutResult)
+{
+	if (!bHasPendingDialogue
+		|| !CanCommitPreparedDialogue(
+			Prepared,
+			PendingDialogue,
+			StateRevision,
+			DialogueGeneration,
+			RulesEngine.GetState().CommittedTransactions))
+	{
+		OutResult.ActionId = Prepared.OriginalRequest.ActionId;
+		OutResult.TransactionId = Prepared.TransactionId;
+		OutResult.DialogueAct = Prepared.OriginalRequest.DialogueAct;
+		OutResult.PromiseCondition = Prepared.OriginalRequest.PromiseCondition;
+		OutResult.APBefore = RulesEngine.IsV11()
+			? RulesEngine.GetState().PhaseActionPoints
+			: RulesEngine.GetState().ActionPoints;
+		OutResult.APAfter = OutResult.APBefore;
+		OutResult.ReasonCode = RulesEngine.GetState().CommittedTransactions.Contains(
+			Prepared.TransactionId)
+			? EWSReasonCode::DuplicateTransaction
+			: EWSReasonCode::DialogueStateChanged;
+		return false;
+	}
+	OutResult = RulesEngine.CommitDialogueOutcome(Prepared, Outcome);
+	return OutResult.bCommitted;
+}
+
+void UWindStationStateSubsystem::AbortPendingDialogue(
+	const EWSReasonCode Reason,
+	const bool bNotifyCompletion,
+	const bool bResetGateway)
+{
+	TFunction<void(const FWSActionResult&)> Completion;
+	FWSActionResult Result;
+	if (bHasPendingDialogue)
+	{
+		Result.ActionId = PendingDialogue.OriginalRequest.ActionId;
+		Result.TransactionId = PendingDialogue.TransactionId;
+		Result.DialogueAct = PendingDialogue.OriginalRequest.DialogueAct;
+		Result.PromiseCondition = PendingDialogue.OriginalRequest.PromiseCondition;
+		Result.APBefore = RulesEngine.GetState().ActionPoints;
+		Result.APAfter = Result.APBefore;
+		Result.ReasonCode = Reason;
+		Completion = MoveTemp(PendingDialogueCompletion);
+	}
+	bHasPendingDialogue = false;
+	PendingDialogue = FWSPreparedDialogue();
+	PendingDialogueCompletion = {};
+	++DialogueGeneration;
+	if (bResetGateway && AgentGateway)
+	{
+		AgentGateway->ResetSession();
+	}
+	if (bNotifyCompletion && Completion)
+	{
+		CompleteDialogueSubmission(Result, MoveTemp(Completion));
+	}
+}
+
+void UWindStationStateSubsystem::CompleteDialogueSubmission(
+	const FWSActionResult& Result,
+	TFunction<void(const FWSActionResult&)> Completion)
+{
+	if (Completion)
+	{
+		Completion(Result);
+	}
+}
+
+void UWindStationStateSubsystem::BroadcastDialogueLine(
+	const FWSAgentReply& Reply)
+{
+#if WITH_DEV_AUTOMATION_TESTS
+	++DialogueLineBroadcastCountForTest;
+#endif
+	OnDialogueLine.Broadcast(Reply);
 }
 
 bool UWindStationStateSubsystem::BeginDayPhase(
@@ -401,10 +979,17 @@ bool UWindStationStateSubsystem::BeginDayPhase(
 	EWSReasonCode& OutReason,
 	TArray<FString>& OutChanges)
 {
+	if (bLifecycleTransitionActive || bCommitDispatchActive)
+	{
+		OutReason = EWSReasonCode::DialogueCancelled;
+		OutChanges.Reset();
+		return false;
+	}
 	const bool bStarted =
 		RulesEngine.BeginDayPhase(HeatingZone, OutReason, OutChanges);
 	if (bStarted)
 	{
+		++StateRevision;
 		SaveSnapshot();
 		BroadcastState();
 	}
@@ -415,6 +1000,12 @@ bool UWindStationStateSubsystem::SettleCurrentDayPhase(
 	EWSReasonCode& OutReason,
 	FWSPhaseSummary& OutSummary)
 {
+	if (bLifecycleTransitionActive || bCommitDispatchActive)
+	{
+		OutReason = EWSReasonCode::DialogueCancelled;
+		OutSummary = FWSPhaseSummary();
+		return false;
+	}
 	TSet<FName> ActiveOfferIdsBeforeSettlement;
 	for (const FWSNegotiationOffer& Offer : RulesEngine.GetState().NegotiationOffers)
 	{
@@ -438,6 +1029,7 @@ bool UWindStationStateSubsystem::SettleCurrentDayPhase(
 					RulesEngine.GetState());
 			}
 		}
+		++StateRevision;
 		SaveSnapshot();
 		BroadcastState();
 	}
@@ -446,7 +1038,17 @@ bool UWindStationStateSubsystem::SettleCurrentDayPhase(
 
 FWSGameState UWindStationStateSubsystem::EndGame()
 {
+	if (bLifecycleTransitionActive || bCommitDispatchActive)
+	{
+		return RulesEngine.GetState();
+	}
+	TGuardValue<bool> LifecycleGuard(bLifecycleTransitionActive, true);
+	AbortPendingDialogue(
+		EWSReasonCode::DialogueCancelled,
+		true,
+		true);
 	RulesEngine.EndGame();
+	++StateRevision;
 	SaveSnapshot();
 	BroadcastState();
 	return RulesEngine.GetState();
@@ -461,7 +1063,7 @@ bool UWindStationStateSubsystem::SaveSnapshot()
 		return false;
 	}
 	Save->State = RulesEngine.GetState();
-	return UGameplayStatics::SaveGameToSlot(Save, SaveSlot, 0);
+	return UGameplayStatics::SaveGameToSlot(Save, GetActiveSaveSlot(), 0);
 }
 
 FWSGameState UWindStationStateSubsystem::MigrateSaveStateForV13(
@@ -498,14 +1100,28 @@ FWSGameState UWindStationStateSubsystem::MigrateSaveStateForV13(
 
 bool UWindStationStateSubsystem::LoadSnapshot()
 {
-	FString SlotToLoad = SaveSlot;
-	if (!UGameplayStatics::DoesSaveGameExist(SlotToLoad, 0))
+	if (bLifecycleTransitionActive || bCommitDispatchActive)
+	{
+		return false;
+	}
+	const FString& ActiveSaveSlot = GetActiveSaveSlot();
+	FString SlotToLoad = ActiveSaveSlot;
+	bool bAllowLegacyFallback = true;
+#if WITH_DEV_AUTOMATION_TESTS
+	bAllowLegacyFallback = AutomationSaveSlot.IsEmpty();
+#endif
+	if (bAllowLegacyFallback
+		&& !UGameplayStatics::DoesSaveGameExist(SlotToLoad, 0))
 	{
 		SlotToLoad = UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV12, 0)
 			? LegacySaveSlotV12
 			: LegacySaveSlotV11;
 	}
-	const bool bLoadLegacySlot = SlotToLoad != SaveSlot;
+	const bool bLoadLegacySlot = SlotToLoad != ActiveSaveSlot;
+	if (!UGameplayStatics::DoesSaveGameExist(SlotToLoad, 0))
+	{
+		return false;
+	}
 	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(
 		UGameplayStatics::LoadGameFromSlot(SlotToLoad, 0));
 	if (!Save
@@ -515,16 +1131,18 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	{
 		return false;
 	}
-	if (AgentGateway)
-	{
-		AgentGateway->ResetSession();
-	}
+	TGuardValue<bool> LifecycleGuard(bLifecycleTransitionActive, true);
+	AbortPendingDialogue(
+		EWSReasonCode::DialogueCancelled,
+		true,
+		true);
 	const FWSGameState MigratedState = MigrateSaveStateForV13(
 		Save->State,
 		Save->SaveVersion,
 		RulesEngine.GetConfig().SchemaVersion,
 		RulesEngine.GetConfig().RulesVersion);
 	RulesEngine.SetState(MigratedState);
+	++StateRevision;
 	LatestDialogue = FWSAgentReply();
 	if (bLoadLegacySlot || Save->SaveVersion != TEXT("1.3.0"))
 	{
@@ -536,9 +1154,27 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 
 bool UWindStationStateSubsystem::HasSnapshot() const
 {
-	return UGameplayStatics::DoesSaveGameExist(SaveSlot, 0)
+	const FString& ActiveSaveSlot = GetActiveSaveSlot();
+#if WITH_DEV_AUTOMATION_TESTS
+	if (!AutomationSaveSlot.IsEmpty())
+	{
+		return UGameplayStatics::DoesSaveGameExist(ActiveSaveSlot, 0);
+	}
+#endif
+	return UGameplayStatics::DoesSaveGameExist(ActiveSaveSlot, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV12, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV11, 0);
+}
+
+const FString& UWindStationStateSubsystem::GetActiveSaveSlot() const
+{
+#if WITH_DEV_AUTOMATION_TESTS
+	if (!AutomationSaveSlot.IsEmpty())
+	{
+		return AutomationSaveSlot;
+	}
+#endif
+	return SaveSlot;
 }
 
 bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
@@ -675,13 +1311,15 @@ void UWindStationStateSubsystem::RequestActionExpression(const FWSActionRequest&
 		UWSAgentGateway::IsExpressionKnowledgeBoundaryOpen(
 			Decision.Speaker,
 			AllowedFacts);
-	const bool bUseLiveProvider =
+	const bool bLiveProviderEligible =
 		LLMConfigurationError.IsEmpty()
 		&& AgentGateway->HasLiveProvider()
-		&& bKnowledgeBoundaryOpen
-		&& RulesEngine.TryRecordModelCall();
+		&& bKnowledgeBoundaryOpen;
+	const bool bUseLiveProvider =
+		bLiveProviderEligible && RulesEngine.TryRecordModelCall();
 	if (bUseLiveProvider)
 	{
+		++StateRevision;
 		SaveSnapshot();
 		BroadcastState();
 	}
@@ -692,10 +1330,16 @@ void UWindStationStateSubsystem::RequestActionExpression(const FWSActionRequest&
 		RequirementReport,
 		bUseLiveProvider,
 		FWSAgentReplyCallback::CreateLambda(
-			[WeakThis](const FWSAgentReply& Reply)
+			[WeakThis, ActionRequest](const FWSAgentReply& Reply)
 			{
 				if (WeakThis.IsValid())
 				{
+					if (WeakThis->AgentGateway)
+					{
+						WeakThis->AgentGateway->RecordCommittedDialogueTurn(
+							ActionRequest,
+							Reply);
+					}
 					WeakThis->HandleAgentReply(Reply);
 				}
 			}));
@@ -704,5 +1348,5 @@ void UWindStationStateSubsystem::RequestActionExpression(const FWSActionRequest&
 void UWindStationStateSubsystem::HandleAgentReply(const FWSAgentReply& Reply)
 {
 	LatestDialogue = Reply;
-	OnDialogueLine.Broadcast(LatestDialogue);
+	BroadcastDialogueLine(LatestDialogue);
 }
