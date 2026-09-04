@@ -2,7 +2,7 @@
 
 #include "Agents/WSRoleplayKnowledgeRepository.h"
 
-namespace
+namespace WSNPCContextBuilderPrivate
 {
 	const FName GuHengId(TEXT("gu_heng"));
 	const FName YeChengId(TEXT("ye_cheng"));
@@ -615,6 +615,17 @@ bool UWSNPCContextBuilder::BuildRequest(
 	FWSRoleplayFallback& OutFallback,
 	FString& OutError)
 {
+	using WSNPCContextBuilderPrivate::BuildAllowedProposals;
+	using WSNPCContextBuilderPrivate::BuildEventTags;
+	using WSNPCContextBuilderPrivate::ExtractTagsAndTarget;
+	using WSNPCContextBuilderPrivate::Intersects;
+	using WSNPCContextBuilderPrivate::IsAvailable;
+	using WSNPCContextBuilderPrivate::IsRelationshipMatch;
+	using WSNPCContextBuilderPrivate::MatchesMemory;
+	using WSNPCContextBuilderPrivate::PlayerKnowsFact;
+	using WSNPCContextBuilderPrivate::SelectFallback;
+	using WSNPCContextBuilderPrivate::SpeakerForAction;
+
 	OutRequest = FWSRoleplayRequest();
 	OutFallback = FWSRoleplayFallback();
 	OutError.Reset();
@@ -843,6 +854,8 @@ FWSDialogueSemanticFrame UWSNPCContextBuilder::BuildSemanticFrame(
 	const FString& PlayerLine,
 	const FName CurrentDialogueActionId)
 {
+	using WSNPCContextBuilderPrivate::ContainsAny;
+
 	FWSDialogueSemanticFrame Frame;
 	Frame.TargetCharacter = CurrentDialogueActionId == TEXT("talk_ye_cheng")
 		? EWSCharacterId::YeCheng
@@ -957,6 +970,12 @@ FWSRoleplaySubjectiveState UWSNPCContextBuilder::BuildSubjectiveState(
 	const FName SpeakerId,
 	const FWSGameState& FrozenState)
 {
+	using WSNPCContextBuilderPrivate::CharacterForSpeaker;
+	using WSNPCContextBuilderPrivate::DayPhaseName;
+	using WSNPCContextBuilderPrivate::HeatingZoneName;
+	using WSNPCContextBuilderPrivate::LocationName;
+	using WSNPCContextBuilderPrivate::PhaseName;
+
 	FWSRoleplaySubjectiveState Result;
 	Result.PhaseId = PhaseName(FrozenState.Phase);
 	Result.DayPhaseId = DayPhaseName(FrozenState.DayPhase);

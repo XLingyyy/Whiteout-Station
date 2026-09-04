@@ -2,7 +2,7 @@
 
 #include <initializer_list>
 
-namespace
+namespace WSRoleplayResponseValidatorPrivate
 {
 	constexpr int32 MaxRoleplayLineCharacters = 120;
 	constexpr int32 MaxRoleplaySentences = 3;
@@ -810,7 +810,11 @@ bool UWSRoleplayResponseValidator::Validate(
 	FString& OutReason)
 {
 	TArray<FName> IgnoredGameFactIds;
-	return ValidateInternal(Request, Response, IgnoredGameFactIds, OutReason);
+	return WSRoleplayResponseValidatorPrivate::ValidateInternal(
+		Request,
+		Response,
+		IgnoredGameFactIds,
+		OutReason);
 }
 
 bool UWSRoleplayResponseValidator::ValidateAndDeriveDisclosures(
@@ -819,5 +823,9 @@ bool UWSRoleplayResponseValidator::ValidateAndDeriveDisclosures(
 	TArray<FName>& OutGameFactIds,
 	FString& OutReason)
 {
-	return ValidateInternal(Request, Response, OutGameFactIds, OutReason);
+	return WSRoleplayResponseValidatorPrivate::ValidateInternal(
+		Request,
+		Response,
+		OutGameFactIds,
+		OutReason);
 }
