@@ -1,0 +1,21 @@
+{
+  "schema_version": 7,
+  "runtime_version": "1.4.0",
+  "protocol_version": "bounded_roleplay_v4",
+  "prompt_mode": "subjective_context_single_call",
+  "max_sentences": 3,
+  "max_line_chars": 120,
+  "max_output_tokens": 320,
+  "temperature": 0.5,
+  "top_k_knowledge": 10,
+  "max_session_turns": 3,
+  "provider_name": "deepseek",
+  "model": "deepseek-v4-flash",
+  "endpoint": "https://api.deepseek.com",
+  "timeout_seconds": 8,
+  "llm_enabled": false,
+  "transport": "openai_chat_completions",
+  "credential_policy": "Settings UI credentials are process-memory only. Environment and ignored LocalConfig credentials remain supported for development.",
+  "fallback_policy": "Transport errors, timeout, malformed JSON, schema mismatch, ungrounded assertions, forbidden knowledge, invalid proposals, stale state, or unsafe memory summaries immediately use one state-aware local fallback without another model call.",
+  "notes": "Each player input makes at most one model call. The model receives only the active NPC profile, subjective state, filtered Top-K knowledge, safe memory, and a local action proposal whitelist. Rules, state mutation, disclosure upgrades, and proposal execution remain local and deterministic."
+}

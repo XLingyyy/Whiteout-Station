@@ -7,6 +7,15 @@
 
 class UWSActionResolver;
 class UWSAgentGateway;
+class UWSNPCContextBuilder;
+class UWSRoleplayKnowledgeRepository;
+
+struct FWSDialogueSessionRuntimeState
+{
+	FName ActionId;
+	EWSDayPhase DayPhase = EWSDayPhase::Morning;
+	int32 CommittedTurns = 0;
+};
 
 #if WITH_DEV_AUTOMATION_TESTS
 using FWSDialogueRealizeTestCallback =
@@ -121,6 +130,8 @@ public:
 	FWSAgentReply GetLatestDialogue() const { return LatestDialogue; }
 
 	void CancelPendingDialogue();
+	void EndDialogueSession(const FGuid& DialogueSessionId);
+	bool CanContinueDialogueSession(const FGuid& DialogueSessionId) const;
 	bool ApplyLLMRuntimeConfiguration(FString& OutError);
 	FString GetLLMRuntimeStatus() const;
 	bool HasLiveLLMProvider() const;
@@ -136,6 +147,7 @@ public:
 
 private:
 	static const FString SaveSlot;
+	static const FString LegacySaveSlotV13;
 	static const FString LegacySaveSlotV12;
 	static const FString LegacySaveSlotV11;
 	FWhiteoutRulesEngine RulesEngine;
@@ -147,6 +159,12 @@ private:
 	TObjectPtr<UWSAgentGateway> AgentGateway;
 
 	UPROPERTY()
+	TObjectPtr<UWSRoleplayKnowledgeRepository> RoleplayRepository;
+
+	UPROPERTY()
+	TObjectPtr<UWSNPCContextBuilder> RoleplayContextBuilder;
+
+	UPROPERTY()
 	FWSAgentReply LatestDialogue;
 
 	FWSPreparedDialogue PendingDialogue;
@@ -156,6 +174,7 @@ private:
 	TFunction<void(const FWSActionResult&)> PendingDialogueCompletion;
 	int64 StateRevision = 1;
 	int64 DialogueGeneration = 1;
+	TMap<FGuid, FWSDialogueSessionRuntimeState> DialogueSessions;
 
 #if WITH_DEV_AUTOMATION_TESTS
 	FWSDialogueRealizeTestHook DialogueRealizeTestHook;
@@ -170,6 +189,10 @@ private:
 	FString LLMConfigurationError;
 
 	void BroadcastState();
+	bool NormalizeDialogueSessionRequest(
+		FWSActionRequest& InOutRequest,
+		EWSReasonCode& OutReason) const;
+	void RecordCommittedDialogueSession(const FWSActionRequest& Request);
 	FWSActionResult PrepareDialogue(const FWSActionRequest& ActionRequest);
 	void RealizePreparedDialogue();
 	void HandlePreparedDialogueReply(

@@ -217,12 +217,16 @@ bool FWhiteoutDialogueAuditAndEventExportTest::RunTest(
 		TEXT("final_disclosed_fact_ids"),
 		TEXT("required_atom_ids"),
 		TEXT("realized_atom_ids"),
+		TEXT("referenced_knowledge_ids"),
+		TEXT("speech_function"),
+		TEXT("turn_index"),
+		TEXT("proposal_type"),
 		TEXT("answer_source"),
 		TEXT("validation_outcome"),
 		TEXT("prompt_tokens"),
 		TEXT("completion_tokens")};
 	TestTrue(
-		TEXT("Audit has exactly the thirteen whitelisted fields"),
+		TEXT("Audit has exactly the seventeen whitelisted fields"),
 		HasExactKeys(Audit, AuditFields));
 	TestEqual(
 		TEXT("Audit kind is stable"),
@@ -240,6 +244,16 @@ bool FWhiteoutDialogueAuditAndEventExportTest::RunTest(
 		TEXT("Fallback answer source is normalized"),
 		Audit->GetStringField(TEXT("answer_source")),
 		FString(TEXT("local_natural_fallback")));
+	TestTrue(
+		TEXT("Speech function is a safe audit token"),
+		IsSafeAuditToken(Audit->GetStringField(TEXT("speech_function"))));
+	TestEqual(
+		TEXT("First dialogue turn is recorded"),
+		static_cast<int32>(Audit->GetNumberField(TEXT("turn_index"))),
+		1);
+	TestTrue(
+		TEXT("Proposal type is a safe audit token"),
+		IsSafeAuditToken(Audit->GetStringField(TEXT("proposal_type"))));
 	TestTrue(
 		TEXT("Validation outcome is a safe ASCII token"),
 		IsSafeAuditToken(

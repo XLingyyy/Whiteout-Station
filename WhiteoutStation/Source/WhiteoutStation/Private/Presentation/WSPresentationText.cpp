@@ -150,6 +150,7 @@ FText FWSPresentationText::ReasonCause(const EWSReasonCode Reason)
 	case EWSReasonCode::DialogueCancelled: return Text(TEXT("本轮对话已取消。"));
 	case EWSReasonCode::DialogueOutcomeRequired: return Text(TEXT("对话必须在最终台词确定后提交。"));
 	case EWSReasonCode::DialogueOutcomeInvalid: return Text(TEXT("最终对话结果未通过事务校验。"));
+	case EWSReasonCode::DialogueSessionComplete: return Text(TEXT("本次私聊的三轮对话已经结束。"));
 	default: return TableText(TEXT("reason_default_cause"), TEXT("当前条件不满足。"));
 	}
 }
@@ -196,6 +197,7 @@ FText FWSPresentationText::ReasonNextStep(const EWSReasonCode Reason)
 	case EWSReasonCode::DialogueCancelled: return Text(TEXT("重新进入对话后再提交。"));
 	case EWSReasonCode::DialogueOutcomeRequired: return Text(TEXT("通过对话事务入口提交。"));
 	case EWSReasonCode::DialogueOutcomeInvalid: return Text(TEXT("使用本地安全回退重新生成结果。"));
+	case EWSReasonCode::DialogueSessionComplete: return Text(TEXT("离开后可重新发起一次私聊。"));
 	default: return TableText(TEXT("reason_default_next"), TEXT("检查目标、资源、证据和队员状态后选择下一步。"));
 	}
 }

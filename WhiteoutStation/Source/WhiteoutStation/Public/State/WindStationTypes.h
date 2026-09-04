@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Agents/WSRoleplayTypes.h"
 #include "CoreMinimal.h"
 #include "WindStationTypes.generated.h"
 
@@ -229,7 +230,8 @@ enum class EWSReasonCode : uint8
 	DialogueStateChanged,
 	DialogueCancelled,
 	DialogueOutcomeRequired,
-	DialogueOutcomeInvalid
+	DialogueOutcomeInvalid,
+	DialogueSessionComplete
 };
 
 UENUM(BlueprintType)
@@ -939,6 +941,9 @@ struct FWSGameState
 	TArray<FWSPhaseSummary> PhaseSummaries;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
+	TArray<FWSRoleplayMemoryEntry> DialogueMemories;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	int32 ModelCalls = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
@@ -1009,6 +1014,15 @@ struct FWSActionRequest
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FGuid DialogueSessionId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 DialogueTurnIndex = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 DialogueSessionMaxTurns = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bDialogueSessionFollowUp = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FWSDialogueSemanticFrame SemanticFrame;
@@ -1158,6 +1172,31 @@ struct FWSAgentReply
 	FString Emotion = TEXT("guarded");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EWSRoleplaySpeechFunction SpeechFunction =
+		EWSRoleplaySpeechFunction::Unknown;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FName> ReferencedKnowledgeIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FWSRoleplayAssertion> Assertions;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bHasProposedAction = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSRoleplayActionProposal ProposedAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString MemorySummary;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 DialogueTurnIndex = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 DialogueSessionMaxTurns = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FName> ReferencedFactIds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -1285,6 +1324,12 @@ struct FWSPreparedDialogue
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bModelCallAttempted = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bRoleplayV14 = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FWSRoleplayRequest RoleplayRequest;
 };
 
 USTRUCT(BlueprintType)

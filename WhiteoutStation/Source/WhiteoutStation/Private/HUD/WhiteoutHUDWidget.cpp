@@ -3201,7 +3201,12 @@ void UWhiteoutHUDWidget::ShowDialogueReplyActions()
 	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
 	if (DialogueReplyBorder) DialogueReplyBorder->SetVisibility(ESlateVisibility::Visible);
-	if (DialogueContinueButton) DialogueContinueButton->SetKeyboardFocus();
+	if (DialogueContinueButton
+		&& DialogueContinueButton->GetVisibility() == ESlateVisibility::Visible
+		&& DialogueContinueButton->GetIsEnabled())
+	{
+		DialogueContinueButton->SetKeyboardFocus();
+	}
 }
 
 void UWhiteoutHUDWidget::ContinueDialogue()
@@ -3237,9 +3242,24 @@ FString UWhiteoutHUDWidget::BuildDialogueStatusSummary(
 	const FWSAgentReply& Reply,
 	const bool bIncludeDebugDetails)
 {
+	FString Status;
+	if (Reply.DialogueSessionId.IsValid())
+	{
+		Status = FString::Printf(
+			TEXT("本次私聊 %d/%d"),
+			FMath::Clamp(
+				Reply.DialogueTurnIndex,
+				1,
+				FMath::Max(1, Reply.DialogueSessionMaxTurns)),
+			FMath::Max(1, Reply.DialogueSessionMaxTurns));
+		if (Reply.bHasProposedAction)
+		{
+			Status += TEXT("｜对方提出了一项行动建议");
+		}
+	}
 	if (!bIncludeDebugDetails)
 	{
-		return FString();
+		return Status;
 	}
 	const TCHAR* MovementLabel = TEXT("原地");
 	switch (Reply.MovementIntent)
@@ -3265,7 +3285,11 @@ FString UWhiteoutHUDWidget::BuildDialogueStatusSummary(
 	const FString Validation = Reply.ValidationReason.IsEmpty()
 		? TEXT("通过")
 		: LLMFallbackReasonLabel(Reply.ValidationReason);
-	FString Status = FString::Printf(
+	if (!Status.IsEmpty())
+	{
+		Status += TEXT("\n");
+	}
+	Status += FString::Printf(
 		TEXT("调试｜表达来源 %s｜提交来源 %s｜校验 %s｜表演 %s · %s"),
 		*Provider,
 		Reply.AnswerSource.IsEmpty() ? TEXT("未标记") : *Reply.AnswerSource,
@@ -3273,7 +3297,7 @@ FString UWhiteoutHUDWidget::BuildDialogueStatusSummary(
 		MovementLabel,
 		ReactionLabel);
 	Status += FString::Printf(
-		TEXT("\n语义：%s / %s / %s / %.2f　｜　%s"),
+		TEXT("\n语义：%s / %s / %s / %.2f　｜　%s　｜　知识 %d 条"),
 		*StaticEnum<EWSDialogueAct>()->GetNameStringByValue(
 			static_cast<int64>(Reply.SemanticFrame.SpeechAct)),
 		*StaticEnum<EWSDialogueQueryType>()->GetNameStringByValue(
@@ -3284,7 +3308,8 @@ FString UWhiteoutHUDWidget::BuildDialogueStatusSummary(
 		Reply.SemanticFrame.Confidence,
 		Reply.SemanticFrame.Source.IsEmpty()
 			? TEXT("unspecified")
-			: *Reply.SemanticFrame.Source);
+			: *Reply.SemanticFrame.Source,
+		Reply.ReferencedKnowledgeIds.Num());
 	return Status;
 }
 
@@ -3315,8 +3340,16 @@ void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 		DialogueStatusText->SetText(FText::FromString(
 			BuildDialogueStatusSummary(Reply, bIncludeDebugDetails)));
 		DialogueStatusText->SetColorAndOpacity(FSlateColor(!Reply.bFallback ? Cyan : Secondary));
-		DialogueStatusText->SetVisibility(
-			bIncludeDebugDetails ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		DialogueStatusText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (DialogueContinueButton)
+	{
+		DialogueContinueButton->SetIsEnabled(
+			Reply.DialogueTurnIndex < Reply.DialogueSessionMaxTurns);
+		DialogueContinueButton->SetVisibility(
+			Reply.DialogueTurnIndex < Reply.DialogueSessionMaxTurns
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed);
 	}
 	UpdateDialogueConditionCard(Reply);
 	ShowDialogueReplyActions();
@@ -3413,14 +3446,146 @@ FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
 
 void UWhiteoutHUDWidget::UpdateDialogueConditionCard(const FWSAgentReply& Reply)
 {
-	if (!DialogueConditionBorder
-		|| Reply.RequirementReport.ActionId != TEXT("repair_generator")
-		|| Reply.AnswerContract.QueryType != EWSDialogueQueryType::Requirements)
+	if (!DialogueConditionBorder)
+	{
+		return;
+	}
+	const bool bRoleplayProposal = Reply.bHasProposedAction
+		&& Reply.ProposedAction.Type != EWSRoleplayProposalType::None
+		&& !Reply.ProposedAction.ActionId.IsNone();
+	const bool bLegacyConditions =
+		Reply.RequirementReport.ActionId == TEXT("repair_generator")
+		&& Reply.AnswerContract.QueryType
+			== EWSDialogueQueryType::Requirements;
+	if (!bRoleplayProposal && !bLegacyConditions)
 	{
 		HideDialogueConditionCard();
 		return;
 	}
+	if (bRoleplayProposal)
+	{
+		ActiveDialogueRequirementReport = FWSActionRequirementReport();
+		ActiveDialogueRequirementReport.ActionId =
+			Reply.ProposedAction.ActionId;
+		const auto ConditionLabel = [](const FName ConditionId)
+		{
+			if (ConditionId == TEXT("gu_heng_treated"))
+			{
+				return FString(TEXT("先处理顾衡的伤势"));
+			}
+			if (ConditionId == TEXT("gu_heng_needs_rest"))
+			{
+				return FString(TEXT("先让顾衡恢复体力"));
+			}
+			if (ConditionId == TEXT("repair_room_heated"))
+			{
+				return FString(TEXT("维修间保持供暖"));
+			}
+			if (ConditionId == TEXT("replacement_relay_available"))
+			{
+				return FString(TEXT("准备可用的替代继电器"));
+			}
+			if (ConditionId == TEXT("player_collaboration"))
+			{
+				return FString(TEXT("玩家到场协助维修"));
+			}
+			if (ConditionId == TEXT("gu_heng_available"))
+			{
+				return FString(TEXT("顾衡能够参与维修"));
+			}
+			if (ConditionId == TEXT("gu_heng_stamina_ready"))
+			{
+				return FString(TEXT("顾衡保留足够体力"));
+			}
+			return ConditionId.ToString();
+		};
+		TArray<FString> Lines;
+		const FString ActionLabel = Reply.ProposedAction.ActionId
+			== TEXT("repair_generator")
+			? TEXT("维修发电机")
+			: Reply.ProposedAction.ActionId
+				== TEXT("inspect_control_cabinet")
+				? TEXT("检查控制柜")
+				: Reply.ProposedAction.ActionId
+					== TEXT("send_signal")
+					? TEXT("发送求救信号")
+					: Reply.ProposedAction.ActionId.ToString();
+		if (Reply.ProposedAction.Type
+			== EWSRoleplayProposalType::ConditionalCooperation)
+		{
+			Lines.Add(TEXT("顾衡愿意在这些条件满足后配合："));
+			for (const FName ConditionId :
+				Reply.ProposedAction.RequestedConditionIds)
+			{
+				Lines.Add(TEXT("• ") + ConditionLabel(ConditionId));
+			}
+		}
+		else if (Reply.ProposedAction.Type
+			== EWSRoleplayProposalType::RefuseAction)
+		{
+			Lines.Add(TEXT("当前暂不执行：") + ActionLabel);
+			for (const FName ConditionId :
+				Reply.ProposedAction.RequestedConditionIds)
+			{
+				Lines.Add(TEXT("• ") + ConditionLabel(ConditionId));
+			}
+		}
+		else
+		{
+			Lines.Add(TEXT("建议下一步：") + ActionLabel);
+		}
+		if (DialogueConditionTitleText)
+		{
+			DialogueConditionTitleText->SetText(
+				FText::FromString(TEXT("行动建议")));
+		}
+		if (DialogueConditionBodyText)
+		{
+			DialogueConditionBodyText->SetText(FText::FromString(
+				FString::Join(Lines, TEXT("\n"))));
+		}
+		const bool bAcceptable = Reply.ProposedAction.Type
+			== EWSRoleplayProposalType::ConditionalCooperation;
+		if (DialogueConditionPinButton)
+		{
+			DialogueConditionPinButton->SetIsEnabled(
+				Reply.ProposedAction.ActionId == TEXT("repair_generator"));
+			DialogueConditionPinButton->SetVisibility(
+				Reply.ProposedAction.ActionId == TEXT("repair_generator")
+					? ESlateVisibility::Visible
+					: ESlateVisibility::Collapsed);
+		}
+		if (DialogueConditionAcceptButton)
+		{
+			DialogueConditionAcceptButton->SetIsEnabled(bAcceptable);
+			DialogueConditionAcceptButton->SetVisibility(
+				bAcceptable
+					? ESlateVisibility::Visible
+					: ESlateVisibility::Collapsed);
+		}
+		if (DialogueConditionStatusText)
+		{
+			DialogueConditionStatusText->SetText(FText::FromString(
+				bAcceptable
+					? TEXT("建议已通过本地规则校验，可接受并固定")
+					: TEXT("建议只供参考，实际行动仍由本地规则结算")));
+		}
+		DialogueConditionBorder->SetVisibility(ESlateVisibility::Visible);
+		return;
+	}
 	ActiveDialogueRequirementReport = Reply.RequirementReport;
+	if (DialogueConditionTitleText)
+	{
+		DialogueConditionTitleText->SetText(FText::FromString(TEXT("合作条件")));
+	}
+	if (DialogueConditionPinButton)
+	{
+		DialogueConditionPinButton->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (DialogueConditionAcceptButton)
+	{
+		DialogueConditionAcceptButton->SetVisibility(ESlateVisibility::Visible);
+	}
 	if (DialogueConditionBodyText)
 	{
 		DialogueConditionBodyText->SetText(FText::FromString(

@@ -1,6 +1,7 @@
 #include "Player/WhiteoutCharacter.h"
 
 #include "Agents/WSAgentGateway.h"
+#include "Agents/WSNPCContextBuilder.h"
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -559,8 +560,12 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 	{
 		return;
 	}
-	const bool bAllowedAct = DialogueAct == EWSDialogueAct::Ask || DialogueAct == EWSDialogueAct::Challenge
-		|| DialogueAct == EWSDialogueAct::Promise || DialogueAct == EWSDialogueAct::Reassure;
+	const bool bAllowedAct = DialogueAct == EWSDialogueAct::Ask
+		|| DialogueAct == EWSDialogueAct::Challenge
+		|| DialogueAct == EWSDialogueAct::Command
+		|| DialogueAct == EWSDialogueAct::Promise
+		|| DialogueAct == EWSDialogueAct::Trade
+		|| DialogueAct == EWSDialogueAct::Reassure;
 	const bool bAllowedPromise = DialogueAct != EWSDialogueAct::Promise
 		|| PromiseCondition == TEXT("keep_records") || PromiseCondition == TEXT("reserve_medicine") || PromiseCondition == TEXT("heat_repair_room");
 	if (!bAllowedAct || !bAllowedPromise)
@@ -666,59 +671,15 @@ void AWhiteoutCharacter::SubmitDialogueText(const FString& UserText)
 		PendingPlayerSaid.Reset();
 		return;
 	}
-	UWindStationStateSubsystem* StateSubsystem = GetGameInstance()
-		? GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>()
-		: nullptr;
-	if (!StateSubsystem)
-	{
-		return;
-	}
-	bDialogueIntentPending = true;
-	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
-	{
-		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
-		{
-			HUD->SetDialogueIntentStatus(TEXT("正在理解你的问题……"), true);
-		}
-	}
-	const FGuid ExpectedSessionId = ActiveDialogueSessionId;
-	const FName DialogueActionId = ActiveDialogueTarget->ActionId;
-	TWeakObjectPtr<AWhiteoutCharacter> WeakThis(this);
-	StateSubsystem->RequestDialogueIntent(
+	PendingSemanticFrame = UWSNPCContextBuilder::BuildSemanticFrame(
 		PendingPlayerSaid,
-		DialogueActionId,
-		CurrentDialogueTopicActionId,
-		[WeakThis, ExpectedSessionId](const FWSDialogueIntentResult& Intent)
-		{
-			if (!WeakThis.IsValid())
-			{
-				return;
-			}
-			AWhiteoutCharacter* Character = WeakThis.Get();
-			if (!Character->ActiveDialogueTarget
-				|| Character->ActiveDialogueSessionId != ExpectedSessionId)
-			{
-				return;
-			}
-			Character->bDialogueIntentPending = false;
-			if (!Intent.bMapped)
-			{
-				if (APlayerController* PlayerController = Cast<APlayerController>(Character->Controller))
-				{
-					if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
-					{
-						HUD->SetDialogueIntentStatus(TEXT("这句话的意图不够明确，请换一种问法或使用对话选项。"), false);
-					}
-				}
-				return;
-			}
-			Character->PendingSemanticFrame = Intent.ToSemanticFrame();
-			if (!Intent.TargetActionId.IsNone())
-			{
-				Character->CurrentDialogueTopicActionId = Intent.TargetActionId;
-			}
-			Character->CommitDialogueChoice(Intent.DialogueAct, Intent.PromiseCondition);
-		});
+		ActiveDialogueTarget->ActionId);
+	if (!PendingSemanticFrame.TargetActionId.IsNone())
+	{
+		CurrentDialogueTopicActionId =
+			PendingSemanticFrame.TargetActionId;
+	}
+	CommitDialogueChoice(EWSDialogueAct::Ask, NAME_None);
 }
 
 void AWhiteoutCharacter::SubmitDialogueChoice(
@@ -736,7 +697,14 @@ void AWhiteoutCharacter::SubmitDialogueChoice(
 		PendingPlayerSaid.Reset();
 		return;
 	}
-	if (PendingSemanticFrame.Source.IsEmpty())
+	if (!PendingPlayerSaid.IsEmpty())
+	{
+		PendingSemanticFrame = UWSNPCContextBuilder::BuildSemanticFrame(
+			PendingPlayerSaid,
+			ActiveDialogueTarget->ActionId);
+		PendingSemanticFrame.SpeechAct = DialogueAct;
+	}
+	else if (PendingSemanticFrame.Source.IsEmpty())
 	{
 		PendingSemanticFrame.SpeechAct = DialogueAct;
 		PendingSemanticFrame.TargetCharacter = ActiveDialogueTarget->ActionId == TEXT("talk_ye_cheng")
@@ -754,6 +722,17 @@ void AWhiteoutCharacter::ContinueDialogue()
 	{
 		return;
 	}
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UWindStationStateSubsystem* StateSubsystem =
+			GameInstance->GetSubsystem<UWindStationStateSubsystem>();
+			StateSubsystem
+			&& !StateSubsystem->CanContinueDialogueSession(
+				ActiveDialogueSessionId))
+		{
+			return;
+		}
+	}
 	bDialogueChoiceCommitted = false;
 	bDialogueIntentPending = false;
 	PendingPlayerSaid.Reset();
@@ -770,12 +749,14 @@ void AWhiteoutCharacter::ContinueDialogue()
 
 void AWhiteoutCharacter::CancelDialogue()
 {
+	const FGuid ClosingSessionId = ActiveDialogueSessionId;
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UWindStationStateSubsystem* StateSubsystem =
 			GameInstance->GetSubsystem<UWindStationStateSubsystem>())
 		{
 			StateSubsystem->CancelPendingDialogue();
+			StateSubsystem->EndDialogueSession(ClosingSessionId);
 		}
 	}
 	if (ActiveDialogueTarget)

@@ -42,6 +42,8 @@ struct FWSAgentDialogueTurn
 {
 	FString UserSemanticSummaryJson;
 	FString AssistantSemanticSummaryJson;
+	FString RawPlayerLine;
+	FString RawNpcLine;
 	FName TopicActionId;
 };
 

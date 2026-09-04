@@ -1,6 +1,7 @@
 #include "Agents/WSAgentGateway.h"
 
 #include "Agents/WSNPCDecisionService.h"
+#include "Agents/WSRoleplayResponseValidator.h"
 #include "Dom/JsonObject.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -31,9 +32,10 @@ namespace
 	void AddStructuredOutputOptions(
 		const TSharedRef<FJsonObject>& Root,
 		const FString& ProviderId,
-		const int32 MaxOutputTokens)
+		const int32 MaxOutputTokens,
+		const double Temperature = 0.2)
 	{
-		Root->SetNumberField(TEXT("temperature"), 0.2);
+		Root->SetNumberField(TEXT("temperature"), Temperature);
 		Root->SetNumberField(
 			ProviderId == TEXT("openai")
 				? TEXT("max_completion_tokens")
@@ -354,6 +356,153 @@ namespace
 		else if (Token == TEXT("alarmed")) OutReaction = EWSNPCReaction::Alarmed;
 		else return false;
 		return true;
+	}
+
+	FString EpistemicStatusToken(const EWSEpistemicStatus Status)
+	{
+		switch (Status)
+		{
+		case EWSEpistemicStatus::Known: return TEXT("known");
+		case EWSEpistemicStatus::Observed: return TEXT("observed");
+		case EWSEpistemicStatus::Believed: return TEXT("believed");
+		case EWSEpistemicStatus::Suspected: return TEXT("suspected");
+		case EWSEpistemicStatus::FalseBelief: return TEXT("false_belief");
+		default: return TEXT("unknown");
+		}
+	}
+
+	FString DisclosureLevelToken(const EWSRoleplayDisclosureLevel Level)
+	{
+		switch (Level)
+		{
+		case EWSRoleplayDisclosureLevel::Evasive: return TEXT("evasive");
+		case EWSRoleplayDisclosureLevel::Hint: return TEXT("hint");
+		case EWSRoleplayDisclosureLevel::Partial: return TEXT("partial");
+		case EWSRoleplayDisclosureLevel::Explicit: return TEXT("explicit");
+		default: return TEXT("hidden");
+		}
+	}
+
+	FString SpeechFunctionToken(const EWSRoleplaySpeechFunction Function)
+	{
+		switch (Function)
+		{
+		case EWSRoleplaySpeechFunction::Answer: return TEXT("answer");
+		case EWSRoleplaySpeechFunction::AnswerWithUncertainty: return TEXT("answer_with_uncertainty");
+		case EWSRoleplaySpeechFunction::Clarify: return TEXT("clarify");
+		case EWSRoleplaySpeechFunction::Deflect: return TEXT("deflect");
+		case EWSRoleplaySpeechFunction::Refuse: return TEXT("refuse");
+		case EWSRoleplaySpeechFunction::Reassure: return TEXT("reassure");
+		case EWSRoleplaySpeechFunction::Challenge: return TEXT("challenge");
+		case EWSRoleplaySpeechFunction::Acknowledge: return TEXT("acknowledge");
+		case EWSRoleplaySpeechFunction::ConditionalCooperation: return TEXT("conditional_cooperation");
+		case EWSRoleplaySpeechFunction::SuggestAction: return TEXT("suggest_action");
+		case EWSRoleplaySpeechFunction::Evade: return TEXT("evade");
+		case EWSRoleplaySpeechFunction::Suggest: return TEXT("suggest");
+		case EWSRoleplaySpeechFunction::ConditionalOffer: return TEXT("conditional_offer");
+		case EWSRoleplaySpeechFunction::CrisisResponse: return TEXT("crisis_response");
+		default: return TEXT("unknown");
+		}
+	}
+
+	bool TryParseSpeechFunction(
+		const FString& Token,
+		EWSRoleplaySpeechFunction& OutFunction)
+	{
+		if (Token == TEXT("answer")) OutFunction = EWSRoleplaySpeechFunction::Answer;
+		else if (Token == TEXT("answer_with_uncertainty")) OutFunction = EWSRoleplaySpeechFunction::AnswerWithUncertainty;
+		else if (Token == TEXT("clarify")) OutFunction = EWSRoleplaySpeechFunction::Clarify;
+		else if (Token == TEXT("deflect")) OutFunction = EWSRoleplaySpeechFunction::Deflect;
+		else if (Token == TEXT("refuse")) OutFunction = EWSRoleplaySpeechFunction::Refuse;
+		else if (Token == TEXT("reassure")) OutFunction = EWSRoleplaySpeechFunction::Reassure;
+		else if (Token == TEXT("challenge")) OutFunction = EWSRoleplaySpeechFunction::Challenge;
+		else if (Token == TEXT("acknowledge")) OutFunction = EWSRoleplaySpeechFunction::Acknowledge;
+		else if (Token == TEXT("conditional_cooperation")) OutFunction = EWSRoleplaySpeechFunction::ConditionalCooperation;
+		else if (Token == TEXT("suggest_action")) OutFunction = EWSRoleplaySpeechFunction::SuggestAction;
+		else if (Token == TEXT("evade")) OutFunction = EWSRoleplaySpeechFunction::Evade;
+		else if (Token == TEXT("suggest")) OutFunction = EWSRoleplaySpeechFunction::Suggest;
+		else if (Token == TEXT("conditional_offer")) OutFunction = EWSRoleplaySpeechFunction::ConditionalOffer;
+		else if (Token == TEXT("crisis_response")) OutFunction = EWSRoleplaySpeechFunction::CrisisResponse;
+		else return false;
+		return true;
+	}
+
+	FString ClaimModeToken(const EWSRoleplayClaimMode Mode)
+	{
+		switch (Mode)
+		{
+		case EWSRoleplayClaimMode::Stated: return TEXT("stated");
+		case EWSRoleplayClaimMode::Observation: return TEXT("observation");
+		case EWSRoleplayClaimMode::Belief: return TEXT("belief");
+		case EWSRoleplayClaimMode::Suspected: return TEXT("suspected");
+		case EWSRoleplayClaimMode::Denied: return TEXT("denied");
+		case EWSRoleplayClaimMode::Promised: return TEXT("promised");
+		case EWSRoleplayClaimMode::Withheld: return TEXT("withheld");
+		default: return TEXT("unknown");
+		}
+	}
+
+	bool TryParseClaimMode(const FString& Token, EWSRoleplayClaimMode& OutMode)
+	{
+		if (Token == TEXT("stated")) OutMode = EWSRoleplayClaimMode::Stated;
+		else if (Token == TEXT("observation")) OutMode = EWSRoleplayClaimMode::Observation;
+		else if (Token == TEXT("belief")) OutMode = EWSRoleplayClaimMode::Belief;
+		else if (Token == TEXT("suspected")) OutMode = EWSRoleplayClaimMode::Suspected;
+		else if (Token == TEXT("denied")) OutMode = EWSRoleplayClaimMode::Denied;
+		else if (Token == TEXT("promised")) OutMode = EWSRoleplayClaimMode::Promised;
+		else if (Token == TEXT("withheld")) OutMode = EWSRoleplayClaimMode::Withheld;
+		else return false;
+		return true;
+	}
+
+	FString ProposalTypeToken(const EWSRoleplayProposalType Type)
+	{
+		switch (Type)
+		{
+		case EWSRoleplayProposalType::ConditionalCooperation: return TEXT("conditional_cooperation");
+		case EWSRoleplayProposalType::SuggestAction: return TEXT("suggest_action");
+		case EWSRoleplayProposalType::RefuseAction: return TEXT("refuse_action");
+		default: return TEXT("none");
+		}
+	}
+
+	bool TryParseProposalType(
+		const FString& Token,
+		EWSRoleplayProposalType& OutType)
+	{
+		if (Token == TEXT("none")) OutType = EWSRoleplayProposalType::None;
+		else if (Token == TEXT("conditional_cooperation")) OutType = EWSRoleplayProposalType::ConditionalCooperation;
+		else if (Token == TEXT("suggest_action")) OutType = EWSRoleplayProposalType::SuggestAction;
+		else if (Token == TEXT("refuse_action")) OutType = EWSRoleplayProposalType::RefuseAction;
+		else return false;
+		return true;
+	}
+
+	EWSResponseType ResponseTypeForSpeechFunction(
+		const EWSRoleplaySpeechFunction Function)
+	{
+		switch (Function)
+		{
+		case EWSRoleplaySpeechFunction::Answer:
+			return EWSResponseType::FullDisclosure;
+		case EWSRoleplaySpeechFunction::AnswerWithUncertainty:
+		case EWSRoleplaySpeechFunction::Clarify:
+			return EWSResponseType::PartialDisclosure;
+		case EWSRoleplaySpeechFunction::ConditionalCooperation:
+		case EWSRoleplaySpeechFunction::ConditionalOffer:
+			return EWSResponseType::ConditionalAccept;
+		case EWSRoleplaySpeechFunction::Refuse:
+			return EWSResponseType::Refuse;
+		case EWSRoleplaySpeechFunction::Challenge:
+			return EWSResponseType::Accuse;
+		case EWSRoleplaySpeechFunction::Reassure:
+			return EWSResponseType::Reassure;
+		case EWSRoleplaySpeechFunction::Suggest:
+		case EWSRoleplaySpeechFunction::SuggestAction:
+			return EWSResponseType::PartialDisclosure;
+		default:
+			return EWSResponseType::Deflect;
+		}
 	}
 
 	bool IsAllowedEmotion(const FString& Emotion)
@@ -1826,6 +1975,260 @@ bool UWSAgentGateway::ValidateDialogueOutcomePayload(
 		OutReason = TEXT("invalid_json");
 		return false;
 	}
+	if (Prepared.bRoleplayV14)
+	{
+		const TSet<FString> RoleplayFields = {
+			TEXT("npc_line"),
+			TEXT("speech_function"),
+			TEXT("referenced_knowledge_ids"),
+			TEXT("assertions"),
+			TEXT("proposed_action"),
+			TEXT("memory_summary"),
+			TEXT("emotion"),
+			TEXT("movement_intent"),
+			TEXT("reaction_action")};
+		bool bHasUnexpectedField = false;
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Field :
+			Root->Values)
+		{
+			if (!RoleplayFields.Contains(Field.Key))
+			{
+				bHasUnexpectedField = true;
+				break;
+			}
+		}
+		if (Root->Values.Num() != RoleplayFields.Num()
+			|| bHasUnexpectedField)
+		{
+			OutReason = TEXT("roleplay_unexpected_fields");
+			return false;
+		}
+
+		FWSRoleplayResponse Response;
+		FString SpeechFunction;
+		FString MovementIntent;
+		FString ReactionAction;
+		if (!Root->TryGetStringField(TEXT("npc_line"), Response.NpcLine)
+			|| !Root->TryGetStringField(
+				TEXT("speech_function"),
+				SpeechFunction)
+			|| !Root->TryGetStringField(
+				TEXT("memory_summary"),
+				Response.MemorySummary)
+			|| !Root->TryGetStringField(TEXT("emotion"), Response.Emotion)
+			|| !Root->TryGetStringField(
+				TEXT("movement_intent"),
+				MovementIntent)
+			|| !Root->TryGetStringField(
+				TEXT("reaction_action"),
+				ReactionAction)
+			|| !TryParseSpeechFunction(
+				SpeechFunction,
+				Response.SpeechFunction))
+		{
+			OutReason = TEXT("roleplay_missing_or_invalid_scalar");
+			return false;
+		}
+
+		const auto ReadUniqueNameArray = [&Root, &OutReason](
+			const TCHAR* FieldName,
+			TArray<FName>& OutNames)
+		{
+			const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
+			if (!Root->TryGetArrayField(FieldName, Values) || !Values)
+			{
+				OutReason = FString::Printf(
+					TEXT("roleplay_missing_array:%s"),
+					FieldName);
+				return false;
+			}
+			TSet<FString> Seen;
+			for (const TSharedPtr<FJsonValue>& Value : *Values)
+			{
+				FString Id;
+				if (!Value.IsValid()
+					|| !Value->TryGetString(Id)
+					|| Id.IsEmpty()
+					|| Id != Id.TrimStartAndEnd()
+					|| Seen.Contains(Id))
+				{
+					OutReason = FString::Printf(
+						TEXT("roleplay_invalid_array:%s"),
+						FieldName);
+					return false;
+				}
+				Seen.Add(Id);
+				OutNames.Add(FName(*Id));
+			}
+			return true;
+		};
+		if (!ReadUniqueNameArray(
+				TEXT("referenced_knowledge_ids"),
+				Response.ReferencedKnowledgeIds))
+		{
+			return false;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* AssertionValues = nullptr;
+		if (!Root->TryGetArrayField(TEXT("assertions"), AssertionValues)
+			|| !AssertionValues)
+		{
+			OutReason = TEXT("roleplay_missing_assertions");
+			return false;
+		}
+		TSet<FName> AssertionIds;
+		for (const TSharedPtr<FJsonValue>& Value : *AssertionValues)
+		{
+			const TSharedPtr<FJsonObject>* Object = nullptr;
+			FString KnowledgeId;
+			FString ClaimMode;
+			FWSRoleplayAssertion Assertion;
+			if (!Value.IsValid()
+				|| !Value->TryGetObject(Object)
+				|| !Object
+				|| !Object->IsValid()
+				|| (*Object)->Values.Num() != 2
+				|| !(*Object)->HasField(TEXT("knowledge_id"))
+				|| !(*Object)->HasField(TEXT("claim_mode"))
+				|| !(*Object)->TryGetStringField(
+					TEXT("knowledge_id"),
+					KnowledgeId)
+				|| !(*Object)->TryGetStringField(
+					TEXT("claim_mode"),
+					ClaimMode)
+				|| KnowledgeId.IsEmpty()
+				|| KnowledgeId != KnowledgeId.TrimStartAndEnd()
+				|| !TryParseClaimMode(ClaimMode, Assertion.Mode))
+			{
+				OutReason = TEXT("roleplay_invalid_assertion");
+				return false;
+			}
+			Assertion.KnowledgeId = FName(*KnowledgeId);
+			if (AssertionIds.Contains(Assertion.KnowledgeId))
+			{
+				OutReason = TEXT("roleplay_duplicate_assertion");
+				return false;
+			}
+			AssertionIds.Add(Assertion.KnowledgeId);
+			Response.Assertions.Add(MoveTemp(Assertion));
+		}
+
+		const TSharedPtr<FJsonObject>* ProposalObject = nullptr;
+		FString ProposalType;
+		FString ProposalActionId;
+		FString ProposalExpiry;
+		if (!Root->TryGetObjectField(TEXT("proposed_action"), ProposalObject)
+			|| !ProposalObject
+			|| !ProposalObject->IsValid()
+			|| (*ProposalObject)->Values.Num() != 4
+			|| !(*ProposalObject)->TryGetStringField(
+				TEXT("type"),
+				ProposalType)
+			|| !(*ProposalObject)->TryGetStringField(
+				TEXT("action_id"),
+				ProposalActionId)
+			|| !(*ProposalObject)->TryGetStringField(
+				TEXT("expires_at_phase"),
+				ProposalExpiry)
+			|| !TryParseProposalType(
+				ProposalType,
+				Response.ProposedAction.Type))
+		{
+			OutReason = TEXT("roleplay_invalid_proposal");
+			return false;
+		}
+		const TArray<TSharedPtr<FJsonValue>>* ConditionValues = nullptr;
+		if (!(*ProposalObject)->TryGetArrayField(
+				TEXT("requested_condition_ids"),
+				ConditionValues)
+			|| !ConditionValues)
+		{
+			OutReason = TEXT("roleplay_invalid_proposal_conditions");
+			return false;
+		}
+		TSet<FName> ConditionIds;
+		for (const TSharedPtr<FJsonValue>& Value : *ConditionValues)
+		{
+			FString ConditionId;
+			if (!Value.IsValid()
+				|| !Value->TryGetString(ConditionId)
+				|| ConditionId.IsEmpty()
+				|| ConditionId != ConditionId.TrimStartAndEnd()
+				|| ConditionIds.Contains(FName(*ConditionId)))
+			{
+				OutReason = TEXT("roleplay_invalid_proposal_conditions");
+				return false;
+			}
+			ConditionIds.Add(FName(*ConditionId));
+			Response.ProposedAction.RequestedConditionIds.Add(
+				FName(*ConditionId));
+		}
+		Response.ProposedAction.ActionId =
+			ProposalActionId == TEXT("none")
+				? NAME_None
+				: FName(*ProposalActionId);
+		Response.ProposedAction.ExpiresAtPhase =
+			ProposalExpiry == TEXT("none")
+				? NAME_None
+				: FName(*ProposalExpiry);
+		Response.bHasProposedAction = Response.ProposedAction.Type
+			!= EWSRoleplayProposalType::None;
+		EWSNPCMovementIntent ParsedMovement = EWSNPCMovementIntent::Stay;
+		EWSNPCReaction ParsedReaction = EWSNPCReaction::Neutral;
+		if (!TryParseMovementIntent(MovementIntent, ParsedMovement)
+			|| !TryParseReaction(ReactionAction, ParsedReaction))
+		{
+			OutReason = TEXT("roleplay_invalid_performance_intent");
+			return false;
+		}
+		Response.MovementIntent = MovementIntent;
+		Response.ReactionAction = ReactionAction;
+
+		TArray<FName> DisclosedGameFacts;
+		if (!UWSRoleplayResponseValidator::ValidateAndDeriveDisclosures(
+				Prepared.RoleplayRequest,
+				Response,
+				DisclosedGameFacts,
+				OutReason))
+		{
+			return false;
+		}
+		FWSAgentReply Reply = Prepared.LocalFallback;
+		Reply.Utterance = Response.NpcLine;
+		Reply.SemanticSpine.Reset();
+		Reply.PersonaTail.Reset();
+		Reply.ResponseType = ResponseTypeForSpeechFunction(
+			Response.SpeechFunction);
+		Reply.SpeechFunction = Response.SpeechFunction;
+		Reply.ReferencedKnowledgeIds = Response.ReferencedKnowledgeIds;
+		Reply.Assertions = Response.Assertions;
+		Reply.bHasProposedAction = Response.bHasProposedAction;
+		Reply.ProposedAction = Response.ProposedAction;
+		Reply.MemorySummary = Response.MemorySummary;
+		Reply.Emotion = Response.Emotion;
+		Reply.MovementIntent = ParsedMovement;
+		Reply.Reaction = ParsedReaction;
+		Reply.ReferencedFactIds = DisclosedGameFacts;
+		Reply.DisclosedFactIds = DisclosedGameFacts;
+		Reply.RealizedAtomIds.Reset();
+		Reply.AnswerSource = TEXT("online_roleplay");
+		Reply.ValidationReason = TEXT("dialogue_v14_accepted");
+		Reply.bFallback = false;
+
+		FWSDialogueOutcome Outcome;
+		Outcome.FinalReply = MoveTemp(Reply);
+		Outcome.DisclosedFactIds = MoveTemp(DisclosedGameFacts);
+		Outcome.RealizedAtomIds.Reset();
+		Outcome.AnswerSource = TEXT("online_roleplay");
+		Outcome.ValidationOutcome = TEXT("accepted");
+		if (!ValidateDialogueOutcome(Prepared, Outcome, OutReason))
+		{
+			return false;
+		}
+		OutOutcome = MoveTemp(Outcome);
+		OutReason = TEXT("dialogue_v14_accepted");
+		return true;
+	}
 	const TSet<FString> AllowedFields = {
 		TEXT("npc_line"),
 		TEXT("realized_atom_ids"),
@@ -1993,6 +2396,46 @@ bool UWSAgentGateway::ValidateDialogueOutcome(
 			OutReason))
 	{
 		return false;
+	}
+	if (Prepared.bRoleplayV14)
+	{
+		const FWSAgentReply& Reply = Outcome.FinalReply;
+		FWSRoleplayResponse Response;
+		Response.NpcLine = Reply.Utterance;
+		Response.SpeechFunction = Reply.SpeechFunction;
+		Response.ReferencedKnowledgeIds = Reply.ReferencedKnowledgeIds;
+		Response.Assertions = Reply.Assertions;
+		Response.bHasProposedAction = Reply.bHasProposedAction;
+		Response.ProposedAction = Reply.ProposedAction;
+		Response.MemorySummary = Reply.MemorySummary;
+		Response.Emotion = Reply.Emotion;
+		Response.MovementIntent = MovementIntentToken(Reply.MovementIntent);
+		Response.ReactionAction = ReactionToken(Reply.Reaction);
+		TArray<FName> DerivedGameFacts;
+		if (!UWSRoleplayResponseValidator::ValidateAndDeriveDisclosures(
+				Prepared.RoleplayRequest,
+				Response,
+				DerivedGameFacts,
+				OutReason))
+		{
+			return false;
+		}
+		const auto SameNameSet = [](const TArray<FName>& Left, const TArray<FName>& Right)
+		{
+			return Left.Num() == Right.Num()
+				&& !Left.ContainsByPredicate(
+					[&Right](const FName Value)
+					{
+						return !Right.Contains(Value);
+					});
+		};
+		if (!SameNameSet(DerivedGameFacts, Outcome.DisclosedFactIds))
+		{
+			OutReason = TEXT("roleplay_derived_disclosure_mismatch");
+			return false;
+		}
+		OutReason = TEXT("accepted");
+		return true;
 	}
 	const FString& Line = Outcome.FinalReply.Utterance;
 	const int32 MaxCharacters = FMath::Min(96, Prepared.Contract.MaxCharacters);
@@ -2824,7 +3267,7 @@ void UWSAgentGateway::LoadConfig()
 
 	FString JsonText;
 	const FString ConfigPath =
-		FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.3.json");
+		FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.4.json");
 	if (FFileHelper::LoadFileToString(JsonText, *ConfigPath))
 	{
 		TSharedPtr<FJsonObject> Root;
@@ -2838,6 +3281,9 @@ void UWSAgentGateway::LoadConfig()
 			FString RuntimeVersion;
 			FString ProtocolVersion;
 			FString PromptMode;
+			double Temperature = 0.0;
+			double TopKKnowledge = 0.0;
+			double MaxSessionTurns = 0.0;
 			const bool bHasContractFields =
 				Root->TryGetNumberField(TEXT("schema_version"), SchemaVersion)
 				&& Root->TryGetStringField(TEXT("runtime_version"), RuntimeVersion)
@@ -2845,15 +3291,21 @@ void UWSAgentGateway::LoadConfig()
 				&& Root->TryGetStringField(TEXT("prompt_mode"), PromptMode)
 				&& Root->TryGetNumberField(TEXT("max_sentences"), MaxSentences)
 				&& Root->TryGetNumberField(TEXT("max_line_chars"), MaxLineChars)
-				&& Root->TryGetNumberField(TEXT("max_output_tokens"), MaxOutputTokens);
+				&& Root->TryGetNumberField(TEXT("max_output_tokens"), MaxOutputTokens)
+				&& Root->TryGetNumberField(TEXT("temperature"), Temperature)
+				&& Root->TryGetNumberField(TEXT("top_k_knowledge"), TopKKnowledge)
+				&& Root->TryGetNumberField(TEXT("max_session_turns"), MaxSessionTurns);
 			bRuntimeContractValid = bHasContractFields
-				&& SchemaVersion == 6.0
-				&& RuntimeVersion == TEXT("1.3.0")
-				&& ProtocolVersion == TEXT("dialogue_epistemic_v3")
-				&& PromptMode == TEXT("semantic_atoms_full_line")
-				&& MaxSentences == 2.0
-				&& MaxLineChars == 96.0
-				&& MaxOutputTokens == 256.0;
+				&& SchemaVersion == 7.0
+				&& RuntimeVersion == TEXT("1.4.0")
+				&& ProtocolVersion == TEXT("bounded_roleplay_v4")
+				&& PromptMode == TEXT("subjective_context_single_call")
+				&& MaxSentences == 3.0
+				&& MaxLineChars == 120.0
+				&& MaxOutputTokens == 320.0
+				&& Temperature == 0.5
+				&& TopKKnowledge == 10.0
+				&& MaxSessionTurns == 3.0;
 			if (bRuntimeContractValid)
 			{
 				Root->TryGetStringField(TEXT("endpoint"), Endpoint);
@@ -3032,6 +3484,246 @@ void UWSAgentGateway::LoadConfig()
 FString UWSAgentGateway::BuildDialogueRealizationContextJson(
 	const FWSPreparedDialogue& Prepared) const
 {
+	if (Prepared.bRoleplayV14)
+	{
+		const FWSRoleplayRequest& Roleplay = Prepared.RoleplayRequest;
+		const auto NameValues = [](const TArray<FName>& Names)
+		{
+			TArray<TSharedPtr<FJsonValue>> Values;
+			for (const FName Name : Names)
+			{
+				Values.Add(MakeShared<FJsonValueString>(Name.ToString()));
+			}
+			return Values;
+		};
+		const auto StringValues = [](const TArray<FString>& Strings)
+		{
+			TArray<TSharedPtr<FJsonValue>> Values;
+			for (const FString& Value : Strings)
+			{
+				Values.Add(MakeShared<FJsonValueString>(Value));
+			}
+			return Values;
+		};
+
+		TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
+		Context->SetStringField(
+			TEXT("protocol_version"),
+			TEXT("bounded_roleplay_v4"));
+		Context->SetStringField(
+			TEXT("prompt_mode"),
+			TEXT("subjective_context_single_call"));
+		Context->SetStringField(TEXT("speaker_id"), Roleplay.SpeakerId.ToString());
+		Context->SetStringField(
+			TEXT("target_subject_id"),
+			Roleplay.TargetSubjectId.ToString());
+		Context->SetStringField(
+			TEXT("player_line"),
+			Roleplay.PlayerLine.Left(280));
+		Context->SetNumberField(TEXT("turn_index"), Roleplay.TurnIndex);
+		Context->SetNumberField(
+			TEXT("remaining_turns"),
+			Roleplay.RemainingTurns);
+		Context->SetArrayField(TEXT("topic_tags"), NameValues(Roleplay.TopicTags));
+
+		TSharedRef<FJsonObject> Profile = MakeShared<FJsonObject>();
+		Profile->SetStringField(TEXT("display_name"), Roleplay.RoleProfile.DisplayName);
+		Profile->SetStringField(TEXT("identity"), Roleplay.RoleProfile.Identity);
+		Profile->SetArrayField(
+			TEXT("personality"),
+			StringValues(Roleplay.RoleProfile.Personality));
+		Profile->SetArrayField(
+			TEXT("current_goals"),
+			StringValues(Roleplay.RoleProfile.CurrentGoals));
+		Profile->SetArrayField(
+			TEXT("fears"),
+			StringValues(Roleplay.RoleProfile.Fears));
+		Profile->SetArrayField(
+			TEXT("speaking_style"),
+			StringValues(Roleplay.RoleProfile.SpeakingStyle));
+		Context->SetObjectField(TEXT("role_profile"), Profile);
+
+		const FWSRoleplaySubjectiveState& State = Roleplay.SubjectiveState;
+		TSharedRef<FJsonObject> SubjectiveState = MakeShared<FJsonObject>();
+		SubjectiveState->SetStringField(TEXT("phase"), State.PhaseId.ToString());
+		SubjectiveState->SetStringField(
+			TEXT("day_phase"),
+			State.DayPhaseId.ToString());
+		SubjectiveState->SetStringField(
+			TEXT("heating_state"),
+			State.HeatingStateId.ToString());
+		SubjectiveState->SetStringField(
+			TEXT("heating_zone"),
+			State.HeatingZoneId.ToString());
+		SubjectiveState->SetBoolField(
+			TEXT("heating_locked"),
+			State.bHeatingLocked);
+		SubjectiveState->SetStringField(
+			TEXT("generator_state"),
+			State.GeneratorStateId.ToString());
+		SubjectiveState->SetNumberField(
+			TEXT("generator_progress"),
+			State.GeneratorProgress);
+		SubjectiveState->SetStringField(
+			TEXT("speaker_location"),
+			State.SpeakerLocationId.ToString());
+		SubjectiveState->SetNumberField(
+			TEXT("speaker_trust"),
+			State.SpeakerTrust);
+		SubjectiveState->SetNumberField(
+			TEXT("speaker_pressure"),
+			State.SpeakerPressure);
+		Context->SetObjectField(TEXT("subjective_state"), SubjectiveState);
+
+		TArray<TSharedPtr<FJsonValue>> KnowledgeValues;
+		TSet<FName> AvailableKnowledgeIds;
+		for (const FWSRoleplayKnowledgeItem& Item : Roleplay.AvailableKnowledge)
+		{
+			AvailableKnowledgeIds.Add(Item.KnowledgeId);
+			TSharedRef<FJsonObject> Knowledge = MakeShared<FJsonObject>();
+			Knowledge->SetStringField(
+				TEXT("knowledge_id"),
+				Item.KnowledgeId.ToString());
+			Knowledge->SetStringField(
+				TEXT("subject_id"),
+				Item.SubjectId.ToString());
+			Knowledge->SetStringField(
+				TEXT("category_id"),
+				Item.CategoryId.ToString());
+			Knowledge->SetStringField(TEXT("content"), Item.RoleplayContent);
+			Knowledge->SetStringField(
+				TEXT("epistemic_status"),
+				EpistemicStatusToken(Item.EpistemicStatus));
+			Knowledge->SetNumberField(TEXT("confidence"), Item.Confidence);
+			Knowledge->SetStringField(
+				TEXT("max_disclosure"),
+				DisclosureLevelToken(Item.MaxDisclosure));
+			Knowledge->SetArrayField(
+				TEXT("topic_tags"),
+				NameValues(Item.TopicTags));
+			KnowledgeValues.Add(MakeShared<FJsonValueObject>(Knowledge));
+		}
+		Context->SetArrayField(TEXT("available_knowledge"), KnowledgeValues);
+
+		TArray<TSharedPtr<FJsonValue>> ProposalValues;
+		for (const FWSRoleplayActionProposal& Proposal :
+			Roleplay.AllowedActionProposals)
+		{
+			TSharedRef<FJsonObject> Object = MakeShared<FJsonObject>();
+			Object->SetStringField(
+				TEXT("type"),
+				ProposalTypeToken(Proposal.Type));
+			Object->SetStringField(
+				TEXT("action_id"),
+				Proposal.ActionId.IsNone()
+					? TEXT("none")
+					: Proposal.ActionId.ToString());
+			Object->SetArrayField(
+				TEXT("requested_condition_ids"),
+				NameValues(Proposal.RequestedConditionIds));
+			Object->SetStringField(
+				TEXT("expires_at_phase"),
+				Proposal.ExpiresAtPhase.IsNone()
+					? TEXT("none")
+					: Proposal.ExpiresAtPhase.ToString());
+			ProposalValues.Add(MakeShared<FJsonValueObject>(Object));
+		}
+		Context->SetArrayField(TEXT("allowed_action_proposals"), ProposalValues);
+
+		TArray<TSharedPtr<FJsonValue>> MemoryValues;
+		for (const FWSRoleplayMemoryEntry& Memory : Roleplay.RecentMemory)
+		{
+			const bool bUsesUnavailableKnowledge =
+				Memory.KnowledgeIds.ContainsByPredicate(
+					[&AvailableKnowledgeIds](const FName KnowledgeId)
+					{
+						return !AvailableKnowledgeIds.Contains(KnowledgeId);
+					});
+			if (bUsesUnavailableKnowledge)
+			{
+				continue;
+			}
+			TSharedRef<FJsonObject> Object = MakeShared<FJsonObject>();
+			Object->SetStringField(
+				TEXT("topic_id"),
+				Memory.TopicId.ToString());
+			Object->SetStringField(
+				TEXT("claim_mode"),
+				ClaimModeToken(Memory.ClaimMode));
+			Object->SetArrayField(
+				TEXT("knowledge_ids"),
+				NameValues(Memory.KnowledgeIds));
+			Object->SetStringField(
+				TEXT("safe_summary"),
+				Memory.SafeSummary.Left(160));
+			MemoryValues.Add(MakeShared<FJsonValueObject>(Object));
+		}
+		Context->SetArrayField(TEXT("long_term_memory"), MemoryValues);
+
+		TArray<TSharedPtr<FJsonValue>> RecentTurns;
+		if (const TArray<FWSAgentDialogueTurn>* History =
+			DialogueHistory.Find(Prepared.OriginalRequest.DialogueSessionId))
+		{
+			for (const FWSAgentDialogueTurn& Turn : *History)
+			{
+				TSharedRef<FJsonObject> Object = MakeShared<FJsonObject>();
+				Object->SetStringField(
+					TEXT("player_line"),
+					Turn.RawPlayerLine.Left(280));
+				Object->SetStringField(
+					TEXT("npc_line"),
+					Turn.RawNpcLine.Left(120));
+				RecentTurns.Add(MakeShared<FJsonValueObject>(Object));
+			}
+		}
+		Context->SetArrayField(TEXT("recent_turns"), RecentTurns);
+
+		TSharedRef<FJsonObject> Policy = MakeShared<FJsonObject>();
+		Policy->SetNumberField(
+			TEXT("max_sentences"),
+			FMath::Min(3, Roleplay.ResponsePolicy.MaxSentences));
+		Policy->SetNumberField(
+			TEXT("max_characters"),
+			FMath::Min(120, Roleplay.ResponsePolicy.MaxCharacters));
+		TArray<TSharedPtr<FJsonValue>> SpeechFunctions;
+		for (const EWSRoleplaySpeechFunction Function :
+			Roleplay.ResponsePolicy.AllowedSpeechFunctions)
+		{
+			SpeechFunctions.Add(MakeShared<FJsonValueString>(
+				SpeechFunctionToken(Function)));
+		}
+		Policy->SetArrayField(TEXT("allowed_speech_functions"), SpeechFunctions);
+		Policy->SetArrayField(TEXT("allowed_emotions"), {
+			MakeShared<FJsonValueString>(TEXT("neutral")),
+			MakeShared<FJsonValueString>(TEXT("focused")),
+			MakeShared<FJsonValueString>(TEXT("firm")),
+			MakeShared<FJsonValueString>(TEXT("strained")),
+			MakeShared<FJsonValueString>(TEXT("steadier")),
+			MakeShared<FJsonValueString>(TEXT("reserved")),
+			MakeShared<FJsonValueString>(TEXT("measured")),
+			MakeShared<FJsonValueString>(TEXT("guarded")),
+			MakeShared<FJsonValueString>(TEXT("clinical")),
+			MakeShared<FJsonValueString>(TEXT("urgent"))});
+		Policy->SetArrayField(TEXT("allowed_movement_intents"), {
+			MakeShared<FJsonValueString>(TEXT("stay")),
+			MakeShared<FJsonValueString>(TEXT("step_closer")),
+			MakeShared<FJsonValueString>(TEXT("step_back")),
+			MakeShared<FJsonValueString>(TEXT("return_to_post"))});
+		Policy->SetArrayField(TEXT("allowed_reaction_actions"), {
+			MakeShared<FJsonValueString>(TEXT("neutral")),
+			MakeShared<FJsonValueString>(TEXT("acknowledge")),
+			MakeShared<FJsonValueString>(TEXT("consider")),
+			MakeShared<FJsonValueString>(TEXT("reassure")),
+			MakeShared<FJsonValueString>(TEXT("reject")),
+			MakeShared<FJsonValueString>(TEXT("alarmed"))});
+		Context->SetObjectField(TEXT("response_policy"), Policy);
+
+		FString Json;
+		const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+			TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Json);
+		FJsonSerializer::Serialize(Context, Writer);
+		return Json;
+	}
 	TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
 	Context->SetStringField(
 		TEXT("protocol_version"),
@@ -3185,7 +3877,23 @@ FString UWSAgentGateway::BuildDialogueRealizationRequestJson(
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("model"), ModelName);
 	Root->SetBoolField(TEXT("stream"), false);
-	AddStructuredOutputOptions(Root, ProviderName, 256);
+	const int32 MaxOutputTokens = Prepared.bRoleplayV14
+		? FMath::Min(
+			320,
+			Prepared.RoleplayRequest.ResponsePolicy.MaxOutputTokens)
+		: 256;
+	const double Temperature = Prepared.bRoleplayV14
+		? FMath::Clamp(
+			static_cast<double>(
+				Prepared.RoleplayRequest.ResponsePolicy.Temperature),
+			0.0,
+			1.0)
+		: 0.2;
+	AddStructuredOutputOptions(
+		Root,
+		ProviderName,
+		MaxOutputTokens,
+		Temperature);
 	if (ProviderName == TEXT("deepseek"))
 	{
 		TSharedRef<FJsonObject> Thinking = MakeShared<FJsonObject>();
@@ -3197,7 +3905,9 @@ FString UWSAgentGateway::BuildDialogueRealizationRequestJson(
 	SystemMessage->SetStringField(TEXT("role"), TEXT("system"));
 	SystemMessage->SetStringField(
 		TEXT("content"),
-		TEXT("你是游戏 NPC 的中文台词实现器，不负责决定规则。must_realize 中的意思必须全部自然表达，may_realize 只可选用列出的意思；不得新增条件、事实、承诺、资源、任务结果或系统数值。forbidden_fact_ids 和 forbidden_phrases 绝不能出现在台词中。台词必须是 1-2 句自然中文且不超过输入的 max_characters。realized_atom_ids 必须准确列出实际表达的原子，disclosed_fact_ids 必须与 required_disclosed_fact_ids 完全一致。严格返回一个 JSON 对象，字段只能且必须是 npc_line、realized_atom_ids、disclosed_fact_ids、emotion、movement_intent、reaction_action；禁止 Markdown、换行和额外字段。"));
+		Prepared.bRoleplayV14
+			? TEXT("你正在扮演输入中 role_profile 指定的 NPC。直接回应 player_line，并保持角色身份、目标、语气和当前主观状态。available_knowledge 是你这次唯一能知道或引用的事实；未出现的内容一律未知，禁止猜测、补全或暗示。按每条 epistemic_status 表达确定、观察、相信或怀疑，禁止把观察、相信、怀疑或错误信念升级成已知事实。严格遵守 max_disclosure：evasive 只能拒绝或保留，hint 只能作为相信、怀疑或保留来表达；引用 evasive 或 hint 时必须加入对应 assertion。subjective_state 中已锁定或已完成的状态必须按现状回答，不能要求玩家重新选择。recent_turns 与 long_term_memory 只用于保持连贯。你可以省略无关知识；开放问题优先给出直接、有信息量的自然回答。只有 allowed_action_proposals 中完整相同的对象才可提出，提出也不会执行规则。npc_line 必须是 1-3 句自然中文、不超过 max_characters，不能出现系统术语、内部标识或 Markdown。严格返回一个 JSON 对象，且只能包含九个字段：npc_line 字符串；speech_function 为 allowed_speech_functions 之一；referenced_knowledge_ids 为实际使用的知识 ID 数组；assertions 为实际说出口的事实数组，每项严格包含 knowledge_id 与 claim_mode（stated、observation、belief、suspected、denied、promised、withheld）；proposed_action 严格包含 type、action_id、requested_condition_ids、expires_at_phase，无建议时使用 {\"type\":\"none\",\"action_id\":\"none\",\"requested_condition_ids\":[],\"expires_at_phase\":\"none\"}；memory_summary 为不含秘密的短摘要；emotion、movement_intent、reaction_action 必须取自白名单。禁止额外字段、解释或代码块。")
+			: TEXT("你是游戏 NPC 的中文台词实现器，不负责决定规则。must_realize 中的意思必须全部自然表达，may_realize 只可选用列出的意思；不得新增条件、事实、承诺、资源、任务结果或系统数值。forbidden_fact_ids 和 forbidden_phrases 绝不能出现在台词中。台词必须是 1-2 句自然中文且不超过输入的 max_characters。realized_atom_ids 必须准确列出实际表达的原子，disclosed_fact_ids 必须与 required_disclosed_fact_ids 完全一致。严格返回一个 JSON 对象，字段只能且必须是 npc_line、realized_atom_ids、disclosed_fact_ids、emotion、movement_intent、reaction_action；禁止 Markdown、换行和额外字段。"));
 	Messages.Add(MakeShared<FJsonValueObject>(SystemMessage));
 	TSharedRef<FJsonObject> UserMessage = MakeShared<FJsonObject>();
 	UserMessage->SetStringField(TEXT("role"), TEXT("user"));
@@ -3431,8 +4141,10 @@ void UWSAgentGateway::RecordDialogueTurn(
 	FWSAgentDialogueTurn& Turn = History.AddDefaulted_GetRef();
 	Turn.UserSemanticSummaryJson = BuildHistoryUserJson(ActionRequest, bTopicChanged).Left(1024);
 	Turn.AssistantSemanticSummaryJson = BuildHistoryAssistantJson(Reply).Left(1024);
+	Turn.RawPlayerLine = ActionRequest.PlayerSaid.TrimStartAndEnd().Left(280);
+	Turn.RawNpcLine = Reply.Utterance.TrimStartAndEnd().Left(120);
 	Turn.TopicActionId = TopicActionId;
-	constexpr int32 MaxDialogueHistoryTurns = 4;
+	constexpr int32 MaxDialogueHistoryTurns = 3;
 	if (History.Num() > MaxDialogueHistoryTurns)
 	{
 		History.RemoveAt(0, History.Num() - MaxDialogueHistoryTurns, EAllowShrinking::No);

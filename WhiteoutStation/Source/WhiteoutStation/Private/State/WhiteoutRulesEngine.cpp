@@ -599,6 +599,50 @@ bool FWhiteoutRulesEngine::ValidateDialogueOutcomeContract(
 			&& IsSubset(Left, Right)
 			&& IsSubset(Right, Left);
 	};
+	if (Prepared.bRoleplayV14)
+	{
+		TArray<FName> AvailableKnowledgeIds;
+		for (const FWSRoleplayKnowledgeItem& Item :
+			Prepared.RoleplayRequest.AvailableKnowledge)
+		{
+			AvailableKnowledgeIds.Add(Item.KnowledgeId);
+		}
+		if (ContainsDuplicates(Prepared.AllowedFactIds)
+			|| ContainsDuplicates(Outcome.DisclosedFactIds)
+			|| ContainsDuplicates(Reply.ReferencedKnowledgeIds)
+			|| ContainsDuplicates(Reply.ReferencedFactIds)
+			|| ContainsDuplicates(Reply.DisclosedFactIds)
+			|| !Outcome.RealizedAtomIds.IsEmpty()
+			|| !Reply.RealizedAtomIds.IsEmpty())
+		{
+			OutReason = TEXT("roleplay_duplicate_or_legacy_atom");
+			return false;
+		}
+		if (!IsSubset(
+				Reply.ReferencedKnowledgeIds,
+				AvailableKnowledgeIds)
+			|| !IsSubset(
+				Outcome.DisclosedFactIds,
+				Prepared.AllowedFactIds)
+			|| !SameSet(
+				Reply.DisclosedFactIds,
+				Outcome.DisclosedFactIds)
+			|| !SameSet(
+				Reply.ReferencedFactIds,
+				Outcome.DisclosedFactIds))
+		{
+			OutReason = TEXT("roleplay_knowledge_or_disclosure_mismatch");
+			return false;
+		}
+		if (Outcome.AnswerSource.IsEmpty()
+			|| Outcome.AnswerSource != Reply.AnswerSource)
+		{
+			OutReason = TEXT("answer_source_mismatch");
+			return false;
+		}
+		OutReason = TEXT("accepted");
+		return true;
+	}
 
 	TArray<FName> MustAtomIds;
 	TArray<FName> MayAtomIds;
@@ -1060,12 +1104,23 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecuteV11(
 	{
 		return EWSReasonCode::UnknownAction;
 	}
+	const bool bDialogueAction =
+		Request.ActionId == TalkGuHeng || Request.ActionId == TalkYeCheng;
+	if (bDialogueAction
+		&& (Request.DialogueTurnIndex < 1
+			|| Request.DialogueSessionMaxTurns < 1
+			|| Request.DialogueTurnIndex > Request.DialogueSessionMaxTurns))
+	{
+		return EWSReasonCode::DialogueSessionComplete;
+	}
 	const int32 Count = ActionCount(Request.ActionId);
-	if (!Rule->bRepeatable && Count > 0)
+	if (!Request.bDialogueSessionFollowUp
+		&& !Rule->bRepeatable
+		&& Count > 0)
 	{
 		return EWSReasonCode::AlreadyCompleted;
 	}
-	if (Count >= Rule->MaxUses)
+	if (!Request.bDialogueSessionFollowUp && Count >= Rule->MaxUses)
 	{
 		return EWSReasonCode::UseLimitReached;
 	}
@@ -1444,6 +1499,21 @@ FWSActionPreview FWhiteoutRulesEngine::BuildV11Preview(
 	Result.BaseAP = Rule->BaseAP;
 	Result.RawAP = Rule->BaseAP;
 	Result.APCost = Rule->BaseAP;
+	const bool bFreeDialogueFollowUp =
+		Request.bDialogueSessionFollowUp
+		&& (Request.ActionId == TalkGuHeng
+			|| Request.ActionId == TalkYeCheng);
+	if (bFreeDialogueFollowUp)
+	{
+		Result.BaseAP = 0;
+		Result.RawAP = 0;
+		Result.APCost = 0;
+		Result.bCanExecute = Result.ReasonCode == EWSReasonCode::Ok;
+		Result.WorkReadiness = Result.bCanExecute
+			? EWSWorkReadiness::Ready
+			: EWSWorkReadiness::Unavailable;
+		return Result;
+	}
 	if (Rule->BaseAP == 0)
 	{
 		Result.bCanExecute = Result.ReasonCode == EWSReasonCode::Ok;
@@ -1743,6 +1813,43 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 			Outcome->DisclosedFactIds,
 			Outcome->FinalReply.Speaker,
 			&Result.Changes);
+		const FWSAgentReply& Reply = Outcome->FinalReply;
+		if (Prepared->bRoleplayV14 && !Reply.MemorySummary.IsEmpty())
+		{
+			FWSRoleplayMemoryEntry Memory;
+			Memory.MemoryId = FName(*FString::Printf(
+				TEXT("%s_%d_%d"),
+				*Prepared->RoleplayRequest.SpeakerId.ToString(),
+				State.EventLog.Num() + 1,
+				Prepared->OriginalRequest.DialogueTurnIndex));
+			Memory.Owner = Prepared->RoleplayRequest.SpeakerId;
+			Memory.TopicId = Prepared->RoleplayRequest.TopicTags.IsEmpty()
+				? NAME_None
+				: Prepared->RoleplayRequest.TopicTags[0];
+			Memory.ClaimMode = Reply.Assertions.IsEmpty()
+				? EWSRoleplayClaimMode::Unknown
+				: Reply.Assertions[0].Mode;
+			Memory.KnowledgeIds = Reply.ReferencedKnowledgeIds;
+			Memory.SafeSummary = Reply.MemorySummary.Left(160);
+			Memory.Importance = Reply.Assertions.IsEmpty() ? 0.45f : 0.7f;
+			Memory.TurnIndex = Prepared->OriginalRequest.DialogueTurnIndex;
+			State.DialogueMemories.Add(MoveTemp(Memory));
+			constexpr int32 MaxMemoriesPerNpc = 24;
+			int32 OwnerMemoryCount = 0;
+			for (int32 Index = State.DialogueMemories.Num() - 1; Index >= 0; --Index)
+			{
+				if (State.DialogueMemories[Index].Owner
+					!= Prepared->RoleplayRequest.SpeakerId)
+				{
+					continue;
+				}
+				++OwnerMemoryCount;
+				if (OwnerMemoryCount > MaxMemoriesPerNpc)
+				{
+					State.DialogueMemories.RemoveAt(Index);
+				}
+			}
+		}
 	}
 	Result.bPromiseRecorded = State.Promises.Num() > PromiseCountBefore;
 	UpdateNegotiationOffersForCommittedAction(Request, Result.Changes);
@@ -1751,7 +1858,10 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 		0,
 		Result.APBefore - ActionPreview.APCost);
 	State.ActionPoints = State.PhaseActionPoints;
-	State.ActionCounts.FindOrAdd(Request.ActionId) += 1;
+	if (!Request.bDialogueSessionFollowUp)
+	{
+		State.ActionCounts.FindOrAdd(Request.ActionId) += 1;
+	}
 	State.CommittedTransactions.Add(Request.TransactionId);
 	State.Phase =
 		Request.ActionId == WhiteoutRules::SendSignal
@@ -2294,13 +2404,29 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 	}
 	else if (Request.ActionId == TalkYeCheng)
 	{
-		FWSCharacterState& YeCheng = Character(EWSCharacterId::YeCheng);
-		YeCheng.Trust = FMath::Clamp(YeCheng.Trust + 0.4f, 0.0f, 10.0f);
-		YeCheng.Pressure = FMath::Clamp(YeCheng.Pressure - 0.4f, 0.0f, 10.0f);
-		OutChanges.Add(TEXT("叶澄立场由确定性规则结算"));
+		if (Request.bDialogueSessionFollowUp)
+		{
+			OutChanges.Add(TEXT("同一私聊会话补问，不重复结算关系"));
+		}
+		else
+		{
+			FWSCharacterState& YeCheng = Character(EWSCharacterId::YeCheng);
+			YeCheng.Trust = FMath::Clamp(YeCheng.Trust + 0.4f, 0.0f, 10.0f);
+			YeCheng.Pressure = FMath::Clamp(YeCheng.Pressure - 0.4f, 0.0f, 10.0f);
+			OutChanges.Add(TEXT("叶澄立场由确定性规则结算"));
+		}
 	}
 	else if (Request.ActionId == TalkGuHeng)
 	{
+		if (Request.bDialogueSessionFollowUp)
+		{
+			if (Request.DialogueAct == EWSDialogueAct::Promise)
+			{
+				RecognizePromise(Request, OutChanges);
+			}
+			OutChanges.Add(TEXT("同一私聊会话补问，不重复结算关系"));
+			return;
+		}
 		FWSCharacterState& GuHeng = Character(EWSCharacterId::GuHeng);
 		const bool bEvidenceBacked =
 			Knows(FactForcedRestartSuspicion)
@@ -2826,12 +2952,38 @@ bool FWhiteoutRulesEngine::AcceptNegotiationOffer(
 	const FWSAgentReply& Reply,
 	FString& OutMessage)
 {
-	if (Reply.RequirementReport.ActionId != WhiteoutRules::RepairGenerator
-		|| Reply.AnswerContract.QueryType != EWSDialogueQueryType::Requirements
+	const bool bLegacyOffer =
+		Reply.RequirementReport.ActionId == WhiteoutRules::RepairGenerator
+		&& Reply.AnswerContract.QueryType == EWSDialogueQueryType::Requirements;
+	const bool bRoleplayOffer = Reply.bHasProposedAction
+		&& Reply.ProposedAction.Type
+			== EWSRoleplayProposalType::ConditionalCooperation
+		&& Reply.ProposedAction.ActionId == WhiteoutRules::RepairGenerator;
+	if ((!bLegacyOffer && !bRoleplayOffer)
 		|| Reply.Speaker != EWSCharacterId::GuHeng)
 	{
 		OutMessage = TEXT("当前回应没有可接受的行动条件。");
 		return false;
+	}
+	if (bRoleplayOffer)
+	{
+		static const TSet<FName> AllowedConditionIds = {
+			TEXT("gu_heng_available"),
+			TEXT("gu_heng_treated"),
+			TEXT("player_collaboration"),
+			TEXT("repair_room_heated"),
+			TEXT("gu_heng_stamina_ready"),
+			TEXT("replacement_relay_available")};
+		if (Reply.ProposedAction.RequestedConditionIds.IsEmpty()
+			|| Reply.ProposedAction.RequestedConditionIds.ContainsByPredicate(
+				[](const FName ConditionId)
+				{
+					return !AllowedConditionIds.Contains(ConditionId);
+				}))
+		{
+			OutMessage = TEXT("回应中的条件不在本地规则许可范围内。");
+			return false;
+		}
 	}
 	if (State.NegotiationOffers.ContainsByPredicate(
 			[](const FWSNegotiationOffer& Offer)
@@ -2856,6 +3008,11 @@ bool FWhiteoutRulesEngine::AcceptNegotiationOffer(
 	Offer.PromisedNPCActionId = WhiteoutRules::RepairGenerator;
 	Offer.ExpiryPhase = State.DayPhase;
 	Offer.bAccepted = true;
+	if (bRoleplayOffer)
+	{
+		Offer.RequiredConditionIds =
+			Reply.ProposedAction.RequestedConditionIds;
+	}
 	for (const FWSRequirementItem& Item : Reply.RequirementReport.UniversalRequirements)
 	{
 		if (Item.MechanicalVisibility
