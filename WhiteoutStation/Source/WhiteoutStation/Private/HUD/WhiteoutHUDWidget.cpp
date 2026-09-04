@@ -1132,11 +1132,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	SettingsTitle->SetJustification(ETextJustify::Center);
 	SettingsBox->AddChildToVerticalBox(SettingsTitle)->SetPadding(FMargin(0, 0, 0, 8));
 	UTextBlock* SettingsHint = MakeText(TEXT("SettingsHint"), 13, Secondary);
-#if UE_BUILD_SHIPPING
-	SettingsHint->SetText(FText::FromString(TEXT("显示与音频设置会实时保存。")));
-#else
 	SettingsHint->SetText(FText::FromString(TEXT("显示与音频实时保存；API Key 只保留到本次运行结束。")));
-#endif
 	SettingsHint->SetJustification(ETextJustify::Center);
 	SettingsBox->AddChildToVerticalBox(SettingsHint)->SetPadding(FMargin(0, 0, 0, 10));
 	USizeBox* SettingsScrollSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("SettingsScrollSize"));
@@ -1229,7 +1225,6 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 #endif
 	SettingsContent->AddChildToVerticalBox(LLMIntro)->SetPadding(FMargin(8, 0, 8, 10));
 
-#if !UE_BUILD_SHIPPING
 	auto AddLLMControlRow = [this, SettingsContent](const FName Name, const FString& Label, UWidget* Control)
 	{
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
@@ -1321,7 +1316,6 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		FText::FromString(TEXT("应用模型设置")),
 		TEXT("LLMApplyButton"));
 	LLMApplyButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ApplyLLMSettings);
-#endif
 	LLMStatusText = MakeText(TEXT("LLMStatus"), 12, Secondary);
 	LLMStatusText->SetJustification(ETextJustify::Center);
 #if UE_BUILD_SHIPPING

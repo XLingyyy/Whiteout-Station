@@ -44,7 +44,7 @@ $env:WHITEOUT_LLM_API_KEY = '<your-key>'
 $env:WHITEOUT_LLM_ENABLED = 'true'
 ```
 
-Development 构建可在控制台执行 `ws.DialogueDebug 1` 查看语义与校验信息。Shipping 构建固定隐藏 provider、answer source 和 validation reason，设置页只显示在线角色表达是否可用。
+Development 构建可在控制台执行 `ws.DialogueDebug 1` 查看语义与校验信息。Shipping 构建固定隐藏对话中的 provider、answer source 和 validation reason；设置页仍可选择厂商、BaseURL 与模型，并通过仅驻留当前进程的 API Key 启用在线角色表达。
 
 ## 审计与存档
 
