@@ -172,6 +172,9 @@ struct FWSRoleplaySubjectiveState
 	int32 GeneratorProgress = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 GeneratorRequired = 2;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName SpeakerLocationId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)

@@ -1024,6 +1024,10 @@ struct FWSActionRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bDialogueSessionFollowUp = false;
 
+	// Filled from the authoritative session ledger before preparing a turn.
+	bool bDialoguePositiveRewardApplied = false;
+	bool bDialogueBehaviorEffectApplied = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FWSDialogueSemanticFrame SemanticFrame;
 };

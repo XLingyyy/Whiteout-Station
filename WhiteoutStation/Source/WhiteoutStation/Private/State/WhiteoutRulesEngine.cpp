@@ -2404,49 +2404,59 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 	}
 	else if (Request.ActionId == TalkYeCheng)
 	{
-		if (Request.bDialogueSessionFollowUp)
+		FWSCharacterState& YeCheng = Character(EWSCharacterId::YeCheng);
+		if (Request.DialogueAct == EWSDialogueAct::Command)
 		{
-			OutChanges.Add(TEXT("同一私聊会话补问，不重复结算关系"));
+			if (!Request.bDialogueBehaviorEffectApplied)
+			{
+				YeCheng.Trust = FMath::Clamp(YeCheng.Trust - 0.4f, 0.0f, 10.0f);
+				YeCheng.Pressure = FMath::Clamp(YeCheng.Pressure + 0.6f, 0.0f, 10.0f);
+				++State.Flags.ForcedActionCount;
+			}
 		}
-		else
+		else if (!Request.bDialoguePositiveRewardApplied)
 		{
-			FWSCharacterState& YeCheng = Character(EWSCharacterId::YeCheng);
 			YeCheng.Trust = FMath::Clamp(YeCheng.Trust + 0.4f, 0.0f, 10.0f);
 			YeCheng.Pressure = FMath::Clamp(YeCheng.Pressure - 0.4f, 0.0f, 10.0f);
-			OutChanges.Add(TEXT("叶澄立场由确定性规则结算"));
 		}
+		if (Request.DialogueAct == EWSDialogueAct::Promise)
+		{
+			RecognizePromise(Request, OutChanges);
+		}
+		OutChanges.Add(TEXT("叶澄立场由确定性规则结算"));
 	}
 	else if (Request.ActionId == TalkGuHeng)
 	{
-		if (Request.bDialogueSessionFollowUp)
+		if (Request.DialogueAct == EWSDialogueAct::Promise)
 		{
-			if (Request.DialogueAct == EWSDialogueAct::Promise)
-			{
-				RecognizePromise(Request, OutChanges);
-			}
-			OutChanges.Add(TEXT("同一私聊会话补问，不重复结算关系"));
-			return;
+			RecognizePromise(Request, OutChanges);
 		}
 		FWSCharacterState& GuHeng = Character(EWSCharacterId::GuHeng);
 		const bool bEvidenceBacked =
 			Knows(FactForcedRestartSuspicion)
 			&& Knows(FactBurntRelay);
-		if (Request.DialogueAct == EWSDialogueAct::Challenge && bEvidenceBacked)
+		if (Request.DialogueAct == EWSDialogueAct::Command)
+		{
+			if (!Request.bDialogueBehaviorEffectApplied)
+			{
+				GuHeng.Trust = FMath::Clamp(GuHeng.Trust - 0.4f, 0.0f, 10.0f);
+				GuHeng.Pressure = FMath::Clamp(GuHeng.Pressure + 0.6f, 0.0f, 10.0f);
+				++State.Flags.ForcedActionCount;
+			}
+		}
+		else if (Request.bDialoguePositiveRewardApplied)
+		{
+			OutChanges.Add(TEXT("本次私聊已结算正向关系收益"));
+		}
+		else if (Request.DialogueAct == EWSDialogueAct::Challenge && bEvidenceBacked)
 		{
 			GuHeng.Trust = FMath::Clamp(GuHeng.Trust + 0.8f, 0.0f, 10.0f);
 			GuHeng.Pressure = FMath::Clamp(GuHeng.Pressure + 0.2f, 0.0f, 10.0f);
-		}
-		else if (Request.DialogueAct == EWSDialogueAct::Command)
-		{
-			GuHeng.Trust = FMath::Clamp(GuHeng.Trust - 0.4f, 0.0f, 10.0f);
-			GuHeng.Pressure = FMath::Clamp(GuHeng.Pressure + 0.6f, 0.0f, 10.0f);
-			++State.Flags.ForcedActionCount;
 		}
 		else if (Request.DialogueAct == EWSDialogueAct::Promise)
 		{
 			GuHeng.Trust = FMath::Clamp(GuHeng.Trust + 0.6f, 0.0f, 10.0f);
 			GuHeng.Pressure = FMath::Clamp(GuHeng.Pressure - 0.4f, 0.0f, 10.0f);
-			RecognizePromise(Request, OutChanges);
 		}
 		else if (Request.DialogueAct == EWSDialogueAct::Reassure)
 		{

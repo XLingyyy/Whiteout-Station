@@ -471,6 +471,8 @@ bool UWindStationStateSubsystem::NormalizeDialogueSessionRequest(
 	InOutRequest.DialogueSessionMaxTurns = 3;
 	InOutRequest.DialogueTurnIndex = 1;
 	InOutRequest.bDialogueSessionFollowUp = false;
+	InOutRequest.bDialoguePositiveRewardApplied = false;
+	InOutRequest.bDialogueBehaviorEffectApplied = false;
 	if (const FWSDialogueSessionRuntimeState* Session =
 			DialogueSessions.Find(InOutRequest.DialogueSessionId))
 	{
@@ -487,6 +489,11 @@ bool UWindStationStateSubsystem::NormalizeDialogueSessionRequest(
 		}
 		InOutRequest.DialogueTurnIndex = Session->CommittedTurns + 1;
 		InOutRequest.bDialogueSessionFollowUp = true;
+		InOutRequest.bDialoguePositiveRewardApplied = Session->bPositiveRewardApplied;
+		const FName EffectKey(*FString::Printf(TEXT("%d:%d"),
+			static_cast<int32>(InOutRequest.DialogueAct),
+			static_cast<int32>(InOutRequest.SemanticFrame.TargetCharacter)));
+		InOutRequest.bDialogueBehaviorEffectApplied = Session->AppliedEffectKeys.Contains(EffectKey);
 	}
 	OutReason = EWSReasonCode::Ok;
 	return true;
@@ -503,6 +510,17 @@ void UWindStationStateSubsystem::RecordCommittedDialogueSession(
 		DialogueSessions.FindOrAdd(Request.DialogueSessionId);
 	Session.ActionId = Request.ActionId;
 	Session.DayPhase = RulesEngine.GetState().DayPhase;
+	Session.PaidAP += Request.bDialogueSessionFollowUp ? 0 : 1;
+	if (Request.DialogueAct == EWSDialogueAct::Command)
+	{
+		Session.AppliedEffectKeys.Add(FName(*FString::Printf(TEXT("%d:%d"),
+			static_cast<int32>(Request.DialogueAct),
+			static_cast<int32>(Request.SemanticFrame.TargetCharacter))));
+	}
+	else
+	{
+		Session.bPositiveRewardApplied = true;
+	}
 	Session.CommittedTurns = FMath::Clamp(
 		Request.DialogueTurnIndex,
 		1,
@@ -849,6 +867,8 @@ FWSActionResult UWindStationStateSubsystem::PrepareDialogue(
 		return Result;
 	}
 	Prepared.bRoleplayV14 = true;
+	Prepared.RoleplayRequest.SubjectiveState.GeneratorRequired =
+		RulesEngine.GetConfig().GeneratorRequired;
 	Prepared.Contract.PersonaStyleId =
 		Prepared.RoleplayRequest.SpeakerId.ToString();
 	Prepared.Contract.MaxSentences =

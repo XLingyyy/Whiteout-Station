@@ -550,4 +550,52 @@ bool FWhiteoutDialogueV14ProviderAuthorityParityTest::RunTest(
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutV15FreeTurnConsequencesTest,
+	"WhiteoutStation.Dialogue.V15.Session.FreeTurnConsequences",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV15FreeTurnConsequencesTest::RunTest(const FString& Parameters)
+{
+	using namespace WhiteoutDialogueV14SessionTests;
+	for (const FName Action : {FName(TEXT("talk_gu_heng")), FName(TEXT("talk_ye_cheng"))})
+	{
+		FScopedStateSubsystem Fixture;
+		UWindStationStateSubsystem* Subsystem = Fixture.Get();
+		if (!Fixture.IsReady() || !Subsystem) return false;
+		Subsystem->SetDialogueRealizeTestHook(
+			[](const FWSPreparedDialogue& Prepared, FWSDialogueRealizeTestCallback Reply)
+			{ Reply(Prepared.LocalFallback); });
+		const EWSCharacterId Speaker = Action == TEXT("talk_gu_heng")
+			? EWSCharacterId::GuHeng : EWSCharacterId::YeCheng;
+		FWSActionRequest Request = MakeTalkRequest(FGuid::NewGuid(), TEXT("你现在怎么样？"));
+		Request.ActionId = Action;
+		Request.SemanticFrame.TargetCharacter = Speaker;
+		TestTrue(TEXT("Opening substantive turn commits"), Subsystem->SubmitDialogueAction(Request).bCommitted);
+		const FWSGameState BeforeCommand = Subsystem->GetStateSnapshot();
+		Request.TransactionId = FGuid::NewGuid();
+		Request.DialogueAct = EWSDialogueAct::Command;
+		Request.SemanticFrame.SpeechAct = EWSDialogueAct::Command;
+		Request.PlayerSaid = TEXT("现在按我的安排做。");
+		const FWSActionResult Command = Subsystem->SubmitDialogueAction(Request);
+		const FWSGameState AfterCommand = Subsystem->GetStateSnapshot();
+		TestTrue(TEXT("Command commits as a free follow-up"), Command.bCommitted);
+		TestEqual(TEXT("Follow-up costs zero AP"), Command.ActualAP, 0);
+		TestTrue(TEXT("Command lowers trust for either speaker"),
+			AfterCommand.Characters.FindRef(Speaker).Trust < BeforeCommand.Characters.FindRef(Speaker).Trust);
+		TestTrue(TEXT("Command raises pressure for either speaker"),
+			AfterCommand.Characters.FindRef(Speaker).Pressure > BeforeCommand.Characters.FindRef(Speaker).Pressure);
+		TestEqual(TEXT("Command records one behavior event"),
+			AfterCommand.Flags.ForcedActionCount, BeforeCommand.Flags.ForcedActionCount + 1);
+		Request.TransactionId = FGuid::NewGuid();
+		Request.PlayerSaid = TEXT("照我说的办。");
+		TestTrue(TEXT("Repeated command remains a substantive turn"), Subsystem->SubmitDialogueAction(Request).bCommitted);
+		const FWSGameState AfterRepeat = Subsystem->GetStateSnapshot();
+		TestTrue(TEXT("Synonymous repeated command cannot repeat the effect"),
+			CharacterStateMatches(AfterCommand.Characters.FindRef(Speaker), AfterRepeat.Characters.FindRef(Speaker)));
+		TestEqual(TEXT("Behavior event is deduplicated"), AfterRepeat.Flags.ForcedActionCount, AfterCommand.Flags.ForcedActionCount);
+	}
+	return true;
+}
+
 #endif

@@ -472,21 +472,14 @@ namespace WSRoleplayResponseValidatorPrivate
 		const FString& Text,
 		const FWSRoleplaySubjectiveState& State)
 	{
-		FString GeneratorState = State.GeneratorStateId.ToString();
-		GeneratorState.ToLowerInline();
-		const bool bComplete = State.GeneratorProgress >= 2
-			|| GeneratorState.Contains(TEXT("complete"))
-			|| GeneratorState.Contains(TEXT("repaired"))
-			|| GeneratorState.Contains(TEXT("online"))
-			|| GeneratorState.Contains(TEXT("stable"))
-			|| GeneratorState.Contains(TEXT("restored"));
+		const bool bComplete = State.GeneratorProgress >= State.GeneratorRequired;
 		const bool bHasProgress = State.GeneratorProgress > 0;
 
 		if (!bComplete
 			&& ContainsAny(
 				Text,
 				{TEXT("已经修好"), TEXT("已修好"), TEXT("发电机修好了"),
-					TEXT("把发电机修好"), TEXT("已经恢复供电"),
+					TEXT("已经恢复供电"),
 					TEXT("已恢复供电"), TEXT("供电恢复了"), TEXT("修复完成"),
 					TEXT("恢复正常"), TEXT("发电机正常"), TEXT("恢复运行")}))
 		{

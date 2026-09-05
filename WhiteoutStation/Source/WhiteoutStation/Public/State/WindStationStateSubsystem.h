@@ -15,6 +15,9 @@ struct FWSDialogueSessionRuntimeState
 	FName ActionId;
 	EWSDayPhase DayPhase = EWSDayPhase::Morning;
 	int32 CommittedTurns = 0;
+	int32 PaidAP = 0;
+	bool bPositiveRewardApplied = false;
+	TSet<FName> AppliedEffectKeys;
 };
 
 #if WITH_DEV_AUTOMATION_TESTS

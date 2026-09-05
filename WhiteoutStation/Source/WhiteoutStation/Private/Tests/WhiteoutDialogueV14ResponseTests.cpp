@@ -585,6 +585,11 @@ bool FWhiteoutV14StateConsistencyTest::RunTest(const FString& Parameters)
 		FString(TEXT("generator_state_conflict")));
 
 	Request.SubjectiveState.GeneratorProgress = 1;
+	Request.SubjectiveState.GeneratorStateId = TEXT("partially_repaired");
+	Contradiction.NpcLine = TEXT("顾衡已经把发电机修好，供电恢复了。");
+	TestFalse(TEXT("Partial repair is not completion"), Validate(Request, Contradiction, Reason));
+	Contradiction.NpcLine = TEXT("顾衡说先把发电机修好，再接通通讯。");
+	TestTrue(TEXT("A repair plan does not claim completion"), Validate(Request, Contradiction, Reason));
 	Contradiction.NpcLine = TEXT("顾衡已经修了一部分，但发电机还没有恢复。");
 	TestTrue(
 		TEXT("An offline generator may still report partial repair progress"),
