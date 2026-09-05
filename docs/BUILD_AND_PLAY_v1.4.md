@@ -58,7 +58,7 @@ $env:WHITEOUT_LLM_ENABLED = 'true'
 
 密钥只能留在进程内存、环境变量或未提交的 `LocalConfig/WhiteoutLLM.ini`。Runtime JSON、源码、日志、发布包和 Git 历史不得包含凭据。
 
-Development 控制台执行 `ws.DialogueDebug 1` 可查看本轮知识 ID、校验来源和回退原因；Shipping 固定隐藏这些调试信息。
+Development 控制台执行 `ws.DialogueDebug 1` 可查看语义摘要、引用知识数量、校验来源和回退原因；具体引用 ID 记录于脱敏对话审计。Shipping 固定隐藏界面调试信息。
 
 ## 三轮会话与安全边界
 
@@ -67,6 +67,9 @@ Development 控制台执行 `ws.DialogueDebug 1` 可查看本轮知识 ID、校�
 - 模型只接收当前 NPC 档案、主观状态、过滤后的 Top-K 知识、近期对话与安全长期记忆。未满足披露条件的隐藏知识不进入 prompt。
 - 模型输出只提供台词、知识引用、断言、记忆摘要、表现意图和动作提案。AP、资源、关系、任务、事实升级、结局及提案执行均由本地规则校验并原子提交。
 - 已锁定的供暖区、已完成任务及已确认状态按当前快照回答，不能再次要求玩家做同一选择。
+- 明确向叶澄询问顾衡手部状况，可以进入诊断披露；普通人物闲聊不触发诊断。事实型本地回退逐字采用已获准知识，并携带断言通过同一校验与提交链路。
+- 替代继电器路线需要日志与烧毁继电器的实际证据，以及针对顾衡的质询；玩家仅在输入中声称看过证据不会解锁。技术自动路线使用明确的替代方案问题。
+- 长期记忆按事务提交顺序保留最近六条可见记录，会话内轮次不会用于跨会话排序。
 
 存档槽为 `WhiteoutStation_Autosave_v1_4`。读取 v1.3/v1.2/v1.1 存档后迁移到 v1.4；未完成事务、网络请求和会话轮次不会跨读档恢复。
 
@@ -75,12 +78,14 @@ Development 控制台执行 `ws.DialogueDebug 1` 可查看本轮知识 ID、校�
 为每次归档创建唯一目录：
 
 ```powershell
-$artifact = 'G:\Whiteout Station\Artifacts\WhiteoutStation-v1.4-Win64-<UTC>-<commit>'
+$stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+$revision = git rev-parse --short=8 HEAD
+$artifact = "G:\Whiteout Station\Artifacts\WhiteoutStation-v1.4-Win64-$stamp-$revision-final"
 & 'G:\UnrealEngine\UE_5.8\Engine\Build\BatchFiles\RunUAT.bat' BuildCookRun `
   -project='G:\Whiteout Station\WhiteoutStation\WhiteoutStation.uproject' `
   -noP4 -platform=Win64 -clientconfig=Shipping `
   -build -cook -stage -pak -archive -utf8output `
-  -archivedirectory=$artifact
+  "-archivedirectory=$artifact"
 ```
 
 归档后确认以下 NonUFS 文件存在：
@@ -93,6 +98,14 @@ $artifact = 'G:\Whiteout Station\Artifacts\WhiteoutStation-v1.4-Win64-<UTC>-<com
 - `Windows/WhiteoutStation/Content/Dialogue/v1.4/DialoguePolicy.json`
 - `Windows/WhiteoutStation/Content/Dialogue/v1.4/SafeFallbacks.json`
 
+在归档上运行 v1.4 Shipping 冒烟。脚本使用独立的运行目录，检查五条玩法路线、真实回环 HTTP 的合法回复、知识越界、非法提案、非法 JSON、超时及 AI 开关结算一致性：
+
+```powershell
+python -X utf8 Tools/Release/run_v14_shipping_smoke.py --artifact-root $artifact
+```
+
+证据保存到归档下的 `Validation/ShippingSmokeV14`。这些回环测试使用合成响应；真实模型的自然度、语义改写边界和八人试玩仍需单独验收。
+
 ## 发布前手动验收
 
 用同一初始存档分别关闭、开启 LLM，执行以下最小回归：
@@ -103,3 +116,14 @@ $artifact = 'G:\Whiteout Station\Artifacts\WhiteoutStation-v1.4-Win64-<UTC>-<com
 4. 触发在线超时、非法 JSON 和越界知识响应，确认每次只出现一次本地安全回退。
 5. 对比 LLM 开关两组结果，确认 AP、资源、关系、任务、事实、结局和分数一致。
 6. 复核受保护地图与 NPC 资产未变化，并确认审计日志不含玩家原文、NPC 台词、prompt、请求正文或凭据。
+
+## 2026-09-05 工程验收记录
+
+- 构建源码：`71bd524e`；归档：`Artifacts/WhiteoutStation-v1.4-Win64-20260905T105713Z-71bd524e-final`。
+- Editor Development 与 Win64 Shipping 编译成功。完整 Cook 已处理 1100 个资源包；最后一轮仅改 C++ 函数体和 NonUFS JSON，复用该 Cook，重新编译、暂存和归档成功。
+- 内容及发行契约 Python 测试：45/45 通过。
+- 最新源码的 UE 全量自动化：59/59 通过，报告位于 `WhiteoutStation/Saved/AutomationReports/V14Release71bd524/index.json`。
+- 独立 Shipping 冒烟：13/13 通过。包括五条离线路线、医疗/技术/快速三条路线的合法在线响应、五类异常响应；每条在线输入只发起一次 HTTP 请求。
+- 三条有对话路线的 AI 开关对比：AP、资源、事实、关系、任务、结局与评分一致。证据位于归档下 `Validation/ShippingSmokeV14/summary.json`。
+- 地图与两名 NPC 受保护资产的发布前哈希与接手基线一致；结算截图已检查。用户输入的三份施工 DOCX 未纳入提交。
+- 真实 provider 的自然度、语义改写泄露边界以及八人试玩尚未验收；上述合成响应测试不替代这些项目。
