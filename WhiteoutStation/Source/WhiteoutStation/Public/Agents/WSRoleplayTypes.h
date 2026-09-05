@@ -299,6 +299,9 @@ struct FWSRoleplayFallback
 	TArray<FName> ReferencedKnowledgeIds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FWSRoleplayAssertion> Assertions;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FString> Availability;
 };
 

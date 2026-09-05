@@ -138,6 +138,16 @@ namespace WSNPCContextBuilderPrivate
 		const FWSGameState& State)
 	{
 		if (Predicate == TEXT("always")) return true;
+		if (Predicate == TEXT("ye_diagnosis_disclosable"))
+		{
+			return SpeakerId == YeChengId
+				&& (State.Flags.bGuHengDiagnosed
+					|| (Frame.SpeechAct == EWSDialogueAct::Ask
+						&& Frame.TargetCharacter == EWSCharacterId::GuHeng
+						&& Frame.TargetFactId == TEXT("FACT_HAND_INJURY")
+						&& (Frame.QueryType == EWSDialogueQueryType::Status
+							|| Frame.QueryType == EWSDialogueQueryType::Evidence)));
+		}
 		if (Predicate == TEXT("gu_heng_diagnosed")) return State.Flags.bGuHengDiagnosed;
 		if (Predicate == TEXT("gu_heng_treated")) return State.Flags.bGuHengTreated;
 		if (Predicate == TEXT("cabinet_inspected")) return State.Flags.bCabinetInspected;
@@ -618,6 +628,7 @@ bool UWSNPCContextBuilder::BuildRequest(
 	using WSNPCContextBuilderPrivate::BuildAllowedProposals;
 	using WSNPCContextBuilderPrivate::BuildEventTags;
 	using WSNPCContextBuilderPrivate::ExtractTagsAndTarget;
+	using WSNPCContextBuilderPrivate::GuHengId;
 	using WSNPCContextBuilderPrivate::Intersects;
 	using WSNPCContextBuilderPrivate::IsAvailable;
 	using WSNPCContextBuilderPrivate::IsRelationshipMatch;
@@ -625,6 +636,7 @@ bool UWSNPCContextBuilder::BuildRequest(
 	using WSNPCContextBuilderPrivate::PlayerKnowsFact;
 	using WSNPCContextBuilderPrivate::SelectFallback;
 	using WSNPCContextBuilderPrivate::SpeakerForAction;
+	using WSNPCContextBuilderPrivate::YeChengId;
 
 	OutRequest = FWSRoleplayRequest();
 	OutFallback = FWSRoleplayFallback();
@@ -696,16 +708,10 @@ bool UWSNPCContextBuilder::BuildRequest(
 		{
 			return Entry.bPublic || Entry.Owner == OutRequest.SpeakerId;
 		});
-	OutRequest.RecentMemory.Sort([](
-		const FWSRoleplayMemoryEntry& Left,
-		const FWSRoleplayMemoryEntry& Right)
-	{
-		if (Left.TurnIndex != Right.TurnIndex) return Left.TurnIndex > Right.TurnIndex;
-		return Left.MemoryId.LexicalLess(Right.MemoryId);
-	});
+	// Memories are appended in commit order; TurnIndex restarts each session.
 	if (OutRequest.RecentMemory.Num() > 6)
 	{
-		OutRequest.RecentMemory.SetNum(6);
+		OutRequest.RecentMemory.RemoveAt(0, OutRequest.RecentMemory.Num() - 6);
 	}
 
 	TArray<FWSRoleplayKnowledgeItem> Candidates = Repository.GetGlobalKnowledge();
@@ -757,6 +763,11 @@ bool UWSNPCContextBuilder::BuildRequest(
 		FScoredKnowledge Scored;
 		Scored.Item = Item;
 		Scored.Score = static_cast<double>(Item.Salience);
+		if (Item.GameFactId == TEXT("FACT_MEDICAL_DIAGNOSIS")
+			&& Frame.TargetFactId == TEXT("FACT_HAND_INJURY"))
+		{
+			Scored.Score += 8.0;
+		}
 		if (Item.SubjectId == OutRequest.TargetSubjectId
 			|| Item.TopicTags.Contains(OutRequest.TargetSubjectId)
 			|| Intersects(Item.TopicTags, EntityTags)
@@ -820,6 +831,10 @@ bool UWSNPCContextBuilder::BuildRequest(
 		if (!Scored.Item.GameFactId.IsNone())
 		{
 			ProtectedFacts.Remove(Scored.Item.GameFactId);
+			if (Scored.Item.GameFactId == TEXT("FACT_MEDICAL_DIAGNOSIS"))
+			{
+				ProtectedFacts.Remove(TEXT("FACT_HAND_INJURY"));
+			}
 		}
 		OutRequest.AvailableKnowledge.Add(MoveTemp(Scored.Item));
 	}
@@ -847,6 +862,28 @@ bool UWSNPCContextBuilder::BuildRequest(
 		OutRequest.SubjectiveState,
 		AvailableKnowledgeIds,
 		OutFallback);
+	// A local factual fallback states the selected knowledge verbatim, so its
+	// assertion has an authored source instead of treating every reference as fact.
+	for (const FWSRoleplayKnowledgeItem& Item : OutRequest.AvailableKnowledge)
+	{
+		const bool bDirectFact = !Frame.TargetFactId.IsNone()
+			&& (Item.GameFactId == Frame.TargetFactId
+				|| (Item.GameFactId == TEXT("FACT_MEDICAL_DIAGNOSIS")
+					&& Frame.TargetFactId == TEXT("FACT_HAND_INJURY")));
+		if (bDirectFact && Item.bCreatesGameFact
+			&& Item.MaxDisclosure == EWSRoleplayDisclosureLevel::Explicit
+			&& Item.EpistemicStatus == EWSEpistemicStatus::Known)
+		{
+			OutFallback.Line = Item.RoleplayContent + TEXT("。");
+			OutFallback.SpeechFunction = EWSRoleplaySpeechFunction::Answer;
+			OutFallback.ReferencedKnowledgeIds = {Item.KnowledgeId};
+			FWSRoleplayAssertion Assertion;
+			Assertion.KnowledgeId = Item.KnowledgeId;
+			Assertion.Mode = EWSRoleplayClaimMode::Stated;
+			OutFallback.Assertions = {Assertion};
+			break;
+		}
+	}
 	return true;
 }
 

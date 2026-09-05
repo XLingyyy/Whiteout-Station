@@ -881,6 +881,21 @@ FWSActionResult UWindStationStateSubsystem::PrepareDialogue(
 	Fallback.SpeechFunction = RoleplayFallback.SpeechFunction;
 	Fallback.ReferencedKnowledgeIds =
 		RoleplayFallback.ReferencedKnowledgeIds;
+	Fallback.Assertions = RoleplayFallback.Assertions;
+	for (const FWSRoleplayAssertion& Assertion : Fallback.Assertions)
+	{
+		const FWSRoleplayKnowledgeItem* Knowledge =
+			Prepared.RoleplayRequest.AvailableKnowledge.FindByPredicate(
+				[&Assertion](const FWSRoleplayKnowledgeItem& Item)
+				{
+					return Item.KnowledgeId == Assertion.KnowledgeId;
+				});
+		if (Knowledge && Knowledge->bCreatesGameFact)
+		{
+			Fallback.DisclosedFactIds.AddUnique(Knowledge->GameFactId);
+		}
+	}
+	Fallback.ReferencedFactIds = Fallback.DisclosedFactIds;
 	Fallback.MemorySummary = RoleplayFallback.Line.Left(160);
 	Fallback.SemanticFrame = ActionRequest.SemanticFrame;
 	Fallback.Emotion = Fallback.Speaker == EWSCharacterId::YeCheng

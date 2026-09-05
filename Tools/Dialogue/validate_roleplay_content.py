@@ -92,6 +92,7 @@ STATIC_AVAILABILITY = frozenset(
     {
         "always",
         "gu_heng_diagnosed",
+        "ye_diagnosis_disclosable",
         "gu_heng_treated",
         "cabinet_inspected",
         "relay_compatibility_known",

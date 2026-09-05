@@ -284,6 +284,7 @@ namespace
 		static const TSet<FString> FixedPredicates{
 			TEXT("always"),
 			TEXT("gu_heng_diagnosed"),
+			TEXT("ye_diagnosis_disclosable"),
 			TEXT("gu_heng_treated"),
 			TEXT("cabinet_inspected"),
 			TEXT("relay_compatibility_known"),

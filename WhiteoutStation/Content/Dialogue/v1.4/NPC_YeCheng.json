@@ -483,7 +483,7 @@
       "public": false,
       "game_fact_id": "FACT_MEDICAL_DIAGNOSIS",
       "creates_game_fact": true,
-      "availability": ["gu_heng_diagnosed"],
+      "availability": ["ye_diagnosis_disclosable"],
       "secret_family": "gu_heng_hand"
     },
     {

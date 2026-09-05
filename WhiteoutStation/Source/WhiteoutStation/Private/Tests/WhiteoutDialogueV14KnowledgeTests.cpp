@@ -437,4 +437,65 @@ bool FWhiteoutDialogueV14SecretBoundaryTest::RunTest(
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FWhiteoutDialogueV14DiagnosisAndMemoryTest,
+	"WhiteoutStation.Dialogue.V14.Knowledge.DiagnosisAndMemoryRecency",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutDialogueV14DiagnosisAndMemoryTest::RunTest(const FString& Parameters)
+{
+	UWSRoleplayKnowledgeRepository* Repository = NewObject<UWSRoleplayKnowledgeRepository>();
+	FString Error;
+	if (!Repository->LoadDefault(Error))
+	{
+		AddError(Error);
+		return false;
+	}
+	FWSGameState State;
+	TArray<FWSRoleplayMemoryEntry> Memories;
+	for (int32 Index = 0; Index < 8; ++Index)
+	{
+		FWSRoleplayMemoryEntry Memory;
+		Memory.MemoryId = FName(*FString::Printf(TEXT("ye_%d"), Index));
+		Memory.Owner = TEXT("ye_cheng");
+		Memory.TurnIndex = Index < 6 ? 3 : 1;
+		Memories.Add(Memory);
+	}
+	FWSRoleplayRequest Context;
+	FWSRoleplayFallback Fallback;
+	TestTrue(TEXT("Explicit medical question builds"), UWSNPCContextBuilder::BuildRequest(
+		MakeDialogueRequest(TEXT("talk_ye_cheng"), TEXT("顾衡的手怎么样，会影响精细维修吗？")),
+		State, *Repository, Memories, 1, Context, Fallback, Error));
+	TestTrue(TEXT("Diagnosis is reachable before treatment"),
+		KnowledgeIds(Context).Contains(TEXT("YE_GU_HAND_DIAGNOSIS")));
+	TestFalse(TEXT("Permitted diagnosis includes its hand-injury surface"),
+		Context.ForbiddenFactIds.Contains(TEXT("FACT_HAND_INJURY")));
+	TestEqual(TEXT("Keep six latest memories"), Context.RecentMemory.Num(), 6);
+	if (Context.RecentMemory.Num() == 6)
+	{
+		TestEqual(TEXT("Oldest retained memory"), Context.RecentMemory[0].MemoryId, FName(TEXT("ye_2")));
+		TestEqual(TEXT("New session turn one stays newest"), Context.RecentMemory.Last().MemoryId, FName(TEXT("ye_7")));
+	}
+	FWSRoleplayResponse Response;
+	Response.NpcLine = Fallback.Line;
+	Response.SpeechFunction = Fallback.SpeechFunction;
+	Response.ReferencedKnowledgeIds = Fallback.ReferencedKnowledgeIds;
+	Response.Assertions = Fallback.Assertions;
+	Response.MemorySummary = Fallback.Line;
+	Response.Emotion = TEXT("clinical");
+	Response.MovementIntent = TEXT("stay");
+	Response.ReactionAction = TEXT("consider");
+	TArray<FName> Facts;
+	TestTrue(TEXT("Authored factual fallback validates"),
+		UWSRoleplayResponseValidator::ValidateAndDeriveDisclosures(Context, Response, Facts, Error));
+	TestTrue(TEXT("Fallback asserts diagnosis"), Facts.Contains(TEXT("FACT_MEDICAL_DIAGNOSIS")));
+	TestTrue(TEXT("Generic character question builds"), UWSNPCContextBuilder::BuildRequest(
+		MakeDialogueRequest(TEXT("talk_ye_cheng"), TEXT("对于顾衡，你知道多少？")),
+		State, *Repository, {}, 1, Context, Fallback, Error));
+	TestFalse(TEXT("Character chat cannot diagnose"),
+		KnowledgeIds(Context).Contains(TEXT("YE_GU_HAND_DIAGNOSIS")));
+	TestTrue(TEXT("Character fallback cannot upgrade facts"), Fallback.Assertions.IsEmpty());
+	return true;
+}
+
 #endif
