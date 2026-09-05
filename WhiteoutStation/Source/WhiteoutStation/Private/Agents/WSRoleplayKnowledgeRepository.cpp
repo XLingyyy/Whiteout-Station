@@ -292,6 +292,7 @@ namespace
 			TEXT("heating_locked"),
 			TEXT("heating_unlocked"),
 			TEXT("ye_heat_pack_disclosable"),
+			TEXT("gu_relay_disclosable"),
 			TEXT("gu_restart_disclosable")};
 		if (FixedPredicates.Contains(Predicate))
 		{

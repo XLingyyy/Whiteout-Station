@@ -2506,6 +2506,14 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 		AddAction(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
 		{
 			Request.DialogueAct = EWSDialogueAct::Challenge;
+			Request.PlayerSaid = TEXT("控制柜和日志里的证据都看过了，继电器还有替代方案吗？");
+			Request.SemanticFrame.SpeechAct = EWSDialogueAct::Challenge;
+			Request.SemanticFrame.QueryType = EWSDialogueQueryType::Alternative;
+			Request.SemanticFrame.TargetCharacter = EWSCharacterId::GuHeng;
+			Request.SemanticFrame.TargetActionId = TEXT("repair_generator");
+			Request.SemanticFrame.TargetFactId = TEXT("FACT_RELAY_COMPATIBILITY");
+			Request.SemanticFrame.Confidence = 0.99f;
+			Request.SemanticFrame.Source = TEXT("shipping_auto_route");
 		});
 		AddSettlePhase();
 		AddBeginPhase(EWSHeatingZone::RepairRoom);

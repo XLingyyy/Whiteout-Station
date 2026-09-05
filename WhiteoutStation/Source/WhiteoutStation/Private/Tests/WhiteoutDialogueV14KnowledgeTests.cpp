@@ -495,6 +495,19 @@ bool FWhiteoutDialogueV14DiagnosisAndMemoryTest::RunTest(const FString& Paramete
 	TestFalse(TEXT("Character chat cannot diagnose"),
 		KnowledgeIds(Context).Contains(TEXT("YE_GU_HAND_DIAGNOSIS")));
 	TestTrue(TEXT("Character fallback cannot upgrade facts"), Fallback.Assertions.IsEmpty());
+	const FWSActionRequest RelayQuestion = MakeDialogueRequest(TEXT("talk_gu_heng"),
+		TEXT("控制柜和日志里的证据都看过了，继电器还有替代方案吗？"));
+	TestTrue(TEXT("Relay question without evidence builds"), UWSNPCContextBuilder::BuildRequest(
+		RelayQuestion, State, *Repository, {}, 1, Context, Fallback, Error));
+	TestFalse(TEXT("Claiming evidence cannot unlock the relay"),
+		KnowledgeIds(Context).Contains(TEXT("GU_RELAY_COMPATIBILITY_KNOWLEDGE")));
+	State.Evidence.Add(TEXT("EVIDENCE_DEEP_GENERATOR_LOG"));
+	State.Evidence.Add(TEXT("EVIDENCE_BURNT_RELAY"));
+	TestTrue(TEXT("Evidence-backed relay question builds"), UWSNPCContextBuilder::BuildRequest(
+		RelayQuestion, State, *Repository, {}, 1, Context, Fallback, Error));
+	TestTrue(TEXT("Relay route is reachable before dismantling"),
+		KnowledgeIds(Context).Contains(TEXT("GU_RELAY_COMPATIBILITY_KNOWLEDGE")));
+	TestEqual(TEXT("Relay fallback carries one explicit assertion"), Fallback.Assertions.Num(), 1);
 	return true;
 }
 

@@ -517,7 +517,7 @@
       "public": false,
       "game_fact_id": "FACT_RELAY_COMPATIBILITY",
       "creates_game_fact": true,
-      "availability": ["relay_compatibility_known"],
+      "availability": ["gu_relay_disclosable"],
       "secret_family": "relay_route"
     },
     {

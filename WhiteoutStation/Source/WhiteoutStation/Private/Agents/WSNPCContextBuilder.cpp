@@ -184,8 +184,14 @@ namespace WSNPCContextBuilderPrivate
 				&& Character.Trust >= 5.5f
 				&& Character.Pressure < 9.0f;
 		}
-		if (Predicate == TEXT("gu_restart_disclosable"))
+		if (Predicate == TEXT("gu_restart_disclosable")
+			|| Predicate == TEXT("gu_relay_disclosable"))
 		{
+			if (Predicate == TEXT("gu_relay_disclosable")
+				&& SpeakerId == GuHengId && State.Flags.bRelayCompatibilityKnown)
+			{
+				return true;
+			}
 			const bool bHasLogEvidence = PlayerKnowsFact(
 					State,
 					TEXT("FACT_FORCED_RESTART_SUSPICION"))
