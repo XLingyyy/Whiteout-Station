@@ -1604,21 +1604,6 @@ FString UWhiteoutHUDWidget::BuildDialogueCardSummary(
 		*BuildVisibleCharacterStatus(CharacterId, State));
 }
 
-FText UWhiteoutHUDWidget::BuildDialogueInputHint(const EWSDialogueAct DialogueAct)
-{
-	switch (DialogueAct)
-	{
-	case EWSDialogueAct::Challenge:
-		return FText::FromString(TEXT("例：你前后的说法对不上，请解释清楚。"));
-	case EWSDialogueAct::Reassure:
-		return FText::FromString(TEXT("例：先稳住，我们一步一步处理。"));
-	case EWSDialogueAct::Promise:
-		return FText::FromString(TEXT("例：我会保留维修记录，也不会临时改口。"));
-	default:
-		return FText::FromString(TEXT("例：你现在能确认什么？"));
-	}
-}
-
 FString UWhiteoutHUDWidget::BuildPhaseSettlementSummary(
 	const FWSPhaseSummary&,
 	const FWSGameState& State)
@@ -2637,50 +2622,22 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bV
 	}
 }
 
-void UWhiteoutHUDWidget::ShowDialogueWheelChoices()
+void UWhiteoutHUDWidget::RefreshDialogueChoices()
 {
 	if (DialoguePanelV15) DialoguePanelV15->Refresh();
 }
 
-void UWhiteoutHUDWidget::ShowDialoguePromiseChoices()
-{
-	RefreshDialogueAvailability();
-	const bool bHasPromiseChoice = DialoguePromiseButtons.ContainsByPredicate(
-		[](const UButton* Button)
-		{
-			return Button && Button->GetVisibility() == ESlateVisibility::Visible;
-		});
-	if (!bHasPromiseChoice)
-	{
-		ShowDialogueWheelChoices();
-		return;
-	}
-	DialogueStage = EWSDialogueStage::IntentPick;
-	if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Visible);
-	if (DialogueReplyBorder) DialogueReplyBorder->SetVisibility(ESlateVisibility::Collapsed);
-}
-
 void UWhiteoutHUDWidget::ShowDialogueFreeTextForCapture()
 {
-	OpenDialogueFreeText();
+	if (DialoguePanelV15) DialoguePanelV15->Open(ActiveDialogueActionId, EWSDialogueMode::Online);
 }
 
 void UWhiteoutHUDWidget::ShowDialogueReplyForCapture(const FString& Speaker, const FString& Line)
 {
-	if (DialogueNameText) DialogueNameText->SetText(FText::FromString(Speaker));
-	if (DialogueLineText)
-	{
-		DialogueLineText->SetText(FText::FromString(Line));
-		DialogueLineText->SetColorAndOpacity(FSlateColor(Body));
-	}
-	if (DialogueStatusText)
-	{
-		DialogueStatusText->SetText(FText::GetEmpty());
-		DialogueStatusText->SetVisibility(ESlateVisibility::Collapsed);
-	}
-	ShowDialogueReplyActions();
+	FWSAgentReply Reply;
+	Reply.Speaker = Speaker.Contains(TEXT("叶澄")) ? EWSCharacterId::YeCheng : EWSCharacterId::GuHeng;
+	Reply.Utterance = Line; Reply.DialogueTurnIndex = 1;
+	if (DialoguePanelV15) DialoguePanelV15->ShowReply(Reply);
 }
 
 void UWhiteoutHUDWidget::SetDialogueIntentStatus(const FString& Message, const bool bProcessing)
@@ -2688,262 +2645,11 @@ void UWhiteoutHUDWidget::SetDialogueIntentStatus(const FString& Message, const b
 	if (DialoguePanelV15) DialoguePanelV15->SetStatus(Message, bProcessing);
 }
 
-void UWhiteoutHUDWidget::ChooseDialogueAsk()
-{
-	OpenDialogueTextEntry(EWSDialogueAct::Ask);
-}
-
-void UWhiteoutHUDWidget::ChooseDialogueChallenge()
-{
-	OpenDialogueTextEntry(EWSDialogueAct::Challenge);
-}
-
-void UWhiteoutHUDWidget::ChooseDialoguePromise()
-{
-	ShowDialoguePromiseChoices();
-}
-
-void UWhiteoutHUDWidget::ChooseDialogueReassure()
-{
-	OpenDialogueTextEntry(EWSDialogueAct::Reassure);
-}
-
-void UWhiteoutHUDWidget::OpenDialogueFreeText()
-{
-	OpenDialogueTextEntry(EWSDialogueAct::Ask);
-}
-
-void UWhiteoutHUDWidget::OpenDialogueTextEntry(
-	const EWSDialogueAct DialogueAct,
-	const FName PromiseCondition)
-{
-	DialogueStage = EWSDialogueStage::TextEntry;
-	PendingDialogueAct = DialogueAct;
-	PendingPromiseCondition = PromiseCondition;
-	if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Visible);
-	if (DialogueReplyBorder) DialogueReplyBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialogueFreeTextInput)
-	{
-		DialogueFreeTextInput->SetHintText(BuildDialogueInputHint(DialogueAct));
-		DialogueFreeTextInput->SetText(FText::GetEmpty());
-		DialogueFreeTextInput->SetKeyboardFocus();
-	}
-}
-
-void UWhiteoutHUDWidget::ChoosePromiseKeepRecords()
-{
-	OpenDialogueTextEntry(EWSDialogueAct::Promise, TEXT("keep_records"));
-}
-
-void UWhiteoutHUDWidget::ChoosePromisePreventSelfHarm()
-{
-	OpenDialogueTextEntry(EWSDialogueAct::Promise, TEXT("reserve_medicine"));
-}
-
-void UWhiteoutHUDWidget::ChoosePromiseRepairTogether()
-{
-	OpenDialogueTextEntry(EWSDialogueAct::Promise, TEXT("heat_repair_room"));
-}
-
-void UWhiteoutHUDWidget::SubmitDialogueFreeText()
-{
-	if (!DialogueFreeTextInput)
-	{
-		return;
-	}
-	const FString UserText = DialogueFreeTextInput->GetText().ToString().TrimStartAndEnd().Left(280);
-	if (!UserText.IsEmpty() && UWSAgentGateway::ContainsAdversarialInstruction(UserText))
-	{
-		SetDialogueIntentStatus(TEXT("这句话不能这么说，换种表达。"), false);
-		return;
-	}
-	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
-	{
-		if (PendingDialogueAct == EWSDialogueAct::Ask && PendingPromiseCondition.IsNone())
-		{
-			Character->SubmitDialogueText(UserText);
-		}
-		else
-		{
-			Character->SubmitDialogueChoice(PendingDialogueAct, PendingPromiseCondition, UserText);
-		}
-	}
-}
-
-void UWhiteoutHUDWidget::RefreshDialogueAvailability()
-{
-	AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn());
-	const bool bLiveDialogue = Character && Character->IsDialogueActive();
-	if (!bLiveDialogue && !bPresentationCaptureOverride)
-	{
-		for (UButton* Button : DialogueIntentButtons)
-		{
-			if (Button)
-			{
-				Button->SetIsEnabled(false);
-				Button->SetVisibility(ESlateVisibility::Collapsed);
-			}
-		}
-		for (UButton* Button : DialoguePromiseButtons)
-		{
-			if (Button)
-			{
-				Button->SetIsEnabled(false);
-				Button->SetVisibility(ESlateVisibility::Collapsed);
-			}
-		}
-		return;
-	}
-	FWhiteoutRulesEngine CaptureRules;
-	if (bPresentationCaptureOverride)
-	{
-		CaptureRules.SetState(PresentationCaptureState);
-	}
-	const auto PreviewDialogue = [
-		this,
-		Character,
-		bLiveDialogue,
-		&CaptureRules](const EWSDialogueAct Act, const FName Condition = NAME_None)
-	{
-		if (bLiveDialogue)
-		{
-			return Character->PreviewActiveDialogue(Act, Condition);
-		}
-		FWSActionRequest Request;
-		Request.ActionId = ActiveDialogueActionId;
-		Request.DialogueAct = Act;
-		Request.PromiseCondition = Condition;
-		return CaptureRules.Preview(Request);
-	};
-	const TArray<EWSDialogueAct> Acts = {
-		EWSDialogueAct::Ask,
-		EWSDialogueAct::Challenge,
-		EWSDialogueAct::Reassure,
-		EWSDialogueAct::Promise};
-	TArray<UButton*> AvailableButtons;
-	FWSActionPreview FirstPreview;
-	for (int32 Index = 0; Index < DialogueIntentButtons.Num() && Index < Acts.Num(); ++Index)
-	{
-		FWSActionPreview Preview;
-		if (Acts[Index] == EWSDialogueAct::Promise)
-		{
-			for (const FName Condition : {FName(TEXT("keep_records")), FName(TEXT("reserve_medicine")), FName(TEXT("heat_repair_room"))})
-			{
-				const FWSActionPreview Candidate = PreviewDialogue(Acts[Index], Condition);
-				if (Candidate.bCanExecute || Preview.ActionId.IsNone()) Preview = Candidate;
-				if (Candidate.bCanExecute) break;
-			}
-		}
-		else
-		{
-			Preview = PreviewDialogue(Acts[Index]);
-		}
-		if (Index == 0) FirstPreview = Preview;
-		DialogueIntentButtons[Index]->SetIsEnabled(Preview.bCanExecute);
-		DialogueIntentButtons[Index]->SetVisibility(
-			Preview.bCanExecute ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-		if (Preview.bCanExecute)
-		{
-			AvailableButtons.Add(DialogueIntentButtons[Index]);
-		}
-	}
-	const TArray<FName> PromiseConditions = {
-		TEXT("keep_records"),
-		TEXT("reserve_medicine"),
-		TEXT("heat_repair_room")};
-	for (int32 Index = 0; Index < DialoguePromiseButtons.Num() && Index < PromiseConditions.Num(); ++Index)
-	{
-		const FWSActionPreview Preview = PreviewDialogue(
-			EWSDialogueAct::Promise,
-			PromiseConditions[Index]);
-		DialoguePromiseButtons[Index]->SetIsEnabled(Preview.bCanExecute);
-		DialoguePromiseButtons[Index]->SetVisibility(
-			Preview.bCanExecute ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	}
-	ReflowDialogueIntentButtons(AvailableButtons);
-	if (DialogueStatusText)
-	{
-		DialogueStatusText->SetText(FText::FromString(FString::Printf(
-			TEXT("当前可谈 %d 项｜意向会随证据、伤情、关系和局势变化"),
-			AvailableButtons.Num())));
-		DialogueStatusText->SetColorAndOpacity(FSlateColor(Secondary));
-		DialogueStatusText->SetVisibility(ESlateVisibility::Visible);
-	}
-	if (AvailableButtons.IsEmpty() && DialogueLineText)
-	{
-		DialogueLineText->SetText(FText::Format(
-			FText::FromString(TEXT("{0} {1}")),
-			FWSPresentationText::ReasonCause(FirstPreview.ReasonCode),
-			FWSPresentationText::ReasonNextStep(FirstPreview.ReasonCode)));
-		DialogueLineText->SetColorAndOpacity(FSlateColor(Amber));
-	}
-}
-
-void UWhiteoutHUDWidget::ReflowDialogueIntentButtons(const TArray<UButton*>& AvailableButtons)
-{
-	const int32 Count = AvailableButtons.Num();
-	if (Count <= 0)
-	{
-		return;
-	}
-	for (int32 Index = 0; Index < Count; ++Index)
-	{
-		UButton* Button = AvailableButtons[Index];
-		UCanvasPanelSlot* CanvasSlot = Button ? Cast<UCanvasPanelSlot>(Button->Slot) : nullptr;
-		if (!CanvasSlot)
-		{
-			continue;
-		}
-		const float CenterX = (static_cast<float>(Index) + 0.5f) / static_cast<float>(Count);
-		CanvasSlot->SetAnchors(FAnchors(CenterX, 0.5f));
-		CanvasSlot->SetAlignment(FVector2D::ZeroVector);
-		CanvasSlot->SetOffsets(FMargin(-75.0f, -24.0f, 150.0f, 48.0f));
-	}
-}
-
-void UWhiteoutHUDWidget::ShowDialogueReplyActions()
-{
-	DialogueStage = EWSDialogueStage::Reply;
-	if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialogueReplyBorder) DialogueReplyBorder->SetVisibility(ESlateVisibility::Visible);
-	if (DialogueContinueButton
-		&& DialogueContinueButton->GetVisibility() == ESlateVisibility::Visible
-		&& DialogueContinueButton->GetIsEnabled())
-	{
-		DialogueContinueButton->SetKeyboardFocus();
-	}
-}
-
-void UWhiteoutHUDWidget::ContinueDialogue()
-{
-	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
-	{
-		Character->ContinueDialogue();
-	}
-	if (DialogueLineText)
-	{
-		DialogueLineText->SetText(FWSPresentationText::UI(TEXT("dlg_continue_v04"), TEXT("还要说什么？")));
-		DialogueLineText->SetColorAndOpacity(FSlateColor(Body));
-	}
-}
-
 void UWhiteoutHUDWidget::CancelDialogue()
 {
 	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
 	{
 		Character->CancelDialogue();
-	}
-}
-
-void UWhiteoutHUDWidget::HandleDialogueTextCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
-{
-	if (CommitMethod == ETextCommit::OnEnter)
-	{
-		SubmitDialogueFreeText();
 	}
 }
 

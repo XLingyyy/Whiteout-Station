@@ -9,6 +9,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Framework/Application/SlateApplication.h"
 #include "HUD/WhiteoutHUD.h"
 #include "HUD/WhiteoutHUDWidget.h"
 #include "InputAction.h"
@@ -78,6 +79,8 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 void AWhiteoutCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	if (FSlateApplication::IsInitialized())
+		FSlateApplication::Get().OnApplicationActivationStateChanged().AddUObject(this, &AWhiteoutCharacter::HandleApplicationActivation);
 	if (const APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (ULocalPlayer* LocalPlayer = PlayerController->GetLocalPlayer())
@@ -107,6 +110,7 @@ void AWhiteoutCharacter::BeginPlay()
 void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (!bApplicationActive) return;
 	if (ActiveDialogueSessionId.IsValid() && !IsDialogueTargetVisible(ActiveDialogueTarget.Get(), 340.0f, true))
 	{
 		CancelDialogue();
@@ -160,6 +164,34 @@ void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 		}
 	}
 	UpdateFootsteps();
+}
+
+void AWhiteoutCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (FSlateApplication::IsInitialized())
+		FSlateApplication::Get().OnApplicationActivationStateChanged().RemoveAll(this);
+	Super::EndPlay(EndPlayReason);
+}
+
+void AWhiteoutCharacter::HandleApplicationActivation(bool bActive)
+{
+	bApplicationActive = bActive;
+	if (bActive) return;
+	CancelDialogue();
+	if (IsValid(FocusedInteractable)) FocusedInteractable->SetInteractionFocused(false);
+	FocusedInteractable = nullptr;
+	FocusCandidate.Reset();
+	FocusAcquireSeconds = FocusLossSeconds = 0.0f;
+	PreviewedInteractable = nullptr;
+	bPreviewCanExecute = false;
+	PreviewActionRequest = FWSActionRequest();
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
+		{
+			HUD->HideActionPreview();
+			HUD->ClearInteractionFocus();
+			HUD->SetStatusFocus(NAME_None);
+		}
 }
 
 void AWhiteoutCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -515,38 +547,6 @@ void AWhiteoutCharacter::BeginDialogue(AWSInteractableActor* Interactable)
 	}
 }
 
-void AWhiteoutCharacter::ChooseDialogueAct(const EWSDialogueAct DialogueAct)
-{
-	if (DialogueAct == EWSDialogueAct::Promise)
-	{
-		if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
-		{
-			if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
-			{
-				HUD->ShowDialoguePromiseChoices();
-			}
-		}
-		return;
-	}
-	PendingSemanticFrame = FWSDialogueSemanticFrame();
-	PendingSemanticFrame.SpeechAct = DialogueAct;
-	PendingSemanticFrame.Source = TEXT("dialogue_wheel");
-	PendingSemanticFrame.Confidence = 1.0f;
-	SubmitDialogueChoice(DialogueAct, NAME_None, FString());
-}
-
-void AWhiteoutCharacter::ChooseDialoguePromise(const FName PromiseCondition)
-{
-	PendingSemanticFrame = FWSDialogueSemanticFrame();
-	PendingSemanticFrame.SpeechAct = EWSDialogueAct::Promise;
-	PendingSemanticFrame.TargetActionId = PromiseCondition == TEXT("heat_repair_room")
-		? FName(TEXT("repair_generator"))
-		: NAME_None;
-	PendingSemanticFrame.Source = TEXT("dialogue_wheel");
-	PendingSemanticFrame.Confidence = 1.0f;
-	SubmitDialogueChoice(EWSDialogueAct::Promise, PromiseCondition, FString());
-}
-
 FWSActionPreview AWhiteoutCharacter::PreviewActiveDialogue(
 	const EWSDialogueAct DialogueAct,
 	const FName PromiseCondition) const
@@ -774,7 +774,7 @@ void AWhiteoutCharacter::ContinueDialogue()
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->ShowDialogueWheelChoices();
+			HUD->RefreshDialogueChoices();
 		}
 	}
 }

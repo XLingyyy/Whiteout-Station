@@ -105,4 +105,12 @@ python -X utf8 Tools/Release/run_v15_http_faults.py --exe 'G:/UnrealEngine/UE_5.
 
 三条真实在线／离线等价测试入口为 `Tools/Release/run_v15_equivalent_routes.py`，参数同上，另外显式传 `--key-file`。在线只读取作者选项的自然文本，经实际 A/B 链路提交；承诺在第一次提议时检查 AP、承诺数、revision 均不变，再发送明确确认。比较最终完整规则状态及逐步 AP／承诺／披露事件，排除交易 ID、台词和请求计数。
 
+替代部件文案修正后的五条 Editor 作者路线再次全部成功，评分仍为 74.70／71.44／58.94／36.92／42.16，每条 `model_calls=0`；结果在 `Artifacts/v1.5-evidence/editor-routes-contract`。作者路线脚本新增可选 `--project`，用于同一个入口运行 Editor 与 Shipping。
+
 首次对照暴露了承诺确认、命令和替代部件语义不一致。补充 A 的字段合同；替代部件作者选项原本是中性问句却标成 challenge，现改为明确质疑台词，保留技术路线既有结算。将该选项临时改成 ask 的尝试导致技术路线无法披露替代件，该改动已撤回。原失败报告保留 `equivalent-routes` 与 `equivalent-routes-contract`。后一次在线请求均在 A 阶段达到 3 秒超时；独立 Python 请求和 curl 同时出现 TLS 握手断开，尚不能归因于提供商整体故障，在线等价仍未通过。没有提高生产超时上限或增加自动重试。
+
+## 旧控件移除与窗口失焦
+
+移除旧态度轮盘、承诺菜单、单行输入框及其回车提交代码；追问刷新直接转交 v1.5 面板。旧截图入口也使用新面板。原提示词防泄露测试改为检查当前输入框文案，保留原七项禁用事实词断言，另检查回车换行与点击发送说明；`Saved/AutomationReports/V15LegacyCleanup` 1/1 通过。
+
+实机复现 Alt+Tab 后旧对话保持。修正为监听 Slate 应用激活事件，失焦立即取消未完成会话、清除 NPC 卡、预览与交互提示，恢复后按原获取延迟重新注视。编译成功，Editor 实机确认返回后对话已关闭、AP 仍为 4/4，随后重新获取顾衡卡；两轮离线对话完成后 AP 为 3/4，追问刷新正常。证据为 `editor-background-before.png`、`editor-reactivated-after.png`、`editor-focus-reacquired.png`、`editor-followup-cleanup.png`、`editor-followup-ap.png`。截图中的 GUI 窗口实际为 1280×720，系统缩放后捕获约 1922×1128；不混作原生分辨率矩阵。

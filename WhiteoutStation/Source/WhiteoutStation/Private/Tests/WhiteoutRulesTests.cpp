@@ -5,6 +5,7 @@
 #include "Agents/WSAgentGateway.h"
 #include "Agents/WSNPCDecisionService.h"
 #include "HUD/WhiteoutHUDWidget.h"
+#include "HUD/WSDialoguePanelWidget.h"
 #include "Presentation/WSPresentationText.h"
 #include "State/WhiteoutRulesEngine.h"
 #include "State/WSKnowledgePolicy.h"
@@ -1806,13 +1807,10 @@ bool FWhiteoutV13DisclosureStopgapTest::RunTest(const FString& Parameters)
 			FString::Printf(TEXT("Production dialogue status hides %s"), *Forbidden),
 			ProductionDialogueStatus.Contains(Forbidden));
 	}
-	for (const EWSDialogueAct DialogueAct : {
-		EWSDialogueAct::Ask,
-		EWSDialogueAct::Challenge,
-		EWSDialogueAct::Reassure,
-		EWSDialogueAct::Promise})
 	{
-		const FString Hint = UWhiteoutHUDWidget::BuildDialogueInputHint(DialogueAct).ToString();
+		const FString Hint = UWSDialoguePanelWidget::BuildInputHint().ToString();
+		TestTrue(TEXT("Direct input hint explains newline behavior"), Hint.Contains(TEXT("回车换行")));
+		TestTrue(TEXT("Direct input hint explains explicit submission"), Hint.Contains(TEXT("点击发送")));
 		for (const FString& Forbidden : {
 			FString(TEXT("保护装置")),
 			FString(TEXT("手动绕过")),

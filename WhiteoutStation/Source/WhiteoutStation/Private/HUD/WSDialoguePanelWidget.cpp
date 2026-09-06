@@ -87,7 +87,7 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 	Input->WidgetStyle.SetForegroundColor(FLinearColor(0.91f, 0.93f, 0.95f));
 	Input->WidgetStyle.SetPadding(FMargin(10));
 	Input->SetTextStyle(InputStyle);
-	Input->SetHintText(FText::FromString(TEXT("直接说出你想问或协商的事；回车换行，点击发送")));
+	Input->SetHintText(BuildInputHint());
 	USizeBox* InputArea = WidgetTree->ConstructWidget<USizeBox>();
 	InputArea->SetHeightOverride(96); InputArea->SetContent(Input);
 	Box->AddChildToVerticalBox(InputArea)->SetPadding(FMargin(0, 8));
@@ -156,6 +156,11 @@ void UWSDialoguePanelWidget::Append(const FString& Text)
 {
 	if (!History.IsEmpty()) History += TEXT("\n\n");
 	History += Text; Transcript->SetText(FText::FromString(History)); HistoryScroll->ScrollToEnd();
+}
+
+FText UWSDialoguePanelWidget::BuildInputHint()
+{
+	return FText::FromString(TEXT("直接说出你想问或协商的事；回车换行，点击发送"));
 }
 
 void UWSDialoguePanelWidget::ShowReply(const FWSAgentReply& Reply)

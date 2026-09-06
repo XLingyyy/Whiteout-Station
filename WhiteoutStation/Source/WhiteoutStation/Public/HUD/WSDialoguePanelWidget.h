@@ -16,6 +16,7 @@ class WHITEOUTSTATION_API UWSDialoguePanelWidget : public UUserWidget
 {
 	GENERATED_BODY()
 public:
+	static FText BuildInputHint();
 	void Build(UFont* Font);
 	void Open(FName InAction, EWSDialogueMode InMode);
 	void Refresh();

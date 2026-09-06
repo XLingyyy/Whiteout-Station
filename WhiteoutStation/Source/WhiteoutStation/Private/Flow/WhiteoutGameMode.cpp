@@ -1692,7 +1692,7 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		HUD->ShowDialogueMenu(NPCAction, true);
 		if (CaptureName.Equals(TEXT("dialogue_promise")))
 		{
-			HUD->ShowDialoguePromiseChoices();
+			HUD->RefreshDialogueChoices();
 		}
 		else if (CaptureName.Equals(TEXT("dialogue_free")) || CaptureName.Equals(TEXT("dialogue_ask_entry")))
 		{
@@ -1700,7 +1700,7 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		}
 		else if (CaptureName.Equals(TEXT("dialogue_offline")))
 		{
-			HUD->SetDialogueIntentStatus(TEXT("离线模式｜当前使用本地意图词典；无法可靠识别时将回到安全轮盘。"), false);
+			HUD->SetDialogueIntentStatus(TEXT("离线 · 剧本对话；选择固定话题继续。"), false);
 		}
 		else if (CaptureName.Equals(TEXT("dialogue_response")) || CaptureName.Equals(TEXT("dialogue_reply")))
 		{

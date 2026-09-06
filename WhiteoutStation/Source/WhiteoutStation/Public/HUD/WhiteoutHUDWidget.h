@@ -35,14 +35,6 @@ enum class EWSUILayer : uint8
 	Results
 };
 
-enum class EWSDialogueStage : uint8
-{
-	Opening,
-	IntentPick,
-	TextEntry,
-	Reply
-};
-
 enum class EWSOpeningPhase : uint8
 {
 	FadingInLine,
@@ -92,9 +84,8 @@ public:
 	void CloseEvidence();
 	void ShowDialogueMenu(FName NPCActionId, bool bVisible);
 	void OpenDialogueSettings() { OpenSettings(); }
-	void ShowDialoguePromiseChoices();
 	UFUNCTION()
-	void ShowDialogueWheelChoices();
+	void RefreshDialogueChoices();
 	void ShowDialogueFreeTextForCapture();
 	void ShowDialogueReplyForCapture(const FString& Speaker, const FString& Line);
 	void SetDialogueIntentStatus(const FString& Message, bool bProcessing);
@@ -111,7 +102,6 @@ public:
 	static FString BuildDialogueCardSummary(
 		EWSCharacterId CharacterId,
 		const FWSGameState& State);
-	static FText BuildDialogueInputHint(EWSDialogueAct DialogueAct);
 	static FString BuildPhaseSettlementSummary(
 		const FWSPhaseSummary& Summary,
 		const FWSGameState& State);
@@ -274,39 +264,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> DialogueText;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UTextBlock> DialogueNameText;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UTextBlock> DialogueLineText;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UCanvasPanel> DialogueWheelPanel;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UBorder> DialoguePromiseBorder;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UBorder> DialogueFreeTextBorder;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UBorder> DialogueReplyBorder;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UButton> DialogueContinueButton;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UButton>> DialogueIntentButtons;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UButton>> DialoguePromiseButtons;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UEditableTextBox> DialogueFreeTextInput;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UTextBlock> DialogueStatusText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> DialogueConditionBorder;
@@ -539,9 +496,6 @@ private:
 	bool bPendingLLMEnabled = false;
 	int32 EvidenceFilterIndex = 0;
 	EWSUILayer CurrentLayer = EWSUILayer::Game;
-	EWSDialogueStage DialogueStage = EWSDialogueStage::Opening;
-	EWSDialogueAct PendingDialogueAct = EWSDialogueAct::Ask;
-	FName PendingPromiseCondition;
 	TArray<FString> EvidenceCardDetailCopies;
 	FName ActiveDialogueActionId;
 	FWSActionRequirementReport ActiveDialogueRequirementReport;
@@ -562,10 +516,6 @@ private:
 	void SetBaseHudHidden(bool bHidden);
 	void SetEvidenceFilter(int32 FilterIndex);
 	void ShowEvidenceDetail(const FString& DetailCopy);
-	void OpenDialogueTextEntry(EWSDialogueAct DialogueAct, FName PromiseCondition = NAME_None);
-	void RefreshDialogueAvailability();
-	void ReflowDialogueIntentButtons(const TArray<UButton*>& AvailableButtons);
-	void ShowDialogueReplyActions();
 	void UpdateDialogueConditionCard(const FWSAgentReply& Reply);
 	void HideDialogueConditionCard();
 	void UpdateDialogueCard(const FWSGameState& State);
@@ -688,40 +638,7 @@ private:
 	void ShowHoveredEvidenceDetail();
 
 	UFUNCTION()
-	void ContinueDialogue();
-
-	UFUNCTION()
-	void ChooseDialogueAsk();
-
-	UFUNCTION()
-	void ChooseDialogueChallenge();
-
-	UFUNCTION()
-	void ChooseDialoguePromise();
-
-	UFUNCTION()
-	void ChooseDialogueReassure();
-
-	UFUNCTION()
-	void OpenDialogueFreeText();
-
-	UFUNCTION()
-	void ChoosePromiseKeepRecords();
-
-	UFUNCTION()
-	void ChoosePromisePreventSelfHarm();
-
-	UFUNCTION()
-	void ChoosePromiseRepairTogether();
-
-	UFUNCTION()
-	void SubmitDialogueFreeText();
-
-	UFUNCTION()
 	void CancelDialogue();
-
-	UFUNCTION()
-	void HandleDialogueTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
 	UFUNCTION()
 	void HandleDialogueLine(const FWSAgentReply& Reply);

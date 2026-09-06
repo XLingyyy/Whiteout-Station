@@ -68,14 +68,9 @@ void AWhiteoutHUD::ShowDialogueMenu(const FName NPCActionId, const bool bVisible
 	if (HUDWidget) HUDWidget->ShowDialogueMenu(NPCActionId, bVisible);
 }
 
-void AWhiteoutHUD::ShowDialoguePromiseChoices()
+void AWhiteoutHUD::RefreshDialogueChoices()
 {
-	if (HUDWidget) HUDWidget->ShowDialoguePromiseChoices();
-}
-
-void AWhiteoutHUD::ShowDialogueWheelChoices()
-{
-	if (HUDWidget) HUDWidget->ShowDialogueWheelChoices();
+	if (HUDWidget) HUDWidget->RefreshDialogueChoices();
 }
 
 void AWhiteoutHUD::ShowDialogueFreeTextForCapture()

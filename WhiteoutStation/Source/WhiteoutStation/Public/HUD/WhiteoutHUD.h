@@ -29,8 +29,7 @@ public:
 	void ToggleEvidence();
 	void ShowDialogueMenu(FName NPCActionId, bool bVisible);
 	void OpenDialogueSettings();
-	void ShowDialoguePromiseChoices();
-	void ShowDialogueWheelChoices();
+	void RefreshDialogueChoices();
 	void ShowDialogueFreeTextForCapture();
 	void ShowDialogueReplyForCapture(const FString& Speaker, const FString& Line);
 	void SetDialogueIntentStatus(const FString& Message, bool bProcessing);

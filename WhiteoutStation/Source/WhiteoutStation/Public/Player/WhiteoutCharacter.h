@@ -22,6 +22,7 @@ class WHITEOUTSTATION_API AWhiteoutCharacter : public ACharacter
 public:
 	AWhiteoutCharacter();
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
@@ -35,8 +36,6 @@ public:
 		const AActor* Viewer = nullptr,
 		float MaxDistance = 425.0f);
 
-	void ChooseDialogueAct(EWSDialogueAct DialogueAct);
-	void ChooseDialoguePromise(FName PromiseCondition);
 	void SubmitDialogueText(const FString& UserText);
 	void SubmitAuthoredChoice(FName ChoiceId);
 	void SubmitDialogueChoice(EWSDialogueAct DialogueAct, FName PromiseCondition, const FString& PlayerSaid);
@@ -111,6 +110,8 @@ private:
 	TWeakObjectPtr<AWSInteractableActor> FocusCandidate;
 	float FocusAcquireSeconds = 0.0f;
 	float FocusLossSeconds = 0.0f;
+	bool bApplicationActive = true;
+	void HandleApplicationActivation(bool bActive);
 	void UpdateInteractionLease(float DeltaSeconds);
 	bool IsDialogueTargetVisible(AWSInteractableActor* Target, float MaxDistance, bool bAllowAngularGrace) const;
 
