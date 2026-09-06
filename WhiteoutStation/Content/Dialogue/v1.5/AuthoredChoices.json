@@ -91,7 +91,7 @@
   {
     "choice_id": "gu_relay",
     "speaker_id": "gu_heng",
-    "text": "现有设备里，有能替换的部件吗？",
+    "text": "我质疑你对替代方案的判断。现有设备里真的没有能替换的部件吗？",
     "visible_if": [],
     "enabled_if": [
       "dialogue_turn_available"
@@ -109,7 +109,7 @@
       "confidence": 1,
       "needs_clarification": false,
       "evidence_spans": [
-        "现有设备里，有能替换的部件吗？"
+        "我质疑你对替代方案的判断。现有设备里真的没有能替换的部件吗？"
       ],
       "resolved_from_turn": 0
     },

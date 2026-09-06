@@ -43,6 +43,7 @@ public:
 	void HandleBackRequested();
 	void ResetPresentationCapture();
 	void SetPresentationCaptureState(const FWSGameState& State);
+	void ShowV15Capture(const FString& Mode);
 	void ShowNPCFocusForCapture(const FText& ActionName, const FWSActionPreview& Preview);
 	void ShowEvidenceForCapture(int32 FilterIndex = 0, bool bShowFirstDetail = false);
 	void ShowComponentGalleryForCapture();

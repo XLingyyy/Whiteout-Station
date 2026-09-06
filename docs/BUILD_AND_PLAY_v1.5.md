@@ -64,7 +64,7 @@ python -X utf8 Tools/Release/run_v15_authored_routes.py --exe 'Artifacts/Whiteou
 
 ## 尚未通过的发布条件
 
-120 条人工标注中文语义集、独立安全集全覆盖、三条完整在线／离线等价轨迹、全部 D/H 实机用例、多分辨率八类画面、完整中文 IME 快捷键矩阵、UI CPU 统计及八人交叉盲测，均须按实际证据补齐。当前自动化和合成输入不能替代这些项目。
+120 条人工标注中文语义集、独立安全集全覆盖、三条完整在线／离线等价轨迹、全部 D/H 实机用例、完整中文 IME 快捷键矩阵、UI CPU 统计及八人交叉盲测，均须按实际证据补齐。多分辨率八类画面已生成，具体范围见后续记录。当前自动化和合成输入不能替代人工项目。
 
 旧构建与失效缓存清理已核对保留范围，但删除操作遭自动审批审查拒绝，返回 `blocked by policy`，未给出进一步理由。本轮未绕过拒绝，旧归档仍在。保留的 v1.4 已验证包为 `Artifacts/WhiteoutStation-v1.4-Win64-20260905T105713Z-71bd524e-final`。
 
@@ -84,3 +84,25 @@ python -X utf8 Tools/Release/run_v15_authored_routes.py --exe 'Artifacts/Whiteou
 随后完整 100 条同一合成输入批次 **100/100 提交**：77 条模型表达、23 条合格作者恢复；p95 **2.965 秒**，最大 **3.634 秒**。AP、诊断与承诺均与逐条预期一致。摘要为 `Artifacts/v1.5-evidence/normal100_contract_summary.json`。这证明本批次达到吞吐门槛，不替代未参与调优的人工标注集与玩家体验评价；旧 88/100 记录保留。
 
 自动聚焦使用 UUserWidget 的 DesiredFocusWidget，将父面板的延迟焦点转交输入框；移除无效的 NextTick 焦点重试。Editor 实机首次打开后未点击输入框即可输入。中文候选 Esc 取消后仍保留对话；Space 确认“人”，Enter 在无候选时换行，在候选时确认输入；R/C/E/H 未触发对应游戏动作，未发送退出后 AP 仍为 4/4。文本编辑末尾一次 Esc 可能先清除选区，第二次离开；不能将其记作所有编辑态单次 Esc 验收通过。截图为 `editor-auto-focus-ime.png` 与 `editor-ime-shortcuts.png`。
+
+## 响应式布局与两阶段故障注入
+
+状态卡和对话接入 SafeZone，预留状态卡 320 逻辑单位与间隙；圆角 6、细边框 1，使用局部颜色 token。诊断来源由无法鼠标触达的 Tooltip 改为卡内文字。NPC 卡淡入 0.12 秒；失效目标立即清除，对话淡出 0.10 秒。Reduced Motion 使用即时显示。新增 `WhiteoutV15StatusPresent` CPU trace scope，仅测状态更新函数，尚不代表完整 Slate 开销。
+
+Editor 编译通过，`Saved/AutomationReports/V15LayoutFinal` 的 5 项 v1.5 定向测试全部成功。实际 UE 渲染矩阵为 1280×720、1366×768、1920×1080、2560×1440、3440×1440，各有 100%、125%、150% 字号，每组八类画面，共 120 张；PNG 实际尺寸全部与请求相符。代表性截图检查覆盖五种分辨率和三档字号，未见新面板越界或遮挡发送／离开区。截图在 `Artifacts/v1.5-evidence/layouts`，矩阵索引 `matrix.json`。这些画面通过状态呈现夹具生成，用于布局检查，不作为真实准星、碰撞、在线请求或真人验收证据。
+
+截图命令示例（其余组合替换尺寸与 scale）：
+
+```powershell
+& 'G:\UnrealEngine\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' 'G:\Whiteout Station\WhiteoutStation\WhiteoutStation.uproject' -game -RenderOffScreen -windowed -forceres -ResX=1280 -ResY=720 -unattended -nosplash -nop4 -WhiteoutPresentationCapture=v15suite -WhiteoutCaptureScale=1.5
+```
+
+`Tools/Release/run_v15_http_faults.py` 启动本地 loopback HTTP 服务并驱动真实 UE A/B 请求。`Artifacts/v1.5-evidence/http-faults-contract/summary.json`：15/15 通过，覆盖成功、A/B 坏 JSON、HTTP 500、超时、缺少／非法 claim、自由文本越权、B 无合格替代，以及 A/B 等待时取消／新局后迟到响应。请求数为 1 或 2，无重试，无 Authorization；预算分别为 256/0 与 640/0.45。A 超时 3.002 秒；B 超时整轮 7.007 秒。取消／新局后无迟到状态变化。首版 mock 漏 `finish_reason`，未形成有效 B 阶段测试；失败输出保留于 `http-faults`，随后按实际提供商响应合同修正 mock，未放宽引擎解析。
+
+```powershell
+python -X utf8 Tools/Release/run_v15_http_faults.py --exe 'G:/UnrealEngine/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' --project 'WhiteoutStation/WhiteoutStation.uproject' --output 'Artifacts/v1.5-evidence/http-faults-contract'
+```
+
+三条真实在线／离线等价测试入口为 `Tools/Release/run_v15_equivalent_routes.py`，参数同上，另外显式传 `--key-file`。在线只读取作者选项的自然文本，经实际 A/B 链路提交；承诺在第一次提议时检查 AP、承诺数、revision 均不变，再发送明确确认。比较最终完整规则状态及逐步 AP／承诺／披露事件，排除交易 ID、台词和请求计数。
+
+首次对照暴露了承诺确认、命令和替代部件语义不一致。补充 A 的字段合同；替代部件作者选项原本是中性问句却标成 challenge，现改为明确质疑台词，保留技术路线既有结算。将该选项临时改成 ask 的尝试导致技术路线无法披露替代件，该改动已撤回。原失败报告保留 `equivalent-routes` 与 `equivalent-routes-contract`。后一次在线请求均在 A 阶段达到 3 秒超时；独立 Python 请求和 curl 同时出现 TLS 握手断开，尚不能归因于提供商整体故障，在线等价仍未通过。没有提高生产超时上限或增加自动重试。

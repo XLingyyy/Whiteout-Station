@@ -1,4 +1,7 @@
 #include "HUD/WSStatusPanelWidget.h"
+#include "HUD/WSUITokens.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/Font.h"
 #include "Components/Border.h"
@@ -18,12 +21,12 @@ void UWSStatusPanelWidget::Build(UFont* Font)
 	const auto Text = [&](int32 Size)
 	{
 		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(); T->SetFont(FSlateFontInfo(Font, Size));
-		T->SetAutoWrapText(true); T->SetColorAndOpacity(FSlateColor(FLinearColor(0.91f, 0.93f, 0.95f))); return T;
+		T->SetAutoWrapText(true); T->SetColorAndOpacity(FSlateColor(WSUITokens::V15::Text)); return T;
 	};
 	for (int32 Card = 0; Card < 2; ++Card)
 	{
 		UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
-		Background->SetBrushColor(FLinearColor(0.025f, 0.033f, 0.043f, 0.92f)); Background->SetPadding(FMargin(16));
+		Background->SetBrush(FSlateRoundedBoxBrush(WSUITokens::V15::Surface, WSUITokens::V15::Radius, WSUITokens::V15::Stroke, 1.0f)); Background->SetPadding(FMargin(16));
 		Stack->AddChildToVerticalBox(Background)->SetPadding(FMargin(0, Card ? 12 : 0, 0, 0));
 		if (Card) TargetCard = Background;
 		UVerticalBox* Box = WidgetTree->ConstructWidget<UVerticalBox>(); Background->SetContent(Box);
@@ -38,12 +41,26 @@ void UWSStatusPanelWidget::Build(UFont* Font)
 			UTextBlock* Value = Text(16); Values.Add(Value); Value->SetJustification(ETextJustify::Right);
 			Line->AddChildToHorizontalBox(Value)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		}
+		if (Card)
+		{
+			DiagnosisSource = Text(13);
+			DiagnosisSource->SetText(FText::FromString(TEXT("伤势来源：已确认诊断")));
+			Box->AddChildToVerticalBox(DiagnosisSource)->SetPadding(FMargin(0, 8, 0, 0));
+			DiagnosisSource->SetVisibility(ESlateVisibility::Collapsed);
+		}
 	}
 	TargetCard->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void UWSStatusPanelWidget::Present(const FWSStatusCardViewModel& Player, const TOptional<FWSStatusCardViewModel>& Target)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(WhiteoutV15StatusPresent);
+	if (Target.IsSet() && (TargetCard->GetVisibility() == ESlateVisibility::Collapsed
+		|| !Titles[1]->GetText().EqualTo(FText::FromString(Target->Title))))
+	{
+		TargetOpacity = 0.0f;
+		TargetCard->SetRenderOpacity(0.0f);
+	}
 	for (int32 Card = 0; Card < 2; ++Card)
 	{
 		const FWSStatusCardViewModel* Model = Card ? (Target.IsSet() ? &Target.GetValue() : nullptr) : &Player;
@@ -57,11 +74,20 @@ void UWSStatusPanelWidget::Present(const FWSStatusCardViewModel& Player, const T
 			const FText Value = Field ? FText::FromString(Field->DisplayValue) : FText::GetEmpty();
 			if (!Labels[Index]->GetText().EqualTo(Label)) Labels[Index]->SetText(Label);
 			if (!Values[Index]->GetText().EqualTo(Value)) Values[Index]->SetText(Value);
-			const FLinearColor Color = Field && Field->Severity == EWSStatusSeverity::Critical ? FLinearColor(1, 0.3f, 0.3f)
-				: Field && Field->Severity == EWSStatusSeverity::Attention ? FLinearColor(0.95f, 0.75f, 0.3f) : FLinearColor(0.91f, 0.93f, 0.95f);
-			Values[Index]->SetColorAndOpacity(FSlateColor(Color));
-			Values[Index]->SetToolTipText(Field && Field->Source == EWSStatusSource::Diagnosis ? FText::FromString(TEXT("来源：已确认诊断")) : FText::GetEmpty());
+			const FLinearColor Color = Field && Field->Severity == EWSStatusSeverity::Critical ? WSUITokens::V15::Critical
+				: Field && Field->Severity == EWSStatusSeverity::Attention ? WSUITokens::V15::Attention : WSUITokens::V15::Text;
+			if (Values[Index]->GetColorAndOpacity() != FSlateColor(Color)) Values[Index]->SetColorAndOpacity(FSlateColor(Color));
 		}
 	}
 	TargetCard->SetVisibility(Target.IsSet() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	DiagnosisSource->SetVisibility(Target.IsSet() && Target->Fields.ContainsByPredicate(
+		[](const FWSStatusField& Field) { return Field.Source == EWSStatusSource::Diagnosis; })
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+void UWSStatusPanelWidget::AdvanceAnimation(float DeltaTime, bool ReducedMotion)
+{
+	if (TargetOpacity >= 1.0f || TargetCard->GetVisibility() == ESlateVisibility::Collapsed) return;
+	TargetOpacity = ReducedMotion ? 1.0f : FMath::Min(1.0f, TargetOpacity + DeltaTime / WSUITokens::V15::FadeIn);
+	TargetCard->SetRenderOpacity(TargetOpacity);
 }

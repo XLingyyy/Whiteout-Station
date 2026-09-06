@@ -130,6 +130,7 @@ public:
 	bool IsPauseMenuVisible() const;
 	void ResetPresentationCapture();
 	void SetPresentationCaptureState(const FWSGameState& State);
+	void ShowV15Capture(const FString& Mode);
 	void ShowNPCFocusForCapture(const FText& ActionName, const FWSActionPreview& Preview);
 	void ShowEvidenceForCapture(int32 FilterIndex = 0, bool bShowFirstDetail = false);
 	void ShowComponentGalleryForCapture();
@@ -152,6 +153,7 @@ private:
 	UPROPERTY() TObjectPtr<UWSStatusPanelWidget> StatusPanelV15;
 	FName StatusFocusAction;
 	FVector2D LastDialogueLayoutSize = FVector2D::ZeroVector;
+	UPROPERTY() TObjectPtr<UCanvasPanel> V15Canvas;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> BottomPanel;

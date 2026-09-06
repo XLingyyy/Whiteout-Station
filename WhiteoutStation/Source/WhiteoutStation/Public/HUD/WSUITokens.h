@@ -11,6 +11,17 @@
 
 namespace WSUITokens
 {
+	namespace V15
+	{
+		inline const FLinearColor Surface(0.025f, 0.033f, 0.043f, 0.94f);
+		inline const FLinearColor Stroke(0.65f, 0.70f, 0.75f, 0.18f);
+		inline const FLinearColor Text(0.91f, 0.93f, 0.95f);
+		inline const FLinearColor Attention(0.95f, 0.75f, 0.3f);
+		inline const FLinearColor Critical(1.0f, 0.3f, 0.3f);
+		constexpr float Radius = 6.0f;
+		constexpr float FadeIn = 0.12f;
+		constexpr float FadeOut = 0.10f;
+	}
 	// =========================================================================
 	// 颜色 — Surface
 	// =========================================================================

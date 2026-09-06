@@ -38,6 +38,7 @@ public:
 	void PrepareOpeningReveal();
 	void FinishOpeningPresentation();
 	void RunV15DialogueProbe(const FString& InputPath, int32 CaseIndex = 0);
+	void SubmitV15OnlineRouteDialogue(const FWSActionRequest& AuthoredRequest);
 
 private:
 	UPROPERTY()

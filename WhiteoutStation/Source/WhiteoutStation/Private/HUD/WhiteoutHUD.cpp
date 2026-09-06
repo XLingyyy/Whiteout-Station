@@ -138,6 +138,11 @@ void AWhiteoutHUD::SetPresentationCaptureState(const FWSGameState& State)
 	if (HUDWidget) HUDWidget->SetPresentationCaptureState(State);
 }
 
+void AWhiteoutHUD::ShowV15Capture(const FString& Mode)
+{
+	if (HUDWidget) HUDWidget->ShowV15Capture(Mode);
+}
+
 void AWhiteoutHUD::ShowNPCFocusForCapture(const FText& ActionName, const FWSActionPreview& Preview)
 {
 	if (HUDWidget) HUDWidget->ShowNPCFocusForCapture(ActionName, Preview);

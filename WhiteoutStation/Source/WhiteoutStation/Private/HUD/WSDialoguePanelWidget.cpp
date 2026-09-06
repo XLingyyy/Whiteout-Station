@@ -1,9 +1,11 @@
 #include "HUD/WSDialoguePanelWidget.h"
 #include "HUD/WhiteoutHUD.h"
+#include "HUD/WSUITokens.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/Font.h"
 #include "Components/Border.h"
 #include "Brushes/SlateColorBrush.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
 #include "Components/HorizontalBox.h"
@@ -21,7 +23,7 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 {
 	SetIsFocusable(true);
 	UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
-	Background->SetBrushColor(FLinearColor(0.025f, 0.033f, 0.043f, 0.94f));
+	Background->SetBrush(FSlateRoundedBoxBrush(WSUITokens::V15::Surface, WSUITokens::V15::Radius, WSUITokens::V15::Stroke, 1.0f));
 	Background->SetPadding(FMargin(16));
 	WidgetTree->RootWidget = Background;
 	UVerticalBox* Box = WidgetTree->ConstructWidget<UVerticalBox>();
@@ -30,7 +32,7 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 	{
 		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>();
 		T->SetFont(FSlateFontInfo(Font, Size));
-		T->SetColorAndOpacity(FSlateColor(FLinearColor(0.91f, 0.93f, 0.95f)));
+		T->SetColorAndOpacity(FSlateColor(WSUITokens::V15::Text));
 		T->SetAutoWrapText(true);
 		return T;
 	};
@@ -162,6 +164,8 @@ void UWSDialoguePanelWidget::ShowReply(const FWSAgentReply& Reply)
 	Append((Reply.Speaker == EWSCharacterId::YeCheng ? FString(TEXT("叶澄：")) : FString(TEXT("顾衡："))) + Reply.Utterance);
 	SetStatus(Turns >= 3 ? TEXT("本次私聊已结束，请离开。")
 		: FString::Printf(TEXT("本次私聊 1 AP · 本次剩余 %d 轮"), 3 - Turns), false);
+	if (Reply.AnswerSource == TEXT("authored_recovery_v15"))
+		Status->SetText(FText::FromString(Status->GetText().ToString() + TEXT(" · 本次使用固定台词")));
 	if (Turns < 3)
 		if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn())) Character->ContinueDialogue();
 	Refresh();

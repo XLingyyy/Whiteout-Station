@@ -20,6 +20,7 @@
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/SafeZone.h"
 #include "Components/Slider.h"
 #include "Components/TextBlock.h"
 #include "Components/UniformGridPanel.h"
@@ -288,7 +289,7 @@ void UWhiteoutHUDWidget::NativeDestruct()
 void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	const FVector2D LayoutSize = MyGeometry.GetLocalSize();
+	const FVector2D LayoutSize = V15Canvas ? V15Canvas->GetCachedGeometry().GetLocalSize() : MyGeometry.GetLocalSize();
 	if (DialogueBorder && LayoutSize.X > 0 && LayoutSize.Y > 0 && LayoutSize != LastDialogueLayoutSize)
 	{
 		LastDialogueLayoutSize = LayoutSize;
@@ -296,13 +297,16 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 		{
 			const float Top = LayoutSize.Y < 650 ? 0.08f : 0.30f;
 			DialogueCanvasSlot->SetAnchors(FAnchors(0, 0));
-			DialogueCanvasSlot->SetPosition(FVector2D(LayoutSize.X * 0.04f, LayoutSize.Y * Top));
-			DialogueCanvasSlot->SetSize(FVector2D(FMath::Min(LayoutSize.X * 0.64f, 900.0f), LayoutSize.Y * (0.96f - Top)));
+			const float Left = FMath::Max(20.0f, LayoutSize.X * 0.04f);
+			const float Bottom = FMath::Max(20.0f, LayoutSize.Y * 0.04f);
+			DialogueCanvasSlot->SetPosition(FVector2D(Left, FMath::Max(20.0f, LayoutSize.Y * Top)));
+			DialogueCanvasSlot->SetSize(FVector2D(FMath::Min3(LayoutSize.X * 0.64, 900.0, LayoutSize.X - Left - 352.0), LayoutSize.Y * (1.0f - Top) - Bottom));
 		}
 	}
 	TickPanelAnimations(InDeltaTime);
 	TickOpening(InDeltaTime);
 	const bool bReducedMotion = IsReducedMotionEnabled();
+	if (StatusPanelV15) StatusPanelV15->AdvanceAnimation(InDeltaTime, bReducedMotion);
 	if (ToastRemaining > 0.0f && ToastBorder)
 	{
 		ToastRemaining = FMath::Max(0.0f, ToastRemaining - InDeltaTime);
@@ -439,9 +443,16 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	ObjectiveBox->AddChildToVerticalBox(TutorialText);
 	SetGlassPanelContent(ObjectivePanel, ObjectiveBox);
 
+	USafeZone* V15SafeZone = WidgetTree->ConstructWidget<USafeZone>();
+	V15SafeZone->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	UCanvasPanelSlot* SafeSlot = Canvas->AddChildToCanvas(V15SafeZone);
+	SafeSlot->SetAnchors(FAnchors(0, 0, 1, 1)); SafeSlot->SetOffsets(FMargin(0));
+	V15Canvas = WidgetTree->ConstructWidget<UCanvasPanel>();
+	V15Canvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	V15SafeZone->SetContent(V15Canvas);
 	StatusPanelV15 = CreateWidget<UWSStatusPanelWidget>(GetOwningPlayer());
 	StatusPanelV15->Build(UIFontFamily);
-	UCanvasPanelSlot* StatusSlot = Canvas->AddChildToCanvas(StatusPanelV15);
+	UCanvasPanelSlot* StatusSlot = V15Canvas->AddChildToCanvas(StatusPanelV15);
 	StatusSlot->SetAnchors(FAnchors(1, 0));
 	StatusSlot->SetAlignment(FVector2D(1, 0));
 	StatusSlot->SetPosition(FVector2D(-20, 20));
@@ -649,7 +660,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		TEXT("准备度：综合体温、体能、伤势与压力；预览中的动态 AP 会反映这些因素。\n")
 		TEXT("信任：影响合作、情报和结算。公平分配、照护和兑现承诺会改变信任。\n\n")
 		TEXT("信息与交涉\n")
-		TEXT("按 E 查看证据板。对话先选意向，再自由输入；质疑和承诺只会在已有事实或可兑现条件时出现。")));
+		TEXT("按 E 查看证据板。AI 关闭时选择固定话题；开启并配置后直接输入，点击发送。私聊首轮成功回复消耗 1 AP，最多三轮；承诺需要再次确认。")));
 	UScrollBox* GuideScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("GuideScroll"));
 	GuideScroll->AddChild(GuideIntro);
 	UVerticalBoxSlot* GuideScrollSlot = GuideBox->AddChildToVerticalBox(GuideScroll);
@@ -664,7 +675,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	GuideCloseButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CloseGuide);
 	GuideBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	DialogueBorder = MakePanel(Canvas, TEXT("DialoguePanel"), FAnchors(0.04f, 0.30f, 0.68f, 0.96f), FMargin(0), FLinearColor::Transparent);
+	DialogueBorder = MakePanel(V15Canvas, TEXT("DialoguePanel"), FAnchors(0.04f, 0.30f, 0.68f, 0.96f), FMargin(0), FLinearColor::Transparent);
 	DialogueBorder->SetPadding(FMargin(0));
 	DialoguePanelV15 = CreateWidget<UWSDialoguePanelWidget>(GetOwningPlayer());
 	DialoguePanelV15->Build(UIFontFamily);
@@ -2602,9 +2613,10 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bV
 {
 	bDialogueVisible = bVisible;
 	ActiveDialogueActionId = bVisible ? NPCActionId : NAME_None;
-	DialogueBorder->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	ShowPanelAnimated(DialogueBorder, bVisible, bVisible ? WSUITokens::V15::FadeIn : WSUITokens::V15::FadeOut, false);
 	if (!bVisible)
 	{
+		if (DialogueBorder->GetVisibility() != ESlateVisibility::Collapsed) DialogueBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
 		if (CurrentLayer == EWSUILayer::Dialogue) SetLayer(EWSUILayer::Game);
 		return;
 	}
@@ -4504,6 +4516,7 @@ void UWhiteoutHUDWidget::QuitGame()
 
 void UWhiteoutHUDWidget::SetStatusFocus(FName ActionId)
 {
+	if (bPresentationCaptureOverride) return;
 	if (CurrentLayer != EWSUILayer::Game && CurrentLayer != EWSUILayer::Dialogue && CurrentLayer != EWSUILayer::Preview) ActionId = NAME_None;
 	if (StatusFocusAction == ActionId) return;
 	StatusFocusAction = ActionId;
@@ -4521,4 +4534,21 @@ void UWhiteoutHUDWidget::HandleStatusState(const FWSGameState& State)
 	if (StatusFocusAction == TEXT("talk_gu_heng") || StatusFocusAction == TEXT("talk_ye_cheng"))
 		Target = WSStatusPresenter::Build(StatusFocusAction == TEXT("talk_gu_heng") ? EWSCharacterId::GuHeng : EWSCharacterId::YeCheng, State, Config);
 	StatusPanelV15->Present(WSStatusPresenter::Build(EWSCharacterId::Player, State, Config), Target);
+}
+
+void UWhiteoutHUDWidget::ShowV15Capture(const FString& Mode)
+{
+	UWindStationStateSubsystem* Subsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	FWSGameState State = Subsystem->GetStateSnapshot();
+	State.Flags.bGuHengDiagnosed = Mode == TEXT("v15_diagnosed");
+	StatusFocusAction = Mode == TEXT("v15_self") ? NAME_None
+		: Mode == TEXT("v15_ye") || Mode == TEXT("v15_offline") ? FName(TEXT("talk_ye_cheng")) : FName(TEXT("talk_gu_heng"));
+	SetPresentationCaptureState(State);
+	if (Mode == TEXT("v15_offline") || Mode == TEXT("v15_online") || Mode == TEXT("v15_fault"))
+	{
+		ShowDialogueMenu(StatusFocusAction, true);
+		DialoguePanelV15->Open(StatusFocusAction, Mode == TEXT("v15_offline") ? EWSDialogueMode::Authored
+			: Mode == TEXT("v15_online") ? EWSDialogueMode::Online : EWSDialogueMode::InvalidConfiguration);
+	}
+	HandleStatusState(State);
 }

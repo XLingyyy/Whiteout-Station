@@ -35,6 +35,7 @@
 #include "Presentation/WhiteoutAudioDirector.h"
 #include "Presentation/WSPresentationText.h"
 #include "Settings/WhiteoutSettingsSubsystem.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "State/WindStationStateSubsystem.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -1200,7 +1201,15 @@ void AWhiteoutGameMode::BeginPresentationCapture()
 		DepthOfFieldQuality->Set(0, ECVF_SetByCode);
 	}
 	PresentationCaptureNames.Reset();
-	if (PresentationCaptureMode.Equals(TEXT("suite"), ESearchCase::IgnoreCase))
+	if (PresentationCaptureMode.Equals(TEXT("v15suite"), ESearchCase::IgnoreCase))
+	{
+		PresentationCaptureNames = {TEXT("v15_self"), TEXT("v15_gu"), TEXT("v15_ye"), TEXT("v15_unknown"),
+			TEXT("v15_diagnosed"), TEXT("v15_offline"), TEXT("v15_online"), TEXT("v15_fault")};
+		float Scale = 1.0f;
+		FParse::Value(FCommandLine::Get(), TEXT("WhiteoutCaptureScale="), Scale);
+		GetMutableDefault<UUserInterfaceSettings>()->ApplicationScale = FMath::Clamp(Scale, 0.9f, 1.5f);
+	}
+	else if (PresentationCaptureMode.Equals(TEXT("suite"), ESearchCase::IgnoreCase))
 	{
 		PresentationCaptureNames = {
 			TEXT("opening"), TEXT("hud"), TEXT("components"), TEXT("preview"),
@@ -1635,6 +1644,10 @@ void AWhiteoutGameMode::StagePresentationCapture()
 		else Request.ActionId = TEXT("dismantle_kitchen_heater");
 		const FWSActionPreview Preview = StateSubsystem->PreviewAction(Request);
 		HUD->ShowActionPreview(FWSPresentationText::ActionLabel(Request.ActionId), Preview);
+	}
+	else if (CaptureName.StartsWith(TEXT("v15_")))
+	{
+		HUD->ShowV15Capture(CaptureName);
 	}
 	else if (CaptureName.Equals(TEXT("dialogue")))
 	{
@@ -2158,8 +2171,10 @@ void AWhiteoutGameMode::CapturePresentationFrame()
 	const FIntPoint Size = GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport
 		? GEngine->GameViewport->Viewport->GetSizeXY()
 		: FIntPoint(0, 0);
-	const FString Directory = FPaths::ConvertRelativePathToFull(
-		FPaths::ProjectDir() / TEXT("../docs/baseline_v1.0"));
+	const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() /
+		(CaptureName.StartsWith(TEXT("v15_"))
+			? FString::Printf(TEXT("../Artifacts/v1.5-evidence/layouts/scale_%d"), FMath::RoundToInt(GetDefault<UUserInterfaceSettings>()->ApplicationScale * 100))
+			: FString(TEXT("../docs/baseline_v1.0"))));
 	IFileManager::Get().MakeDirectory(*Directory, true);
 	const FString ScreenshotPath = Directory / FString::Printf(
 		TEXT("UI_%s_%dx%d.png"),
@@ -2449,7 +2464,8 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 		{
 			Configure(Step.Request);
 		}
-		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV15AuthoredRoute")))
+		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV15AuthoredRoute"))
+			|| FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV15OnlineRoute")))
 		{
 			if (Step.Request.ActionId == TEXT("talk_ye_cheng"))
 				Step.Request.AuthoredChoiceId = Step.Request.SemanticFrame.TargetFactId == TEXT("FACT_HAND_INJURY")
@@ -2725,6 +2741,11 @@ void AWhiteoutGameMode::ContinueAutomationRoute()
 		|| Step.Request.ActionId == TEXT("talk_ye_cheng");
 	if (bDialogueAction)
 	{
+		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV15OnlineRoute")))
+		{
+			SubmitV15OnlineRouteDialogue(Step.Request);
+			return;
+		}
 		TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
 		const FName ActionId = Step.Request.ActionId;
 		StateSubsystem->SubmitDialogueAction(
