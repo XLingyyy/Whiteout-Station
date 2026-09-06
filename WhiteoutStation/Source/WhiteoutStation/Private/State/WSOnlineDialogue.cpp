@@ -11,6 +11,8 @@ void UWindStationStateSubsystem::ResolveOnlineIntent(FName ActionId, const FStri
 		|| bCommitDispatchActive || bLifecycleTransitionActive || Text.IsEmpty() || Text.Len() > 480
 		|| !NormalizeDialogueSessionRequest(Request, Reason))
 	{ Completion(false, {}, TEXT("当前无法发送，请检查会话与 AI 设置。")); return; }
+	if (!RulesEngine.TryRecordModelCall())
+	{ Completion(false, {}, TEXT("本局 AI 请求额度已用完，请切换离线对话。")); return; }
 	FWSDialogueSessionRuntimeState& Session = DialogueSessions.FindOrAdd(SessionId);
 	Session.ActionId = ActionId; Session.DayPhase = RulesEngine.GetState().DayPhase;
 	TArray<FString> History = Session.SafeConversation;
@@ -34,7 +36,7 @@ void UWindStationStateSubsystem::ResolveOnlineIntent(FName ActionId, const FStri
 			FWSDialogueSessionRuntimeState* Current = Self->DialogueSessions.Find(SessionId);
 			if (!Current || Current->ActionId != ActionId || Self->StateRevision != Revision)
 			{ Completion(false, {}, TEXT("情况已变化，请按当前状态重新交谈。")); return; }
-			if (!Valid) { Completion(false, {}, TEXT("连接或意图解析失败，本次未扣费。请重新输入或在设置中切换离线。")); return; }
+			if (!Valid) { Completion(false, {}, TEXT("连接或意图解析失败，本次未扣费。请重新输入或点击切换离线对话。")); return; }
 			if (!Parsed.CanPlan()) { Completion(false, {}, TEXT("请说明对象和想做的事。本次未扣费。")); return; }
 			FWSCanonicalIntent Intent = Parsed;
 			if (Intent.Commitment == EWSCommitmentIntent::RejectPending)

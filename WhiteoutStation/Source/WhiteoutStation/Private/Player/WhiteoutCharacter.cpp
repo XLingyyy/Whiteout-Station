@@ -216,6 +216,7 @@ void AWhiteoutCharacter::Look(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 {
+	if (ActiveDialogueSessionId.IsValid()) return;
 	if (AWSInteractableActor* Interactable = FocusedInteractable)
 	{
 		if (Interactable->IsCharacterHotspot())
@@ -845,6 +846,7 @@ void AWhiteoutCharacter::AdvanceOpening()
 
 void AWhiteoutCharacter::ToggleGuide()
 {
+	if (ActiveDialogueSessionId.IsValid()) return;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
@@ -867,6 +869,7 @@ void AWhiteoutCharacter::TogglePauseMenu()
 
 void AWhiteoutCharacter::ContinueRun(const FInputActionValue& Value)
 {
+	if (ActiveDialogueSessionId.IsValid()) return;
 	UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
 	if (!StateSubsystem)
 	{
@@ -885,6 +888,7 @@ void AWhiteoutCharacter::ContinueRun(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::ToggleEvidence(const FInputActionValue& Value)
 {
+	if (ActiveDialogueSessionId.IsValid()) return;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
@@ -896,6 +900,7 @@ void AWhiteoutCharacter::ToggleEvidence(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::RestartRun(const FInputActionValue& Value)
 {
+	if (ActiveDialogueSessionId.IsValid()) return;
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		StateSubsystem->NewGame();
@@ -905,6 +910,7 @@ void AWhiteoutCharacter::RestartRun(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::Settle(const FInputActionValue& Value)
 {
+	if (ActiveDialogueSessionId.IsValid()) return;
 	UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
 	if (!StateSubsystem)
 	{

@@ -1207,6 +1207,7 @@ void UWindStationStateSubsystem::HandlePreparedDialogueOutcome(
 			Outcome,
 			ValidationReason))
 	{
+		UE_LOG(LogTemp, Display, TEXT("Whiteout prepared outcome rejected: %s"), *ValidationReason);
 		if (Prepared.bRoleplayV15 && !Prepared.bHasAuthoredFallback && Prepared.OriginalRequest.AuthoredChoiceId.IsNone())
 		{
 			AbortPendingDialogue(EWSReasonCode::DialogueOutcomeInvalid, true, false);
@@ -1365,6 +1366,9 @@ bool UWindStationStateSubsystem::AppendDialogueAudit(
 
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("kind"), TEXT("dialogue_expression"));
+	Root->SetStringField(TEXT("protocol_version"), Prepared.bRoleplayV15 ? TEXT("bounded_roleplay_v5") : TEXT("legacy"));
+	Root->SetStringField(TEXT("authored_choice_id"), Prepared.OriginalRequest.AuthoredChoiceId.ToString());
+	Root->SetStringField(TEXT("authored_line_id"), Outcome.FinalReply.AuthoredLineId.ToString());
 	Root->SetStringField(
 		TEXT("transaction_id"),
 		Prepared.TransactionId.ToString(EGuidFormats::DigitsWithHyphens).ToLower());
@@ -1407,7 +1411,7 @@ bool UWindStationStateSubsystem::AppendDialogueAudit(
 		StaticEnum<EWSRoleplayProposalType>()->GetNameStringByValue(
 			static_cast<int64>(
 				Outcome.FinalReply.ProposedAction.Type)).ToLower());
-	const FString AnswerSource = !Outcome.FinalReply.bFallback
+	const FString AnswerSource = Prepared.bRoleplayV15 || !Outcome.FinalReply.bFallback
 		? Outcome.AnswerSource
 		: TEXT("local_natural_fallback");
 	Root->SetStringField(TEXT("answer_source"), AnswerSource);

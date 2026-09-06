@@ -33,6 +33,7 @@ private:
 	UPROPERTY() TArray<TObjectPtr<UButton>> ChoiceButtons;
 	UPROPERTY() TArray<TObjectPtr<UTextBlock>> ChoiceLabels;
 	UPROPERTY() TObjectPtr<UMultiLineEditableTextBox> Input;
+	UPROPERTY() TObjectPtr<UWidget> InputContainer;
 	UPROPERTY() TObjectPtr<UButton> Send;
 	UPROPERTY() TObjectPtr<UButton> More;
 	UPROPERTY() TObjectPtr<UButton> Offline;
@@ -44,6 +45,7 @@ private:
 	int32 Page = 0;
 	int32 Turns = 0;
 	bool bBusy = false;
+	int32 PageSize() const;
 	void Select(int32 Index);
 	void Append(const FString& Text);
 	UFUNCTION() void Select0();

@@ -151,6 +151,7 @@ private:
 
 	UPROPERTY() TObjectPtr<UWSStatusPanelWidget> StatusPanelV15;
 	FName StatusFocusAction;
+	FVector2D LastDialogueLayoutSize = FVector2D::ZeroVector;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> BottomPanel;

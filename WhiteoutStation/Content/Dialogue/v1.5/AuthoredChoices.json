@@ -412,5 +412,34 @@
     "line_group_id": "ye_command_reply",
     "topic_id": "relationship",
     "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "ye_reassure",
+    "speaker_id": "ye_cheng",
+    "text": "不用一个人扛着，我们一起想办法。",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "ye_cheng",
+      "topic_id": "relationship",
+      "speech_act": "reassure",
+      "query_type": "status",
+      "target_action_id": "",
+      "target_character": "ye_cheng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "不用一个人扛着，我们一起想办法。"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "ye_reassure_reply",
+    "topic_id": "relationship",
+    "repeat_policy": "recap_no_bonus"
   }
 ]

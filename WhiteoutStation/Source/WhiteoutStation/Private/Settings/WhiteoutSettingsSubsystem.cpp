@@ -4,7 +4,7 @@
 #include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
-#include "Framework/Application/SlateApplication.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/WhiteoutCharacter.h"
 #include "Sound/SoundClass.h"
@@ -98,7 +98,7 @@ void UWhiteoutSettingsSubsystem::Load()
 	AmbienceVolume = LoadClampedSetting(TEXT("AmbienceVolume"), 1.0f, 0.0f, 1.0f);
 	EffectsVolume = LoadClampedSetting(TEXT("EffectsVolume"), 1.0f, 0.0f, 1.0f);
 	FeedbackVolume = LoadClampedSetting(TEXT("FeedbackVolume"), 1.0f, 0.0f, 1.0f);
-	TextScale = LoadClampedSetting(TEXT("TextScale"), 1.0f, 0.9f, 1.2f);
+	TextScale = LoadClampedSetting(TEXT("TextScale"), 1.0f, 0.9f, 1.5f);
 	bReducedMotion = LoadBoolSetting(TEXT("ReducedMotion"), false);
 	LLMProviderId = LoadStringSetting(TEXT("LLMProvider"), TEXT("deepseek"), 32).ToLower();
 	LLMBaseUrl = LoadStringSetting(TEXT("LLMBaseUrl"), TEXT("https://api.deepseek.com"), 512);
@@ -170,10 +170,7 @@ void UWhiteoutSettingsSubsystem::Apply(UObject* WorldContextObject)
 	{
 		return;
 	}
-	if (FSlateApplication::IsInitialized())
-	{
-		FSlateApplication::Get().SetApplicationScale(TextScale);
-	}
+	GetMutableDefault<UUserInterfaceSettings>()->ApplicationScale = TextScale;
 	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(UGameplayStatics::GetPlayerCharacter(WorldContextObject, 0)))
 	{
 		if (Character->FirstPersonCamera)
@@ -247,7 +244,7 @@ void UWhiteoutSettingsSubsystem::SetFeedbackVolume(const float Value, UObject* W
 
 void UWhiteoutSettingsSubsystem::SetTextScale(const float Value, UObject* WorldContextObject)
 {
-	TextScale = FMath::Clamp(Value, 0.9f, 1.2f);
+	TextScale = FMath::Clamp(Value, 0.9f, 1.5f);
 	Save();
 	Apply(WorldContextObject);
 }

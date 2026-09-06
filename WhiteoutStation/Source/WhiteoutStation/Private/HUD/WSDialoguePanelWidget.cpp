@@ -3,7 +3,9 @@
 #include "Blueprint/WidgetTree.h"
 #include "Engine/Font.h"
 #include "Components/Border.h"
+#include "Brushes/SlateColorBrush.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/MultiLineEditableTextBox.h"
@@ -32,6 +34,16 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 		T->SetAutoWrapText(true);
 		return T;
 	};
+	const auto StyleButton = [](UButton* B)
+	{
+		FButtonStyle Style;
+		Style.SetNormal(FSlateColorBrush(FLinearColor(0.07f, 0.11f, 0.14f)));
+		Style.SetHovered(FSlateColorBrush(FLinearColor(0.12f, 0.21f, 0.25f)));
+		Style.SetPressed(FSlateColorBrush(FLinearColor(0.04f, 0.09f, 0.11f)));
+		Style.SetDisabled(FSlateColorBrush(FLinearColor(0.06f, 0.07f, 0.08f)));
+		Style.SetNormalPadding(FMargin(12, 6)); Style.SetPressedPadding(FMargin(12, 6));
+		B->SetStyle(Style);
+	};
 	Header = Text(20);
 	Box->AddChildToVerticalBox(Header)->SetPadding(FMargin(0, 0, 0, 12));
 	HistoryScroll = WidgetTree->ConstructWidget<UScrollBox>();
@@ -46,11 +58,14 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 	for (int32 I = 0; I < 5; ++I)
 	{
 		UButton* Button = WidgetTree->ConstructWidget<UButton>();
+		StyleButton(Button);
 		UTextBlock* Label = Text(16);
 		USizeBox* Minimum = WidgetTree->ConstructWidget<USizeBox>();
 		Minimum->SetMinDesiredHeight(44);
 		Minimum->SetContent(Label);
 		Button->SetContent(Minimum);
+		CastChecked<UButtonSlot>(Minimum->Slot)->SetHorizontalAlignment(HAlign_Fill);
+		CastChecked<UButtonSlot>(Minimum->Slot)->SetVerticalAlignment(VAlign_Center);
 		ChoicesBox->AddChildToVerticalBox(Button)->SetPadding(FMargin(0, 3));
 		ChoiceButtons.Add(Button); ChoiceLabels.Add(Label);
 	}
@@ -64,15 +79,19 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 	InputStyle.SetFont(FSlateFontInfo(Font, 16));
 	Input->SetTextStyle(InputStyle);
 	Input->SetHintText(FText::FromString(TEXT("直接说出你想问或协商的事；回车换行，点击发送")));
-	Box->AddChildToVerticalBox(Input)->SetPadding(FMargin(0, 8));
+	USizeBox* InputArea = WidgetTree->ConstructWidget<USizeBox>();
+	InputArea->SetHeightOverride(96); InputArea->SetContent(Input);
+	Box->AddChildToVerticalBox(InputArea)->SetPadding(FMargin(0, 8));
+	InputContainer = InputArea;
 	Status = Text(14);
 	Box->AddChildToVerticalBox(Status)->SetPadding(FMargin(0, 8));
 	UHorizontalBox* Actions = WidgetTree->ConstructWidget<UHorizontalBox>();
 	Box->AddChildToVerticalBox(Actions);
 	const auto Button = [&](const TCHAR* Label)
 	{
-		UButton* B = WidgetTree->ConstructWidget<UButton>();
-		UTextBlock* T = Text(16); T->SetText(FText::FromString(Label)); B->SetContent(T);
+		UButton* B = WidgetTree->ConstructWidget<UButton>(); StyleButton(B);
+		UTextBlock* T = Text(16); T->SetAutoWrapText(false); T->SetText(FText::FromString(Label));
+		USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>(); Size->SetMinDesiredHeight(40); Size->SetContent(T); B->SetContent(Size);
 		Actions->AddChildToHorizontalBox(B)->SetPadding(FMargin(0, 0, 16, 0)); return B;
 	};
 	Send = Button(TEXT("发送")); Send->OnClicked.AddDynamic(this, &UWSDialoguePanelWidget::Submit);
@@ -107,16 +126,16 @@ void UWSDialoguePanelWidget::Refresh()
 	Configure->SetVisibility(Mode == EWSDialogueMode::InvalidConfiguration ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	if (UWindStationStateSubsystem* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 		Choices = State->GetAuthoredDialogueChoices(Action);
-	if (Page * 5 >= Choices.Num()) Page = 0;
+	if (Page * PageSize() >= Choices.Num()) Page = 0;
 	for (int32 I = 0; I < ChoiceButtons.Num(); ++I)
 	{
-		const int32 Index = Page * 5 + I;
-		const bool Visible = Mode == EWSDialogueMode::Authored && Available && Choices.IsValidIndex(Index);
+		const int32 Index = Page * PageSize() + I;
+		const bool Visible = Mode == EWSDialogueMode::Authored && Available && I < PageSize() && Choices.IsValidIndex(Index);
 		ChoiceButtons[I]->SetVisibility(Visible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		ChoiceButtons[I]->SetIsEnabled(!bBusy);
 		ChoiceLabels[I]->SetText(Visible ? FText::FromString(Choices[Index].Text) : FText::GetEmpty());
 	}
-	Input->SetVisibility(Mode == EWSDialogueMode::Online && Available ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	InputContainer->SetVisibility(Mode == EWSDialogueMode::Online && Available ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Input->SetIsReadOnly(bBusy);
 	Send->SetVisibility(Input->GetVisibility()); Send->SetIsEnabled(!bBusy);
 	More->SetVisibility(Mode == EWSDialogueMode::Authored && Available && Choices.Num() > 5 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
@@ -147,7 +166,7 @@ void UWSDialoguePanelWidget::SetStatus(const FString& Message, bool Busy)
 
 void UWSDialoguePanelWidget::Select(int32 Index)
 {
-	Index += Page * 5;
+	Index += Page * PageSize();
 	if (Mode != EWSDialogueMode::Authored || bBusy || Turns >= 3 || !Choices.IsValidIndex(Index)) return;
 	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
 	{
@@ -161,7 +180,7 @@ void UWSDialoguePanelWidget::Select1() { Select(1); }
 void UWSDialoguePanelWidget::Select2() { Select(2); }
 void UWSDialoguePanelWidget::Select3() { Select(3); }
 void UWSDialoguePanelWidget::Select4() { Select(4); }
-void UWSDialoguePanelWidget::NextPage() { Page = (Page + 1) % FMath::Max(1, FMath::DivideAndRoundUp(Choices.Num(), 5)); Refresh(); }
+void UWSDialoguePanelWidget::NextPage() { Page = (Page + 1) % FMath::Max(1, FMath::DivideAndRoundUp(Choices.Num(), PageSize())); Refresh(); }
 void UWSDialoguePanelWidget::Submit()
 {
 	if (Mode != EWSDialogueMode::Online || bBusy || Turns >= 3) return;
@@ -201,4 +220,10 @@ void UWSDialoguePanelWidget::OpenConfiguration()
 	Leave();
 	if (APlayerController* PC = GetOwningPlayer())
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PC->GetHUD())) HUD->OpenDialogueSettings();
+}
+
+int32 UWSDialoguePanelWidget::PageSize() const
+{
+	const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(Choices.Num(), 5));
+	return FMath::Max(1, FMath::DivideAndRoundUp(Choices.Num(), Pages));
 }

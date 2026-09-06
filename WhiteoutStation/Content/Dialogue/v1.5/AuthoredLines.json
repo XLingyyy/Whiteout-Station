@@ -291,5 +291,25 @@
     "npc_line": "这样的催促只会让配合更困难。具体要做什么，先把条件和风险说清楚。",
     "claim_ids": [],
     "reaction": "consider"
+  },
+  {
+    "line_id": "ye_alternative_diagnosed",
+    "line_group_id": "ye_alternative_reply",
+    "priority": 5,
+    "when": [
+      "gu_diagnosed"
+    ],
+    "npc_line": "顾衡的伤情已经确认。替代处置还要落实人员配合，先按医嘱安排，别让他硬撑。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_reassure_base",
+    "line_group_id": "ye_reassure_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "好。我们把眼前的事一项一项安排，别急着硬撑。",
+    "claim_ids": [],
+    "reaction": "reassure"
   }
 ]

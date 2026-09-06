@@ -614,6 +614,12 @@ void AWhiteoutGameMode::BeginPlay()
 		RunDialogueHistoryProbeStep(0);
 	}
 
+	FString V15ProbePath;
+	if (FParse::Value(FCommandLine::Get(), TEXT("WhiteoutV15Probe="), V15ProbePath))
+	{
+		FTimerHandle ProbeTimer;
+		GetWorldTimerManager().SetTimer(ProbeTimer, [this, V15ProbePath]() { RunV15DialogueProbe(V15ProbePath); }, 1.0f, false);
+	}
 	FString InputSmokeTarget;
 	if (FParse::Value(
 		FCommandLine::Get(),
@@ -625,6 +631,15 @@ void AWhiteoutGameMode::BeginPlay()
 			InputSmokeSetupTimer,
 			[this, InputSmokeTarget]()
 			{
+				if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+					if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PC->GetHUD())) HUD->DismissOpening();
+				if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV15UIFixture")))
+					if (UWindStationStateSubsystem* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+					{
+						EWSReasonCode Reason;
+						TArray<FString> Changes;
+						State->BeginDayPhase(EWSHeatingZone::MedicalRoom, Reason, Changes);
+					}
 				SetupInputSmokeTarget(InputSmokeTarget);
 			},
 			0.75f,
@@ -632,6 +647,7 @@ void AWhiteoutGameMode::BeginPlay()
 	}
 
 	if (AutoRoute.IsEmpty()
+		&& V15ProbePath.IsEmpty()
 		&& FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoCapture")))
 	{
 		FTimerHandle CaptureTimer;
@@ -683,6 +699,7 @@ void AWhiteoutGameMode::BeginPlay()
 	}
 
 	if (AutoRoute.IsEmpty()
+		&& InputSmokeTarget.IsEmpty()
 		&& !bIntentProbeRequested
 		&& !bExpressionProbeRequested
 		&& !bDialogueHistoryProbeRequested
@@ -2431,6 +2448,16 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 		if (Configure)
 		{
 			Configure(Step.Request);
+		}
+		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV15AuthoredRoute")))
+		{
+			if (Step.Request.ActionId == TEXT("talk_ye_cheng"))
+				Step.Request.AuthoredChoiceId = Step.Request.SemanticFrame.TargetFactId == TEXT("FACT_HAND_INJURY")
+					? TEXT("ye_diagnosis") : TEXT("ye_person");
+			else if (Step.Request.ActionId == TEXT("talk_gu_heng"))
+				Step.Request.AuthoredChoiceId = Step.Request.DialogueAct == EWSDialogueAct::Promise ? TEXT("gu_heat_promise")
+					: Step.Request.DialogueAct == EWSDialogueAct::Command ? TEXT("gu_command")
+					: Step.Request.DialogueAct == EWSDialogueAct::Challenge ? TEXT("gu_relay") : TEXT("gu_person");
 		}
 	};
 	const auto AddSettlePhase = [this]()

@@ -3519,7 +3519,7 @@ FString UWSAgentGateway::BuildDialogueRealizationContextJson(
 			Roleplay.TargetSubjectId.ToString());
 		Context->SetStringField(
 			TEXT("player_line"),
-			Roleplay.PlayerLine.Left(280));
+			Roleplay.PlayerLine.Left(Prepared.bRoleplayV15 ? 480 : 280));
 		Context->SetNumberField(TEXT("turn_index"), Roleplay.TurnIndex);
 		Context->SetNumberField(
 			TEXT("remaining_turns"),
@@ -3669,10 +3669,10 @@ FString UWSAgentGateway::BuildDialogueRealizationContextJson(
 				TSharedRef<FJsonObject> Object = MakeShared<FJsonObject>();
 				Object->SetStringField(
 					TEXT("player_line"),
-					Turn.RawPlayerLine.Left(280));
+					Turn.RawPlayerLine.Left(Prepared.bRoleplayV15 ? 480 : 280));
 				Object->SetStringField(
 					TEXT("npc_line"),
-					Turn.RawNpcLine.Left(120));
+					Turn.RawNpcLine.Left(Prepared.bRoleplayV15 ? 240 : 120));
 				RecentTurns.Add(MakeShared<FJsonValueObject>(Object));
 			}
 		}
@@ -4141,8 +4141,8 @@ void UWSAgentGateway::RecordDialogueTurn(
 	FWSAgentDialogueTurn& Turn = History.AddDefaulted_GetRef();
 	Turn.UserSemanticSummaryJson = BuildHistoryUserJson(ActionRequest, bTopicChanged).Left(1024);
 	Turn.AssistantSemanticSummaryJson = BuildHistoryAssistantJson(Reply).Left(1024);
-	Turn.RawPlayerLine = ActionRequest.PlayerSaid.TrimStartAndEnd().Left(280);
-	Turn.RawNpcLine = Reply.Utterance.TrimStartAndEnd().Left(120);
+	Turn.RawPlayerLine = ActionRequest.PlayerSaid.TrimStartAndEnd().Left(ActionRequest.SemanticFrame.bCanonicalIntentValidated ? 480 : 280);
+	Turn.RawNpcLine = Reply.Utterance.TrimStartAndEnd().Left(ActionRequest.SemanticFrame.bCanonicalIntentValidated ? 240 : 120);
 	Turn.TopicActionId = TopicActionId;
 	constexpr int32 MaxDialogueHistoryTurns = 3;
 	if (History.Num() > MaxDialogueHistoryTurns)

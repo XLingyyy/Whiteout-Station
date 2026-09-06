@@ -37,6 +37,7 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	void PrepareOpeningReveal();
 	void FinishOpeningPresentation();
+	void RunV15DialogueProbe(const FString& InputPath, int32 CaseIndex = 0);
 
 private:
 	UPROPERTY()

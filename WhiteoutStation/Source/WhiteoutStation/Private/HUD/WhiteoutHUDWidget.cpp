@@ -288,6 +288,18 @@ void UWhiteoutHUDWidget::NativeDestruct()
 void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	const FVector2D LayoutSize = MyGeometry.GetLocalSize();
+	if (DialogueBorder && LayoutSize.X > 0 && LayoutSize.Y > 0 && LayoutSize != LastDialogueLayoutSize)
+	{
+		LastDialogueLayoutSize = LayoutSize;
+		if (UCanvasPanelSlot* DialogueCanvasSlot = Cast<UCanvasPanelSlot>(DialogueBorder->Slot))
+		{
+			const float Top = LayoutSize.Y < 650 ? 0.08f : 0.30f;
+			DialogueCanvasSlot->SetAnchors(FAnchors(0, 0));
+			DialogueCanvasSlot->SetPosition(FVector2D(LayoutSize.X * 0.04f, LayoutSize.Y * Top));
+			DialogueCanvasSlot->SetSize(FVector2D(FMath::Min(LayoutSize.X * 0.64f, 900.0f), LayoutSize.Y * (0.96f - Top)));
+		}
+	}
 	TickPanelAnimations(InDeltaTime);
 	TickOpening(InDeltaTime);
 	const bool bReducedMotion = IsReducedMotionEnabled();
@@ -652,7 +664,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	GuideCloseButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CloseGuide);
 	GuideBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	DialogueBorder = MakePanel(Canvas, TEXT("DialoguePanel"), FAnchors(0.04f, 0.48f, 0.68f, 0.96f), FMargin(0), FLinearColor::Transparent);
+	DialogueBorder = MakePanel(Canvas, TEXT("DialoguePanel"), FAnchors(0.04f, 0.30f, 0.68f, 0.96f), FMargin(0), FLinearColor::Transparent);
 	DialogueBorder->SetPadding(FMargin(0));
 	DialoguePanelV15 = CreateWidget<UWSDialoguePanelWidget>(GetOwningPlayer());
 	DialoguePanelV15->Build(UIFontFamily);
@@ -994,7 +1006,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	SettingsContent->AddChildToVerticalBox(MakeText(TEXT("SettingsScope"), 12, Secondary))->SetPadding(FMargin(8, 10, 8, 14));
 	if (UTextBlock* ScopeText = Cast<UTextBlock>(SettingsContent->GetChildAt(SettingsContent->GetChildrenCount() - 1)))
 	{
-		ScopeText->SetText(FText::FromString(TEXT("字号 90%–120%｜减少动态效果会保留逐句推进并缩短淡入淡出")));
+		ScopeText->SetText(FText::FromString(TEXT("字号 90%–150%｜减少动态效果会保留逐句推进并缩短淡入淡出")));
 		ScopeText->SetJustification(ETextJustify::Center);
 	}
 
@@ -1404,6 +1416,7 @@ void UWhiteoutHUDWidget::SetBaseHudHidden(const bool bHidden)
 void UWhiteoutHUDWidget::SetLayer(const EWSUILayer Layer)
 {
 	CurrentLayer = Layer;
+	if (Layer != EWSUILayer::Game && Layer != EWSUILayer::Dialogue && Layer != EWSUILayer::Preview) SetStatusFocus(NAME_None);
 	const bool bHideBaseHud = Layer == EWSUILayer::Evidence
 		|| Layer == EWSUILayer::Dialogue
 		|| Layer == EWSUILayer::Guide
@@ -1411,6 +1424,7 @@ void UWhiteoutHUDWidget::SetLayer(const EWSUILayer Layer)
 		|| Layer == EWSUILayer::Settings
 		|| Layer == EWSUILayer::Results;
 	SetBaseHudHidden(bHideBaseHud);
+	if (StatusPanelV15 && Layer == EWSUILayer::Dialogue) StatusPanelV15->SetVisibility(ESlateVisibility::HitTestInvisible);
 	if (bHideBaseHud)
 	{
 		ClearInteractionFocus();
@@ -2533,7 +2547,7 @@ void UWhiteoutHUDWidget::SetActionFeedback(
 			*RejectedFormat,
 			{ActionName.ToString(), FWSPresentationText::ReasonCause(Result.ReasonCode).ToString(), FWSPresentationText::ReasonNextStep(Result.ReasonCode).ToString()});
 	}
-	if (ToastBorder && ToastText)
+	if (ToastBorder && ToastText && !bDialogueVisible)
 	{
 		ToastText->SetText(FText::FromString(SystemMessage));
 		ToastText->SetColorAndOpacity(FSlateColor(Result.bCommitted ? Body : FLinearColor(1.0f, 0.72f, 0.62f, 1.0f)));
@@ -4294,7 +4308,7 @@ void UWhiteoutHUDWidget::RefreshSettingsUI()
 	if (AmbienceVolumeSlider) AmbienceVolumeSlider->SetValue(Settings->GetAmbienceVolume());
 	if (EffectsVolumeSlider) EffectsVolumeSlider->SetValue(Settings->GetEffectsVolume());
 	if (FeedbackVolumeSlider) FeedbackVolumeSlider->SetValue(Settings->GetFeedbackVolume());
-	if (TextScaleSlider) TextScaleSlider->SetValue((Settings->GetTextScale() - 0.9f) / 0.3f);
+	if (TextScaleSlider) TextScaleSlider->SetValue((Settings->GetTextScale() - 0.9f) / 0.6f);
 	if (FOVValueText) FOVValueText->SetText(FText::FromString(FString::Printf(TEXT("%d°"), FMath::RoundToInt(Settings->GetFieldOfView()))));
 	if (MasterVolumeValueText) MasterVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetMasterVolume() * 100.0f))));
 	if (AmbienceVolumeValueText) AmbienceVolumeValueText->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Settings->GetAmbienceVolume() * 100.0f))));
@@ -4423,7 +4437,7 @@ void UWhiteoutHUDWidget::HandleTextScaleChanged(const float Value)
 	if (UWhiteoutSettingsSubsystem* Settings =
 		GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
 	{
-		Settings->SetTextScale(0.9f + FMath::Clamp(Value, 0.0f, 1.0f) * 0.3f, this);
+		Settings->SetTextScale(0.9f + FMath::Clamp(Value, 0.0f, 1.0f) * 0.6f, this);
 		if (TextScaleValueText)
 		{
 			TextScaleValueText->SetText(FText::FromString(FString::Printf(
@@ -4490,6 +4504,7 @@ void UWhiteoutHUDWidget::QuitGame()
 
 void UWhiteoutHUDWidget::SetStatusFocus(FName ActionId)
 {
+	if (CurrentLayer != EWSUILayer::Game && CurrentLayer != EWSUILayer::Dialogue && CurrentLayer != EWSUILayer::Preview) ActionId = NAME_None;
 	if (StatusFocusAction == ActionId) return;
 	StatusFocusAction = ActionId;
 	if (UWindStationStateSubsystem* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())

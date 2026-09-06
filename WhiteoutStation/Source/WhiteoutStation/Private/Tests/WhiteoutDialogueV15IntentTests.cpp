@@ -56,6 +56,9 @@ bool FWhiteoutV15ControlledClaimsTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Unlisted claim cannot introduce a fact"), UWSAgentGateway::ParseControlledRoleplay(
 		Envelope.Replace(TEXT("%SEGMENTS%"), TEXT(R"([{"kind":"claim","claim_id":"secret"}])")), Prepared, Reply, Error));
 	TestEqual(TEXT("Unknown claim is blocked before text rendering"), Error, FString(TEXT("roleplay_claim_unknown_or_duplicate")));
+	TestFalse(TEXT("Critical facts cannot be paraphrased in free text"), UWSAgentGateway::ParseControlledRoleplay(
+		Envelope.Replace(TEXT("%SEGMENTS%"), TEXT(R"([{"kind":"text","text":"右手撕裂加失温。"},{"kind":"claim","claim_id":"diagnosis"}])")), Prepared, Reply, Error));
+	TestEqual(TEXT("Duplicate free diagnosis is rejected before committing"), Error, FString(TEXT("roleplay_fact_outside_claim")));
 	TestFalse(TEXT("Claim cannot repeat"), UWSAgentGateway::ParseControlledRoleplay(
 		Envelope.Replace(TEXT("%SEGMENTS%"), TEXT(R"([{"kind":"claim","claim_id":"diagnosis"},{"kind":"claim","claim_id":"diagnosis"}])")), Prepared, Reply, Error));
 	return true;
