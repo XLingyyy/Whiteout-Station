@@ -669,7 +669,7 @@ void AWhiteoutCharacter::SubmitAuthoredChoice(FName ChoiceId)
 {
 	if (!ActiveDialogueTarget.IsValid() || bDialogueChoiceCommitted || bDialogueIntentPending) return;
 	UWindStationStateSubsystem* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
-	if (!State || State->GetDialogueMode() != EWSDialogueMode::Authored) return;
+	if (!State) return;
 	const TArray<FWSAuthoredChoice> Choices = State->GetAuthoredDialogueChoices(ActiveDialogueTarget->ActionId);
 	const FWSAuthoredChoice* Choice = Choices.FindByPredicate([ChoiceId](const FWSAuthoredChoice& C) { return C.ChoiceId == ChoiceId; });
 	if (!Choice) return;

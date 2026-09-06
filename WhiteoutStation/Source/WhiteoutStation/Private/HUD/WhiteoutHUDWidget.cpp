@@ -2622,6 +2622,11 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bV
 		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PC->SetInputMode(Mode);
 		DialoguePanelV15->FocusInput();
+		TWeakObjectPtr<UWhiteoutHUDWidget> WeakThis(this);
+		GetWorld()->GetTimerManager().SetTimerForNextTick([WeakThis]()
+		{
+			if (WeakThis.IsValid() && WeakThis->bDialogueVisible) WeakThis->DialoguePanelV15->FocusInput();
+		});
 	}
 }
 

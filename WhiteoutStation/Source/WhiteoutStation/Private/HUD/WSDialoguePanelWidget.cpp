@@ -77,6 +77,13 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 	Input = WidgetTree->ConstructWidget<UMultiLineEditableTextBox>();
 	FTextBlockStyle InputStyle;
 	InputStyle.SetFont(FSlateFontInfo(Font, 16));
+	InputStyle.SetColorAndOpacity(FSlateColor(FLinearColor(0.91f, 0.93f, 0.95f)));
+	Input->WidgetStyle.SetBackgroundImageNormal(FSlateColorBrush(FLinearColor(0.035f, 0.05f, 0.065f)));
+	Input->WidgetStyle.SetBackgroundImageHovered(FSlateColorBrush(FLinearColor(0.045f, 0.065f, 0.08f)));
+	Input->WidgetStyle.SetBackgroundImageFocused(FSlateColorBrush(FLinearColor(0.055f, 0.085f, 0.105f)));
+	Input->WidgetStyle.SetBackgroundImageReadOnly(FSlateColorBrush(FLinearColor(0.035f, 0.04f, 0.05f)));
+	Input->WidgetStyle.SetForegroundColor(FLinearColor(0.91f, 0.93f, 0.95f));
+	Input->WidgetStyle.SetPadding(FMargin(10));
 	Input->SetTextStyle(InputStyle);
 	Input->SetHintText(FText::FromString(TEXT("直接说出你想问或协商的事；回车换行，点击发送")));
 	USizeBox* InputArea = WidgetTree->ConstructWidget<USizeBox>();
@@ -137,7 +144,7 @@ void UWSDialoguePanelWidget::Refresh()
 	}
 	InputContainer->SetVisibility(Mode == EWSDialogueMode::Online && Available ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Input->SetIsReadOnly(bBusy);
-	Send->SetVisibility(Input->GetVisibility()); Send->SetIsEnabled(!bBusy);
+	Send->SetVisibility(InputContainer->GetVisibility()); Send->SetIsEnabled(!bBusy);
 	More->SetVisibility(Mode == EWSDialogueMode::Authored && Available && Choices.Num() > 5 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	More->SetIsEnabled(!bBusy);
 }
