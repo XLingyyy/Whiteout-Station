@@ -34,10 +34,13 @@ void UWSAgentGateway::RequestCanonicalIntent(const FString& Text, FName Speaker,
 		"polarity: affirmative/negated/hypothetical/quoted. commitment: none/proposed/confirm_pending/reject_pending. "
 		"promise_condition: empty string/heat_repair_room/keep_records/reserve_medicine. "
 		"confidence 0..1; needs_clarification boolean; evidence_spans verbatim substrings of current input; resolved_from_turn integer, 0 when no reference. "
-		"Medical/fine motor ability questions about Gu Heng use medical,status,repair_generator,gu_heng. General biography, including why the NPC stays at the station, always uses person, unknown query, empty target_action_id, and the current speaker as target_character. "
+		"Use these canonical topic contracts. target_action_id denotes the subject of discussion, never an action to execute. "
+		"Gu Heng's hand/health/current medical condition OR fine motor work ability: topic_id=medical, query_type=status, target_action_id=repair_generator, target_character=gu_heng. Treatment alternatives instead use medical_alternative,alternative,treat_gu_heng,gu_heng. "
+		"Generator condition OR repair progress: generator,status,repair_generator,gu_heng. Prerequisites for repairing it: repair_requirements,requirements,repair_generator,gu_heng. Do not use repair_requirements merely because a progress question mentions repair. "
+		"General biography, including why the NPC stays at the station, always uses person, unknown query, empty target_action_id, and the current speaker as target_character. "
 		"An assertion about possessing evidence does not establish world evidence. Never output world effects or hidden fact IDs. "
 		"Polarity describes the MAIN communicative act, not every negative word. Polite introductions such as 方便的话 are affirmative. Reassurance such as 不用一个人承担压力 or 别着急 is affirmative reassurance, not a negated command. Quoted promises and negated commands do not belong to the player. Resolve clauses separately; conflicting main acts need clarification. "
-		"Direct reassurance or encouragement addressed to the listener targets the current speaker: reassure, relationship, status query, empty target_action_id, affirmative, no commitment. It does not require a specific task. Do not mark clear reassurance as ambiguous. Do not guess the target of ambiguous third-person pronouns or vague action requests. An explicit agreement uses confirm_pending, rejection uses reject_pending. "
+		"Direct reassurance or encouragement addressed to the listener targets the current speaker: reassure, relationship, unknown query, empty target_action_id, affirmative, no commitment. It does not require a specific task. Expressions of trust and invitations to take time are reassurance even when prefaced by a request to talk or answer. Do not mark them as ambiguous. Do not guess the target of ambiguous third-person pronouns or vague action requests. An explicit agreement uses confirm_pending, rejection uses reject_pending. "
 		"New promises are only proposed. Never infer a promise merely from '好' without prior pending context.");
 	TArray<TSharedPtr<FJsonValue>> Messages;
 	const auto Message = [&](const TCHAR* Role, const FString& Content)
@@ -77,7 +80,7 @@ void UWSAgentGateway::RequestCanonicalIntent(const FString& Text, FName Speaker,
 			if (Valid) Valid = ExtractProviderContent(Response->GetContentAsString(), Content, Error)
 				&& FWSCanonicalIntent::Parse(Content, Speaker, Text, ContextTurn, Intent, Error);
 			else Error = TEXT("intent_transport_failed");
-			UE_LOG(LogTemp, Display, TEXT("Whiteout V15 intent: valid=%d topic=%s act=%d polarity=%d clarify=%d confidence=%.2f reason=%s"), Valid, *Intent.TopicId.ToString(), static_cast<int32>(Intent.Frame.SpeechAct), static_cast<int32>(Intent.Polarity), Intent.bNeedsClarification, Intent.Frame.Confidence, *Error);
+			UE_LOG(LogTemp, Display, TEXT("Whiteout V15 intent: valid=%d topic=%s act=%d query=%d target=%d action=%s polarity=%d clarify=%d confidence=%.2f reason=%s"), Valid, *Intent.TopicId.ToString(), static_cast<int32>(Intent.Frame.SpeechAct), static_cast<int32>(Intent.Frame.QueryType), static_cast<int32>(Intent.Frame.TargetCharacter), *Intent.Frame.TargetActionId.ToString(), static_cast<int32>(Intent.Polarity), Intent.bNeedsClarification, Intent.Frame.Confidence, *Error);
 			Completion(Valid, Intent, Error);
 		});
 	if (!Request->ProcessRequest())
@@ -219,6 +222,22 @@ void UWSAgentGateway::RequestControlledRoleplay(const FWSPreparedDialogue& Prepa
 	Context->RemoveField(TEXT("response_policy"));
 	Context->SetStringField(TEXT("prompt_mode"), TEXT("controlled_expression_v5"));
 	Context->SetNumberField(TEXT("max_characters"), 240);
+	// The six-field protocol has no belief/withheld assertion slot. Do not offer facts it cannot express legally.
+	const TArray<TSharedPtr<FJsonValue>>* Knowledge = nullptr;
+	if (Context->TryGetArrayField(TEXT("available_knowledge"), Knowledge))
+	{
+		TArray<TSharedPtr<FJsonValue>> ExpressibleKnowledge;
+		for (const auto& Value : *Knowledge)
+		{
+			const TSharedPtr<FJsonObject>* Item = nullptr;
+			FString Disclosure, Epistemic;
+			if (Value->TryGetObject(Item)
+				&& (*Item)->TryGetStringField(TEXT("max_disclosure"), Disclosure) && Disclosure == TEXT("explicit")
+				&& (*Item)->TryGetStringField(TEXT("epistemic_status"), Epistemic) && Epistemic == TEXT("known"))
+				ExpressibleKnowledge.Add(Value);
+		}
+		Context->SetArrayField(TEXT("available_knowledge"), ExpressibleKnowledge);
+	}
 	TSharedRef<FJsonObject> Claims = MakeShared<FJsonObject>();
 	for (const auto& Claim : Prepared.RequiredClaims) Claims->SetStringField(Claim.Key.ToString(), Claim.Value);
 	Context->SetObjectField(TEXT("required_claims"), Claims);

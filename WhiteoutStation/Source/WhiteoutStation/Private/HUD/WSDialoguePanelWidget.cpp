@@ -111,6 +111,7 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 void UWSDialoguePanelWidget::Open(FName InAction, EWSDialogueMode InMode)
 {
 	Action = InAction; Mode = InMode; Page = 0; Turns = 0; History.Reset(); bBusy = false;
+	SetDesiredFocusWidget(Mode == EWSDialogueMode::Online ? Input.Get() : nullptr);
 	Input->SetText(FText::GetEmpty());
 	const FString Name = Action == TEXT("talk_ye_cheng") ? TEXT("叶澄 · 医生") : TEXT("顾衡 · 工程师");
 	const FString ModeText = Mode == EWSDialogueMode::Authored ? TEXT("离线 · 剧本对话")
@@ -218,6 +219,7 @@ void UWSDialoguePanelWidget::SwitchOffline()
 {
 	if (bBusy) return;
 	Mode = EWSDialogueMode::Authored; Page = 0;
+	SetDesiredFocusWidget(static_cast<UWidget*>(nullptr));
 	Header->SetText(FText::FromString((Action == TEXT("talk_ye_cheng") ? FString(TEXT("叶澄 · 医生")) : FString(TEXT("顾衡 · 工程师"))) + TEXT("    离线 · 剧本对话")));
 	SetStatus(TEXT("已切换离线剧本对话；本次已用轮次和 AP 保留。"), false);
 	FocusInput();
