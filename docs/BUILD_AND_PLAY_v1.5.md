@@ -4,6 +4,8 @@
 
 当前按候选版本管理。人工标注语义集、八人盲测和全部视觉／输入验收证据尚不齐全，不能标为完整发布通过。
 
+最新可运行归档：`Artifacts/WhiteoutStation-v1.5-Win64-20260906-8ba299e-candidate/Windows/WhiteoutStation.exe`。包含响应式面板、明确质疑的替代件选项、旧控件移除与窗口失焦清理。下方旧包和失败批次保留为历史验证记录。
+
 ## 运行与配置
 
 工程：`WhiteoutStation/WhiteoutStation.uproject`，UE 5.8，VS 14.44.35228，Windows SDK 10.0.22621.0。
@@ -75,7 +77,7 @@ python -X utf8 Tools/Release/run_v15_authored_routes.py --exe 'Artifacts/Whiteou
 
 同时复现两项 UI 问题：切离线后角色仍以全局 AI 模式拒绝作者选项；限制多行框高度后发送按钮误读了子控件可见性。`9168212` 修正作者选项提交入口和发送按钮显隐，并修复默认紫字浅底、延迟一帧设置输入焦点。新归档实机确认：在线回复一轮后切离线，两次作者追问都提交成功，三轮结束后 AP 为 3/4；离线发送按钮隐藏，输入文字为深底浅字。延迟一帧仍未解决首次输入焦点，另行修正并验证。证据为 `shipping-online-final.png`、`shipping-offline-recovery-final.png`、`shipping-three-turns-ap.png`。
 
-新归档 `Artifacts/WhiteoutStation-v1.5-Win64-20260906-9168212-candidate` 复用前一次已成功且内容未变化的 Cook，仅重新编译 Shipping、Stage 和归档。旧 `e969728` 包保留为复现证据，运行请选新包。
+归档 `Artifacts/WhiteoutStation-v1.5-Win64-20260906-9168212-candidate` 复用前一次已成功且内容未变化的 Cook，仅重新编译 Shipping、Stage 和归档。该包现为历史验证产物；运行请选本文开头的最新包。
 
 ## 意图合同与焦点后续修正
 
@@ -109,7 +111,17 @@ python -X utf8 Tools/Release/run_v15_http_faults.py --exe 'G:/UnrealEngine/UE_5.
 
 首次对照暴露了承诺确认、命令和替代部件语义不一致。补充 A 的字段合同；替代部件作者选项原本是中性问句却标成 challenge，现改为明确质疑台词，保留技术路线既有结算。将该选项临时改成 ask 的尝试导致技术路线无法披露替代件，该改动已撤回。原失败报告保留 `equivalent-routes` 与 `equivalent-routes-contract`。后一次在线请求均在 A 阶段达到 3 秒超时；独立 Python 请求和 curl 同时出现 TLS 握手断开，尚不能归因于提供商整体故障，在线等价仍未通过。没有提高生产超时上限或增加自动重试。
 
+## 最新 Shipping 包验证
+
+`8ba299e` 候选包完成 Shipping 编译、完整 Cook、Stage 和归档，用时 194 秒。包内运行配置与九份作者对话数据门禁零错误。五条打包后作者路线全部成功，结局与既有基线一致，评分为 74.70／71.44／58.94／36.92／42.16，所有路线模型调用为零。报告：`Artifacts/v1.5-evidence/shipping-8ba299e-routes/summary.json`。
+
+该 Shipping 包实机确认缺少进程 Key 时可切换离线，更新后的替代件质疑文案完整显示；首轮作者回复成功、剩余两轮，Esc 离开后 AP 从 4/4 变为 3/4。截图为 `shipping-8ba299e-first-turn.png` 与 `shipping-8ba299e-ap.png`。测试使用已明确标记的开局／定位夹具，交互和提交走实际游戏逻辑。
+
+受保护的 262 个文件最终复核无变化，记录为 `Artifacts/v1.5-evidence/protected-assets-final.json`。Git 在 2026-09-06 14:01 再次推送失败，错误为 `schannel: failed to receive handshake, SSL/TLS connection failed`；远端最后成功推送仍为 `f1e7d41`，后续提交保存在本地主分支。
+
 ## 旧控件移除与窗口失焦
+
+新增真实碰撞场景测试 `WhiteoutStation.UI.V15.Focus.CollisionAndLease`，验证碰撞表面 300 cm 获取距离、150 ms 获取延迟、340 cm 保持距离、墙体遮挡立即清除、200 ms 小角度宽限、视线切换、目标销毁及应用失焦状态。首次测试第二个 NPC 的斜向表面距离超出 300 cm，修正夹具位置并补齐临时世界上下文后，`Artifacts/v1.5-evidence/V15FocusGeometryFinal` 1/1 通过，零警告；原报告保留。该修改仅增加开发自动化测试与 friend 声明，不改变 Shipping 行为，因此未重复打包。
 
 移除旧态度轮盘、承诺菜单、单行输入框及其回车提交代码；追问刷新直接转交 v1.5 面板。旧截图入口也使用新面板。原提示词防泄露测试改为检查当前输入框文案，保留原七项禁用事实词断言，另检查回车换行与点击发送说明；`Saved/AutomationReports/V15LegacyCleanup` 1/1 通过。
 

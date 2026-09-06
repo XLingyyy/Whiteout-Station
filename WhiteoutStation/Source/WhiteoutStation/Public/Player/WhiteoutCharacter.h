@@ -49,6 +49,7 @@ public:
 		FName PromiseCondition = NAME_None) const;
 
 private:
+	friend class FWhiteoutV15FocusLeaseTest;
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> RuntimeInputContext;
 

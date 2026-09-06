@@ -93,6 +93,7 @@ public:
 		FName PromiseCondition = NAME_None);
 
 private:
+	friend class FWhiteoutV15FocusLeaseTest;
 	UPROPERTY(EditAnywhere, Category = "Interaction|Character")
 	TObjectPtr<UAnimSequence> IdleAnimation;
 
