@@ -19,6 +19,7 @@ public:
 	void SetInteractionPrompt(const FText& Prompt);
 	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, bool bDialogue = false);
 	void ClearInteractionFocus();
+	void SetStatusFocus(FName ActionId);
 	void SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview, bool bPromiseCreated = false);
 	void ShowActionPreview(
 		const FText& ActionName,
@@ -27,6 +28,7 @@ public:
 	void HideActionPreview();
 	void ToggleEvidence();
 	void ShowDialogueMenu(FName NPCActionId, bool bVisible);
+	void OpenDialogueSettings();
 	void ShowDialoguePromiseChoices();
 	void ShowDialogueWheelChoices();
 	void ShowDialogueFreeTextForCapture();

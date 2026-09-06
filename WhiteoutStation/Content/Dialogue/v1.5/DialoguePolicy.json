@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "top_k": 10,
+  "max_sentences": 3,
+  "max_characters": 120,
+  "max_output_tokens": 320,
+  "temperature": 0.5,
+  "allowed_speech_functions": [
+    "answer",
+    "answer_with_uncertainty",
+    "clarify",
+    "evade",
+    "refuse",
+    "suggest",
+    "conditional_offer",
+    "acknowledge",
+    "crisis_response"
+  ],
+  "allowed_proposal_types": [
+    "conditional_cooperation",
+    "suggest_action",
+    "refuse_action"
+  ]
+}

@@ -182,3 +182,14 @@ void AWhiteoutHUD::SetInterfaceVisibleForCapture(const bool bVisible)
 {
 	if (HUDWidget) HUDWidget->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 }
+#include "HUD/WhiteoutHUDWidget.h"
+
+void AWhiteoutHUD::SetStatusFocus(FName ActionId)
+{
+	if (HUDWidget) HUDWidget->SetStatusFocus(ActionId);
+}
+
+void AWhiteoutHUD::OpenDialogueSettings()
+{
+	if (HUDWidget) HUDWidget->OpenDialogueSettings();
+}

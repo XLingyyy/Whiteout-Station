@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "State/WhiteoutRulesEngine.h"
+#include "Dialogue/WSAuthoredDialogueRepository.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "WindStationStateSubsystem.generated.h"
 
@@ -18,6 +19,9 @@ struct FWSDialogueSessionRuntimeState
 	int32 PaidAP = 0;
 	bool bPositiveRewardApplied = false;
 	TSet<FName> AppliedEffectKeys;
+	TArray<FString> SafeConversation;
+	TOptional<FWSCanonicalIntent> PendingCommitment;
+	int64 PendingCommitmentRevision = 0;
 };
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -71,7 +75,7 @@ public:
 		TFunction<void(const FWSActionResult&)> Completion = {});
 
 	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Dialogue")
-	bool HasPendingDialogue() const { return bHasPendingDialogue; }
+	bool HasPendingDialogue() const { return bHasPendingDialogue || bHasPendingOnlineIntent; }
 
 	int64 GetStateRevision() const { return StateRevision; }
 	static bool CanCommitPreparedDialogue(
@@ -138,6 +142,12 @@ public:
 	bool ApplyLLMRuntimeConfiguration(FString& OutError);
 	FString GetLLMRuntimeStatus() const;
 	bool HasLiveLLMProvider() const;
+	EWSDialogueMode GetDialogueMode() const;
+	void ResolveOnlineIntent(FName ActionId, const FString& Text, FGuid SessionId,
+		TFunction<void(bool, const FWSCanonicalIntent&, const FString&)> Completion);
+	TArray<FWSAuthoredChoice> GetAuthoredDialogueChoices(FName ActionId) const;
+	FWSActionResult SubmitAuthoredDialogueChoice(FName ActionId, FName ChoiceId,
+		FGuid SessionId, TFunction<void(const FWSActionResult&)> Completion = {});
 	bool SetRequirementPinned(FName ActionId, bool bPinned);
 	bool AcceptLatestNegotiationOffer(FString& OutMessage);
 	void RequestDialogueIntent(
@@ -150,10 +160,12 @@ public:
 
 private:
 	static const FString SaveSlot;
+	static const FString LegacySaveSlotV14;
 	static const FString LegacySaveSlotV13;
 	static const FString LegacySaveSlotV12;
 	static const FString LegacySaveSlotV11;
 	FWhiteoutRulesEngine RulesEngine;
+	FWSAuthoredDialogueRepository AuthoredRepository;
 
 	UPROPERTY()
 	TObjectPtr<UWSActionResolver> ActionResolver;
@@ -172,6 +184,7 @@ private:
 
 	FWSPreparedDialogue PendingDialogue;
 	bool bHasPendingDialogue = false;
+	bool bHasPendingOnlineIntent = false;
 	bool bCommitDispatchActive = false;
 	bool bLifecycleTransitionActive = false;
 	TFunction<void(const FWSActionResult&)> PendingDialogueCompletion;

@@ -39,6 +39,13 @@ bool WSDialogueDisclosurePolicy::IsTargetedGuHengDiagnosisQuestion(
 	}
 
 	const FWSDialogueSemanticFrame& Frame = Request.SemanticFrame;
+	if (Frame.bCanonicalIntentValidated)
+	{
+		return Frame.TopicId == TEXT("medical")
+			&& Frame.TargetCharacter == EWSCharacterId::GuHeng
+			&& (Frame.QueryType == EWSDialogueQueryType::Status
+				|| Frame.QueryType == EWSDialogueQueryType::Evidence);
+	}
 	const bool bValidTarget = Frame.TargetCharacter == EWSCharacterId::GuHeng;
 	const bool bValidQuery = Frame.QueryType == EWSDialogueQueryType::Status
 		|| Frame.QueryType == EWSDialogueQueryType::Evidence;
@@ -74,6 +81,11 @@ bool WSDialogueDisclosurePolicy::IsGuHengConditionObservationQuestion(
 		return false;
 	}
 	const FWSDialogueSemanticFrame& Frame = Request.SemanticFrame;
+	if (Frame.bCanonicalIntentValidated)
+	{
+		return Frame.TopicId == TEXT("status")
+			&& Frame.TargetCharacter == EWSCharacterId::GuHeng;
+	}
 	return Frame.TargetCharacter == EWSCharacterId::GuHeng
 		&& Frame.QueryType == EWSDialogueQueryType::Status
 		&& Frame.TargetActionId.IsNone()
@@ -92,6 +104,12 @@ bool WSDialogueDisclosurePolicy::IsHeatPackDisclosureQuestion(
 	}
 
 	const FWSDialogueSemanticFrame& Frame = Request.SemanticFrame;
+	if (Frame.bCanonicalIntentValidated)
+	{
+		return Frame.TopicId == TEXT("medical_alternative")
+			&& Frame.QueryType == EWSDialogueQueryType::Alternative
+			&& Frame.TargetCharacter == EWSCharacterId::GuHeng;
+	}
 	const bool bExplicitSupportQuestion = ContainsAny(Request.PlayerSaid, {
 		TEXT("保温包"), TEXT("医疗物资")});
 	const bool bMedicalContext = ContainsAny(Request.PlayerSaid, {

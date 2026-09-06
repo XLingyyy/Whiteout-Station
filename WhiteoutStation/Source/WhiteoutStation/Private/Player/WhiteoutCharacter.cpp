@@ -107,12 +107,17 @@ void AWhiteoutCharacter::BeginPlay()
 void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (ActiveDialogueTarget)
+	if (ActiveDialogueSessionId.IsValid() && !IsDialogueTargetVisible(ActiveDialogueTarget.Get(), 340.0f, true))
 	{
-		if (FocusedInteractable != ActiveDialogueTarget)
+		CancelDialogue();
+	}
+	UpdateInteractionLease(DeltaSeconds);
+	if (ActiveDialogueTarget.IsValid())
+	{
+		if (FocusedInteractable != ActiveDialogueTarget.Get())
 		{
 			if (FocusedInteractable) FocusedInteractable->SetInteractionFocused(false);
-			FocusedInteractable = ActiveDialogueTarget;
+			FocusedInteractable = ActiveDialogueTarget.Get();
 			FocusedInteractable->SetInteractionFocused(true);
 		}
 		return;
@@ -121,7 +126,7 @@ void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			AWSInteractableActor* Interactable = FindLookedAtInteractable();
+			AWSInteractableActor* Interactable = FocusedInteractable;
 			if (FocusedInteractable != Interactable)
 			{
 				if (FocusedInteractable)
@@ -211,7 +216,7 @@ void AWhiteoutCharacter::Look(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 {
-	if (AWSInteractableActor* Interactable = FindLookedAtInteractable())
+	if (AWSInteractableActor* Interactable = FocusedInteractable)
 	{
 		if (Interactable->IsCharacterHotspot())
 		{
@@ -250,7 +255,7 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
 {
-	if (!PreviewedInteractable || ActiveDialogueTarget)
+	if (!PreviewedInteractable || ActiveDialogueTarget.IsValid())
 	{
 		return;
 	}
@@ -478,7 +483,7 @@ void AWhiteoutCharacter::RefreshActionPreview()
 
 void AWhiteoutCharacter::BeginDialogue(AWSInteractableActor* Interactable)
 {
-	if (!Interactable || !Interactable->IsCharacterHotspot() || ActiveDialogueTarget)
+	if (!Interactable || !Interactable->IsCharacterHotspot() || ActiveDialogueTarget.IsValid())
 	{
 		return;
 	}
@@ -545,7 +550,7 @@ FWSActionPreview AWhiteoutCharacter::PreviewActiveDialogue(
 	const EWSDialogueAct DialogueAct,
 	const FName PromiseCondition) const
 {
-	if (ActiveDialogueTarget)
+	if (ActiveDialogueTarget.IsValid())
 	{
 		return ActiveDialogueTarget->PreviewInteraction(DialogueAct, PromiseCondition);
 	}
@@ -556,7 +561,7 @@ FWSActionPreview AWhiteoutCharacter::PreviewActiveDialogue(
 
 void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, const FName PromiseCondition)
 {
-	if (!ActiveDialogueTarget || bDialogueChoiceCommitted || bDialogueIntentPending)
+	if (!ActiveDialogueTarget.IsValid() || bDialogueChoiceCommitted || bDialogueIntentPending)
 	{
 		return;
 	}
@@ -578,6 +583,7 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 		PendingPlayerSaid,
 		ActiveDialogueSessionId);
 	Request.SemanticFrame = PendingSemanticFrame;
+	Request.AuthoredChoiceId = PendingAuthoredChoiceId;
 	const FWSActionPreview Preview = ActiveDialogueTarget->PreviewRequest(Request);
 	if (!Preview.bCanExecute)
 	{
@@ -658,28 +664,53 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 	PendingPlayerSaid.Reset();
 }
 
+void AWhiteoutCharacter::SubmitAuthoredChoice(FName ChoiceId)
+{
+	if (!ActiveDialogueTarget.IsValid() || bDialogueChoiceCommitted || bDialogueIntentPending) return;
+	UWindStationStateSubsystem* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	if (!State || State->GetDialogueMode() != EWSDialogueMode::Authored) return;
+	const TArray<FWSAuthoredChoice> Choices = State->GetAuthoredDialogueChoices(ActiveDialogueTarget->ActionId);
+	const FWSAuthoredChoice* Choice = Choices.FindByPredicate([ChoiceId](const FWSAuthoredChoice& C) { return C.ChoiceId == ChoiceId; });
+	if (!Choice) return;
+	FWSActionRequest Request;
+	Choice->Intent.ApplyTo(Request);
+	PendingAuthoredChoiceId = ChoiceId;
+	PendingPlayerSaid = Choice->Text;
+	PendingSemanticFrame = Request.SemanticFrame;
+	CommitDialogueChoice(Request.DialogueAct, Request.PromiseCondition);
+	PendingAuthoredChoiceId = NAME_None;
+}
+
 void AWhiteoutCharacter::SubmitDialogueText(const FString& UserText)
 {
-	if (!ActiveDialogueTarget || bDialogueChoiceCommitted || bDialogueIntentPending)
-	{
-		return;
-	}
-	PendingPlayerSaid = UserText.TrimStartAndEnd().Left(280);
-	if (PendingPlayerSaid.IsEmpty()
-		|| UWSAgentGateway::ContainsAdversarialInstruction(PendingPlayerSaid))
-	{
-		PendingPlayerSaid.Reset();
-		return;
-	}
-	PendingSemanticFrame = UWSNPCContextBuilder::BuildSemanticFrame(
-		PendingPlayerSaid,
-		ActiveDialogueTarget->ActionId);
-	if (!PendingSemanticFrame.TargetActionId.IsNone())
-	{
-		CurrentDialogueTopicActionId =
-			PendingSemanticFrame.TargetActionId;
-	}
-	CommitDialogueChoice(EWSDialogueAct::Ask, NAME_None);
+	if (!ActiveDialogueTarget.IsValid() || bDialogueChoiceCommitted || bDialogueIntentPending) return;
+	const FString Text = UserText.TrimStartAndEnd();
+	if (Text.IsEmpty() || Text.Len() > 480) return;
+	UWindStationStateSubsystem* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	if (!State || State->GetDialogueMode() != EWSDialogueMode::Online) return;
+	bDialogueIntentPending = true;
+	PendingPlayerSaid = Text;
+	const FGuid Session = ActiveDialogueSessionId;
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PC->GetHUD())) HUD->SetDialogueIntentStatus(TEXT("正在回应…"), true);
+	TWeakObjectPtr<AWhiteoutCharacter> WeakThis(this);
+	State->ResolveOnlineIntent(ActiveDialogueTarget->ActionId, Text, Session,
+		[WeakThis, Session](bool Ready, const FWSCanonicalIntent& Intent, const FString& Status)
+		{
+			if (!WeakThis.IsValid() || WeakThis->ActiveDialogueSessionId != Session || !WeakThis->ActiveDialogueTarget.IsValid()) return;
+			AWhiteoutCharacter* Character = WeakThis.Get();
+			Character->bDialogueIntentPending = false;
+			if (!Ready)
+			{
+				if (APlayerController* PC = Cast<APlayerController>(Character->Controller))
+					if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PC->GetHUD())) HUD->SetDialogueIntentStatus(Status, false);
+				return;
+			}
+			FWSActionRequest Request;
+			Intent.ApplyTo(Request);
+			Character->PendingSemanticFrame = Request.SemanticFrame;
+			Character->CommitDialogueChoice(Request.DialogueAct, Request.PromiseCondition);
+		});
 }
 
 void AWhiteoutCharacter::SubmitDialogueChoice(
@@ -687,7 +718,7 @@ void AWhiteoutCharacter::SubmitDialogueChoice(
 	const FName PromiseCondition,
 	const FString& PlayerSaid)
 {
-	if (!ActiveDialogueTarget || bDialogueChoiceCommitted || bDialogueIntentPending)
+	if (!ActiveDialogueTarget.IsValid() || bDialogueChoiceCommitted || bDialogueIntentPending)
 	{
 		return;
 	}
@@ -718,7 +749,7 @@ void AWhiteoutCharacter::SubmitDialogueChoice(
 
 void AWhiteoutCharacter::ContinueDialogue()
 {
-	if (!ActiveDialogueTarget)
+	if (!ActiveDialogueTarget.IsValid())
 	{
 		return;
 	}
@@ -749,6 +780,7 @@ void AWhiteoutCharacter::ContinueDialogue()
 
 void AWhiteoutCharacter::CancelDialogue()
 {
+	if (!ActiveDialogueSessionId.IsValid()) return;
 	const FGuid ClosingSessionId = ActiveDialogueSessionId;
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -759,7 +791,7 @@ void AWhiteoutCharacter::CancelDialogue()
 			StateSubsystem->EndDialogueSession(ClosingSessionId);
 		}
 	}
-	if (ActiveDialogueTarget)
+	if (ActiveDialogueTarget.IsValid())
 	{
 		ActiveDialogueTarget->SetDialogueLookAtActive(false);
 	}
@@ -773,8 +805,8 @@ void AWhiteoutCharacter::CancelDialogue()
 	CurrentDialogueTopicActionId = NAME_None;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
-		PlayerController->ResetIgnoreMoveInput();
-		PlayerController->ResetIgnoreLookInput();
+		PlayerController->SetIgnoreMoveInput(false);
+		PlayerController->SetIgnoreLookInput(false);
 		PlayerController->SetShowMouseCursor(false);
 		PlayerController->SetInputMode(FInputModeGameOnly());
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
@@ -1028,6 +1060,66 @@ void AWhiteoutCharacter::Settle(const FInputActionValue& Value)
 		bEarlySettleConfirmationPending = false;
 	}
 	FinishRun();
+}
+
+bool AWhiteoutCharacter::IsDialogueTargetVisible(AWSInteractableActor* Target, float MaxDistance, bool bAllowAngularGrace) const
+{
+	if (!IsValid(Target) || Target->IsActorBeingDestroyed() || !Target->InteractionCollision || !FirstPersonCamera || !GetWorld()) return false;
+	const FVector Start = FirstPersonCamera->GetComponentLocation();
+	const FVector Forward = FirstPersonCamera->GetForwardVector();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(WhiteoutNPCFocus), false, this);
+	FHitResult ProxyHit;
+	FVector End = Start + Forward * MaxDistance;
+	if (!Target->InteractionCollision->LineTraceComponent(ProxyHit, Start, End, Params))
+	{
+		if (!bAllowAngularGrace) return false;
+		const FVector Closest = Target->InteractionCollision->Bounds.GetBox().GetClosestPointTo(End);
+		const FVector Direction = (Closest - Start).GetSafeNormal();
+		if (FVector::DotProduct(Direction, Forward) < FMath::Cos(FMath::DegreesToRadians(1.5f))) return false;
+		End = Start + Direction * MaxDistance;
+		if (!Target->InteractionCollision->LineTraceComponent(ProxyHit, Start, End, Params)) return false;
+	}
+	if (ProxyHit.Distance > MaxDistance) return false;
+	FHitResult Occluder;
+	return !GetWorld()->LineTraceSingleByChannel(Occluder, Start, ProxyHit.ImpactPoint, ECC_Visibility, Params)
+		|| Occluder.GetActor() == Target;
+}
+
+void AWhiteoutCharacter::UpdateInteractionLease(float DeltaSeconds)
+{
+	AWSInteractableActor* Previous = FocusedInteractable;
+	AWSInteractableActor* Next = ActiveDialogueTarget.Get();
+	if (!Next)
+	{
+		AWSInteractableActor* Candidate = FindLookedAtInteractable();
+		if (Candidate && Candidate->IsCharacterHotspot() && !IsDialogueTargetVisible(Candidate, 300.0f, false)) Candidate = nullptr;
+		if (Previous && Previous->IsCharacterHotspot() && IsDialogueTargetVisible(Previous, 340.0f, false))
+		{
+			Next = Previous;
+			FocusLossSeconds = 0.0f;
+		}
+		else if (!Candidate && Previous && Previous->IsCharacterHotspot()
+			&& IsDialogueTargetVisible(Previous, 340.0f, true) && (FocusLossSeconds += DeltaSeconds) <= 0.20f)
+		{
+			Next = Previous;
+		}
+		else if (Candidate && Candidate->IsCharacterHotspot())
+		{
+			if (FocusCandidate.Get() != Candidate) { FocusCandidate = Candidate; FocusAcquireSeconds = 0.0f; }
+			FocusAcquireSeconds += DeltaSeconds;
+			if (FocusAcquireSeconds >= 0.15f) { Next = Candidate; FocusLossSeconds = 0.0f; }
+		}
+		else { Next = Candidate; FocusCandidate.Reset(); FocusAcquireSeconds = 0.0f; }
+	}
+	if (Previous != Next)
+	{
+		if (IsValid(Previous)) Previous->SetInteractionFocused(false);
+		FocusedInteractable = Next;
+		if (Next) Next->SetInteractionFocused(true);
+	}
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
+		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PC->GetHUD()))
+			HUD->SetStatusFocus(Next && Next->IsCharacterHotspot() ? Next->ActionId : NAME_None);
 }
 
 AWSInteractableActor* AWhiteoutCharacter::FindLookedAtInteractable() const

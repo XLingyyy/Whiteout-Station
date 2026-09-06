@@ -696,6 +696,25 @@ bool UWSNPCContextBuilder::BuildRequest(
 		EntityTags,
 		OutRequest.TopicTags,
 		OutRequest.TargetSubjectId);
+	if (Frame.bCanonicalIntentValidated)
+	{
+		EntityTags.Reset();
+		OutRequest.TopicTags = {Frame.TopicId};
+		OutRequest.TargetSubjectId = Frame.TargetCharacter == EWSCharacterId::GuHeng
+			? GuHengId : (Frame.TargetCharacter == EWSCharacterId::YeCheng ? YeChengId : FName(TEXT("player")));
+		if (Frame.TopicId == TEXT("generator") || Frame.TopicId == TEXT("repair_requirements")
+			|| Frame.TopicId == TEXT("relay_alternative") || Frame.TopicId == TEXT("restart_evidence"))
+		{
+			OutRequest.TargetSubjectId = TEXT("generator");
+			OutRequest.TopicTags.AddUnique(TEXT("repair"));
+			OutRequest.TopicTags.AddUnique(TEXT("generator"));
+		}
+		if (Frame.TopicId == TEXT("medical") || Frame.TopicId == TEXT("medical_alternative"))
+		{
+			OutRequest.TopicTags.AddUnique(TEXT("medical"));
+			OutRequest.TopicTags.AddUnique(TEXT("injury"));
+		}
+	}
 	if (!Frame.TargetActionId.IsNone())
 	{
 		OutRequest.TopicTags.AddUnique(Frame.TargetActionId);

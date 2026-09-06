@@ -38,10 +38,11 @@ public:
 	void ChooseDialogueAct(EWSDialogueAct DialogueAct);
 	void ChooseDialoguePromise(FName PromiseCondition);
 	void SubmitDialogueText(const FString& UserText);
+	void SubmitAuthoredChoice(FName ChoiceId);
 	void SubmitDialogueChoice(EWSDialogueAct DialogueAct, FName PromiseCondition, const FString& PlayerSaid);
 	void ContinueDialogue();
 	void CancelDialogue();
-	bool IsDialogueActive() const { return ActiveDialogueTarget != nullptr; }
+	bool IsDialogueActive() const { return ActiveDialogueTarget.IsValid(); }
 	FGuid GetActiveDialogueSessionId() const { return ActiveDialogueSessionId; }
 	FGuid GetActiveDialogueTransactionId() const { return ActiveDialogueTransactionId; }
 	FWSActionPreview PreviewActiveDialogue(
@@ -92,6 +93,7 @@ private:
 	int32 EarlySettleConfirmationAP = INDEX_NONE;
 	int32 EarlySettleConfirmationTransactionCount = INDEX_NONE;
 	FString PendingPlayerSaid;
+	FName PendingAuthoredChoiceId;
 	FWSDialogueSemanticFrame PendingSemanticFrame;
 	FName CurrentDialogueTopicActionId;
 	FWSActionRequest PreviewActionRequest;
@@ -105,7 +107,12 @@ private:
 	TObjectPtr<AWSInteractableActor> FocusedInteractable;
 
 	UPROPERTY(Transient)
-	TObjectPtr<AWSInteractableActor> ActiveDialogueTarget;
+	TWeakObjectPtr<AWSInteractableActor> ActiveDialogueTarget;
+	TWeakObjectPtr<AWSInteractableActor> FocusCandidate;
+	float FocusAcquireSeconds = 0.0f;
+	float FocusLossSeconds = 0.0f;
+	void UpdateInteractionLease(float DeltaSeconds);
+	bool IsDialogueTargetVisible(AWSInteractableActor* Target, float MaxDistance, bool bAllowAngularGrace) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USoundBase> SnowFootstepSound;

@@ -1,0 +1,295 @@
+[
+  {
+    "line_id": "gu_generator_base",
+    "line_group_id": "gu_generator_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "发电机的情况得按检查结果判断。先检查控制柜和日志。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_generator_unstarted",
+    "line_group_id": "gu_generator_reply",
+    "priority": 10,
+    "when": [
+      "generator_unstarted"
+    ],
+    "npc_line": "发电机还没恢复供电。先把故障和能用的人手弄清楚。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_generator_partial",
+    "line_group_id": "gu_generator_reply",
+    "priority": 20,
+    "when": [
+      "generator_partial"
+    ],
+    "npc_line": "发电机只处理了一部分，还不能算修好。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_generator_complete",
+    "line_group_id": "gu_generator_reply",
+    "priority": 30,
+    "when": [
+      "generator_complete"
+    ],
+    "npc_line": "发电机已经恢复了。接下来检查通讯和天线。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_repair_requirement_base",
+    "line_group_id": "gu_repair_requirement_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "维修得先检查故障，再确认人手、体能和防护。行动前把安排核对清楚。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_repair_requirement_diagnosed",
+    "line_group_id": "gu_repair_requirement_reply",
+    "priority": 10,
+    "when": [
+      "gu_diagnosed"
+    ],
+    "npc_line": "{claim:GU_HAND_INJURY_KNOWLEDGE}。维修前先安排处理和防护。",
+    "claim_ids": [
+      "GU_HAND_INJURY_KNOWLEDGE"
+    ],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_repair_requirement_treated",
+    "line_group_id": "gu_repair_requirement_reply",
+    "priority": 20,
+    "when": [
+      "gu_treated"
+    ],
+    "npc_line": "伤口处理过了。维修前还要确认体能和现场防护，别省掉检查。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_repair_requirement_complete",
+    "line_group_id": "gu_repair_requirement_reply",
+    "priority": 30,
+    "when": [
+      "generator_complete"
+    ],
+    "npc_line": "发电机已经恢复，接下来检查天线和通讯。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_restart_evidence_base",
+    "line_group_id": "gu_restart_evidence_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "日志和继电器要放在一起核对。责任的事，我会按证据说清楚。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_restart_evidence_disclose",
+    "line_group_id": "gu_restart_evidence_reply",
+    "priority": 10,
+    "when": [],
+    "npc_line": "{claim:GU_FORCED_RESTART_KNOWLEDGE}。这件事我认。",
+    "claim_ids": [
+      "GU_FORCED_RESTART_KNOWLEDGE"
+    ],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_relay_base",
+    "line_group_id": "gu_relay_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "替换部件先看规格。把控制柜和日志查清楚，再讨论拆哪台设备。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_relay_disclose",
+    "line_group_id": "gu_relay_reply",
+    "priority": 10,
+    "when": [],
+    "npc_line": "{claim:GU_RELAY_COMPATIBILITY_KNOWLEDGE}。拆之前先把取舍定下来。",
+    "claim_ids": [
+      "GU_RELAY_COMPATIBILITY_KNOWLEDGE"
+    ],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_relay_complete",
+    "line_group_id": "gu_relay_reply",
+    "priority": 20,
+    "when": [
+      "generator_complete"
+    ],
+    "npc_line": "发电机已经恢复，暂时不用为它再拆替换件。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_heat_promise_base",
+    "line_group_id": "gu_heat_promise_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "维修间下一阶段供暖，你说的我记住了。到时候看实际安排。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_reassure_base",
+    "line_group_id": "gu_reassure_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "那就按实际情况分工。能做的我会做，风险也会说清楚。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_diagnosis_base",
+    "line_group_id": "ye_diagnosis_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "顾衡的情况需要具体评估。先确认他的身体状况，再安排精细操作。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_diagnosis_diagnosis",
+    "line_group_id": "ye_diagnosis_reply",
+    "priority": 10,
+    "when": [],
+    "npc_line": "{claim:YE_GU_HAND_DIAGNOSIS}。先处理，再安排他动手。",
+    "claim_ids": [
+      "YE_GU_HAND_DIAGNOSIS"
+    ],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_diagnosis_treated",
+    "line_group_id": "ye_diagnosis_reply",
+    "priority": 20,
+    "when": [
+      "gu_treated"
+    ],
+    "npc_line": "顾衡的伤口已经处理。操作前还要确认体能和防护，不能忽略后续风险。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_alternative_base",
+    "line_group_id": "ye_alternative_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "药品的安排要看伤情。先把顾衡的情况确认，再讨论替代处理。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_alternative_reserve",
+    "line_group_id": "ye_alternative_reply",
+    "priority": 10,
+    "when": [],
+    "npc_line": "{claim:YE_HEAT_PACK_KNOWLEDGE}。使用前先确认处置安排。",
+    "claim_ids": [
+      "YE_HEAT_PACK_KNOWLEDGE"
+    ],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_alternative_treated",
+    "line_group_id": "ye_alternative_reply",
+    "priority": 20,
+    "when": [
+      "gu_treated"
+    ],
+    "npc_line": "顾衡的伤口已经处理。剩余医疗物资先留好，之后按伤情安排。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_person_base",
+    "line_group_id": "gu_person_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "站里的设备我熟悉。现在出了故障，我得把能做的事做完。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_heating_base",
+    "line_group_id": "gu_heating_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "供暖已安排。接下来检查故障、人员状态和剩余物资，再确认行动。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_heating_complete",
+    "line_group_id": "gu_heating_reply",
+    "priority": 10,
+    "when": [
+      "generator_complete"
+    ],
+    "npc_line": "供暖已安排，发电机也恢复了。接下来检查天线，准备发出求救信号。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "gu_command_base",
+    "line_group_id": "gu_command_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "这样的催促只会让配合更困难。具体要做什么，先把条件和风险说清楚。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_person_base",
+    "line_group_id": "ye_person_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "这里需要有人做医疗和气象观测。我驻站这几年，一直在做这两件事。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_heating_base",
+    "line_group_id": "ye_heating_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "供暖已安排。接下来检查故障、人员状态和剩余物资，再确认行动。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_heating_complete",
+    "line_group_id": "ye_heating_reply",
+    "priority": 10,
+    "when": [
+      "generator_complete"
+    ],
+    "npc_line": "供暖已安排，发电机也恢复了。接下来检查天线，准备发出求救信号。",
+    "claim_ids": [],
+    "reaction": "consider"
+  },
+  {
+    "line_id": "ye_command_base",
+    "line_group_id": "ye_command_reply",
+    "priority": 0,
+    "when": [],
+    "npc_line": "这样的催促只会让配合更困难。具体要做什么，先把条件和风险说清楚。",
+    "claim_ids": [],
+    "reaction": "consider"
+  }
+]

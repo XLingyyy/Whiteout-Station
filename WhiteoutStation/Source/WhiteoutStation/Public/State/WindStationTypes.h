@@ -413,6 +413,10 @@ struct FWSDialogueSemanticFrame
 {
 	GENERATED_BODY()
 
+	FName TopicId;
+	bool bCanonicalIntentValidated = false;
+	double DeadlineSeconds = 0;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	EWSDialogueAct SpeechAct = EWSDialogueAct::Ask;
 
@@ -958,6 +962,8 @@ struct FWSActionRequest
 {
 	GENERATED_BODY()
 
+	FName AuthoredChoiceId;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName ActionId;
 
@@ -1133,6 +1139,8 @@ struct FWSAgentReply
 {
 	GENERATED_BODY()
 
+	FName AuthoredLineId;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	EWSCharacterId Speaker = EWSCharacterId::GuHeng;
 
@@ -1286,6 +1294,10 @@ USTRUCT(BlueprintType)
 struct FWSPreparedDialogue
 {
 	GENERATED_BODY()
+
+	bool bRoleplayV15 = false;
+	bool bHasAuthoredFallback = false;
+	TMap<FName, FString> RequiredClaims;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FGuid TransactionId;

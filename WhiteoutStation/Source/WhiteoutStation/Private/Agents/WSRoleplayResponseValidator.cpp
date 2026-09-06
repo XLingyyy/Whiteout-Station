@@ -626,6 +626,8 @@ namespace WSRoleplayResponseValidatorPrivate
 			Response.SpeechFunction == EWSRoleplaySpeechFunction::Clarify
 			|| Response.SpeechFunction == EWSRoleplaySpeechFunction::Unknown;
 		if (!Request.TargetSubjectId.IsNone()
+			&& !Request.bAuthoredDialogue
+			&& !Request.bControlledClaims
 			&& !bMayOmitReferences
 			&& !bReferencesTargetSubject)
 		{

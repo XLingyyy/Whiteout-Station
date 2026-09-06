@@ -1,4 +1,6 @@
 #include "HUD/WhiteoutHUDWidget.h"
+#include "HUD/WSDialoguePanelWidget.h"
+#include "HUD/WSStatusPanelWidget.h"
 
 #include "Agents/WSAgentGateway.h"
 #include "Blueprint/WidgetTree.h"
@@ -217,7 +219,6 @@ void UWhiteoutHUDWidget::NativeOnInitialized()
 	}
 	InitializeUIFontFamily();
 	InkBrushTexture = LoadObject<UTexture2D>(nullptr, TEXT("/Game/WindStation/UI/v03/Textures/T_UI_InkBrush.T_UI_InkBrush"));
-	PlayerPortraitTexture = LoadObject<UTexture2D>(nullptr, TEXT("/Game/WindStation/UI/v03/Portraits/P_PlayerSilhouette.P_PlayerSilhouette"));
 	GuHengPortraitTexture = LoadObject<UTexture2D>(nullptr, TEXT("/Game/WindStation/UI/v03/Portraits/P_GuHeng.P_GuHeng"));
 	YeChengPortraitTexture = LoadObject<UTexture2D>(nullptr, TEXT("/Game/WindStation/UI/v03/Portraits/P_YeCheng.P_YeCheng"));
 	SystemMessage = FWSPresentationText::UI(TEXT("ui_initial_message"), TEXT("靠近带有白色轮廓的设备，按 F 查看行动。")).ToString();
@@ -264,6 +265,8 @@ void UWhiteoutHUDWidget::NativeConstruct()
 		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
 		{
 			StateSubsystem->OnDialogueLine.AddUniqueDynamic(this, &UWhiteoutHUDWidget::HandleDialogueLine);
+			StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &UWhiteoutHUDWidget::HandleStatusState);
+			HandleStatusState(StateSubsystem->GetStateSnapshot());
 		}
 	}
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: native UMG widget added to viewport"));
@@ -276,6 +279,7 @@ void UWhiteoutHUDWidget::NativeDestruct()
 		if (UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
 		{
 			StateSubsystem->OnDialogueLine.RemoveDynamic(this, &UWhiteoutHUDWidget::HandleDialogueLine);
+			StateSubsystem->OnStateChanged.RemoveDynamic(this, &UWhiteoutHUDWidget::HandleStatusState);
 		}
 	}
 	Super::NativeDestruct();
@@ -423,76 +427,13 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	ObjectiveBox->AddChildToVerticalBox(TutorialText);
 	SetGlassPanelContent(ObjectivePanel, ObjectiveBox);
 
-	CrewPanel = MakeGlassPanel(Canvas, TEXT("CrewPanel"), FAnchors(1, 0), FMargin(-300, 20, 280, 520), 12.0f, WSUITokens::Color::SurfacePanel);
-	SetGlassPanelPadding(CrewPanel, FMargin(12));
-	UVerticalBox* CrewBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("CrewBox"));
-	SetGlassPanelContent(CrewPanel, CrewBox);
-	CrewText = MakeText(TEXT("CrewHeader"), 16, Body);
-	CrewText->SetText(FText::FromString(TEXT("值班组状态")));
-	CrewBox->AddChildToVerticalBox(CrewText)->SetPadding(FMargin(0, 0, 0, 8));
-	const TArray<FLinearColor> StatusColors = {
-		WSUITokens::Color::StatusHealth,
-		WSUITokens::Color::StatusTemperature,
-		WSUITokens::Color::StatusEnergy,
-		WSUITokens::Color::StatusHunger,
-		WSUITokens::Color::StatusPressure};
-	CrewCardTexts.Reset();
-	CrewStatusBars.Reset();
-	CrewTrustBars.Reset();
-	for (int32 CharacterIndex = 0; CharacterIndex < 3; ++CharacterIndex)
-	{
-		UHorizontalBox* CardRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*FString::Printf(TEXT("CrewCard%d"), CharacterIndex)));
-		if (CharacterIndex == 0 && PlayerPortraitTexture)
-		{
-			USizeBox* PortraitBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("CrewPortraitBox0"));
-			PortraitBox->SetWidthOverride(66.0f);
-			PortraitBox->SetHeightOverride(88.0f);
-			UImage* Portrait = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("CrewPortrait0"));
-			Portrait->SetBrushFromTexture(PlayerPortraitTexture, false);
-			Portrait->SetDesiredSizeOverride(FVector2D(66.0f, 88.0f));
-			PortraitBox->SetContent(Portrait);
-			CardRow->AddChildToHorizontalBox(PortraitBox)->SetPadding(FMargin(0, 0, 10, 0));
-		}
-
-		UVerticalBox* CardInfo = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), FName(*FString::Printf(TEXT("CrewInfo%d"), CharacterIndex)));
-		UTextBlock* CardText = MakeText(FName(*FString::Printf(TEXT("CrewText%d"), CharacterIndex)), 13, WSUITokens::Color::TextPrimary);
-		CardInfo->AddChildToVerticalBox(CardText)->SetPadding(FMargin(0, 0, 0, 4));
-		CrewCardTexts.Add(CardText);
-		UTextBlock* StatusLegend = MakeText(FName(*FString::Printf(TEXT("CrewLegend%d"), CharacterIndex)), 10, WSUITokens::Color::TextSecondary, false);
-		StatusLegend->SetText(FText::FromString(TEXT("温　体　伤　压　备")));
-		CardInfo->AddChildToVerticalBox(StatusLegend)->SetPadding(FMargin(0, 0, 0, 2));
-		UHorizontalBox* StatusRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*FString::Printf(TEXT("CrewBars%d"), CharacterIndex)));
-		for (int32 StatusIndex = 0; StatusIndex < 5; ++StatusIndex)
-		{
-			USizeBox* BarBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*FString::Printf(TEXT("CrewBarBox%d_%d"), CharacterIndex, StatusIndex)));
-			BarBox->SetWidthOverride(31.0f);
-			BarBox->SetHeightOverride(7.0f);
-			UProgressBar* Bar = MakeProgressBar(FName(*FString::Printf(TEXT("CrewBar%d_%d"), CharacterIndex, StatusIndex)), StatusColors[StatusIndex]);
-			BarBox->SetContent(Bar);
-			StatusRow->AddChildToHorizontalBox(BarBox)->SetPadding(FMargin(0, 0, 3, 0));
-			CrewStatusBars.Add(Bar);
-		}
-		CardInfo->AddChildToVerticalBox(StatusRow)->SetPadding(FMargin(0, 0, 0, 4));
-		if (CharacterIndex > 0)
-		{
-			UTextBlock* TrustLabel = MakeText(FName(*FString::Printf(TEXT("CrewTrustLabel%d"), CharacterIndex)), 10, WSUITokens::Color::TextSecondary, false);
-			TrustLabel->SetText(FText::FromString(TEXT("信任")));
-			CardInfo->AddChildToVerticalBox(TrustLabel);
-			USizeBox* TrustBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*FString::Printf(TEXT("CrewTrustBox%d"), CharacterIndex)));
-			TrustBox->SetHeightOverride(6.0f);
-			UProgressBar* TrustBar = MakeProgressBar(FName(*FString::Printf(TEXT("CrewTrust%d"), CharacterIndex)), WSUITokens::Color::TrustBar);
-			TrustBox->SetContent(TrustBar);
-			CardInfo->AddChildToVerticalBox(TrustBox);
-			CrewTrustBars.Add(TrustBar);
-		}
-		else
-		{
-			CrewTrustBars.Add(nullptr);
-		}
-		UHorizontalBoxSlot* InfoSlot = CardRow->AddChildToHorizontalBox(CardInfo);
-		InfoSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		CrewBox->AddChildToVerticalBox(CardRow)->SetPadding(FMargin(0, 0, 0, 10));
-	}
+	StatusPanelV15 = CreateWidget<UWSStatusPanelWidget>(GetOwningPlayer());
+	StatusPanelV15->Build(UIFontFamily);
+	UCanvasPanelSlot* StatusSlot = Canvas->AddChildToCanvas(StatusPanelV15);
+	StatusSlot->SetAnchors(FAnchors(1, 0));
+	StatusSlot->SetAlignment(FVector2D(1, 0));
+	StatusSlot->SetPosition(FVector2D(-20, 20));
+	StatusSlot->SetAutoSize(true);
 
 	BottomPanel = MakeGlassPanel(Canvas, TEXT("BottomPanel"), FAnchors(0.5f, 1.0f), FMargin(-420, -142, 840, 122), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(BottomPanel, FMargin(12, 8));
@@ -711,163 +652,11 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	GuideCloseButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CloseGuide);
 	GuideBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	DialogueBorder = MakePanel(Canvas, TEXT("DialoguePanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor::Transparent);
+	DialogueBorder = MakePanel(Canvas, TEXT("DialoguePanel"), FAnchors(0.04f, 0.48f, 0.68f, 0.96f), FMargin(0), FLinearColor::Transparent);
 	DialogueBorder->SetPadding(FMargin(0));
-	UCanvasPanel* DialogueCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("DialogueCanvas"));
-	DialogueBorder->SetContent(DialogueCanvas);
-	UBorder* DialogueBar = MakeGlassPanel(DialogueCanvas, TEXT("DialogueBar"), FAnchors(0.18f, 0.57f, 0.82f, 0.97f), FMargin(0), 18.0f, WSUITokens::Color::SurfaceDialogue);
-	SetGlassPanelPadding(DialogueBar, FMargin(14, 10));
-	UVerticalBox* DialogueBarBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueBarBox"));
-	SetGlassPanelContent(DialogueBar, DialogueBarBox);
-	DialogueNameText = MakeText(TEXT("DialogueNameText"), 15, Cyan, false);
-	DialogueNameText->SetFont(UIFont(15, true));
-	DialogueLineText = MakeText(TEXT("DialogueLineText"), 16, Body);
-	DialogueLineText->SetLineHeightPercentage(1.2f);
-	DialogueText = DialogueLineText;
-	DialogueStatusText = MakeText(TEXT("DialogueStatusText"), 12, Secondary);
-	DialogueStatusText->SetText(FText::GetEmpty());
-	DialogueStatusText->SetVisibility(ESlateVisibility::Collapsed);
-	UVerticalBoxSlot* DialogueNameSlot = DialogueBarBox->AddChildToVerticalBox(DialogueNameText);
-	DialogueNameSlot->SetPadding(FMargin(0, 0, 0, 3));
-	DialogueNameSlot->SetHorizontalAlignment(HAlign_Fill);
-	UVerticalBoxSlot* DialogueLineSlot = DialogueBarBox->AddChildToVerticalBox(DialogueLineText);
-	DialogueLineSlot->SetPadding(FMargin(0, 0, 0, 7));
-	DialogueLineSlot->SetHorizontalAlignment(HAlign_Fill);
-	UVerticalBoxSlot* DialogueStatusSlot = DialogueBarBox->AddChildToVerticalBox(DialogueStatusText);
-	DialogueStatusSlot->SetPadding(FMargin(0, 0, 0, 6));
-	DialogueStatusSlot->SetHorizontalAlignment(HAlign_Fill);
-
-	DialogueConditionBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DialogueConditionCard"));
-	DialogueConditionBorder->SetBrushColor(FLinearColor(0.04f, 0.08f, 0.10f, 0.94f));
-	DialogueConditionBorder->SetPadding(FMargin(9, 7));
-	UVerticalBox* ConditionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueConditionBox"));
-	DialogueConditionBorder->SetContent(ConditionBox);
-	DialogueConditionTitleText = MakeText(TEXT("DialogueConditionTitle"), 12, Cyan, false);
-	DialogueConditionTitleText->SetFont(UIFont(12, true));
-	DialogueConditionTitleText->SetText(FText::FromString(TEXT("协作条件 · 发电机维修")));
-	ConditionBox->AddChildToVerticalBox(DialogueConditionTitleText)->SetPadding(FMargin(0, 0, 0, 3));
-	DialogueConditionBodyText = MakeText(TEXT("DialogueConditionBody"), 12, Body);
-	DialogueConditionBodyText->SetLineHeightPercentage(1.05f);
-	ConditionBox->AddChildToVerticalBox(DialogueConditionBodyText)->SetPadding(FMargin(0, 0, 0, 4));
-	DialogueConditionStatusText = MakeText(TEXT("DialogueConditionStatus"), 11, Secondary, false);
-	ConditionBox->AddChildToVerticalBox(DialogueConditionStatusText)->SetPadding(FMargin(0, 0, 0, 4));
-	UHorizontalBox* ConditionActions = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("DialogueConditionActions"));
-	ConditionBox->AddChildToVerticalBox(ConditionActions);
-	auto MakeConditionActionButton = [this, ConditionActions](const FName Name, const FString& Label)
-	{
-		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
-		FButtonStyle Style = Button->GetStyle();
-		Style.Normal.TintColor = FSlateColor(WSUITokens::Color::ButtonNormal);
-		Style.Hovered.TintColor = FSlateColor(WSUITokens::Color::ButtonHover);
-		Style.Pressed.TintColor = FSlateColor(WSUITokens::Color::ButtonPressed);
-		Button->SetStyle(Style);
-		SilenceButton(Button);
-		UTextBlock* LabelText = MakeText(
-			FName(*(Name.ToString() + TEXT("Label"))),
-			11,
-			WSUITokens::Color::TextPrimary,
-			false);
-		LabelText->SetText(FText::FromString(Label));
-		LabelText->SetJustification(ETextJustify::Center);
-		Button->SetContent(LabelText);
-		UHorizontalBoxSlot* Slot = ConditionActions->AddChildToHorizontalBox(Button);
-		Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		Slot->SetPadding(FMargin(0, 0, 5, 0));
-		return Button;
-	};
-	DialogueConditionPinButton = MakeConditionActionButton(TEXT("DialogueConditionPin"), TEXT("固定到任务栏"));
-	DialogueConditionAcceptButton = MakeConditionActionButton(TEXT("DialogueConditionAccept"), TEXT("接受条件"));
-	DialogueConditionPinButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::PinDialogueConditions);
-	DialogueConditionAcceptButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::AcceptDialogueConditions);
-	UVerticalBoxSlot* ConditionCardSlot = DialogueBarBox->AddChildToVerticalBox(DialogueConditionBorder);
-	ConditionCardSlot->SetPadding(FMargin(0, 0, 0, 6));
-	ConditionCardSlot->SetHorizontalAlignment(HAlign_Fill);
-	DialogueConditionBorder->SetVisibility(ESlateVisibility::Collapsed);
-
-	DialogueWheelPanel = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("DialogueWheel"));
-	USizeBox* IntentSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("DialogueIntentSize"));
-	IntentSize->SetHeightOverride(52.0f);
-	IntentSize->SetContent(DialogueWheelPanel);
-	UVerticalBoxSlot* IntentSlot = DialogueBarBox->AddChildToVerticalBox(IntentSize);
-	IntentSlot->SetHorizontalAlignment(HAlign_Fill);
-	UButton* AskButton = MakeDialogueChoiceButton(DialogueWheelPanel, FWSPresentationText::UI(TEXT("dialogue_ask"), TEXT("询问")), TEXT("I_Dialogue_Inquire"), TEXT("DialogueAsk"), FAnchors(0.125f, 0.5f), FMargin(-70, -24, 140, 48));
-	UButton* ChallengeButton = MakeDialogueChoiceButton(DialogueWheelPanel, FWSPresentationText::UI(TEXT("dialogue_challenge"), TEXT("质疑")), TEXT("I_Dialogue_Doubt"), TEXT("DialogueChallenge"), FAnchors(0.375f, 0.5f), FMargin(-70, -24, 140, 48));
-	UButton* ReassureButton = MakeDialogueChoiceButton(DialogueWheelPanel, FWSPresentationText::UI(TEXT("dialogue_reassure"), TEXT("安抚")), TEXT("I_Dialogue_Comfort"), TEXT("DialogueReassure"), FAnchors(0.625f, 0.5f), FMargin(-70, -24, 140, 48));
-	UButton* PromiseButton = MakeDialogueChoiceButton(DialogueWheelPanel, FWSPresentationText::UI(TEXT("dialogue_promise"), TEXT("承诺")), TEXT("I_Dialogue_Promise"), TEXT("DialoguePromise"), FAnchors(0.875f, 0.5f), FMargin(-70, -24, 140, 48));
-	AskButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChooseDialogueAsk);
-	ChallengeButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChooseDialogueChallenge);
-	ReassureButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChooseDialogueReassure);
-	PromiseButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChooseDialoguePromise);
-	DialogueIntentButtons = {AskButton, ChallengeButton, ReassureButton, PromiseButton};
-
-	DialoguePromiseBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DialoguePromisePanel"));
-	DialoguePromiseBorder->SetBrushColor(FLinearColor::Transparent);
-	DialoguePromiseBorder->SetPadding(FMargin(0));
-	UVerticalBox* PromiseBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialoguePromiseBox"));
-	DialoguePromiseBorder->SetContent(PromiseBox);
-	UTextBlock* PromiseTitle = MakeText(TEXT("DialoguePromiseTitle"), 13, Amber);
-	PromiseTitle->SetText(FWSPresentationText::UI(TEXT("ui_dialogue_promise_title"), TEXT("选择承诺条件，再用自己的话发送")));
-	PromiseBox->AddChildToVerticalBox(PromiseTitle)->SetPadding(FMargin(0, 0, 0, 3));
-	UButton* KeepRecordsButton = MakeButton(PromiseBox, FWSPresentationText::UI(TEXT("dialogue_promise_records"), TEXT("不弃站｜保存记录")), TEXT("PromiseKeepRecords"));
-	UButton* PreventSelfHarmButton = MakeButton(PromiseBox, FText::FromString(TEXT("保留药品｜应对突发状况")), TEXT("PromisePreventSelfHarm"));
-	UButton* RepairTogetherButton = MakeButton(PromiseBox, FWSPresentationText::UI(TEXT("dialogue_promise_heat"), TEXT("配合修复｜维修间升温")), TEXT("PromiseRepairTogether"));
-	KeepRecordsButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromiseKeepRecords);
-	PreventSelfHarmButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromisePreventSelfHarm);
-	RepairTogetherButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ChoosePromiseRepairTogether);
-	DialoguePromiseButtons = {KeepRecordsButton, PreventSelfHarmButton, RepairTogetherButton};
-	DialogueBarBox->AddChildToVerticalBox(DialoguePromiseBorder);
-	DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
-
-	DialogueFreeTextBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DialogueFreeTextPanel"));
-	DialogueFreeTextBorder->SetBrushColor(FLinearColor::Transparent);
-	DialogueFreeTextBorder->SetPadding(FMargin(0));
-	UVerticalBox* FreeTextBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueFreeTextBox"));
-	DialogueFreeTextBorder->SetContent(FreeTextBox);
-	DialogueFreeTextInput = WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("DialogueFreeTextInput"));
-	DialogueFreeTextInput->SetHintText(BuildDialogueInputHint(EWSDialogueAct::Ask));
-	FEditableTextBoxStyle DialogueInputStyle = DialogueFreeTextInput->GetWidgetStyle();
-	DialogueInputStyle.SetFont(UIFont(15));
-	DialogueInputStyle.BackgroundImageNormal.TintColor = FSlateColor(WSUITokens::Color::SurfaceInput);
-	DialogueInputStyle.BackgroundImageHovered.TintColor = FSlateColor(WSUITokens::Color::SurfaceInputFocused);
-	DialogueInputStyle.BackgroundImageFocused.TintColor = FSlateColor(WSUITokens::Color::SurfaceInputFocused);
-	DialogueInputStyle.ForegroundColor = FSlateColor(WSUITokens::Color::TextPrimary);
-	DialogueInputStyle.BackgroundColor = FSlateColor(WSUITokens::Color::SurfaceInput);
-	DialogueFreeTextInput->SetWidgetStyle(DialogueInputStyle);
-	DialogueFreeTextInput->SetForegroundColor(FLinearColor::White);
-	DialogueFreeTextInput->OnTextCommitted.AddDynamic(this, &UWhiteoutHUDWidget::HandleDialogueTextCommitted);
-	FreeTextBox->AddChildToVerticalBox(DialogueFreeTextInput)->SetPadding(FMargin(0, 2, 0, 3));
-	UButton* SubmitTextButton = MakeButton(FreeTextBox, FWSPresentationText::UI(TEXT("ui_dialogue_submit_v04"), TEXT("发送")), TEXT("DialogueTextSubmit"));
-	SubmitTextButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::SubmitDialogueFreeText);
-	DialogueBarBox->AddChildToVerticalBox(DialogueFreeTextBorder);
-	DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
-
-	DialogueReplyBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DialogueReplyPanel"));
-	DialogueReplyBorder->SetBrushColor(FLinearColor::Transparent);
-	UVerticalBox* ReplyBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueReplyBox"));
-	DialogueReplyBorder->SetContent(ReplyBox);
-	DialogueContinueButton = MakeButton(ReplyBox, FWSPresentationText::UI(TEXT("dlg_continue_button_v04"), TEXT("继续交涉")), TEXT("DialogueContinue"));
-	UButton* EndDialogueButton = MakeButton(ReplyBox, FWSPresentationText::UI(TEXT("dlg_end_button_v04"), TEXT("结束对话")), TEXT("DialogueEnd"));
-	DialogueContinueButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ContinueDialogue);
-	EndDialogueButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CancelDialogue);
-	DialogueBarBox->AddChildToVerticalBox(DialogueReplyBorder);
-	DialogueReplyBorder->SetVisibility(ESlateVisibility::Collapsed);
-
-	UBorder* NPCCard = MakeGlassPanel(DialogueCanvas, TEXT("DialogueNPCCard"), FAnchors(0.76f, 0.06f, 0.97f, 0.28f), FMargin(0), 12.0f, FLinearColor(0.020f, 0.020f, 0.020f, 0.94f));
-	SetGlassPanelPadding(NPCCard, FMargin(10));
-	UVerticalBox* NPCCardBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueNPCCardBox"));
-	SetGlassPanelContent(NPCCard, NPCCardBox);
-	DialogueNPCText = MakeText(TEXT("DialogueNPCText"), 13, Body);
-	NPCCardBox->AddChildToVerticalBox(DialogueNPCText)->SetPadding(FMargin(0, 0, 0, 4));
-	DialogueNPCBars.Reset();
-	const TArray<FLinearColor> DialogueBarColors = {WSUITokens::Color::AccentWarning, WSUITokens::Color::AccentInfo, WSUITokens::Color::AccentAction, FLinearColor(0.58f, 0.76f, 0.92f, 1.0f)};
-	for (int32 Index = 0; Index < DialogueBarColors.Num(); ++Index)
-	{
-		UProgressBar* Bar = MakeProgressBar(FName(*FString::Printf(TEXT("DialogueNPCBar%d"), Index)), DialogueBarColors[Index]);
-		NPCCardBox->AddChildToVerticalBox(Bar)->SetPadding(FMargin(0, 1, 0, 2));
-		DialogueNPCBars.Add(Bar);
-	}
-	UButton* DialogueCancelButton = MakeDialogueChoiceButton(DialogueCanvas, FWSPresentationText::UI(TEXT("ui_dialogue_leave_v04"), TEXT("离开")), TEXT(""), TEXT("DialogueCancel"), FAnchors(0.84f, 0.90f, 0.95f, 0.96f), FMargin(0));
-	DialogueCancelButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::CancelDialogue);
+	DialoguePanelV15 = CreateWidget<UWSDialoguePanelWidget>(GetOwningPlayer());
+	DialoguePanelV15->Build(UIFontFamily);
+	DialogueBorder->SetContent(DialoguePanelV15);
 	DialogueBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	ResultsBorder = MakePanel(Canvas, TEXT("ResultsPanel"), FAnchors(0, 0, 1, 1), FMargin(0), WSUITokens::Color::SurfaceFullscreen);
@@ -1608,7 +1397,7 @@ void UWhiteoutHUDWidget::SetBaseHudHidden(const bool bHidden)
 	const ESlateVisibility PanelVisibility = bHidden ? ESlateVisibility::Hidden : ESlateVisibility::Visible;
 	if (TopPanel) TopPanel->SetVisibility(PanelVisibility);
 	if (ObjectivePanel) ObjectivePanel->SetVisibility(PanelVisibility);
-	if (CrewPanel) CrewPanel->SetVisibility(PanelVisibility);
+	if (StatusPanelV15) StatusPanelV15->SetVisibility(bHidden ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	if (BottomPanel) BottomPanel->SetVisibility(PanelVisibility);
 }
 
@@ -1897,67 +1686,6 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	}
 	UpdateGuideContext(State);
 
-	CrewText->SetText(FWSPresentationText::UI(TEXT("ui_crew_header_v03"), TEXT("值班组状态")));
-	const TArray<EWSCharacterId> CharacterIds = {EWSCharacterId::Player, EWSCharacterId::GuHeng, EWSCharacterId::YeCheng};
-	for (int32 CharacterIndex = 0; CharacterIndex < CharacterIds.Num(); ++CharacterIndex)
-	{
-		const EWSCharacterId CharacterId = CharacterIds[CharacterIndex];
-		if (const FWSCharacterState* Character = State.Characters.Find(CharacterId))
-		{
-			const bool bInjuryVisible = CharacterId != EWSCharacterId::GuHeng
-				|| FWSKnowledgePolicy::IsGuHengInjuryVisible(State);
-			if (CrewCardTexts.IsValidIndex(CharacterIndex))
-			{
-				FString Card = FWSPresentationText::CharacterName(CharacterId).ToString();
-				Card += TEXT("\n");
-				Card += BuildVisibleCharacterStatus(CharacterId, State);
-				CrewCardTexts[CharacterIndex]->SetText(FText::FromString(Card));
-			}
-			const float InjuryRatio = !bInjuryVisible
-				? 1.0f
-				:
-				Character->InjurySeverity == EWSInjurySeverity::Normal
-				? 1.0f
-				: Character->InjurySeverity
-					== EWSInjurySeverity::Restricted
-				? 0.5f
-				: 0.0f;
-			const float ReadinessRatio = FMath::Min(
-				FMath::Min(
-					FMath::Clamp(
-						Character->Temperature / 6.0f,
-						0.0f,
-						1.0f),
-					FMath::Clamp(
-						static_cast<float>(Character->Stamina) / 2.0f,
-						0.0f,
-						1.0f)),
-				FMath::Min(
-					InjuryRatio,
-					FMath::Clamp(
-						1.0f - Character->Pressure / 10.0f,
-						0.0f,
-						1.0f)));
-			const TArray<float> Ratios = {
-				Character->Temperature / 10.0f,
-				static_cast<float>(Character->Stamina) / 2.0f,
-				InjuryRatio,
-				1.0f - Character->Pressure / 10.0f,
-				ReadinessRatio};
-			for (int32 StatusIndex = 0; StatusIndex < Ratios.Num(); ++StatusIndex)
-			{
-				const int32 FlatIndex = CharacterIndex * Ratios.Num() + StatusIndex;
-				if (CrewStatusBars.IsValidIndex(FlatIndex))
-				{
-					CrewStatusBars[FlatIndex]->SetPercent(FMath::Clamp(Ratios[StatusIndex], 0.0f, 1.0f));
-				}
-			}
-			if (CrewTrustBars.IsValidIndex(CharacterIndex) && CrewTrustBars[CharacterIndex])
-			{
-				CrewTrustBars[CharacterIndex]->SetPercent(FMath::Clamp(Character->Trust / 10.0f, 0.0f, 1.0f));
-			}
-		}
-	}
 	if (PauseStatusText)
 	{
 		PauseStatusText->SetText(FText::FromString(FString::Printf(
@@ -2860,64 +2588,32 @@ void UWhiteoutHUDWidget::ShowDialogueMenu(const FName NPCActionId, const bool bV
 {
 	bDialogueVisible = bVisible;
 	ActiveDialogueActionId = bVisible ? NPCActionId : NAME_None;
-	HideDialogueConditionCard();
-	ShowPanelAnimated(DialogueBorder, bVisible, WSUITokens::Anim::Normal);
+	DialogueBorder->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	if (!bVisible)
 	{
-		if (CurrentLayer == EWSUILayer::Dialogue)
-		{
-			SetLayer(EWSUILayer::Game);
-		}
+		if (CurrentLayer == EWSUILayer::Dialogue) SetLayer(EWSUILayer::Game);
 		return;
 	}
 	HideActionPreview();
 	bEvidenceVisible = false;
 	if (EvidenceBorder) EvidenceBorder->SetVisibility(ESlateVisibility::Collapsed);
 	SetLayer(EWSUILayer::Dialogue);
-	DialogueStage = EWSDialogueStage::Opening;
-	if (const UGameInstance* GameInstance = GetGameInstance())
+	if (UWindStationStateSubsystem* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+		DialoguePanelV15->Open(NPCActionId, State->GetDialogueMode());
+	if (APlayerController* PC = GetOwningPlayer())
 	{
-		if (const UWindStationStateSubsystem* StateSubsystem = GameInstance->GetSubsystem<UWindStationStateSubsystem>())
-		{
-			const FWSGameState State = bPresentationCaptureOverride
-				? PresentationCaptureState
-				: StateSubsystem->GetStateSnapshot();
-			const EWSCharacterId CharacterId = NPCActionId == TEXT("talk_ye_cheng")
-				? EWSCharacterId::YeCheng
-				: EWSCharacterId::GuHeng;
-			if (DialogueNameText)
-			{
-				DialogueNameText->SetText(FWSPresentationText::CharacterName(CharacterId));
-			}
-			if (DialogueLineText)
-			{
-				DialogueLineText->SetText(FWSPresentationText::DialogueOpening(CharacterId, State));
-				DialogueLineText->SetColorAndOpacity(FSlateColor(Body));
-			}
-			UpdateDialogueCard(State);
-		}
-	}
-	ShowDialogueWheelChoices();
-	if (APlayerController* PlayerController = GetOwningPlayer())
-	{
-		PlayerController->SetShowMouseCursor(true);
-		FInputModeUIOnly InputMode;
-		InputMode.SetWidgetToFocus(DialogueWheelPanel->TakeWidget());
-		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		PlayerController->SetInputMode(InputMode);
-		ResetMouseToViewportCenter();
+		PC->SetShowMouseCursor(true);
+		FInputModeUIOnly Mode;
+		Mode.SetWidgetToFocus(DialoguePanelV15->TakeWidget());
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(Mode);
+		DialoguePanelV15->FocusInput();
 	}
 }
 
 void UWhiteoutHUDWidget::ShowDialogueWheelChoices()
 {
-	HideDialogueConditionCard();
-	DialogueStage = EWSDialogueStage::IntentPick;
-	if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Visible);
-	if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
-	if (DialogueReplyBorder) DialogueReplyBorder->SetVisibility(ESlateVisibility::Collapsed);
-	RefreshDialogueAvailability();
+	if (DialoguePanelV15) DialoguePanelV15->Refresh();
 }
 
 void UWhiteoutHUDWidget::ShowDialoguePromiseChoices()
@@ -2963,20 +2659,7 @@ void UWhiteoutHUDWidget::ShowDialogueReplyForCapture(const FString& Speaker, con
 
 void UWhiteoutHUDWidget::SetDialogueIntentStatus(const FString& Message, const bool bProcessing)
 {
-	if (DialogueStatusText)
-	{
-		DialogueStatusText->SetText(FText::FromString(Message));
-		DialogueStatusText->SetColorAndOpacity(FSlateColor(bProcessing ? Amber : Secondary));
-		DialogueStatusText->SetVisibility(
-			Message.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
-	}
-	if (bProcessing)
-	{
-		if (DialogueWheelPanel) DialogueWheelPanel->SetVisibility(ESlateVisibility::Collapsed);
-		if (DialoguePromiseBorder) DialoguePromiseBorder->SetVisibility(ESlateVisibility::Collapsed);
-		if (DialogueFreeTextBorder) DialogueFreeTextBorder->SetVisibility(ESlateVisibility::Collapsed);
-		if (DialogueReplyBorder) DialogueReplyBorder->SetVisibility(ESlateVisibility::Collapsed);
-	}
+	if (DialoguePanelV15) DialoguePanelV15->SetStatus(Message, bProcessing);
 }
 
 void UWhiteoutHUDWidget::ChooseDialogueAsk()
@@ -3315,44 +2998,13 @@ FString UWhiteoutHUDWidget::BuildDialogueStatusSummary(
 
 void UWhiteoutHUDWidget::HandleDialogueLine(const FWSAgentReply& Reply)
 {
-	if (!bDialogueVisible || Reply.ActionId != ActiveDialogueActionId || !DialogueLineText)
-	{
-		return;
-	}
+	if (!bDialogueVisible || Reply.ActionId != ActiveDialogueActionId || !DialoguePanelV15) return;
 	if (const AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
 	{
 		if (Reply.DialogueSessionId != Character->GetActiveDialogueSessionId()
-			|| Reply.TransactionId != Character->GetActiveDialogueTransactionId())
-		{
-			return;
-		}
+			|| Reply.TransactionId != Character->GetActiveDialogueTransactionId()) return;
 	}
-	const FString Speaker = Reply.Speaker == EWSCharacterId::GuHeng ? TEXT("顾衡") : TEXT("叶澄");
-	if (DialogueNameText) DialogueNameText->SetText(FText::FromString(Speaker));
-	DialogueLineText->SetText(FText::FromString(Reply.Utterance));
-	DialogueLineText->SetColorAndOpacity(FSlateColor(Body));
-	if (DialogueStatusText)
-	{
-		bool bIncludeDebugDetails = false;
-#if !UE_BUILD_SHIPPING
-		bIncludeDebugDetails = CVarWhiteoutDialogueDebug.GetValueOnGameThread() != 0;
-#endif
-		DialogueStatusText->SetText(FText::FromString(
-			BuildDialogueStatusSummary(Reply, bIncludeDebugDetails)));
-		DialogueStatusText->SetColorAndOpacity(FSlateColor(!Reply.bFallback ? Cyan : Secondary));
-		DialogueStatusText->SetVisibility(ESlateVisibility::Visible);
-	}
-	if (DialogueContinueButton)
-	{
-		DialogueContinueButton->SetIsEnabled(
-			Reply.DialogueTurnIndex < Reply.DialogueSessionMaxTurns);
-		DialogueContinueButton->SetVisibility(
-			Reply.DialogueTurnIndex < Reply.DialogueSessionMaxTurns
-				? ESlateVisibility::Visible
-				: ESlateVisibility::Collapsed);
-	}
-	UpdateDialogueConditionCard(Reply);
-	ShowDialogueReplyActions();
+	DialoguePanelV15->ShowReply(Reply);
 }
 
 FString UWhiteoutHUDWidget::BuildDialogueConditionSummary(
@@ -4834,4 +4486,24 @@ void UWhiteoutHUDWidget::QuitGame()
 	{
 		UKismetSystemLibrary::QuitGame(this, PlayerController, EQuitPreference::Quit, false);
 	}
+}
+
+void UWhiteoutHUDWidget::SetStatusFocus(FName ActionId)
+{
+	if (StatusFocusAction == ActionId) return;
+	StatusFocusAction = ActionId;
+	if (UWindStationStateSubsystem* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+		HandleStatusState(State->GetStateSnapshot());
+}
+
+void UWhiteoutHUDWidget::HandleStatusState(const FWSGameState& State)
+{
+	if (!StatusPanelV15) return;
+	const UWindStationStateSubsystem* Subsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+	if (!Subsystem) return;
+	const FWhiteoutRuleConfig& Config = Subsystem->GetRulesEngine().GetConfig();
+	TOptional<FWSStatusCardViewModel> Target;
+	if (StatusFocusAction == TEXT("talk_gu_heng") || StatusFocusAction == TEXT("talk_ye_cheng"))
+		Target = WSStatusPresenter::Build(StatusFocusAction == TEXT("talk_gu_heng") ? EWSCharacterId::GuHeng : EWSCharacterId::YeCheng, State, Config);
+	StatusPanelV15->Present(WSStatusPresenter::Build(EWSCharacterId::Player, State, Config), Target);
 }

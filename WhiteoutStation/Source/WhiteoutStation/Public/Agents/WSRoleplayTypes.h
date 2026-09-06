@@ -313,6 +313,9 @@ struct FWSRoleplayRequest
 {
 	GENERATED_BODY()
 
+	bool bAuthoredDialogue = false;
+	bool bControlledClaims = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName SpeakerId;
 

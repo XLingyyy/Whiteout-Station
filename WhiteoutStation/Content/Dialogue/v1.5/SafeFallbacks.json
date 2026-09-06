@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "fallbacks": [
+    {
+      "fallback_id": "FB_GU_CHARACTER_GOAL",
+      "speaker": "gu_heng",
+      "target": "gu_heng",
+      "topic_tags": ["character_goal", "gu_heng", "motivation"],
+      "speech_function": "answer",
+      "line": "我先把发电和通讯恢复。设备还没稳住之前，其他事往后放。",
+      "referenced_knowledge_ids": ["GU_GOAL_RESTORE_GENERATOR", "GU_GOAL_RESTORE_COMMUNICATIONS"],
+      "availability": ["always"]
+    },
+    {
+      "fallback_id": "FB_YE_CHARACTER_GOAL",
+      "speaker": "ye_cheng",
+      "target": "ye_cheng",
+      "topic_tags": ["character_goal", "ye_cheng", "motivation"],
+      "speech_function": "answer",
+      "line": "我要让我们三个人都能撑到救援抵达，也要把可以避免的伤势控制住。",
+      "referenced_knowledge_ids": ["YE_GOAL_KEEP_CREW_CAPABLE", "YE_GOAL_PREVENT_COLD_DAMAGE"],
+      "availability": ["always"]
+    },
+    {
+      "fallback_id": "FB_GU_CHARACTER_YE",
+      "speaker": "gu_heng",
+      "target": "ye_cheng",
+      "topic_tags": ["character_goal", "character", "ye_cheng", "relationship"],
+      "speech_function": "answer",
+      "line": "她的医疗判断可靠，就是每一步都要留足余地。紧急时这会拖时间，也会救命。",
+      "referenced_knowledge_ids": ["GU_VIEW_YE_SKILL", "GU_VIEW_YE_CAUTION"],
+      "availability": ["always"]
+    },
+    {
+      "fallback_id": "FB_YE_CHARACTER_GU",
+      "speaker": "ye_cheng",
+      "target": "gu_heng",
+      "topic_tags": ["character_goal", "character", "gu_heng", "relationship"],
+      "speech_function": "answer",
+      "line": "我信任顾衡的技术，但他遇到事故时太习惯自己扛。我不会把这两件事混在一起。",
+      "referenced_knowledge_ids": ["YE_VIEW_GU_SKILL", "YE_VIEW_GU_RISK", "YE_DOUBT_GU_STOPPING"],
+      "availability": ["always"]
+    },
+    {
+      "fallback_id": "FB_GU_EQUIPMENT_GENERATOR",
+      "speaker": "gu_heng",
+      "target": "generator",
+      "topic_tags": ["equipment", "generator", "diagnosis"],
+      "speech_function": "answer_with_uncertainty",
+      "line": "发电机的问题要看运行记录和控制柜。没核对过的部分，我不会先下结论。",
+      "referenced_knowledge_ids": ["WORLD_GENERATOR_STOP_EVENT", "GU_SKILL_FAULT_DIAGNOSIS"],
+      "availability": ["always"]
+    },
+    {
+      "fallback_id": "FB_YE_EQUIPMENT_UNKNOWN",
+      "speaker": "ye_cheng",
+      "target": "generator",
+      "topic_tags": ["equipment", "generator", "unknown"],
+      "speech_function": "answer_with_uncertainty",
+      "line": "设备细节要由顾衡检查。我能说明停电对人员的影响，也可以听你描述现场现象。",
+      "referenced_knowledge_ids": ["WORLD_GENERATOR_STOP_EVENT", "YE_RELAY_DETAILS_UNKNOWN"],
+      "availability": ["player_missing:FACT_BURNT_RELAY"]
+    },
+    {
+      "fallback_id": "FB_GU_OVERALL_STATE",
+      "speaker": "gu_heng",
+      "target": "station",
+      "topic_tags": ["overall_status", "station", "heating", "generator"],
+      "speech_function": "crisis_response",
+      "line": "供暖状态：{heating_state}；发电机状态：{generator_state}。先处理眼前能确认的故障。",
+      "referenced_knowledge_ids": ["WORLD_GENERATOR_STOP_EVENT", "WORLD_HEATING_BY_ZONE"],
+      "availability": ["always"]
+    },
+    {
+      "fallback_id": "FB_YE_OVERALL_STATE",
+      "speaker": "ye_cheng",
+      "target": "station",
+      "topic_tags": ["overall_status", "station", "heating", "generator", "weather"],
+      "speech_function": "crisis_response",
+      "line": "供暖状态：{heating_state}；发电机状态：{generator_state}。暴风雪仍会放大低温和外出的风险。",
+      "referenced_knowledge_ids": ["WORLD_HEATING_BY_ZONE", "WORLD_BLIZZARD_APPROACHING", "YE_BLIZZARD_ASSESSMENT"],
+      "availability": ["always"]
+    },
+    {
+      "fallback_id": "FB_GU_AMBIGUOUS",
+      "speaker": "gu_heng",
+      "target": "unknown",
+      "topic_tags": ["ambiguous", "clarification", "character", "equipment"],
+      "speech_function": "clarify",
+      "line": "你具体想问谁，还是哪台设备？说清一点。",
+      "referenced_knowledge_ids": ["GU_SELF_EQUIPMENT_TRUTH"],
+      "availability": ["always"]
+    },
+    {
+      "fallback_id": "FB_YE_AMBIGUOUS",
+      "speaker": "ye_cheng",
+      "target": "unknown",
+      "topic_tags": ["ambiguous", "clarification", "character", "equipment", "risk"],
+      "speech_function": "clarify",
+      "line": "你想问的是某个人、设备，还是眼下的风险？我可以按你关心的部分说。",
+      "referenced_knowledge_ids": ["YE_SELF_EVIDENCE_BOUNDARY"],
+      "availability": ["always"]
+    }
+  ]
+}

@@ -598,4 +598,37 @@ bool FWhiteoutV15FreeTurnConsequencesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWhiteoutV15AuthoredSubmissionTest,
+	"WhiteoutStation.Dialogue.V15.Authored.SubmissionAndNoNetwork",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWhiteoutV15AuthoredSubmissionTest::RunTest(const FString& Parameters)
+{
+	using namespace WhiteoutDialogueV14SessionTests;
+	FScopedStateSubsystem Fixture;
+	UWindStationStateSubsystem* Subsystem = Fixture.Get();
+	if (!Fixture.IsReady() || !Subsystem) return false;
+	int32 ModelDispatches = 0;
+	Subsystem->SetDialogueRealizeTestHook([&](const FWSPreparedDialogue& P, FWSDialogueRealizeTestCallback Reply)
+		{ ++ModelDispatches; Reply(P.LocalFallback); });
+	const FWSGameState Initial = Subsystem->GetStateSnapshot();
+	TestFalse(TEXT("Evidence-only choice cannot be forged before investigating"),
+		Subsystem->SubmitAuthoredDialogueChoice(TEXT("talk_gu_heng"), TEXT("gu_restart_evidence"), FGuid::NewGuid()).bCommitted);
+	TestEqual(TEXT("Invalid choice costs no AP"), Subsystem->GetStateSnapshot().PhaseActionPoints, Initial.PhaseActionPoints);
+	TestFalse(TEXT("Unknown choice cannot fall back into another topic"),
+		Subsystem->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("nonexistent"), FGuid::NewGuid()).bCommitted);
+	const FGuid Session = FGuid::NewGuid();
+	TestTrue(TEXT("Authored diagnosis commits through the rules transaction"),
+		Subsystem->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_diagnosis"), Session).bCommitted);
+	TestTrue(TEXT("Authored diagnosis discloses the actual diagnosis"), Subsystem->GetStateSnapshot().Flags.bGuHengDiagnosed);
+	TestEqual(TEXT("Authored line identity is preserved"), Subsystem->GetLatestDialogue().AuthoredLineId, FName(TEXT("ye_diagnosis_diagnosis")));
+	const FWSGameState First = Subsystem->GetStateSnapshot();
+	TestTrue(TEXT("Authored follow-up commits"),
+		Subsystem->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_diagnosis"), Session).bCommitted);
+	TestEqual(TEXT("Follow-up does not charge again"), Subsystem->GetStateSnapshot().PhaseActionPoints, First.PhaseActionPoints);
+	TestEqual(TEXT("Authored turns bypass model dispatch entirely"), ModelDispatches, 0);
+	TestEqual(TEXT("Authored turns consume no model budget"), Subsystem->GetStateSnapshot().ModelCalls, Initial.ModelCalls);
+	return true;
+}
+
 #endif

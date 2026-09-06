@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "State/WindStationTypes.h"
+#include "Dialogue/WSDialogueV15Types.h"
 #include "UObject/Object.h"
 #include "WSAgentGateway.generated.h"
 
@@ -54,6 +55,12 @@ class WHITEOUTSTATION_API UWSAgentGateway : public UObject
 
 public:
 	void Initialize();
+	void RequestCanonicalIntent(const FString& Text, FName Speaker,
+		const TArray<FString>& SafeHistory, int32 ContextTurn,
+		TFunction<void(bool, const FWSCanonicalIntent&, const FString&)> Completion);
+	void RequestControlledRoleplay(const FWSPreparedDialogue& Prepared, FWSDialogueOutcomeCallback Completion);
+	static bool ParseControlledRoleplay(const FString& Json, const FWSPreparedDialogue& Prepared,
+		FWSAgentReply& Reply, FString& Error);
 	void ResetSession();
 	virtual void BeginDestroy() override;
 	bool HasLiveProvider() const;

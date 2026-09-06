@@ -3267,7 +3267,7 @@ void UWSAgentGateway::LoadConfig()
 
 	FString JsonText;
 	const FString ConfigPath =
-		FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.4.json");
+		FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.5.json");
 	if (FFileHelper::LoadFileToString(JsonText, *ConfigPath))
 	{
 		TSharedPtr<FJsonObject> Root;
@@ -3296,14 +3296,14 @@ void UWSAgentGateway::LoadConfig()
 				&& Root->TryGetNumberField(TEXT("top_k_knowledge"), TopKKnowledge)
 				&& Root->TryGetNumberField(TEXT("max_session_turns"), MaxSessionTurns);
 			bRuntimeContractValid = bHasContractFields
-				&& SchemaVersion == 7.0
-				&& RuntimeVersion == TEXT("1.4.0")
-				&& ProtocolVersion == TEXT("bounded_roleplay_v4")
-				&& PromptMode == TEXT("subjective_context_single_call")
+				&& SchemaVersion == 8.0
+				&& RuntimeVersion == TEXT("1.5.0")
+				&& ProtocolVersion == TEXT("bounded_roleplay_v5")
+				&& PromptMode == TEXT("canonical_intent_then_controlled_expression")
 				&& MaxSentences == 3.0
-				&& MaxLineChars == 120.0
-				&& MaxOutputTokens == 320.0
-				&& Temperature == 0.5
+				&& MaxLineChars == 240.0
+				&& MaxOutputTokens == 640.0
+				&& Temperature == 0.45
 				&& TopKKnowledge == 10.0
 				&& MaxSessionTurns == 3.0;
 			if (bRuntimeContractValid)
@@ -3509,7 +3509,7 @@ FString UWSAgentGateway::BuildDialogueRealizationContextJson(
 		TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
 		Context->SetStringField(
 			TEXT("protocol_version"),
-			TEXT("bounded_roleplay_v4"));
+			TEXT("bounded_roleplay_v5"));
 		Context->SetStringField(
 			TEXT("prompt_mode"),
 			TEXT("subjective_context_single_call"));

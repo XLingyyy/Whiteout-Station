@@ -8,6 +8,8 @@
 #include "WhiteoutHUDWidget.generated.h"
 
 class UBorder;
+class UWSDialoguePanelWidget;
+class UWSStatusPanelWidget;
 class UButton;
 class UCanvasPanel;
 class UEditableTextBox;
@@ -77,6 +79,8 @@ public:
 	void SetInteractionPrompt(const FText& Prompt);
 	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, bool bDialogue = false);
 	void ClearInteractionFocus();
+	void SetStatusFocus(FName ActionId);
+	UFUNCTION() void HandleStatusState(const FWSGameState& State);
 	void SetActionFeedback(const FText& ActionName, const FWSActionResult& Result, const FWSActionPreview& Preview, bool bPromiseCreated = false);
 	void ShowActionPreview(
 		const FText& ActionName,
@@ -87,6 +91,7 @@ public:
 	UFUNCTION()
 	void CloseEvidence();
 	void ShowDialogueMenu(FName NPCActionId, bool bVisible);
+	void OpenDialogueSettings() { OpenSettings(); }
 	void ShowDialoguePromiseChoices();
 	UFUNCTION()
 	void ShowDialogueWheelChoices();
@@ -143,6 +148,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> CrewPanel;
+
+	UPROPERTY() TObjectPtr<UWSStatusPanelWidget> StatusPanelV15;
+	FName StatusFocusAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> BottomPanel;
@@ -257,6 +265,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> DialogueBorder;
+
+	UPROPERTY()
+	TObjectPtr<UWSDialoguePanelWidget> DialoguePanelV15;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> DialogueText;

@@ -189,6 +189,8 @@ namespace
 }
 
 const FString UWindStationStateSubsystem::SaveSlot(
+	TEXT("WhiteoutStation_Autosave_v1_5"));
+const FString UWindStationStateSubsystem::LegacySaveSlotV14(
 	TEXT("WhiteoutStation_Autosave_v1_4"));
 const FString UWindStationStateSubsystem::LegacySaveSlotV13(
 	TEXT("WhiteoutStation_Autosave_v1_3"));
@@ -205,6 +207,10 @@ void UWindStationStateSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	bHasPendingDialogue = false;
 	Collection.InitializeDependency<UWhiteoutSettingsSubsystem>();
 	FString Error;
+	if (!AuthoredRepository.Load(FPaths::ProjectContentDir() / TEXT("Dialogue/v1.5"), Error))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Authored dialogue unavailable: %s"), *Error);
+	}
 	const FString ConfigPath =
 		FPaths::ProjectContentDir()
 		/ TEXT("Rules/WhiteoutStationRules.v1.1.json");
@@ -316,6 +322,30 @@ bool UWindStationStateSubsystem::HasLiveLLMProvider() const
 	return LLMConfigurationError.IsEmpty()
 		&& AgentGateway
 		&& AgentGateway->HasLiveProvider();
+}
+
+EWSDialogueMode UWindStationStateSubsystem::GetDialogueMode() const
+{
+	const UWhiteoutSettingsSubsystem* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>();
+	if (!Settings || !Settings->IsLLMEnabled()) return EWSDialogueMode::Authored;
+	return HasLiveLLMProvider() ? EWSDialogueMode::Online : EWSDialogueMode::InvalidConfiguration;
+}
+
+TArray<FWSAuthoredChoice> UWindStationStateSubsystem::GetAuthoredDialogueChoices(FName ActionId) const
+{
+	const FName Speaker = ActionId == TEXT("talk_ye_cheng") ? FName(TEXT("ye_cheng")) : FName(TEXT("gu_heng"));
+	return AuthoredRepository.GetChoices(Speaker, RulesEngine.GetState());
+}
+
+FWSActionResult UWindStationStateSubsystem::SubmitAuthoredDialogueChoice(FName ActionId,
+	FName ChoiceId, FGuid SessionId, TFunction<void(const FWSActionResult&)> Completion)
+{
+	FWSActionRequest Request;
+	Request.ActionId = ActionId;
+	Request.AuthoredChoiceId = ChoiceId;
+	Request.DialogueSessionId = SessionId;
+	Request.TransactionId = FGuid::NewGuid();
+	return SubmitDialogueAction(Request, MoveTemp(Completion));
 }
 
 bool UWindStationStateSubsystem::SetRequirementPinned(
@@ -488,7 +518,7 @@ bool UWindStationStateSubsystem::NormalizeDialogueSessionRequest(
 			return false;
 		}
 		InOutRequest.DialogueTurnIndex = Session->CommittedTurns + 1;
-		InOutRequest.bDialogueSessionFollowUp = true;
+		InOutRequest.bDialogueSessionFollowUp = Session->PaidAP > 0;
 		InOutRequest.bDialoguePositiveRewardApplied = Session->bPositiveRewardApplied;
 		const FName EffectKey(*FString::Printf(TEXT("%d:%d"),
 			static_cast<int32>(InOutRequest.DialogueAct),
@@ -511,6 +541,9 @@ void UWindStationStateSubsystem::RecordCommittedDialogueSession(
 	Session.ActionId = Request.ActionId;
 	Session.DayPhase = RulesEngine.GetState().DayPhase;
 	Session.PaidAP += Request.bDialogueSessionFollowUp ? 0 : 1;
+	Session.SafeConversation.Add(TEXT("玩家：") + Request.PlayerSaid);
+	Session.SafeConversation.Add(TEXT("NPC：") + LatestDialogue.Utterance);
+	if (Session.SafeConversation.Num() > 6) Session.SafeConversation.RemoveAt(0, Session.SafeConversation.Num() - 6);
 	if (Request.DialogueAct == EWSDialogueAct::Command)
 	{
 		Session.AppliedEffectKeys.Add(FName(*FString::Printf(TEXT("%d:%d"),
@@ -741,6 +774,22 @@ FWSActionResult UWindStationStateSubsystem::SubmitDialogueAction(
 	TFunction<void(const FWSActionResult&)> Completion)
 {
 	FWSActionRequest NormalizedRequest = Request;
+	if (!Request.AuthoredChoiceId.IsNone())
+	{
+		const FWSAuthoredChoice* Choice = AuthoredRepository.FindChoice(Request.AuthoredChoiceId);
+		const FName Speaker = Request.ActionId == TEXT("talk_ye_cheng") ? FName(TEXT("ye_cheng")) : FName(TEXT("gu_heng"));
+		if (!Choice || !AuthoredRepository.CanSelect(*Choice, Speaker, RulesEngine.GetState()))
+		{
+			FWSActionResult Rejected;
+			Rejected.ActionId = Request.ActionId;
+			Rejected.TransactionId = Request.TransactionId;
+			Rejected.ReasonCode = EWSReasonCode::DialogueOutcomeInvalid;
+			CompleteDialogueSubmission(Rejected, MoveTemp(Completion));
+			return Rejected;
+		}
+		Choice->Intent.ApplyTo(NormalizedRequest);
+		NormalizedRequest.PlayerSaid = Choice->Text;
+	}
 	if (!NormalizedRequest.TransactionId.IsValid())
 	{
 		NormalizedRequest.TransactionId = FGuid::NewGuid();
@@ -869,6 +918,29 @@ FWSActionResult UWindStationStateSubsystem::PrepareDialogue(
 	Prepared.bRoleplayV14 = true;
 	Prepared.RoleplayRequest.SubjectiveState.GeneratorRequired =
 		RulesEngine.GetConfig().GeneratorRequired;
+	Prepared.bRoleplayV15 = ActionRequest.SemanticFrame.bCanonicalIntentValidated;
+	Prepared.RoleplayRequest.bControlledClaims = Prepared.bRoleplayV15;
+	if (Prepared.bRoleplayV15) Prepared.RoleplayRequest.ResponsePolicy.MaxCharacters = 240;
+	if (Prepared.bRoleplayV15 && ActionRequest.AuthoredChoiceId.IsNone())
+	{
+		if (const FWSAuthoredChoice* Equivalent = AuthoredRepository.FindEquivalent(
+			Prepared.RoleplayRequest.SpeakerId, ActionRequest.SemanticFrame))
+		{
+			Prepared.bHasAuthoredFallback = AuthoredRepository.SelectLine(*Equivalent, Prepared.ReadSnapshot,
+				Prepared.RoleplayRequest, RoleplayFallback, RoleplayError);
+		}
+	}
+	if (!ActionRequest.AuthoredChoiceId.IsNone())
+	{
+		Prepared.RoleplayRequest.bAuthoredDialogue = true;
+		const FWSAuthoredChoice* Choice = AuthoredRepository.FindChoice(ActionRequest.AuthoredChoiceId);
+		if (!Choice || !AuthoredRepository.SelectLine(*Choice, Prepared.ReadSnapshot,
+			Prepared.RoleplayRequest, RoleplayFallback, RoleplayError))
+		{
+			Result.ReasonCode = EWSReasonCode::DialogueOutcomeInvalid;
+			return Result;
+		}
+	}
 	Prepared.Contract.PersonaStyleId =
 		Prepared.RoleplayRequest.SpeakerId.ToString();
 	Prepared.Contract.MaxSentences =
@@ -925,6 +997,22 @@ FWSActionResult UWindStationStateSubsystem::PrepareDialogue(
 	Fallback.Provider = TEXT("preset");
 	Fallback.ValidationReason = TEXT("local_natural_fallback");
 	Fallback.bFallback = true;
+	if (Prepared.bRoleplayV15)
+	{
+		for (const FName KnowledgeId : RoleplayFallback.ReferencedKnowledgeIds)
+		{
+			FString ClaimText; FName ClaimKnowledge;
+			if (AuthoredRepository.RenderClaim(KnowledgeId, Prepared.RoleplayRequest, ClaimText, ClaimKnowledge))
+				Prepared.RequiredClaims.Add(KnowledgeId, ClaimText);
+		}
+	}
+	if (Prepared.bHasAuthoredFallback) Fallback.AuthoredLineId = RoleplayFallback.FallbackId;
+	if (!ActionRequest.AuthoredChoiceId.IsNone())
+	{
+		Fallback.AnswerSource = TEXT("authored_v15");
+		Fallback.AuthoredLineId = RoleplayFallback.FallbackId;
+		Fallback.bFallback = false;
+	}
 
 	FWSDialogueOutcome SimulationOutcome;
 	SimulationOutcome.FinalReply = Prepared.LocalFallback;
@@ -977,6 +1065,11 @@ void UWindStationStateSubsystem::RealizePreparedDialogue()
 	}
 	const FGuid TransactionId = PendingDialogue.TransactionId;
 	const int64 Generation = PendingDialogue.Generation;
+	if (!PendingDialogue.OriginalRequest.AuthoredChoiceId.IsNone())
+	{
+		HandlePreparedDialogueReply(PendingDialogue.LocalFallback, TransactionId, Generation);
+		return;
+	}
 #if WITH_DEV_AUTOMATION_TESTS
 	if (DialogueRealizeTestHook)
 	{
@@ -1034,6 +1127,20 @@ void UWindStationStateSubsystem::RealizePreparedDialogue()
 
 	const FWSPreparedDialogue Prepared = PendingDialogue;
 	TWeakObjectPtr<UWindStationStateSubsystem> WeakThis(this);
+	if (Prepared.bRoleplayV15)
+	{
+		if (!bUseLiveProvider)
+		{
+			AbortPendingDialogue(EWSReasonCode::DialogueOutcomeInvalid, true, false);
+			return;
+		}
+		AgentGateway->RequestControlledRoleplay(Prepared, FWSDialogueOutcomeCallback::CreateLambda(
+			[WeakThis, TransactionId, Generation](const FWSDialogueOutcome& Outcome)
+			{
+				if (WeakThis.IsValid()) WeakThis->HandlePreparedDialogueOutcome(Outcome, TransactionId, Generation);
+			}));
+		return;
+	}
 	AgentGateway->RequestDialogueRealization(
 		Prepared,
 		bUseLiveProvider,
@@ -1085,6 +1192,11 @@ void UWindStationStateSubsystem::HandlePreparedDialogueOutcome(
 
 	const FWSPreparedDialogue Prepared = PendingDialogue;
 	FWSDialogueOutcome Outcome = RealizedOutcome;
+	if (Prepared.bRoleplayV15 && Outcome.ValidationOutcome == TEXT("v15_no_response"))
+	{
+		AbortPendingDialogue(EWSReasonCode::DialogueOutcomeInvalid, true, false);
+		return;
+	}
 	Outcome.ValidationOutcome = NormalizeValidationOutcome(
 		Outcome.ValidationOutcome,
 		Outcome.FinalReply.bFallback,
@@ -1095,6 +1207,11 @@ void UWindStationStateSubsystem::HandlePreparedDialogueOutcome(
 			Outcome,
 			ValidationReason))
 	{
+		if (Prepared.bRoleplayV15 && !Prepared.bHasAuthoredFallback && Prepared.OriginalRequest.AuthoredChoiceId.IsNone())
+		{
+			AbortPendingDialogue(EWSReasonCode::DialogueOutcomeInvalid, true, false);
+			return;
+		}
 		const FString Provider = Outcome.FinalReply.Provider;
 		const FString FailureReason = Outcome.FinalReply.ValidationReason;
 		Outcome.FinalReply = Prepared.LocalFallback;
@@ -1328,6 +1445,7 @@ void UWindStationStateSubsystem::AbortPendingDialogue(
 	const bool bNotifyCompletion,
 	const bool bResetGateway)
 {
+	bHasPendingOnlineIntent = false;
 	TFunction<void(const FWSActionResult&)> Completion;
 	FWSActionResult Result;
 	if (bHasPendingDialogue)
@@ -1475,7 +1593,8 @@ FWSGameState UWindStationStateSubsystem::MigrateSaveStateForV13(
 	const FString& TargetRulesVersion)
 {
 	FWSGameState MigratedState = SourceState;
-	if (SourceSaveVersion != TEXT("1.4.0")
+	if (SourceSaveVersion != TEXT("1.5.0")
+		&& SourceSaveVersion != TEXT("1.4.0")
 		&& SourceSaveVersion != TEXT("1.3.0"))
 	{
 		if (MigratedState.Flags.bHeatPackRevealed)
@@ -1516,7 +1635,9 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	if (bAllowLegacyFallback
 		&& !UGameplayStatics::DoesSaveGameExist(SlotToLoad, 0))
 	{
-		SlotToLoad = UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV13, 0)
+		SlotToLoad = UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV14, 0)
+			? LegacySaveSlotV14
+			: UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV13, 0)
 			? LegacySaveSlotV13
 			: UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV12, 0)
 				? LegacySaveSlotV12
@@ -1530,7 +1651,8 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(
 		UGameplayStatics::LoadGameFromSlot(SlotToLoad, 0));
 	if (!Save
-		|| (Save->SaveVersion != TEXT("1.4.0")
+		|| (Save->SaveVersion != TEXT("1.5.0")
+			&& Save->SaveVersion != TEXT("1.4.0")
 			&& Save->SaveVersion != TEXT("1.3.0")
 			&& Save->SaveVersion != TEXT("1.2.0")
 			&& Save->SaveVersion != TEXT("1.1.0")))
@@ -1551,7 +1673,7 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	DialogueSessions.Reset();
 	++StateRevision;
 	LatestDialogue = FWSAgentReply();
-	if (bLoadLegacySlot || Save->SaveVersion != TEXT("1.4.0"))
+	if (bLoadLegacySlot || Save->SaveVersion != TEXT("1.5.0"))
 	{
 		SaveSnapshot();
 	}
@@ -1569,6 +1691,7 @@ bool UWindStationStateSubsystem::HasSnapshot() const
 	}
 #endif
 	return UGameplayStatics::DoesSaveGameExist(ActiveSaveSlot, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV14, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV13, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV12, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV11, 0);
