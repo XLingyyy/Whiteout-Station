@@ -4,7 +4,7 @@
 
 当前按候选版本管理。人工标注语义集、八人盲测和全部视觉／输入验收证据尚不齐全，不能标为完整发布通过。
 
-最新可运行归档：`Artifacts/WhiteoutStation-v1.5-Win64-20260906-8ba299e-candidate/Windows/WhiteoutStation.exe`。包含响应式面板、明确质疑的替代件选项、旧控件移除与窗口失焦清理。下方旧包和失败批次保留为历史验证记录。
+最新可运行归档：`Artifacts/WhiteoutStation-v1.5-Win64-20260907-8faee88-candidate/Windows/WhiteoutStation.exe`。包含响应式面板、明确质疑的替代件选项、旧控件移除、窗口失焦清理及证据板按状态变化刷新的性能修复。下方旧包和失败批次保留为历史验证记录。
 
 ## 运行与配置
 
@@ -112,6 +112,8 @@ python -X utf8 Tools/Release/run_v15_http_faults.py --exe 'G:/UnrealEngine/UE_5.
 首次对照暴露了承诺确认、命令和替代部件语义不一致。补充 A 的字段合同；替代部件作者选项原本是中性问句却标成 challenge，现改为明确质疑台词，保留技术路线既有结算。将该选项临时改成 ask 的尝试导致技术路线无法披露替代件，该改动已撤回。原失败报告保留 `equivalent-routes` 与 `equivalent-routes-contract`。后一次在线请求均在 A 阶段达到 3 秒超时；独立 Python 请求和 curl 同时出现 TLS 握手断开，尚不能归因于提供商整体故障，在线等价仍未通过。没有提高生产超时上限或增加自动重试。
 
 ## 最新 Shipping 包验证
+
+`8faee88` 新归档完成 Shipping 编译、完整 Cook、Stage 和归档，用时 153.69 秒。包内运行配置和九份对话数据门禁零错误。打包后五条作者路线全部成功，结局和评分与基线一致，模型调用均为零，报告为 `Artifacts/v1.5-evidence/shipping-8faee88-routes/summary.json`。此次仅改变 UI 刷新触发方式及计时点，A/B 合同和规则结算未变，因此复用同日已通过的三条真实在线等价证据。受保护资产 262/262 无变化，复核记录为 `protected-assets-20260907.json`。
 
 ### 2026-09-07 在线等价复测
 
