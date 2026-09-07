@@ -14,6 +14,7 @@
 
 void UWSStatusPanelWidget::Build(UFont* Font)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(WhiteoutV15StatusBuild);
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 	USizeBox* Width = WidgetTree->ConstructWidget<USizeBox>(); Width->SetWidthOverride(320);
 	WidgetTree->RootWidget = Width;
@@ -87,6 +88,7 @@ void UWSStatusPanelWidget::Present(const FWSStatusCardViewModel& Player, const T
 
 void UWSStatusPanelWidget::AdvanceAnimation(float DeltaTime, bool ReducedMotion)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(WhiteoutV15StatusAnimation);
 	if (TargetOpacity >= 1.0f || TargetCard->GetVisibility() == ESlateVisibility::Collapsed) return;
 	TargetOpacity = ReducedMotion ? 1.0f : FMath::Min(1.0f, TargetOpacity + DeltaTime / WSUITokens::V15::FadeIn);
 	TargetCard->SetRenderOpacity(TargetOpacity);

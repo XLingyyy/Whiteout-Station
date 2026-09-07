@@ -510,6 +510,7 @@ private:
 	void BuildWidgetTree();
 	void InitializeUIFontFamily();
 	void UpdateFromState(const FWSGameState& State);
+	UFUNCTION()
 	void UpdateEvidence(const FWSGameState& State);
 	void SetLayer(EWSUILayer Layer);
 	void ResetMouseToViewportCenter();

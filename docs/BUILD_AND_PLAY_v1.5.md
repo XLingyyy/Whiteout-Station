@@ -66,9 +66,9 @@ python -X utf8 Tools/Release/run_v15_authored_routes.py --exe 'Artifacts/Whiteou
 
 ## 尚未通过的发布条件
 
-120 条人工标注中文语义集、独立安全集全覆盖、三条完整在线／离线等价轨迹、全部 D/H 实机用例、完整中文 IME 快捷键矩阵、UI CPU 统计及八人交叉盲测，均须按实际证据补齐。多分辨率八类画面已生成，具体范围见后续记录。当前自动化和合成输入不能替代人工项目。
+120 条人工标注中文语义集、独立安全集全覆盖、全部 D/H 实机用例、完整中文 IME 快捷键矩阵及八人交叉盲测，均须按实际证据补齐。三条完整在线／离线等价轨迹已于 2026-09-07 通过；状态模块的 1080p 静止场景 CPU 预算已取得通过证据，不外推到全部场景。多分辨率八类画面已生成。当前自动化和合成输入不能替代人工项目。
 
-旧构建与失效缓存清理已核对保留范围，但删除操作遭自动审批审查拒绝，返回 `blocked by policy`，未给出进一步理由。本轮未绕过拒绝，旧归档仍在。保留的 v1.4 已验证包为 `Artifacts/WhiteoutStation-v1.4-Win64-20260905T105713Z-71bd524e-final`。
+旧构建删除曾遭自动审批审查拒绝，返回 `blocked by policy`，未给出进一步理由。用户随后手动删除，2026-09-07 复核九个旧归档均已不存在，只保留最新 v1.5 包、v1.4 回退包及测试证据；当时 G 盘可用 31.37 GiB。未据跨日剩余空间反推实际释放量。保留的 v1.4 包为 `Artifacts/WhiteoutStation-v1.4-Win64-20260905T105713Z-71bd524e-final`。
 
 
 ## Shipping 实机补充检查
@@ -113,6 +113,16 @@ python -X utf8 Tools/Release/run_v15_http_faults.py --exe 'G:/UnrealEngine/UE_5.
 
 ## 最新 Shipping 包验证
 
+### 2026-09-07 在线等价复测
+
+网络恢复后，`fc2430f` 及之前积压提交已成功推送到 `origin/main`。使用现有 `8ba299e` Shipping 包再次执行真实 DeepSeek 路线对照，医疗、技术、风险三条全部通过：最终完整规则状态、逐步 AP、承诺和事实披露无差异。在线请求数分别为 7／4／2，离线均为零；评分仍为 74.70／71.44／58.94。
+
+六次在线对话提交中，模型表达 2 次、合格作者替代 4 次；医疗路线包含先提议再确认承诺。该结果覆盖两阶段实际请求与允许的恢复路径，不能解读为六次全部由模型生成，也不替代人工语义验收。日期、模型和预算记录在 `Artifacts/v1.5-evidence/equivalent-routes-20260907/metadata.json`，对照摘要为同目录 `summary.json`。旧失败批次继续保留。
+
+```powershell
+python -X utf8 Tools/Release/run_v15_equivalent_routes.py --exe 'Artifacts/WhiteoutStation-v1.5-Win64-20260906-8ba299e-candidate/Windows/WhiteoutStation/Binaries/Win64/WhiteoutStation-Win64-Shipping.exe' --output 'Artifacts/v1.5-evidence/equivalent-routes-20260907' --key-file 'C:/Users/admin/Desktop/apikey.txt'
+```
+
 `8ba299e` 候选包完成 Shipping 编译、完整 Cook、Stage 和归档，用时 194 秒。包内运行配置与九份作者对话数据门禁零错误。五条打包后作者路线全部成功，结局与既有基线一致，评分为 74.70／71.44／58.94／36.92／42.16，所有路线模型调用为零。报告：`Artifacts/v1.5-evidence/shipping-8ba299e-routes/summary.json`。
 
 该 Shipping 包实机确认缺少进程 Key 时可切换离线，更新后的替代件质疑文案完整显示；首轮作者回复成功、剩余两轮，Esc 离开后 AP 从 4/4 变为 3/4。截图为 `shipping-8ba299e-first-turn.png` 与 `shipping-8ba299e-ap.png`。测试使用已明确标记的开局／定位夹具，交互和提交走实际游戏逻辑。
@@ -120,6 +130,20 @@ python -X utf8 Tools/Release/run_v15_http_faults.py --exe 'G:/UnrealEngine/UE_5.
 受保护的 262 个文件最终复核无变化，记录为 `Artifacts/v1.5-evidence/protected-assets-final.json`。Git 在 2026-09-06 14:01 再次推送失败，错误为 `schannel: failed to receive handshake, SSL/TLS connection failed`；远端最后成功推送仍为 `f1e7d41`，后续提交保存在本地主分支。
 
 ## 旧控件移除与窗口失焦
+
+### 2026-09-07 逐帧性能与证据板刷新
+
+按 Epic 官方 Timing Insights 导出流程采集 CPU 事件，使用 UE 5.8 Editor Development `-game -RenderOffScreen`、D3D12、1920×1080、上限 60 FPS，目标机 i7-13650HX／RTX 4060 Laptop／16 GiB。每次运行 80 秒，排除前 10 秒游戏帧后统计完整 60 秒；真实游戏世界注视顾衡，未使用状态截图覆盖。该范围测 CPU 控件逻辑、子树绘制与预布局，不把 GPU 或共享渲染线程提交算作单个控件。
+
+首次 3597 帧，新卡绘制和 Tick 合计 p95 0.0696 ms；整个 HUD Tick p95 10.7468 ms，并有 3598 次 LoadObject。调用路径确认旧 `UpdateFromState` 每帧执行 `UpdateEvidence`，清空并重建隐藏证据卡。改为订阅 `OnStateChanged`，保留初始化、筛选、截图状态的显式刷新；析构解除订阅。另补状态构建、模型更新和动画的 CPU scope。
+
+修正后 3598 帧：HUD Tick p95 **0.4758 ms**；状态子树绘制／Tick p95 **0.0687 ms**。逐帧合计状态子树、状态更新／动画和**整个窗口**的 Slate Prepass，p95 **0.2075 ms**，低于本场景 0.3 ms 预算。该数字保守计入共享预布局，但未把旧 HUD 的全部 Tick 归给新状态卡。最大值 0.518 ms，不能说所有帧均低于预算。
+
+60 秒稳定段没有 LoadObject／LoadPackage、状态树构建或证据卡重建；整个进程状态树构建 1 次，启动／阶段初始化证据板重建 2 次。Editor 实机先查看 0 条证据，再与叶澄完成诊断，打开证据板即显示 3 条记录，按“对话记录”筛出 2 条；基础 HUD 在证据板期间隐藏。截图为 `evidence-event-before.png`、`evidence-event-after.png`、`evidence-event-filter.png`。
+
+原始 trace、CSV、逐帧摘要和导出响应文件均位于 `Artifacts/v1.5-evidence/ui-cpu-20260907*`，修正后文件带 `-final`。Insights 分析器报告内存标签错误及一个 GPUSortBatch 元数据警告，本报告未使用内存或 GPU 指标。命令行工具需要把含空格的路径放在 `参数="值"` 内；仅给整个 `"参数=值"` 加引号会导致本机 Insights 未识别路径。导出退出码零不足以证明成功，已核对实际 CSV 内容。
+
+参考：[Epic Timing Insights 导出说明](https://dev.epicgames.com/documentation/unreal-engine/using-the-timers-and-counters-tabs-in-unreal-insights-for-unreal-engine?lang=zh-CN)。
 
 新增真实碰撞场景测试 `WhiteoutStation.UI.V15.Focus.CollisionAndLease`，验证碰撞表面 300 cm 获取距离、150 ms 获取延迟、340 cm 保持距离、墙体遮挡立即清除、200 ms 小角度宽限、视线切换、目标销毁及应用失焦状态。首次测试第二个 NPC 的斜向表面距离超出 300 cm，修正夹具位置并补齐临时世界上下文后，`Artifacts/v1.5-evidence/V15FocusGeometryFinal` 1/1 通过，零警告；原报告保留。该修改仅增加开发自动化测试与 friend 声明，不改变 Shipping 行为，因此未重复打包。
 

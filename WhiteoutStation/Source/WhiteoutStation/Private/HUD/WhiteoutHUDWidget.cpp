@@ -1,6 +1,7 @@
 #include "HUD/WhiteoutHUDWidget.h"
 #include "HUD/WSDialoguePanelWidget.h"
 #include "HUD/WSStatusPanelWidget.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "Agents/WSAgentGateway.h"
 #include "Blueprint/WidgetTree.h"
@@ -267,7 +268,9 @@ void UWhiteoutHUDWidget::NativeConstruct()
 		{
 			StateSubsystem->OnDialogueLine.AddUniqueDynamic(this, &UWhiteoutHUDWidget::HandleDialogueLine);
 			StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &UWhiteoutHUDWidget::HandleStatusState);
+			StateSubsystem->OnStateChanged.AddUniqueDynamic(this, &UWhiteoutHUDWidget::UpdateEvidence);
 			HandleStatusState(StateSubsystem->GetStateSnapshot());
+			UpdateEvidence(StateSubsystem->GetStateSnapshot());
 		}
 	}
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: native UMG widget added to viewport"));
@@ -281,6 +284,7 @@ void UWhiteoutHUDWidget::NativeDestruct()
 		{
 			StateSubsystem->OnDialogueLine.RemoveDynamic(this, &UWhiteoutHUDWidget::HandleDialogueLine);
 			StateSubsystem->OnStateChanged.RemoveDynamic(this, &UWhiteoutHUDWidget::HandleStatusState);
+			StateSubsystem->OnStateChanged.RemoveDynamic(this, &UWhiteoutHUDWidget::UpdateEvidence);
 		}
 	}
 	Super::NativeDestruct();
@@ -1720,7 +1724,6 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	}
 	FeedbackText->SetText(FText::FromString(SystemMessage));
 	PromptText->SetText(InteractionPrompt);
-	UpdateEvidence(State);
 	UpdateResults(State);
 }
 
@@ -1924,6 +1927,7 @@ FString UWhiteoutHUDWidget::BuildKnowledgeSourceLabel(
 
 void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(WhiteoutEvidenceRebuild);
 	if (!EvidenceTitleText || !EvidenceFilterText || !EvidenceCardGrid || !EvidenceProgressText)
 	{
 		return;
@@ -3109,6 +3113,7 @@ void UWhiteoutHUDWidget::SetPresentationCaptureState(const FWSGameState& State)
 	PresentationCaptureState = State;
 	bPresentationCaptureOverride = true;
 	UpdateFromState(PresentationCaptureState);
+	UpdateEvidence(PresentationCaptureState);
 }
 
 void UWhiteoutHUDWidget::ShowNPCFocusForCapture(const FText& ActionName, const FWSActionPreview& Preview)
@@ -4232,6 +4237,7 @@ void UWhiteoutHUDWidget::SetStatusFocus(FName ActionId)
 
 void UWhiteoutHUDWidget::HandleStatusState(const FWSGameState& State)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(WhiteoutV15StatusUpdate);
 	if (!StatusPanelV15) return;
 	const UWindStationStateSubsystem* Subsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
 	if (!Subsystem) return;
