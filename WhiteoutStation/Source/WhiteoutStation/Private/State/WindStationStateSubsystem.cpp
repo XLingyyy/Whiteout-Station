@@ -479,6 +479,8 @@ void UWindStationStateSubsystem::EndDialogueSession(
 	{
 		return;
 	}
+	if (bHasPendingDialogue && PendingDialogue.OriginalRequest.DialogueSessionId == DialogueSessionId)
+		CancelPendingDialogue();
 	DialogueSessions.Remove(DialogueSessionId);
 }
 
@@ -487,7 +489,7 @@ bool UWindStationStateSubsystem::CanContinueDialogueSession(
 {
 	const FWSDialogueSessionRuntimeState* Session =
 		DialogueSessions.Find(DialogueSessionId);
-	return Session && Session->CommittedTurns < 3;
+	return Session && (Session->CommittedTurns < 3 || Session->PendingCommitment.IsSet());
 }
 
 bool UWindStationStateSubsystem::NormalizeDialogueSessionRequest(
@@ -503,21 +505,40 @@ bool UWindStationStateSubsystem::NormalizeDialogueSessionRequest(
 	InOutRequest.bDialogueSessionFollowUp = false;
 	InOutRequest.bDialoguePositiveRewardApplied = false;
 	InOutRequest.bDialogueBehaviorEffectApplied = false;
+	InOutRequest.bConfirmationClosure = false;
 	if (const FWSDialogueSessionRuntimeState* Session =
 			DialogueSessions.Find(InOutRequest.DialogueSessionId))
 	{
+		if (InOutRequest.OnlineMessageId.IsValid())
+		{
+			if (Session->CommittedMessages.Contains(InOutRequest.OnlineMessageId))
+			{ OutReason = EWSReasonCode::DuplicateTransaction; return false; }
+			if (!Session->ResolvedMessage.IsSet() || Session->LatestMessageId != InOutRequest.OnlineMessageId)
+			{ OutReason = EWSReasonCode::DialogueStateChanged; return false; }
+			const FName Action = InOutRequest.ActionId;
+			const FGuid Tx = InOutRequest.TransactionId, Id = InOutRequest.DialogueSessionId;
+			const FString Text = InOutRequest.PlayerSaid;
+			InOutRequest = {}; Session->ResolvedMessage->ApplyTo(InOutRequest);
+			InOutRequest.ActionId = Action; InOutRequest.TransactionId = Tx;
+			InOutRequest.DialogueSessionId = Id; InOutRequest.PlayerSaid = Text;
+			for (const auto& Part : InOutRequest.DialogueParts)
+				if (Part.ConfirmProposalId.IsValid() && (!Session->PendingCommitment.IsSet()
+					|| Part.ConfirmProposalId != Session->PendingCommitment->ProposalId
+					|| Part.ConfirmProposalVersion != Session->PendingCommitment->ProposalVersion))
+				{ OutReason = EWSReasonCode::DialogueStateChanged; return false; }
+		}
 		if (Session->ActionId != InOutRequest.ActionId
 			|| Session->DayPhase != RulesEngine.GetState().DayPhase)
 		{
 			OutReason = EWSReasonCode::DialogueStateChanged;
 			return false;
 		}
-		if (Session->CommittedTurns >= InOutRequest.DialogueSessionMaxTurns)
+		if (Session->CommittedTurns >= InOutRequest.DialogueSessionMaxTurns && !InOutRequest.bConfirmationClosure)
 		{
 			OutReason = EWSReasonCode::DialogueSessionComplete;
 			return false;
 		}
-		InOutRequest.DialogueTurnIndex = Session->CommittedTurns + 1;
+		InOutRequest.DialogueTurnIndex = FMath::Min(3, Session->CommittedTurns + 1);
 		InOutRequest.bDialogueSessionFollowUp = Session->PaidAP > 0;
 		InOutRequest.bDialoguePositiveRewardApplied = Session->bPositiveRewardApplied;
 		const FName EffectKey(*FString::Printf(TEXT("%d:%d"),
@@ -540,6 +561,15 @@ void UWindStationStateSubsystem::RecordCommittedDialogueSession(
 		DialogueSessions.FindOrAdd(Request.DialogueSessionId);
 	Session.ActionId = Request.ActionId;
 	Session.DayPhase = RulesEngine.GetState().DayPhase;
+	if (Request.OnlineMessageId.IsValid())
+	{
+		Session.CommittedMessages.Add(Request.OnlineMessageId);
+		for (const auto& Part : Request.DialogueParts)
+			if (Session.PendingCommitment.IsSet() && Part.ConfirmProposalId == Session.PendingCommitment->ProposalId
+				&& Part.ConfirmProposalVersion == Session.PendingCommitment->ProposalVersion)
+				Session.PendingCommitment.Reset();
+		Session.ResolvedMessage.Reset();
+	}
 	Session.PaidAP += Request.bDialogueSessionFollowUp ? 0 : 1;
 	Session.SafeConversation.Add(TEXT("玩家：") + Request.PlayerSaid);
 	Session.SafeConversation.Add(TEXT("NPC：") + LatestDialogue.Utterance);
@@ -839,6 +869,36 @@ FWSActionResult UWindStationStateSubsystem::SubmitDialogueAction(
 FWSActionResult UWindStationStateSubsystem::PrepareDialogue(
 	const FWSActionRequest& ActionRequest)
 {
+	if (!ActionRequest.DialogueParts.IsEmpty() && !bHasPendingDialogue)
+	{
+		TArray<FWSPreparedDialogue> Parts;
+		TArray<FWSDialogueOutcome> Fallbacks;
+		FWSActionResult Result;
+		for (FWSActionRequest Child : ActionRequest.DialogueParts)
+		{
+			Child.ActionId = ActionRequest.ActionId; Child.TransactionId = ActionRequest.TransactionId;
+			Child.DialogueSessionId = ActionRequest.DialogueSessionId;
+			if (Child.PlayerSaid.IsEmpty()) Child.PlayerSaid = ActionRequest.PlayerSaid;
+			Child.DialogueTurnIndex = ActionRequest.DialogueTurnIndex;
+			Child.bDialogueSessionFollowUp = ActionRequest.bDialogueSessionFollowUp;
+			Child.bDialoguePositiveRewardApplied = ActionRequest.bDialoguePositiveRewardApplied;
+			Child.bDialogueBehaviorEffectApplied = ActionRequest.bDialogueBehaviorEffectApplied;
+			Child.DialogueParts.Reset();
+			Result = PrepareDialogue(Child);
+			if (!Result.bPendingDialogue) { bHasPendingDialogue = false; PendingDialogue = {}; return Result; }
+			Parts.Add(PendingDialogue);
+			FWSDialogueOutcome Fallback; Fallback.FinalReply = PendingDialogue.LocalFallback;
+			Fallback.DisclosedFactIds = Fallback.FinalReply.DisclosedFactIds;
+			Fallback.AnswerSource = Fallback.FinalReply.AnswerSource;
+			Fallbacks.Add(Fallback);
+			bHasPendingDialogue = false;
+		}
+		PendingDialogue = Parts[0]; PendingDialogue.Parts = Parts;
+		PendingDialogue.OriginalRequest = ActionRequest; PendingDialogue.Generation = ++DialogueGeneration;
+		PendingDialogue.LocalFallback = FWSDialogueOutcome::Combine(Fallbacks, ActionRequest.DialogueNotice).FinalReply;
+		bHasPendingDialogue = true;
+		return Result;
+	}
 	FWSActionResult Result;
 	Result.ActionId = ActionRequest.ActionId;
 	Result.TransactionId = ActionRequest.TransactionId;
@@ -999,6 +1059,20 @@ FWSActionResult UWindStationStateSubsystem::PrepareDialogue(
 	Fallback.bFallback = true;
 	if (Prepared.bRoleplayV15)
 	{
+		if (ActionRequest.SemanticFrame.TopicId == TEXT("generator")
+			&& ActionRequest.SemanticFrame.QueryType == EWSDialogueQueryType::Status)
+		{
+			FWSRoleplayKnowledgeItem Progress;
+			Progress.KnowledgeId = TEXT("DIALOGUE_GENERATOR_PROGRESS");
+			Progress.Owner = Prepared.RoleplayRequest.SpeakerId; Progress.SubjectId = TEXT("generator");
+			Progress.CategoryId = TEXT("public_status"); Progress.EpistemicStatus = EWSEpistemicStatus::Known;
+			Progress.MaxDisclosure = EWSRoleplayDisclosureLevel::Explicit; Progress.Confidence = 1.0f;
+			Progress.RoleplayContent = FString::Printf(TEXT("发电机检修进度为 %d/%d，%s。"),
+				Prepared.ReadSnapshot.Tasks.GeneratorProgress, RulesEngine.GetConfig().GeneratorRequired,
+				Prepared.ReadSnapshot.Tasks.GeneratorProgress >= RulesEngine.GetConfig().GeneratorRequired ? TEXT("检修已完成") : TEXT("检修尚未完成"));
+			Prepared.RoleplayRequest.AvailableKnowledge.Add(Progress);
+			Prepared.RequiredClaims.Add(Progress.KnowledgeId, Progress.RoleplayContent);
+		}
 		for (const FName KnowledgeId : RoleplayFallback.ReferencedKnowledgeIds)
 		{
 			FString ClaimText; FName ClaimKnowledge;
@@ -1170,6 +1244,19 @@ void UWindStationStateSubsystem::HandlePreparedDialogueReply(
 	const FGuid TransactionId,
 	const int64 Generation)
 {
+	if (!PendingDialogue.Parts.IsEmpty())
+	{
+		TArray<FWSDialogueOutcome> Parts;
+		for (const auto& Prepared : PendingDialogue.Parts)
+		{
+			FWSDialogueOutcome Part; Part.FinalReply = Prepared.LocalFallback;
+			Part.DisclosedFactIds = Part.FinalReply.DisclosedFactIds; Part.AnswerSource = Part.FinalReply.AnswerSource;
+			Parts.Add(Part);
+		}
+		auto Combined = FWSDialogueOutcome::Combine(Parts, PendingDialogue.OriginalRequest.DialogueNotice);
+		if (Reply.Utterance != Combined.FinalReply.Utterance) Combined.ValidationOutcome = TEXT("v15_no_response");
+		HandlePreparedDialogueOutcome(Combined, TransactionId, Generation); return;
+	}
 	FWSDialogueOutcome Outcome;
 	Outcome.FinalReply = Reply;
 	Outcome.DisclosedFactIds = Reply.DisclosedFactIds;
@@ -1208,6 +1295,8 @@ void UWindStationStateSubsystem::HandlePreparedDialogueOutcome(
 			ValidationReason))
 	{
 		UE_LOG(LogTemp, Display, TEXT("Whiteout prepared outcome rejected: %s"), *ValidationReason);
+		if (!Prepared.Parts.IsEmpty())
+		{ AbortPendingDialogue(EWSReasonCode::DialogueOutcomeInvalid, true, false); return; }
 		if (Prepared.bRoleplayV15 && !Prepared.bHasAuthoredFallback && Prepared.OriginalRequest.AuthoredChoiceId.IsNone())
 		{
 			AbortPendingDialogue(EWSReasonCode::DialogueOutcomeInvalid, true, false);
@@ -1274,9 +1363,12 @@ void UWindStationStateSubsystem::HandlePreparedDialogueOutcome(
 	PendingDialogue = FWSPreparedDialogue();
 	++DialogueGeneration;
 	++StateRevision;
-	const FWSAgentReply CommittedReply = Outcome.FinalReply;
+	FWSAgentReply CommittedReply = Outcome.FinalReply;
 	LatestDialogue = CommittedReply;
 	RecordCommittedDialogueSession(Prepared.OriginalRequest);
+	if (const auto* Session = DialogueSessions.Find(Prepared.OriginalRequest.DialogueSessionId))
+		CommittedReply.bPendingConfirmation = Session->PendingCommitment.IsSet();
+	LatestDialogue = CommittedReply;
 	if (AgentGateway)
 	{
 		AgentGateway->RecordCommittedDialogueTurn(
@@ -1366,6 +1458,23 @@ bool UWindStationStateSubsystem::AppendDialogueAudit(
 
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("kind"), TEXT("dialogue_expression"));
+	Root->SetNumberField(TEXT("message_schema_version"), 2);
+	TArray<TSharedPtr<FJsonValue>> ClauseResults;
+	for (int32 I = 0; I < Prepared.Parts.Num(); ++I)
+	{
+		const auto& Part = Prepared.Parts[I]; const auto& Reply = Outcome.Parts[I].FinalReply;
+		auto Item = MakeShared<FJsonObject>();
+		Item->SetStringField(TEXT("topic"), Part.OriginalRequest.SemanticFrame.TopicId.ToString());
+		Item->SetNumberField(TEXT("target"), static_cast<int32>(Part.OriginalRequest.SemanticFrame.TargetCharacter));
+		Item->SetStringField(TEXT("polarity"), Part.OriginalRequest.DialoguePolarity);
+		Item->SetBoolField(TEXT("local_clarification"), Part.OriginalRequest.bLocalClarification);
+		Item->SetArrayField(TEXT("allowed_fact_ids"), NameIdArray(Part.AllowedFactIds));
+		Item->SetArrayField(TEXT("disclosed_fact_ids"), NameIdArray(Reply.DisclosedFactIds));
+		Item->SetStringField(TEXT("response"), Reply.Utterance);
+		Item->SetStringField(TEXT("source"), Reply.AnswerSource);
+		ClauseResults.Add(MakeShared<FJsonValueObject>(Item));
+	}
+	Root->SetArrayField(TEXT("clause_results"), ClauseResults);
 	Root->SetStringField(TEXT("protocol_version"), Prepared.bRoleplayV15 ? TEXT("bounded_roleplay_v5") : TEXT("legacy"));
 	Root->SetStringField(TEXT("authored_choice_id"), Prepared.OriginalRequest.AuthoredChoiceId.ToString());
 	Root->SetStringField(TEXT("authored_line_id"), Outcome.FinalReply.AuthoredLineId.ToString());

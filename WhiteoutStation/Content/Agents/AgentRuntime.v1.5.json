@@ -20,6 +20,8 @@
   "notes": "Offline choices make no HTTP requests. Online intent and expression are sequential; all effects and claim permissions remain local.",
   "intent_timeout_seconds": 3,
   "expression_timeout_seconds": 7,
-  "intent_max_output_tokens": 256,
+  "intent_max_output_tokens": 1600,
+  "max_message_output_tokens": 3840,
+  "max_intents_per_message": 6,
   "max_calls_per_turn": 2
 }

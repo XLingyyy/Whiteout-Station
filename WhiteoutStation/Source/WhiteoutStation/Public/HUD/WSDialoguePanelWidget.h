@@ -40,12 +40,14 @@ private:
 	UPROPERTY() TObjectPtr<UButton> Offline;
 	UPROPERTY() TObjectPtr<UButton> Configure;
 	FName Action;
+	FGuid SessionId;
 	EWSDialogueMode Mode = EWSDialogueMode::Authored;
 	TArray<FWSAuthoredChoice> Choices;
 	FString History;
 	int32 Page = 0;
 	int32 Turns = 0;
 	bool bBusy = false;
+	bool bPendingConfirmation = false;
 	int32 PageSize() const;
 	void Select(int32 Index);
 	void Append(const FString& Text);

@@ -22,6 +22,11 @@ struct FWSDialogueSessionRuntimeState
 	TArray<FString> SafeConversation;
 	TOptional<FWSCanonicalIntent> PendingCommitment;
 	int64 PendingCommitmentRevision = 0;
+	int32 MessageCount = 0;
+	FGuid LatestMessageId;
+	TOptional<FWSCanonicalIntent> ResolvedMessage;
+	TOptional<FWSCanonicalIntent> LastParsedMessage;
+	TSet<FGuid> CommittedMessages;
 };
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -145,6 +150,9 @@ public:
 	EWSDialogueMode GetDialogueMode() const;
 	void ResolveOnlineIntent(FName ActionId, const FString& Text, FGuid SessionId,
 		TFunction<void(bool, const FWSCanonicalIntent&, const FString&)> Completion);
+	bool ResolveParsedOnlineMessage(FName ActionId, const FString& Text, FGuid SessionId,
+		const FWSCanonicalIntent& Parsed, FWSCanonicalIntent& Out, FString& Status, bool bMessageCounted = false);
+	const FWSDialogueSessionRuntimeState* GetDialogueSessionState(FGuid SessionId) const { return DialogueSessions.Find(SessionId); }
 	TArray<FWSAuthoredChoice> GetAuthoredDialogueChoices(FName ActionId) const;
 	FWSActionResult SubmitAuthoredDialogueChoice(FName ActionId, FName ChoiceId,
 		FGuid SessionId, TFunction<void(const FWSActionResult&)> Completion = {});
@@ -159,6 +167,7 @@ public:
 	const FWhiteoutRulesEngine& GetRulesEngine() const { return RulesEngine; }
 
 private:
+	friend class FWhiteoutV15MessageStateTest;
 	static const FString SaveSlot;
 	static const FString LegacySaveSlotV14;
 	static const FString LegacySaveSlotV13;

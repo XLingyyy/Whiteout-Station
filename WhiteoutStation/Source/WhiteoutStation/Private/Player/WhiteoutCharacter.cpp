@@ -573,7 +573,8 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 		|| DialogueAct == EWSDialogueAct::Trade
 		|| DialogueAct == EWSDialogueAct::Reassure;
 	const bool bAllowedPromise = DialogueAct != EWSDialogueAct::Promise
-		|| PromiseCondition == TEXT("keep_records") || PromiseCondition == TEXT("reserve_medicine") || PromiseCondition == TEXT("heat_repair_room");
+		|| PromiseCondition == TEXT("keep_records") || PromiseCondition == TEXT("reserve_medicine")
+		|| PromiseCondition == TEXT("heat_repair_room") || PromiseCondition == TEXT("heat_zone");
 	if (!bAllowedAct || !bAllowedPromise)
 	{
 		return;
@@ -585,6 +586,13 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 		ActiveDialogueSessionId);
 	Request.SemanticFrame = PendingSemanticFrame;
 	Request.AuthoredChoiceId = PendingAuthoredChoiceId;
+	if (PendingOnlineRequest.OnlineMessageId.IsValid())
+	{
+		const FGuid Transaction = Request.TransactionId;
+		Request = PendingOnlineRequest; Request.TransactionId = Transaction;
+		Request.ActionId = ActiveDialogueTarget->ActionId;
+		Request.DialogueSessionId = ActiveDialogueSessionId; Request.PlayerSaid = PendingPlayerSaid;
+	}
 	const FWSActionPreview Preview = ActiveDialogueTarget->PreviewRequest(Request);
 	if (!Preview.bCanExecute)
 	{
@@ -709,6 +717,7 @@ void AWhiteoutCharacter::SubmitDialogueText(const FString& UserText)
 			}
 			FWSActionRequest Request;
 			Intent.ApplyTo(Request);
+			Character->PendingOnlineRequest = Request;
 			Character->PendingSemanticFrame = Request.SemanticFrame;
 			Character->CommitDialogueChoice(Request.DialogueAct, Request.PromiseCondition);
 		});
@@ -750,6 +759,7 @@ void AWhiteoutCharacter::SubmitDialogueChoice(
 
 void AWhiteoutCharacter::ContinueDialogue()
 {
+	PendingOnlineRequest = {};
 	if (!ActiveDialogueTarget.IsValid())
 	{
 		return;
@@ -781,6 +791,7 @@ void AWhiteoutCharacter::ContinueDialogue()
 
 void AWhiteoutCharacter::CancelDialogue()
 {
+	PendingOnlineRequest = {};
 	if (!ActiveDialogueSessionId.IsValid()) return;
 	const FGuid ClosingSessionId = ActiveDialogueSessionId;
 	if (UGameInstance* GameInstance = GetGameInstance())

@@ -2390,6 +2390,13 @@ bool UWSAgentGateway::ValidateDialogueOutcome(
 	const FWSDialogueOutcome& Outcome,
 	FString& OutReason)
 {
+	if (!Prepared.Parts.IsEmpty())
+	{
+		if (!FWhiteoutRulesEngine::ValidateDialogueOutcomeContract(Prepared, Outcome, OutReason)) return false;
+		for (int32 I = 0; I < Prepared.Parts.Num(); ++I)
+			if (!ValidateDialogueOutcome(Prepared.Parts[I], Outcome.Parts[I], OutReason)) return false;
+		return true;
+	}
 	if (!FWhiteoutRulesEngine::ValidateDialogueOutcomeContract(
 			Prepared,
 			Outcome,

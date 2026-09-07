@@ -227,9 +227,11 @@ bool FWhiteoutDialogueAuditAndEventExportTest::RunTest(
 		TEXT("completion_tokens"),
 		TEXT("protocol_version"),
 		TEXT("authored_choice_id"),
-		TEXT("authored_line_id")};
+		TEXT("authored_line_id"),
+		TEXT("message_schema_version"),
+		TEXT("clause_results")};
 	TestTrue(
-		TEXT("Audit has exactly the twenty whitelisted fields"),
+		TEXT("Audit has exactly the versioned whitelisted fields"),
 		HasExactKeys(Audit, AuditFields));
 	TestEqual(
 		TEXT("Audit kind is stable"),

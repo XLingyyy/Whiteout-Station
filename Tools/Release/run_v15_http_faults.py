@@ -27,7 +27,7 @@ def main():
         def do_POST(self):
             payload = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
             scenario = payload['model']
-            stage = 'a' if payload['max_tokens'] == 256 else 'b'
+            stage = 'a' if 'player_text' in json.loads(payload['messages'][-1]['content']) else 'b'
             context = json.loads(payload['messages'][-1]['content'])
             requests[scenario].append(dict(stage=stage, max_tokens=payload['max_tokens'],
                 temperature=payload['temperature'], authorization_present='Authorization' in self.headers))
@@ -99,7 +99,7 @@ def main():
                   and data['ap_after'] == (3 if expected_commit else 4)
                   and data['promises'] == 0 and data['diagnosed'] == expected_commit and not data['pending']
                   and [r['stage'] for r in observed] == expected_stages
-                  and all(r['max_tokens'] == (256 if r['stage'] == 'a' else 640)
+                  and all(r['max_tokens'] == (1600 if r['stage'] == 'a' else 640)
                           and r['temperature'] == (0 if r['stage'] == 'a' else 0.45) for r in observed)
                   and not any(r['authorization_present'] for r in observed)
                   and data['elapsed_seconds'] < 10.5)

@@ -95,6 +95,7 @@ private:
 	FString PendingPlayerSaid;
 	FName PendingAuthoredChoiceId;
 	FWSDialogueSemanticFrame PendingSemanticFrame;
+	FWSActionRequest PendingOnlineRequest;
 	FName CurrentDialogueTopicActionId;
 	FWSActionRequest PreviewActionRequest;
 	FGuid ActiveDialogueSessionId;

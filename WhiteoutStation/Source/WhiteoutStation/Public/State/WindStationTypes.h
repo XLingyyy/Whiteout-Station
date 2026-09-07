@@ -748,6 +748,23 @@ struct FWSPhaseSummary
 };
 
 USTRUCT(BlueprintType)
+struct FWSPromiseTerms
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FName Kind;
+	UPROPERTY(SaveGame) EWSHeatingZone Zone = EWSHeatingZone::None;
+	UPROPERTY(SaveGame) int32 PhaseOffset = 0;
+	UPROPERTY(SaveGame) int32 DuePhase = INDEX_NONE;
+	UPROPERTY(SaveGame) FString Prerequisite;
+	UPROPERTY(SaveGame) FString Description;
+	bool SameTerms(const FWSPromiseTerms& Other) const
+	{
+		return Kind == Other.Kind && Zone == Other.Zone && DuePhase == Other.DuePhase
+			&& Prerequisite == Other.Prerequisite;
+	}
+};
+
+USTRUCT(BlueprintType)
 struct FWSPromiseRecord
 {
 	GENERATED_BODY()
@@ -757,6 +774,10 @@ struct FWSPromiseRecord
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	FName ConditionId;
+	UPROPERTY(SaveGame) FWSPromiseTerms Terms;
+	UPROPERTY(SaveGame) FGuid ProposalId;
+	UPROPERTY(SaveGame) int32 ProposalVersion = 0;
+	UPROPERTY(SaveGame) EWSCharacterId Recipient = EWSCharacterId::GuHeng;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	bool bRecognized = false;
@@ -962,6 +983,18 @@ struct FWSActionRequest
 {
 	GENERATED_BODY()
 
+	// One message owns one transaction; parts never submit independently.
+	TArray<FWSActionRequest> DialogueParts;
+	FString DialogueNotice;
+	FString DialoguePolarity;
+	FString LocalClarification;
+	bool bLocalClarification = false;
+	FGuid OnlineMessageId;
+	FGuid ConfirmProposalId;
+	int32 ConfirmProposalVersion = 0;
+	TArray<FWSPromiseTerms> PromiseTerms;
+	bool bConfirmationClosure = false;
+
 	FName AuthoredChoiceId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -1138,6 +1171,7 @@ USTRUCT(BlueprintType)
 struct FWSAgentReply
 {
 	GENERATED_BODY()
+	bool bPendingConfirmation = false;
 
 	FName AuthoredLineId;
 
@@ -1294,6 +1328,7 @@ USTRUCT(BlueprintType)
 struct FWSPreparedDialogue
 {
 	GENERATED_BODY()
+	TArray<FWSPreparedDialogue> Parts;
 
 	bool bRoleplayV15 = false;
 	bool bHasAuthoredFallback = false;
@@ -1352,6 +1387,8 @@ USTRUCT(BlueprintType)
 struct FWSDialogueOutcome
 {
 	GENERATED_BODY()
+	TArray<FWSDialogueOutcome> Parts;
+	static FWSDialogueOutcome Combine(const TArray<FWSDialogueOutcome>& InParts, const FString& Notice);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FWSAgentReply FinalReply;

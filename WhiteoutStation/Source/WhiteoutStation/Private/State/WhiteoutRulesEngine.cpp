@@ -553,6 +553,16 @@ bool FWhiteoutRulesEngine::ValidateDialogueOutcomeContract(
 {
 	const FWSActionRequest& Request = Prepared.OriginalRequest;
 	const FWSAgentReply& Reply = Outcome.FinalReply;
+	if (!Prepared.Parts.IsEmpty())
+	{
+		if (Prepared.Parts.Num() != Outcome.Parts.Num()) { OutReason = TEXT("message_missing_part"); return false; }
+		for (int32 I = 0; I < Prepared.Parts.Num(); ++I)
+			if (!ValidateDialogueOutcomeContract(Prepared.Parts[I], Outcome.Parts[I], OutReason)) return false;
+		const auto Combined = FWSDialogueOutcome::Combine(Outcome.Parts, Request.DialogueNotice);
+		if (Combined.FinalReply.Utterance != Reply.Utterance || Combined.DisclosedFactIds != Outcome.DisclosedFactIds)
+		{ OutReason = TEXT("message_aggregate_mismatch"); return false; }
+		OutReason = TEXT("accepted"); return true;
+	}
 	const bool bDialogueAction =
 		Request.ActionId == WhiteoutRules::TalkGuHeng
 		|| Request.ActionId == WhiteoutRules::TalkYeCheng;
@@ -1146,6 +1156,23 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecuteV11(
 		}
 		if (Request.DialogueAct == EWSDialogueAct::Promise)
 		{
+			if (!Request.PromiseTerms.IsEmpty())
+			{
+				if (!Request.ConfirmProposalId.IsValid() || Request.ConfirmProposalVersion < 1)
+					return EWSReasonCode::InvalidPromiseCondition;
+				for (const auto& Term : Request.PromiseTerms)
+				{
+					if (!Term.Prerequisite.IsEmpty() || (Term.Kind != TEXT("heat_zone")
+						&& Term.Kind != TEXT("keep_records") && Term.Kind != TEXT("reserve_medicine")))
+						return EWSReasonCode::InvalidPromiseCondition;
+					if (Term.Kind == TEXT("heat_zone") && (Term.Zone == EWSHeatingZone::None
+						|| Term.DuePhase <= static_cast<int32>(State.DayPhase) || Term.DuePhase >= 3))
+						return EWSReasonCode::InvalidPromiseCondition;
+					if (State.Promises.ContainsByPredicate([&](const FWSPromiseRecord& P) { return P.Recipient == Request.SemanticFrame.TargetCharacter && P.Terms.SameTerms(Term); }))
+						return EWSReasonCode::DuplicatePromise;
+				}
+				return EWSReasonCode::Ok;
+			}
 			static const TSet<FName> AllowedConditions = {
 				TEXT("reserve_medicine"),
 				TEXT("keep_records"),
@@ -2379,6 +2406,17 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 	const FWSActionPreview& Preview,
 	TArray<FString>& OutChanges)
 {
+	if (!Request.DialogueParts.IsEmpty())
+	{
+		FWSActionRequest Primary = Request; Primary.DialogueParts.Reset();
+		// The parent settles one social response. Other clauses add only their confirmed contracts.
+		if (Primary.DialogueAct == EWSDialogueAct::Promise) { Primary.PromiseTerms.Reset(); Primary.PromiseCondition = NAME_None; }
+		ApplyV11Effect(Primary, Preview, OutChanges);
+		for (const auto& Part : Request.DialogueParts)
+			if (Part.DialogueAct == EWSDialogueAct::Promise)
+			{ FWSActionRequest Confirmed = Part; Confirmed.ActionId = Request.ActionId; RecognizePromise(Confirmed, OutChanges); }
+		return;
+	}
 	using namespace WhiteoutRules;
 	const EWSCharacterId Executor = ResolveV11Executor(Request);
 	const FWhiteoutActionRule& Rule =
@@ -2766,6 +2804,23 @@ void FWhiteoutRulesEngine::TriggerMidCrisis(TArray<FString>& OutChanges)
 
 void FWhiteoutRulesEngine::RecognizePromise(const FWSActionRequest& Request, TArray<FString>& OutChanges)
 {
+	if (!Request.PromiseTerms.IsEmpty())
+	{
+		for (int32 I = 0; I < Request.PromiseTerms.Num(); ++I)
+		{
+			const auto& Terms = Request.PromiseTerms[I];
+			const auto Recipient = Request.ActionId == TEXT("talk_ye_cheng") ? EWSCharacterId::YeCheng : EWSCharacterId::GuHeng;
+			if (State.Promises.ContainsByPredicate([&](const auto& P) { return P.Recipient == Recipient && P.Terms.SameTerms(Terms); })) continue;
+			FWSPromiseRecord Record; Record.Terms = Terms; Record.ConditionId = Terms.Kind;
+			Record.Recipient = Recipient;
+			Record.ProposalId = Request.ConfirmProposalId; Record.ProposalVersion = Request.ConfirmProposalVersion;
+			Record.PromiseId = FName(*FString::Printf(TEXT("%s:%d:%d"), *Record.ProposalId.ToString(), Record.ProposalVersion, I));
+			Record.bRecognized = true; Record.HeatingHistoryCountAtRecognition = State.Heating.History.Num();
+			State.Promises.Add(Record);
+			OutChanges.Add(FString::Printf(TEXT("Promise recognized: %s"), *Record.PromiseId.ToString()));
+		}
+		return;
+	}
 	static const TSet<FName> AllowedConditions = {
 		TEXT("reserve_medicine"),
 		TEXT("keep_records"),
@@ -2798,7 +2853,12 @@ void FWhiteoutRulesEngine::SettlePromises()
 		{
 			continue;
 		}
-		if (Promise.ConditionId == TEXT("reserve_medicine"))
+		if (Promise.Terms.Kind == TEXT("heat_zone"))
+		{
+			Promise.bFulfilled = State.Heating.History.ContainsByPredicate([&](const auto& Entry)
+				{ return Entry.Zone == Promise.Terms.Zone && static_cast<int32>(Entry.Phase) == Promise.Terms.DuePhase; });
+		}
+		else if (Promise.ConditionId == TEXT("reserve_medicine"))
 		{
 			Promise.bFulfilled = State.Resources.Medicine > 0;
 		}
@@ -2841,7 +2901,7 @@ void FWhiteoutRulesEngine::SettlePromises()
 			}
 		}
 		Promise.bSettled = true;
-		ChangeCharacter(EWSCharacterId::GuHeng, 0, 0, 0, 0, 0, Promise.bFulfilled ? 0.6f : -1.2f);
+		ChangeCharacter(Promise.Recipient, 0, 0, 0, 0, 0, Promise.bFulfilled ? 0.6f : -1.2f);
 	}
 }
 

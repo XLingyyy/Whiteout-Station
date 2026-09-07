@@ -5,6 +5,25 @@
 #include "Agents/WSAgentGateway.h"
 #include "Presentation/WSStatusPresenter.h"
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWhiteoutV15LocalClarificationRegression,
+	"WhiteoutStation.Dialogue.V15.Revision.LocalClarification",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FWhiteoutV15LocalClarificationRegression::RunTest(const FString& Parameters)
+{
+	FWSCanonicalIntent Intent;
+	Intent.SpeakerId = TEXT("gu_heng");
+	Intent.TopicId = TEXT("relationship");
+	Intent.Frame.SpeechAct = EWSDialogueAct::Command;
+	Intent.Frame.TargetCharacter = EWSCharacterId::GuHeng;
+	Intent.Frame.Confidence = 1.0f;
+	Intent.bNeedsClarification = true;
+	TestTrue(TEXT("Clear social pressure survives missing physical task"), Intent.CanPlan());
+	FWSActionRequest Request;
+	Intent.ApplyTo(Request);
+	TestTrue(TEXT("No physical task is invented"), Request.SemanticFrame.TargetActionId.IsNone());
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWhiteoutV15CanonicalIntentTest,
 	"WhiteoutStation.Dialogue.V15.Intent.ValidationAndDisclosure",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -40,6 +59,10 @@ bool FWhiteoutV15CanonicalIntentTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Non-asserted speech cannot register a promise"), Intent.PromiseCondition.IsNone());
 		TestEqual(TEXT("Non-asserted promise has no commitment"), Intent.Commitment, EWSCommitmentIntent::None);
 	}
+	const FString Cancel = Json.Replace(TEXT("affirmative"), TEXT("negated"))
+		.Replace(TEXT("\"commitment\":\"none\""), TEXT("\"commitment\":\"reject_pending\""));
+	TestTrue(TEXT("Negated cancellation parses"), FWSCanonicalIntent::Parse(Cancel, TEXT("ye_cheng"), TEXT("手部还能操作工具吗"), 1, Intent, Error));
+	TestEqual(TEXT("Negation does not erase explicit cancellation"), Intent.Commitment, EWSCommitmentIntent::RejectPending);
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWhiteoutV15ControlledClaimsTest,

@@ -7,6 +7,75 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
+namespace
+{
+	void RunSemanticProbeStep(UWindStationStateSubsystem* State, FGuid Session, FName Action,
+		const TArray<FString>& Steps, int32 Index, TSharedRef<TArray<TSharedPtr<FJsonValue>>> Reports,
+		TFunction<void(bool, const FString&)> Finish)
+	{
+		if (Index >= Steps.Num()) { Finish(false, TEXT("sequence_completed")); return; }
+		const FString Text = Steps[Index];
+		const auto Before = State->GetStateSnapshot();
+		State->ResolveOnlineIntent(Action, Text, Session,
+			[State, Session, Action, Steps, Index, Reports, Finish, Before, Text](bool Ready, const FWSCanonicalIntent& Intent, const FString& Status)
+			{
+				auto Row = MakeShared<FJsonObject>(); Row->SetStringField(TEXT("text"), Text);
+				Row->SetBoolField(TEXT("ready"), Ready); Row->SetStringField(TEXT("resolution_status"), Status);
+				TArray<TSharedPtr<FJsonValue>> Parsed;
+				if (const auto* Ledger = State->GetDialogueSessionState(Session); Ledger && Ledger->LastParsedMessage.IsSet())
+				{
+					const auto& Original = Ledger->LastParsedMessage.GetValue();
+					const auto Parts = Original.Parts.IsEmpty() ? TArray<FWSCanonicalIntent>{Original} : Original.Parts;
+					for (const auto& Part : Parts)
+					{
+						auto P = MakeShared<FJsonObject>(); P->SetStringField(TEXT("topic"), Part.TopicId.ToString());
+						P->SetNumberField(TEXT("speech_act"), static_cast<int32>(Part.Frame.SpeechAct));
+						P->SetNumberField(TEXT("target"), static_cast<int32>(Part.Frame.TargetCharacter));
+						P->SetNumberField(TEXT("polarity"), static_cast<int32>(Part.Polarity));
+						P->SetNumberField(TEXT("commitment"), static_cast<int32>(Part.Commitment));
+						P->SetBoolField(TEXT("clarify"), Part.bNeedsClarification);
+						P->SetStringField(TEXT("clarification"), Part.Clarification);
+						TArray<TSharedPtr<FJsonValue>> Terms;
+						for (const auto& T : Part.Terms)
+						{
+							auto Item = MakeShared<FJsonObject>(); Item->SetStringField(TEXT("kind"), T.Kind.ToString());
+							Item->SetNumberField(TEXT("zone"), static_cast<int32>(T.Zone)); Item->SetNumberField(TEXT("offset"), T.PhaseOffset);
+							Item->SetStringField(TEXT("prerequisite"), T.Prerequisite); Item->SetStringField(TEXT("description"), T.Description);
+							Terms.Add(MakeShared<FJsonValueObject>(Item));
+						}
+						P->SetArrayField(TEXT("terms"), Terms); Parsed.Add(MakeShared<FJsonValueObject>(P));
+					}
+				}
+				Row->SetArrayField(TEXT("parsed"), Parsed);
+				const auto Record = [State, Session, Action, Steps, Index, Reports, Finish, Before, Row, Ready](bool Committed, const FString& Result)
+				{
+					const auto After = State->GetStateSnapshot();
+					Row->SetBoolField(TEXT("committed"), Committed); Row->SetStringField(TEXT("result"), Result);
+					Row->SetNumberField(TEXT("ap_before"), Before.PhaseActionPoints); Row->SetNumberField(TEXT("ap_after"), After.PhaseActionPoints);
+					Row->SetNumberField(TEXT("promises"), After.Promises.Num()); Row->SetNumberField(TEXT("generator_progress"), After.Tasks.GeneratorProgress);
+					Row->SetNumberField(TEXT("forced_actions"), After.Flags.ForcedActionCount);
+					Row->SetBoolField(TEXT("treated"), After.Flags.bGuHengTreated); Row->SetBoolField(TEXT("diagnosed"), After.Flags.bGuHengDiagnosed);
+					Row->SetNumberField(TEXT("medicine"), After.Resources.Medicine); Row->SetNumberField(TEXT("relay"), After.Resources.ReplacementRelay);
+					Row->SetStringField(TEXT("line"), Committed ? State->GetLatestDialogue().Utterance : FString());
+					Row->SetStringField(TEXT("source"), Committed ? State->GetLatestDialogue().AnswerSource : FString());
+					if (const auto* Ledger = State->GetDialogueSessionState(Session))
+					{
+						Row->SetNumberField(TEXT("messages"), Ledger->MessageCount); Row->SetNumberField(TEXT("turns"), Ledger->CommittedTurns);
+						Row->SetBoolField(TEXT("pending_proposal"), Ledger->PendingCommitment.IsSet());
+						if (Ledger->PendingCommitment.IsSet()) Row->SetNumberField(TEXT("proposal_version"), Ledger->PendingCommitment->ProposalVersion);
+					}
+					Reports->Add(MakeShared<FJsonValueObject>(Row));
+					RunSemanticProbeStep(State, Session, Action, Steps, Index + 1, Reports, Finish);
+				};
+				if (!Ready) { Record(false, Status); return; }
+				FWSActionRequest Request; Intent.ApplyTo(Request); Request.ActionId = Action; Request.DialogueSessionId = Session;
+				Request.PlayerSaid = Text; Request.TransactionId = FGuid::NewGuid();
+				State->SubmitDialogueAction(Request, [Record](const FWSActionResult& R)
+					{ Record(R.bCommitted, StaticEnum<EWSReasonCode>()->GetNameStringByValue(static_cast<int64>(R.ReasonCode))); });
+			});
+	}
+}
+
 void AWhiteoutGameMode::SubmitV15OnlineRouteDialogue(const FWSActionRequest& AuthoredRequest)
 {
 	UWindStationStateSubsystem* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
@@ -112,12 +181,14 @@ void AWhiteoutGameMode::RunV15DialogueProbe(const FString& InputPath, const int3
 	EWSReasonCode Reason; TArray<FString> Changes;
 	State->BeginDayPhase(EWSHeatingZone::MedicalRoom, Reason, Changes);
 	const int32 Before = State->GetStateSnapshot().PhaseActionPoints;
+	const FGuid Session = FGuid::NewGuid();
+	const auto StepReports = MakeShared<TArray<TSharedPtr<FJsonValue>>>();
 	const double Started = FPlatformTime::Seconds();
 	TWeakObjectPtr<AWhiteoutGameMode> WeakThis(this);
 	const TSharedRef<bool> Finished = MakeShared<bool>(false);
 	FString Lifecycle;
 	Input->TryGetStringField(TEXT("lifecycle"), Lifecycle);
-	const auto Finish = [WeakThis, Finished, Batch, Count, CaseIndex, State, Settings, OldProvider, OldUrl, OldModel, OldKey, OldEnabled, Before, Started, InputPath](bool Committed, const FString& Status)
+	const auto Finish = [WeakThis, Finished, Batch, Count, CaseIndex, State, Settings, OldProvider, OldUrl, OldModel, OldKey, OldEnabled, Before, Started, InputPath, StepReports](bool Committed, const FString& Status)
 	{
 		if (*Finished) return;
 		*Finished = true;
@@ -134,6 +205,7 @@ void AWhiteoutGameMode::RunV15DialogueProbe(const FString& InputPath, const int3
 		Report->SetStringField(TEXT("line"), State->GetLatestDialogue().Utterance);
 		Report->SetStringField(TEXT("source"), State->GetLatestDialogue().AnswerSource);
 		Report->SetStringField(TEXT("validation"), State->GetLatestDialogue().ValidationReason);
+		Report->SetArrayField(TEXT("steps"), *StepReports);
 		FString Output; FJsonSerializer::Serialize(Report, TJsonWriterFactory<>::Create(&Output));
 		FFileHelper::SaveStringToFile(Output, *(InputPath + (Batch ? FString::Printf(TEXT(".%03d.result.json"), CaseIndex) : FString(TEXT(".result.json")))), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 		FString RestoreError;
@@ -146,7 +218,22 @@ void AWhiteoutGameMode::RunV15DialogueProbe(const FString& InputPath, const int3
 		}
 		else FPlatformMisc::RequestExit(false);
 	};
-	const FGuid Session = FGuid::NewGuid();
+	TArray<FString> Steps;
+	if (Input->TryGetStringArrayField(TEXT("steps"), Steps))
+	{
+		bool SetupDiagnosis = false; Input->TryGetBoolField(TEXT("setup_diagnosis"), SetupDiagnosis);
+		if (SetupDiagnosis && !State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_diagnosis"), FGuid::NewGuid()).bCommitted)
+		{ Finish(false, TEXT("authored_diagnosis_setup_failed")); return; }
+		int32 SetupTurns = 0; Input->TryGetNumberField(TEXT("setup_turns"), SetupTurns);
+		for (int32 I = 0; I < SetupTurns; ++I)
+		{
+			const FName Choice = I == 0 ? FName(TEXT("gu_person")) : FName(TEXT("gu_generator"));
+			if (!State->SubmitAuthoredDialogueChoice(TEXT("talk_gu_heng"), Choice, Session).bCommitted)
+			{ Finish(false, TEXT("authored_setup_failed")); return; }
+		}
+		RunSemanticProbeStep(State, Session, FName(*Action), Steps, 0, StepReports, Finish);
+		return;
+	}
 	State->ResolveOnlineIntent(FName(*Action), Text, Session,
 		[State, Session, Action, Text, Finish, Lifecycle](bool Ready, const FWSCanonicalIntent& Intent, const FString& Status)
 		{

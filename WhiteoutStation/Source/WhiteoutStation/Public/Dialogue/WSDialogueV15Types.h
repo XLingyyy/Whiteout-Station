@@ -18,6 +18,14 @@ struct WHITEOUTSTATION_API FWSCanonicalIntent
 	bool bNeedsClarification = false;
 	TArray<FString> EvidenceSpans;
 	int32 ResolvedFromTurn = 0;
+	TArray<FWSCanonicalIntent> Parts;
+	TArray<FWSPromiseTerms> Terms;
+	FString Clarification;
+	FGuid ProposalId;
+	int32 ProposalVersion = 0;
+	FGuid MessageId;
+	FString Notice;
+	bool bConfirmationClosure = false;
 	double DeadlineSeconds = 0;
 
 	static bool Parse(const FString& Json, FName ExpectedSpeaker,

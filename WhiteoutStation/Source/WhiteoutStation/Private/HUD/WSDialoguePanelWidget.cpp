@@ -112,7 +112,8 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 
 void UWSDialoguePanelWidget::Open(FName InAction, EWSDialogueMode InMode)
 {
-	Action = InAction; Mode = InMode; Page = 0; Turns = 0; History.Reset(); bBusy = false;
+	Action = InAction; Mode = InMode; Page = 0; Turns = 0; History.Reset(); bBusy = false; bPendingConfirmation = false;
+	SessionId.Invalidate();
 	SetDesiredFocusWidget(Mode == EWSDialogueMode::Online ? Input.Get() : nullptr);
 	Input->SetText(FText::GetEmpty());
 	const FString Name = Action == TEXT("talk_ye_cheng") ? TEXT("叶澄 · 医生") : TEXT("顾衡 · 工程师");
@@ -129,7 +130,11 @@ void UWSDialoguePanelWidget::Open(FName InAction, EWSDialogueMode InMode)
 
 void UWSDialoguePanelWidget::Refresh()
 {
-	const bool Available = Turns < 3;
+	if (SessionId.IsValid())
+		if (const auto* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+			if (const auto* Session = State->GetDialogueSessionState(SessionId))
+				bPendingConfirmation = Session->PendingCommitment.IsSet();
+	const bool Available = Turns < 3 || (Mode == EWSDialogueMode::Online && bPendingConfirmation);
 	ChoicesScroll->SetVisibility(Mode == EWSDialogueMode::Authored && Available ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Offline->SetVisibility(Mode != EWSDialogueMode::Authored ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Offline->SetIsEnabled(!bBusy);
@@ -165,13 +170,14 @@ FText UWSDialoguePanelWidget::BuildInputHint()
 
 void UWSDialoguePanelWidget::ShowReply(const FWSAgentReply& Reply)
 {
-	Turns = Reply.DialogueTurnIndex; bBusy = false;
+	Turns = Reply.DialogueTurnIndex; bBusy = false; bPendingConfirmation = Reply.bPendingConfirmation;
+	SessionId = Reply.DialogueSessionId;
 	Append((Reply.Speaker == EWSCharacterId::YeCheng ? FString(TEXT("叶澄：")) : FString(TEXT("顾衡："))) + Reply.Utterance);
-	SetStatus(Turns >= 3 ? TEXT("本次私聊已结束，请离开。")
+	SetStatus(Turns >= 3 ? (bPendingConfirmation ? TEXT("三轮已结束，仅可确认或取消待确认事项，不另扣 AP。") : TEXT("本次私聊已结束，请离开。"))
 		: FString::Printf(TEXT("本次私聊 1 AP · 本次剩余 %d 轮"), 3 - Turns), false);
 	if (Reply.AnswerSource == TEXT("authored_recovery_v15"))
 		Status->SetText(FText::FromString(Status->GetText().ToString() + TEXT(" · 本次使用固定台词")));
-	if (Turns < 3)
+	if (Turns < 3 || bPendingConfirmation)
 		if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn())) Character->ContinueDialogue();
 	Refresh();
 }
@@ -200,7 +206,7 @@ void UWSDialoguePanelWidget::Select4() { Select(4); }
 void UWSDialoguePanelWidget::NextPage() { Page = (Page + 1) % FMath::Max(1, FMath::DivideAndRoundUp(Choices.Num(), PageSize())); Refresh(); }
 void UWSDialoguePanelWidget::Submit()
 {
-	if (Mode != EWSDialogueMode::Online || bBusy || Turns >= 3) return;
+	if (Mode != EWSDialogueMode::Online || bBusy || (Turns >= 3 && !bPendingConfirmation)) return;
 	const FString Text = Input->GetText().ToString().TrimStartAndEnd();
 	if (Text.IsEmpty()) return;
 	if (Text.Len() > 480) { SetStatus(TEXT("内容过长，请缩短至 480 字以内。"), false); return; }
@@ -221,7 +227,7 @@ FReply UWSDialoguePanelWidget::NativeOnKeyDown(const FGeometry& Geometry, const 
 
 void UWSDialoguePanelWidget::FocusInput()
 {
-	if (Mode == EWSDialogueMode::Online && Turns < 3) Input->SetKeyboardFocus();
+	if (Mode == EWSDialogueMode::Online && (Turns < 3 || bPendingConfirmation)) Input->SetKeyboardFocus();
 	else SetKeyboardFocus();
 }
 void UWSDialoguePanelWidget::SwitchOffline()

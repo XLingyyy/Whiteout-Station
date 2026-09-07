@@ -20,7 +20,8 @@ def validate_content(content):
         'prompt_mode': 'canonical_intent_then_controlled_expression',
         'llm_enabled': False, 'max_session_turns': 3,
         'timeout_seconds': 10, 'intent_timeout_seconds': 3,
-        'expression_timeout_seconds': 7, 'intent_max_output_tokens': 256,
+        'expression_timeout_seconds': 7, 'intent_max_output_tokens': 1600,
+        'max_message_output_tokens': 3840, 'max_intents_per_message': 6,
         'max_output_tokens': 640, 'max_calls_per_turn': 2,
     }
     for key, value in expected.items():
