@@ -1,0 +1,43 @@
+{
+  "passed": true,
+  "bones": 160,
+  "materials": 19,
+  "animations": [
+    {
+      "animation": "Idle",
+      "duration": 2.4000000953674316,
+      "samples": 5
+    },
+    {
+      "animation": "Walk",
+      "duration": 1.0,
+      "samples": 5
+    },
+    {
+      "animation": "Acknowledge",
+      "duration": 1.3333333730697632,
+      "samples": 5
+    },
+    {
+      "animation": "Consider",
+      "duration": 1.6666666269302368,
+      "samples": 5
+    },
+    {
+      "animation": "Reassure",
+      "duration": 1.5333333015441895,
+      "samples": 5
+    },
+    {
+      "animation": "Reject",
+      "duration": 1.2666666507720947,
+      "samples": 5
+    },
+    {
+      "animation": "Alarmed",
+      "duration": 1.1333333253860474,
+      "samples": 5
+    }
+  ],
+  "runtime_mesh": "/Game/WindStation/Art/AnimeNPC/YeChengWinter/SK_YeCheng_Winter.SK_YeCheng_Winter"
+}
