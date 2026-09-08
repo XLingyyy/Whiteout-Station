@@ -2,6 +2,7 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "State/WSKnowledgePolicy.h"
 
 namespace
 {
@@ -91,14 +92,61 @@ bool FWSConversationValidator::ApplyVerdict(const FString& Json, const FWSPrepar
 {
 	TSharedPtr<FJsonObject> Root; bool Safe = false;
 	TArray<FString> Issues, Expressed, Goals; FString Correction;
-	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Root) || !Root || Root->Values.Num() != 5
+	const TArray<TSharedPtr<FJsonValue>>* EventClaims = nullptr;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Root) || !Root || Root->Values.Num() != 6
 		|| !Root->TryGetBoolField(TEXT("safe"), Safe) || !Root->TryGetStringArrayField(TEXT("issues"), Issues)
 		|| !Root->TryGetStringArrayField(TEXT("expressed_fact_ids"), Expressed)
 		|| !Root->TryGetStringArrayField(TEXT("addressed_goal_ids"), Goals)
-		|| !Root->TryGetStringField(TEXT("corrects_entry_id"), Correction))
+		|| !Root->TryGetStringField(TEXT("corrects_entry_id"), Correction)
+		|| !Root->TryGetArrayField(TEXT("event_claims"), EventClaims))
 	{ Error = TEXT("verification_schema_invalid"); return false; }
 	if (!Safe || !Issues.IsEmpty() || !UniqueSubset(Goals, Prepared.AnswerGoalIds) || Goals.Num() != Prepared.AnswerGoalIds.Num())
 	{ Error = TEXT("verification_rejected"); return false; }
+	// A semantic verdict does not authorize an invented event. Check extracted assertions against rules.
+	for (const auto& Value : *EventClaims)
+	{
+		const TSharedPtr<FJsonObject>* Claim = nullptr; FString Action, Target, Method, Status;
+		if (!Value->TryGetObject(Claim) || (*Claim)->Values.Num() != 4
+			|| !(*Claim)->TryGetStringField(TEXT("action"), Action) || !(*Claim)->TryGetStringField(TEXT("target"), Target)
+			|| !(*Claim)->TryGetStringField(TEXT("method"), Method) || !(*Claim)->TryGetStringField(TEXT("status"), Status)
+			|| (Status != TEXT("completed") && Status != TEXT("not_completed") && Status != TEXT("in_progress")))
+		{ Error = TEXT("verification_event_schema"); return false; }
+		bool Completed = false;
+		if (Action == TEXT("treatment"))
+		{
+			if ((Target != TEXT("gu_heng") && Target != TEXT("ye_cheng") && Target != TEXT("player"))
+				|| (Method != TEXT("full") && Method != TEXT("bandage") && Method != TEXT("temporary_support")
+					&& Method != TEXT("initial") && Method != TEXT("unspecified")))
+			{ Error = TEXT("verification_event_target"); return false; }
+			const auto Id = Target == TEXT("gu_heng") ? EWSCharacterId::GuHeng : Target == TEXT("ye_cheng") ? EWSCharacterId::YeCheng : EWSCharacterId::Player;
+			const auto View = FWSKnowledgePolicy::CharacterState(Id, Prepared.ReadSnapshot, true);
+			Completed = Method == TEXT("full") ? View.TreatmentStatus == TEXT("completed")
+				: Method == TEXT("bandage") ? View.bBandaged : Method == TEXT("temporary_support") ? View.bTemporarySupport
+				: Method == TEXT("unspecified") && View.TreatmentStatus != TEXT("not_started") && View.TreatmentStatus != TEXT("unknown");
+			for (const auto& Event : Prepared.ReadSnapshot.EventLog)
+			{
+				if (!Event.bHasActionProvenance || Event.TargetCharacter != Id
+					|| (Event.ActionId != TEXT("treat_character") && Event.ActionId != TEXT("treat_gu_heng"))) continue;
+				Completed |= Method == TEXT("unspecified") || (Method == TEXT("full") && Event.TreatmentMethod == EWSTreatmentMethod::Full)
+					|| (Method == TEXT("bandage") && Event.TreatmentMethod == EWSTreatmentMethod::Bandage)
+					|| (Method == TEXT("temporary_support") && Event.TreatmentMethod == EWSTreatmentMethod::HeatPack);
+			}
+		}
+		else if (Action == TEXT("inspection") && Method.IsEmpty())
+		{
+			const bool Cabinet = Prepared.ReadSnapshot.ActionCounts.FindRef(TEXT("inspect_control_cabinet")) > 0;
+			const bool Log = Prepared.ReadSnapshot.ActionCounts.FindRef(TEXT("investigate_generator_log")) > 0;
+			if (Target != TEXT("control_cabinet") && Target != TEXT("generator_log") && Target != TEXT("unspecified"))
+			{ Error = TEXT("verification_event_target"); return false; }
+			Completed = Target == TEXT("control_cabinet") ? Cabinet : Target == TEXT("generator_log") ? Log : Cabinet || Log;
+		}
+		else if (Action == TEXT("repair") && Target == TEXT("generator") && Method.IsEmpty())
+			Completed = Prepared.ReadSnapshot.Tasks.GeneratorProgress >= Prepared.RoleplayRequest.SubjectiveState.GeneratorRequired;
+		else { Error = TEXT("verification_event_action"); return false; }
+		// Actions in this game commit atomically; there is no ongoing autonomous medical/inspection task.
+		if (Status == TEXT("in_progress") || (Status == TEXT("completed")) != Completed)
+		{ Error = TEXT("verification_event_state_mismatch"); return false; }
+	}
 	TArray<FString> Authorized;
 	for (const auto& Pair : Prepared.NaturalFacts) Authorized.Add(Pair.Key.ToString());
 	if (!UniqueSubset(Expressed, Authorized)) { Error = TEXT("verification_fact_mismatch"); return false; }

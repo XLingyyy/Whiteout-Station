@@ -67,8 +67,11 @@ bool FWhiteoutV16NaturalContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Medical sentence requires whole-text verification"), FWSConversationValidator::NeedsSemanticCheck(Prepared, Outcome));
 	TestFalse(TEXT("Writer references alone never authorize commit"), FWSConversationValidator::ValidateCommitted(Prepared, Outcome, Error));
 	TestEqual(TEXT("No disclosure before verification"), Outcome.DisclosedFactIds.Num(), 0);
-	TestFalse(TEXT("Verifier rejection cannot commit"), FWSConversationValidator::ApplyVerdict(TEXT("{\"safe\":false,\"issues\":[\"wrong_patient\"],\"expressed_fact_ids\":[],\"addressed_goal_ids\":[],\"corrects_entry_id\":\"\"}"), Prepared, Outcome, Error));
-	TestTrue(TEXT("Independent verdict accepted"), FWSConversationValidator::ApplyVerdict(TEXT("{\"safe\":true,\"issues\":[],\"expressed_fact_ids\":[\"hand\"],\"addressed_goal_ids\":[\"goal_0\"],\"corrects_entry_id\":\"\"}"), Prepared, Outcome, Error));
+	TestFalse(TEXT("Verifier rejection cannot commit"), FWSConversationValidator::ApplyVerdict(TEXT("{\"safe\":false,\"issues\":[\"wrong_patient\"],\"expressed_fact_ids\":[],\"addressed_goal_ids\":[],\"corrects_entry_id\":\"\",\"event_claims\":[]}"), Prepared, Outcome, Error));
+	TestTrue(TEXT("Independent verdict accepted"), FWSConversationValidator::ApplyVerdict(TEXT("{\"safe\":true,\"issues\":[],\"expressed_fact_ids\":[\"hand\"],\"addressed_goal_ids\":[\"goal_0\"],\"corrects_entry_id\":\"\",\"event_claims\":[]}"), Prepared, Outcome, Error));
+	const FString FalseSafe = TEXT("{\"safe\":true,\"issues\":[],\"expressed_fact_ids\":[],\"addressed_goal_ids\":[\"goal_0\"],\"corrects_entry_id\":\"\",\"event_claims\":[{\"action\":\"treatment\",\"target\":\"gu_heng\",\"method\":\"initial\",\"status\":\"completed\"}]}");
+	FWSDialogueOutcome Invented = Outcome; Invented.FinalReply.Utterance = TEXT("只做了初步处理，完整治疗还没开始。");
+	TestFalse(TEXT("False safe verdict cannot authorize invented initial treatment"), FWSConversationValidator::ApplyVerdict(FalseSafe, Prepared, Invented, Error));
 	TestTrue(TEXT("Verified final text commits"), FWSConversationValidator::ValidateCommitted(Prepared, Outcome, Error));
 	TestTrue(TEXT("Only actually expressed fact disclosed"), Outcome.DisclosedFactIds.Contains(Fact.GameFactId));
 	TestFalse(TEXT("Unknown fact rejected"), FWSConversationValidator::ParseReply(Json.Replace(TEXT("\"hand\""), TEXT("\"secret\"")), Prepared, Outcome, Error));

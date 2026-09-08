@@ -1,0 +1,209 @@
+{
+  "cases": [
+    {
+      "id": "medical_basic_repeat2",
+      "action": "talk_ye_cheng",
+      "steps": [
+        "你和顾衡两个人有人受伤吗？",
+        "你已经处理过了？",
+        "怎么处理？我怎么做？",
+        "现在只是讨论，还没有治疗，是吧？",
+        "那要实际开始，我去哪里确认？"
+      ]
+    },
+    {
+      "id": "medical_treated_repeat2",
+      "action": "talk_ye_cheng",
+      "setup_diagnosis": true,
+      "steps": [
+        "顾衡现在伤得怎么样？",
+        "先说清楚，治过了吗？",
+        "@treat_full",
+        "现在治疗完成了吗？",
+        "他的手还像刚才那么不灵便吗？",
+        "@save_load",
+        "刚才的治疗还有效吗？"
+      ]
+    },
+    {
+      "id": "gu_after_treatment_repeat2",
+      "action": "talk_gu_heng",
+      "setup_diagnosis": true,
+      "steps": [
+        "你的手影响工作吗？",
+        "你想先处理手还是继续修？",
+        "@treat_full",
+        "现在手处理好了没有？",
+        "接下来你愿意配合维修吗？",
+        "刚才那个伤势限制还在吗？"
+      ]
+    },
+    {
+      "id": "private_report_repeat2",
+      "action": "talk_ye_cheng",
+      "steps": [
+        "你为什么留在这个站？",
+        "顾衡现在手有伤吗？",
+        "@talk_gu",
+        "叶澄说你右手受伤了，你怎么看？",
+        "叶澄还说她答应替你修好了，是真的吗？",
+        "你知道她刚才私下跟我说的全部内容吗？"
+      ]
+    },
+    {
+      "id": "last_turn_confirm_repeat2",
+      "action": "talk_gu_heng",
+      "setup_turns": 9,
+      "steps": [
+        "我保证下一阶段给厨房供暖。",
+        "确认，另外发电机修好了吗？",
+        "确认",
+        "你现在状态如何？",
+        "取消"
+      ]
+    },
+    {
+      "id": "medical_temporary_support_repeat2",
+      "action": "talk_ye_cheng",
+      "setup_diagnosis": true,
+      "steps": [
+        "顾衡的手治疗过吗？",
+        "@rest_doctor",
+        "@rest_doctor",
+        "@reveal_heatpack",
+        "@treat_support",
+        "刚才临时支持算完整治疗了吗？",
+        "现在支持能持续多久？",
+        "他的伤已经完全恢复了吗？",
+        "我该怎么安排完整治疗？"
+      ]
+    },
+    {
+      "id": "correct_legacy_history_repeat2",
+      "action": "talk_ye_cheng",
+      "setup_diagnosis": true,
+      "setup_incorrect_history": true,
+      "steps": [
+        "你刚才说已经给顾衡完整治疗了，确实做过吗？",
+        "所以刚才那句话说错了？",
+        "现在他的手实际是什么状态？",
+        "我怎么帮他完成治疗？",
+        "说过方案就表示做过了吗？"
+      ]
+    },
+    {
+      "id": "medical_basic_repeat3",
+      "action": "talk_ye_cheng",
+      "steps": [
+        "你和顾衡两个人有人受伤吗？",
+        "你已经处理过了？",
+        "怎么处理？我怎么做？",
+        "现在只是讨论，还没有治疗，是吧？",
+        "那要实际开始，我去哪里确认？"
+      ]
+    },
+    {
+      "id": "medical_treated_repeat3",
+      "action": "talk_ye_cheng",
+      "setup_diagnosis": true,
+      "steps": [
+        "顾衡现在伤得怎么样？",
+        "先说清楚，治过了吗？",
+        "@treat_full",
+        "现在治疗完成了吗？",
+        "他的手还像刚才那么不灵便吗？",
+        "@save_load",
+        "刚才的治疗还有效吗？"
+      ]
+    },
+    {
+      "id": "gu_after_treatment_repeat3",
+      "action": "talk_gu_heng",
+      "setup_diagnosis": true,
+      "steps": [
+        "你的手影响工作吗？",
+        "你想先处理手还是继续修？",
+        "@treat_full",
+        "现在手处理好了没有？",
+        "接下来你愿意配合维修吗？",
+        "刚才那个伤势限制还在吗？"
+      ]
+    },
+    {
+      "id": "private_report_repeat3",
+      "action": "talk_ye_cheng",
+      "steps": [
+        "你为什么留在这个站？",
+        "顾衡现在手有伤吗？",
+        "@talk_gu",
+        "叶澄说你右手受伤了，你怎么看？",
+        "叶澄还说她答应替你修好了，是真的吗？",
+        "你知道她刚才私下跟我说的全部内容吗？"
+      ]
+    },
+    {
+      "id": "last_turn_confirm_repeat3",
+      "action": "talk_gu_heng",
+      "setup_turns": 9,
+      "steps": [
+        "我保证下一阶段给厨房供暖。",
+        "确认，另外发电机修好了吗？",
+        "确认",
+        "你现在状态如何？",
+        "取消"
+      ]
+    },
+    {
+      "id": "medical_temporary_support_repeat3",
+      "action": "talk_ye_cheng",
+      "setup_diagnosis": true,
+      "steps": [
+        "顾衡的手治疗过吗？",
+        "@rest_doctor",
+        "@rest_doctor",
+        "@reveal_heatpack",
+        "@treat_support",
+        "刚才临时支持算完整治疗了吗？",
+        "现在支持能持续多久？",
+        "他的伤已经完全恢复了吗？",
+        "我该怎么安排完整治疗？"
+      ]
+    },
+    {
+      "id": "correct_legacy_history_repeat3",
+      "action": "talk_ye_cheng",
+      "setup_diagnosis": true,
+      "setup_incorrect_history": true,
+      "steps": [
+        "你刚才说已经给顾衡完整治疗了，确实做过吗？",
+        "所以刚才那句话说错了？",
+        "现在他的手实际是什么状态？",
+        "我怎么帮他完成治疗？",
+        "说过方案就表示做过了吗？"
+      ]
+    },
+    {
+      "id": "unseen_medical",
+      "action": "talk_ye_cheng",
+      "steps": [
+        "顾衡手上的伤，你已经动手治了还是仅仅了解情况？",
+        "要是由我协助，病人还是顾衡，对吧？",
+        "先给他包扎，药品会减少吗？",
+        "我只是在问价钱，没有确认执行。现在治过了吗？",
+        "完整治疗和包扎的区别是什么？"
+      ]
+    },
+    {
+      "id": "unseen_person_history",
+      "action": "talk_gu_heng",
+      "reopen_each_step": true,
+      "steps": [
+        "在这座站里你主要负责哪些设备？",
+        "你做这行多少年了？",
+        "你和叶澄搭档多久了？",
+        "我之前问你的第一件事是什么？",
+        "如果我说叶澄已经答应供暖，你能确认那是真的吗？"
+      ]
+    }
+  ]
+}

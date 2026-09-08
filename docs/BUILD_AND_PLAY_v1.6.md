@@ -16,6 +16,8 @@ UE 5.8 / Windows 64-bit，直接在 main 迭代。默认离线可玩；在线采
 
 模型 B 一次生成完整 `npc_line`，附 `addressed_goal_ids`、`referenced_fact_ids`、`action_proposal_ids`、`emotion`、`reaction_action`。这些标签不构成事实证明。每个回答目标独立筛选知识；关键回复再核查全文与人物、当前状态、已提交事件、提议和历史。披露只取核查器独立识别且本地获准的事实。
 
+核查响应包括 `safe`、`issues`、`expressed_fact_ids`、`addressed_goal_ids`、`corrects_entry_id`、`event_claims`。最后一项提取治疗、检查、维修的对象、方法和完成状态，本地再次与真实记录比较；即使核查器返回 safe=true，虚构“初步处理”或正在自主检查仍会被拒绝。动作提议和未来意愿不作为已执行断言。
+
 历史仅传给该 NPC，玩家转述带未核实约束。真实治疗／维修行动记录包括执行者、对象、方法及事务 ID；目前这些站内行动按公开事件处理，其他 NPC 的私聊原文不共享。历史错误保留原文，纠正回复通过 `CorrectsEntryId` 关联。
 
 未提供可自动提交的通用在线回退；玩家可切换作者选项。未支持复杂条件的承诺仍保持安全拒绝，不自动替换条款。八名陌生玩家自然度评分需真人参与，脚本化测试不充当盲测。

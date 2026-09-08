@@ -58,8 +58,11 @@ def main():
         path = Path(f'{corpus}.{index:03d}.result.json')
         result = json.loads(path.read_text(encoding='utf-8-sig')) if path.exists() else {'missing': True}
         reports.append(dict(id=case['id'], result=result))
-        rows = result.get('steps', [])
-        print(f"{case['id']}: {len(rows)} messages, {sum(bool(s['parsed']) for s in rows)} parsed, {sum(s['committed'] for s in rows)} committed", flush=True)
+        rows = [row for row in result.get('steps', []) if row.get('kind') != 'fixture_action']
+        replies = sum(row.get('source') == 'natural_roleplay_v16' for row in rows)
+        local = sum(row.get('model_calls') == 0 and row.get('committed', False)
+                    or not row.get('ready', False) and row.get('history_after', 0) > row.get('history_before', 0) for row in rows)
+        print(f"{case['id']}: {len(rows)} messages, {replies} natural replies, {local} local controls/clarifications", flush=True)
     summary = dict(engine_exit=process.returncode, provider='deepseek', model='deepseek-v4-flash',
                    protocol='natural_roleplay_v6', cases=reports,
                    evidence_kind='Real provider scripted conversations. Human naturalness review recorded separately.')
