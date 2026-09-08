@@ -39,6 +39,9 @@ for i,slot in enumerate(materials):
                 unreal.MaterialEditingLibrary.connect_material_property(e,'',prop)
             unreal.MaterialEditingLibrary.recompile_material(m)
             unreal.EditorAssetLibrary.save_loaded_asset(m)
+        unreal.MaterialEditingLibrary.set_material_usage(m,unreal.MaterialUsage.MATUSAGE_SKELETAL_MESH)
+        unreal.MaterialEditingLibrary.set_material_usage(m,unreal.MaterialUsage.MATUSAGE_MORPH_TARGETS)
+        unreal.EditorAssetLibrary.save_loaded_asset(m)
         slot.material_interface = m
     else:
         raise RuntimeError('Unmapped material slot '+name)
