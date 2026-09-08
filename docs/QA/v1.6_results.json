@@ -1,0 +1,250 @@
+{
+  "version": "1.6.0",
+  "runtime_source_commit": "93e74670c791986e882547c4b9d6a0e7ad2ec191",
+  "acceptance": "candidate_online_quality_and_human_acceptance_pending",
+  "automation": [
+    {
+      "report": "WhiteoutStation\\Saved\\AutomationReports\\V16IntegrationFinal\\index.json",
+      "source_commit": "b487d33",
+      "succeeded": 71,
+      "succeededWithWarnings": 0,
+      "failed": 0,
+      "notRun": 0
+    },
+    {
+      "report": "WhiteoutStation\\Saved\\AutomationReports\\V16EventAssertions\\index.json",
+      "source_commit": "55a7a58",
+      "succeeded": 3,
+      "succeededWithWarnings": 0,
+      "failed": 0,
+      "notRun": 0
+    }
+  ],
+  "http_faults": {
+    "passed": 17,
+    "total": 17,
+    "scenarios": [
+      {
+        "scenario": "success",
+        "passed": true
+      },
+      {
+        "scenario": "a_bad_json",
+        "passed": true
+      },
+      {
+        "scenario": "a_http500",
+        "passed": true
+      },
+      {
+        "scenario": "a_timeout",
+        "passed": true
+      },
+      {
+        "scenario": "b_bad_json",
+        "passed": true
+      },
+      {
+        "scenario": "b_http500",
+        "passed": true
+      },
+      {
+        "scenario": "b_timeout",
+        "passed": true
+      },
+      {
+        "scenario": "c_bad_json",
+        "passed": true
+      },
+      {
+        "scenario": "c_http500",
+        "passed": true
+      },
+      {
+        "scenario": "c_timeout",
+        "passed": true
+      },
+      {
+        "scenario": "b_unknown_fact",
+        "passed": true
+      },
+      {
+        "scenario": "c_rejected",
+        "passed": true
+      },
+      {
+        "scenario": "c_false_safe_initial",
+        "passed": true
+      },
+      {
+        "scenario": "cancel_a",
+        "passed": true
+      },
+      {
+        "scenario": "cancel_b",
+        "passed": true
+      },
+      {
+        "scenario": "cancel_c",
+        "passed": true
+      },
+      {
+        "scenario": "new_game_c",
+        "passed": true
+      }
+    ]
+  },
+  "shipping_routes": [
+    {
+      "route": "medical",
+      "success": true,
+      "exit_code": 0,
+      "fresh_export": true,
+      "ending": "TaskSuccess",
+      "score": 74.3800048828125,
+      "model_calls": 0,
+      "authored_dialogue_count": 3,
+      "all_dialogue_authored": true
+    },
+    {
+      "route": "technical",
+      "success": true,
+      "exit_code": 0,
+      "fresh_export": true,
+      "ending": "TaskSuccess",
+      "score": 71.12000274658203,
+      "model_calls": 0,
+      "authored_dialogue_count": 2,
+      "all_dialogue_authored": true
+    },
+    {
+      "route": "quick",
+      "success": true,
+      "exit_code": 0,
+      "fresh_export": true,
+      "ending": "CostUncontrolled",
+      "score": 58.94000244140625,
+      "model_calls": 0,
+      "authored_dialogue_count": 1,
+      "all_dialogue_authored": true
+    },
+    {
+      "route": "wait",
+      "success": true,
+      "exit_code": 0,
+      "fresh_export": true,
+      "ending": "SurvivalWait",
+      "score": 36.91999816894531,
+      "model_calls": 0,
+      "authored_dialogue_count": 0,
+      "all_dialogue_authored": true
+    },
+    {
+      "route": "collapse",
+      "success": true,
+      "exit_code": 0,
+      "fresh_export": true,
+      "ending": "TotalCollapse",
+      "score": 42.15999984741211,
+      "model_calls": 0,
+      "authored_dialogue_count": 0,
+      "all_dialogue_authored": true
+    }
+  ],
+  "real_provider_batches": [
+    {
+      "input": "Artifacts\\v1.6-evidence\\editor-final\\results.json",
+      "engine_exit": 0,
+      "cases": 14,
+      "counts": {
+        "messages": 70,
+        "model_calls": 190,
+        "unexpected_ap_changes": 0,
+        "call_limit_violations": 0,
+        "deadline_violations": 0,
+        "natural_replies": 58,
+        "fixture_actions": 9,
+        "fixture_failures": 0,
+        "online_failures": 5,
+        "local_controls_or_clarifications": 4,
+        "local_rejections": 3
+      },
+      "request_latency_seconds": {
+        "p50": 3.566,
+        "p95": 5.091,
+        "maximum": 5.473221600055695,
+        "critical_p95": 5.091,
+        "one_or_two_call_p95": 2.791
+      },
+      "online_failures": [
+        {
+          "case": "gu_after_treatment",
+          "text": "接下来你愿意配合维修吗？",
+          "reason": "DialogueOutcomeInvalid",
+          "calls": 3
+        },
+        {
+          "case": "multi_intent",
+          "text": "那发电机已经恢复供电了吗？",
+          "reason": "DialogueOutcomeInvalid",
+          "calls": 3
+        },
+        {
+          "case": "proposal_amend",
+          "text": "发电机修到哪了？",
+          "reason": "DialogueOutcomeInvalid",
+          "calls": 3
+        },
+        {
+          "case": "proposal_amend",
+          "text": "我刚才的承诺已经履行了吗？",
+          "reason": "DialogueOutcomeInvalid",
+          "calls": 3
+        },
+        {
+          "case": "medical_temporary_support",
+          "text": "现在支持能持续多久？",
+          "reason": "DialogueOutcomeInvalid",
+          "calls": 3
+        }
+      ],
+      "scope": "Transport/transaction statistics only. Reply completeness and factual accuracy require separate review."
+    },
+    {
+      "input": "Artifacts\\v1.6-evidence\\shipping-final\\results.json",
+      "engine_exit": 0,
+      "cases": 16,
+      "counts": {
+        "messages": 80,
+        "model_calls": 209,
+        "unexpected_ap_changes": 0,
+        "call_limit_violations": 0,
+        "deadline_violations": 0,
+        "natural_replies": 70,
+        "fixture_actions": 16,
+        "fixture_failures": 0,
+        "local_controls_or_clarifications": 4,
+        "local_rejections": 6
+      },
+      "request_latency_seconds": {
+        "p50": 3.639,
+        "p95": 4.261,
+        "maximum": 4.798431299626827,
+        "critical_p95": 4.39,
+        "one_or_two_call_p95": 2.999
+      },
+      "online_failures": [],
+      "scope": "Transport/transaction statistics only. Reply completeness and factual accuracy require separate review."
+    }
+  ],
+  "protected_assets": {
+    "protected_count": 262,
+    "changed": [],
+    "free_gib": 30.0
+  },
+  "blind_test": {
+    "status": "not_executed",
+    "required_players": 8
+  },
+  "semantic_quality": "Known ambiguity, over-rejection, repetition and terminology issues. Counts do not imply full semantic acceptance."
+}

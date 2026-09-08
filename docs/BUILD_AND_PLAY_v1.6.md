@@ -1,6 +1,6 @@
 # v1.6 构建与验收
 
-UE 5.8 / Windows 64-bit，直接在 main 迭代。默认离线可玩；在线采用 `natural_roleplay_v6`，配置 schema 9，规则 schema 7。构建路径、最终测试数量和候选限制见同目录发行记录。
+UE 5.8 / Windows 64-bit，直接在 main 迭代。默认离线可玩；在线采用 `natural_roleplay_v6`，配置 schema 9，规则 schema 7。构建路径、最终测试数量和候选限制见 [发行记录](RELEASE_v1.6_20260908.md)。
 
 ## 使用与存档
 
@@ -10,13 +10,13 @@ UE 5.8 / Windows 64-bit，直接在 main 迭代。默认离线可玩；在线采
 
 自动存档槽 `WhiteoutStation_Autosave_v1_6`，依次向后读取 v1.5 至 v1.1。v1.5 以唯一、已提交的原文交流重建已用轮次，不退还已用 AP。历史缺失时只计算可证实交流。读档取消在途请求和未确认提议，已提交历史、额度、承诺与真实动作状态保留。v1.6 存档不降级写回旧槽。
 
-在线在设置页填写 provider、BaseURL、model 与本次进程内存中的 Key。默认模型 `deepseek-v4-flash`，关闭 thinking，温度 0.45；A 意图解析温度 0。常规最多两次请求、10 秒；关键完整台词独立核查温度 0，最多第三次请求、15 秒。输出预算 A/B/C 分别 1600/1000/700 tokens。失败无自动改写或重试，保留草稿，不提交额度或关系效果。
+在线在设置页填写 provider、BaseURL、model 与本次进程内存中的 Key，开启模型调用后向下滚动，点击“应用模型设置”。默认模型 `deepseek-v4-flash`，关闭 thinking，温度 0.45；A 意图解析温度 0。常规最多两次请求、10 秒；关键完整台词独立核查温度 0，最多第三次请求、15 秒。输出预算 A/B/C 分别 1600/1000/700 tokens。失败无自动改写或重试，保留草稿，不提交额度或关系效果。
 
 ## 协议与来源
 
 模型 B 一次生成完整 `npc_line`，附 `addressed_goal_ids`、`referenced_fact_ids`、`action_proposal_ids`、`emotion`、`reaction_action`。这些标签不构成事实证明。每个回答目标独立筛选知识；关键回复再核查全文与人物、当前状态、已提交事件、提议和历史。披露只取核查器独立识别且本地获准的事实。
 
-核查响应包括 `safe`、`issues`、`expressed_fact_ids`、`addressed_goal_ids`、`corrects_entry_id`、`event_claims`。最后一项提取治疗、检查、维修的对象、方法和完成状态，本地再次与真实记录比较；即使核查器返回 safe=true，虚构“初步处理”或正在自主检查仍会被拒绝。动作提议和未来意愿不作为已执行断言。
+核查响应包括 `safe`、`issues`、`expressed_fact_ids`、`addressed_goal_ids`、`corrects_entry_id`、`event_claims`。最后一项提取治疗、检查、维修的对象、方法和完成状态，本地再次与真实记录比较；即使核查器返回 safe=true，只要提取出虚构“初步处理”或正在自主检查的断言，本地仍会拒绝。模型漏提取或误读仍是已知限制，不能保证自由文本无事实错误。动作提议和未来意愿不作为已执行断言。
 
 历史仅传给该 NPC，玩家转述带未核实约束。真实治疗／维修行动记录包括执行者、对象、方法及事务 ID；目前这些站内行动按公开事件处理，其他 NPC 的私聊原文不共享。历史错误保留原文，纠正回复通过 `CorrectsEntryId` 关联。
 
