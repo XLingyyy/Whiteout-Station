@@ -28,6 +28,7 @@ bool FWhiteoutV15MessageStateTest::RunTest(const FString& Parameters)
 		FWSCanonicalIntent P; P.SpeakerId = TEXT("gu_heng"); P.TopicId = Topic;
 		P.Frame.SpeechAct = EWSDialogueAct::Ask; P.Frame.TargetCharacter = EWSCharacterId::GuHeng;
 		P.Frame.Confidence = 1.0f;
+		P.Frame.Source = TEXT("canonical_v15");
 		if (Topic == TEXT("generator")) { P.Frame.QueryType = EWSDialogueQueryType::Status; P.Frame.TargetActionId = TEXT("repair_generator"); }
 		return P;
 	};
@@ -144,6 +145,10 @@ bool FWhiteoutV15MessageStateTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Retry binds same proposal"), Resolve(Confirm()));
 	TestTrue(TEXT("Retry commits"), Submit().bCommitted);
 	TestEqual(TEXT("Retry registers once"), State->GetStateSnapshot().Promises.Num(), 1);
+	auto RepeatedTerms = Propose(EWSHeatingZone::Kitchen, 2);
+	RepeatedTerms.Frame.TargetCharacter = EWSCharacterId::Player;
+	TestFalse(TEXT("Recipient misclassification cannot bypass registered-term deduplication"), Resolve(RepeatedTerms));
+	TestFalse(TEXT("Duplicate terms cannot open a new pending promise"), State->DialogueSessions[Session].PendingCommitment.IsSet());
 
 	Reset(); Session = FGuid::NewGuid();
 	TestFalse(TEXT("Proposal before response failure"), Resolve(Propose(EWSHeatingZone::Kitchen, 1)));
@@ -209,6 +214,28 @@ bool FWhiteoutV15MessageStateTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Third-slot confirmation resolves"), Resolve(Confirm()));
 	TestTrue(TEXT("Third-slot confirmation commits"), Submit().bCommitted);
 	TestEqual(TEXT("Exactly three turns after confirmation"), State->DialogueSessions[Session].CommittedTurns, 3);
+	Reset(); Session = FGuid::NewGuid();
+	TestTrue(TEXT("Player learns diagnosis through a committed transaction"),
+		State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_diagnosis"), FGuid::NewGuid()).bCommitted);
+	TestTrue(TEXT("Actual reassurance supplies conversation memory"),
+		State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_reassure"), FGuid::NewGuid()).bCommitted);
+	auto Diagnosis = Ask(TEXT("medical")); Diagnosis.SpeakerId = TEXT("ye_cheng");
+	Diagnosis.Frame.QueryType = EWSDialogueQueryType::Status; Diagnosis.Frame.TargetActionId = TEXT("repair_generator");
+	auto Alternative = Ask(TEXT("medical_alternative")); Alternative.SpeakerId = TEXT("ye_cheng");
+	Alternative.Frame.QueryType = EWSDialogueQueryType::Alternative; Alternative.Frame.TargetActionId = TEXT("treat_gu_heng");
+	FWSCanonicalIntent MedicalParts; MedicalParts.Parts = {Diagnosis, Alternative};
+	TestTrue(TEXT("Medical clauses resolve with established disclosure premises"),
+		State->ResolveParsedOnlineMessage(TEXT("talk_ye_cheng"), TEXT("诊断和替代方案"), Session, MedicalParts, Resolved, Status));
+	State->SetDialogueRealizeTestHook([&](const auto& P, auto Callback)
+	{
+		TestTrue(TEXT("Authorized requested alternative survives knowledge ranking"),
+			P.Parts.Num() == 2 && P.Parts[1].RequiredClaims.Contains(TEXT("YE_HEAT_PACK_KNOWLEDGE")));
+		Callback(P.LocalFallback);
+	});
+	auto MedicalRequest = Request(); MedicalRequest.ActionId = TEXT("talk_ye_cheng");
+	TestTrue(TEXT("Medical multi-response commits once"), State->SubmitDialogueAction(MedicalRequest).bCommitted);
+	TestTrue(TEXT("Disclosed alternative enters player knowledge"), State->GetStateSnapshot().Flags.bHeatPackRevealed);
+	TestFalse(TEXT("Disclosing treatment alternative does not treat"), State->GetStateSnapshot().Flags.bGuHengTreated);
 	State->SetDialogueRealizeTestHook({}); Game->Shutdown(); Game->RemoveFromRoot(); UGameplayStatics::DeleteGameInSlot(Slot, 0);
 	return true;
 }

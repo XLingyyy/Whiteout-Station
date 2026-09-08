@@ -21,6 +21,9 @@ namespace
 			{
 				auto Row = MakeShared<FJsonObject>(); Row->SetStringField(TEXT("text"), Text);
 				Row->SetBoolField(TEXT("ready"), Ready); Row->SetStringField(TEXT("resolution_status"), Status);
+				Row->SetBoolField(TEXT("diagnosed_before"), Before.Flags.bGuHengDiagnosed);
+				Row->SetNumberField(TEXT("ye_trust_before"), Before.Characters.FindRef(EWSCharacterId::YeCheng).Trust);
+				Row->SetNumberField(TEXT("ye_pressure_before"), Before.Characters.FindRef(EWSCharacterId::YeCheng).Pressure);
 				TArray<TSharedPtr<FJsonValue>> Parsed;
 				if (const auto* Ledger = State->GetDialogueSessionState(Session); Ledger && Ledger->LastParsedMessage.IsSet())
 				{
@@ -224,6 +227,9 @@ void AWhiteoutGameMode::RunV15DialogueProbe(const FString& InputPath, const int3
 		bool SetupDiagnosis = false; Input->TryGetBoolField(TEXT("setup_diagnosis"), SetupDiagnosis);
 		if (SetupDiagnosis && !State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_diagnosis"), FGuid::NewGuid()).bCommitted)
 		{ Finish(false, TEXT("authored_diagnosis_setup_failed")); return; }
+		bool SetupCooperation = false; Input->TryGetBoolField(TEXT("setup_cooperation"), SetupCooperation);
+		if (SetupCooperation && !State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_reassure"), FGuid::NewGuid()).bCommitted)
+		{ Finish(false, TEXT("authored_cooperation_setup_failed")); return; }
 		int32 SetupTurns = 0; Input->TryGetNumberField(TEXT("setup_turns"), SetupTurns);
 		for (int32 I = 0; I < SetupTurns; ++I)
 		{

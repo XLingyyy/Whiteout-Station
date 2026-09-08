@@ -131,7 +131,8 @@ bool UWindStationStateSubsystem::ResolveParsedOnlineMessage(FName ActionId, cons
 				Notices.Add(Part.Clarification.IsEmpty() ? TEXT("请明确承诺的地点、期限与前提；供暖没有默认期限。") : Part.Clarification); continue;
 			}
 			const bool Duplicate = RulesEngine.GetState().Promises.ContainsByPredicate([&](const FWSPromiseRecord& P)
-				{ return P.Recipient == Part.Frame.TargetCharacter && Part.Terms.ContainsByPredicate([&](const FWSPromiseTerms& T) { return P.Terms.SameTerms(T); }); });
+				{ return P.Recipient == (ActionId == TEXT("talk_ye_cheng") ? EWSCharacterId::YeCheng : EWSCharacterId::GuHeng)
+					&& Part.Terms.ContainsByPredicate([&](const FWSPromiseTerms& T) { return P.Terms.SameTerms(T); }); });
 			if (Duplicate) { Notices.Add(TEXT("这项条款已经登记，不重复登记或奖励。")); continue; }
 			Part.ProposalId = Session.PendingCommitment.IsSet() ? Session.PendingCommitment->ProposalId : FGuid::NewGuid();
 			Part.ProposalVersion = Session.PendingCommitment.IsSet() ? Session.PendingCommitment->ProposalVersion + 1 : 1;

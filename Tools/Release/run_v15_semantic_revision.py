@@ -37,6 +37,9 @@ def main():
     cases.append(dict(id='V15-090-diagnosed', action='talk_ye_cheng', text=byid['V15-090']['text'],
                       steps=[byid['V15-090']['text']], setup_diagnosis=True,
                       fixture='morning_medical_heating; player diagnosis acquired through actual authored transaction before this message'))
+    cases.append(dict(id='V15-090-disclosable', action='talk_ye_cheng', text=byid['V15-090']['text'],
+                      steps=[byid['V15-090']['text']], setup_diagnosis=True, setup_cooperation=True,
+                      fixture='morning_medical_heating; actual diagnosis and separate reassurance transactions satisfy player knowledge, trust and pressure gates'))
     if args.only:
         cases = [case for case in cases if case['id'] in args.only]
         if not cases:

@@ -1168,7 +1168,7 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecuteV11(
 					if (Term.Kind == TEXT("heat_zone") && (Term.Zone == EWSHeatingZone::None
 						|| Term.DuePhase <= static_cast<int32>(State.DayPhase) || Term.DuePhase >= 3))
 						return EWSReasonCode::InvalidPromiseCondition;
-					if (State.Promises.ContainsByPredicate([&](const FWSPromiseRecord& P) { return P.Recipient == Request.SemanticFrame.TargetCharacter && P.Terms.SameTerms(Term); }))
+					if (State.Promises.ContainsByPredicate([&](const FWSPromiseRecord& P) { return P.Recipient == (Request.ActionId == TalkYeCheng ? EWSCharacterId::YeCheng : EWSCharacterId::GuHeng) && P.Terms.SameTerms(Term); }))
 						return EWSReasonCode::DuplicatePromise;
 				}
 				return EWSReasonCode::Ok;

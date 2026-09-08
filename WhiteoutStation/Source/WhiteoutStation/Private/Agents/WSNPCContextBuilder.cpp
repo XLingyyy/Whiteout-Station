@@ -771,6 +771,7 @@ bool UWSNPCContextBuilder::BuildRequest(
 	{
 		FWSRoleplayKnowledgeItem Item;
 		double Score = 0.0;
+		bool bRequestedKnownFact = false;
 	};
 	TArray<FScoredKnowledge> Ranked;
 	for (const FWSRoleplayKnowledgeItem& Item : Candidates)
@@ -788,6 +789,9 @@ bool UWSNPCContextBuilder::BuildRequest(
 		FScoredKnowledge Scored;
 		Scored.Item = Item;
 		Scored.Score = static_cast<double>(Item.Salience);
+		Scored.bRequestedKnownFact = Frame.bCanonicalIntentValidated && !Frame.TargetFactId.IsNone()
+			&& Item.GameFactId == Frame.TargetFactId && Item.EpistemicStatus == EWSEpistemicStatus::Known
+			&& Item.MaxDisclosure == EWSRoleplayDisclosureLevel::Explicit;
 		if (Item.GameFactId == TEXT("FACT_MEDICAL_DIAGNOSIS")
 			&& Frame.TargetFactId == TEXT("FACT_HAND_INJURY"))
 		{
@@ -827,6 +831,7 @@ bool UWSNPCContextBuilder::BuildRequest(
 	}
 	Ranked.Sort([](const FScoredKnowledge& Left, const FScoredKnowledge& Right)
 	{
+		if (Left.bRequestedKnownFact != Right.bRequestedKnownFact) return Left.bRequestedKnownFact;
 		if (!FMath::IsNearlyEqual(Left.Score, Right.Score))
 		{
 			return Left.Score > Right.Score;
