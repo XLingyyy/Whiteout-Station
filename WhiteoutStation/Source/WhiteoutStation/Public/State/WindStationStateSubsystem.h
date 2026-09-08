@@ -19,7 +19,6 @@ struct FWSDialogueSessionRuntimeState
 	int32 PaidAP = 0;
 	bool bPositiveRewardApplied = false;
 	TSet<FName> AppliedEffectKeys;
-	TArray<FString> SafeConversation;
 	TOptional<FWSCanonicalIntent> PendingCommitment;
 	int64 PendingCommitmentRevision = 0;
 	int32 MessageCount = 0;
@@ -66,6 +65,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Whiteout Station|State")
 	FWSGameState GetStateSnapshot() const;
+	TArray<FWSConversationEntry> GetConversationHistory(FName ActionId) const;
+	TArray<FString> BuildOnlineConversationHistory(FName ActionId, FGuid SessionId) const;
 
 	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Actions")
 	FWSActionPreview PreviewAction(const FWSActionRequest& Request) const;

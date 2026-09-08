@@ -41,6 +41,14 @@ def main():
     cases.append(dict(id='V15-090-disclosable', action='talk_ye_cheng', text=byid['V15-090']['text'],
                       steps=[byid['V15-090']['text']], setup_diagnosis=True, setup_cooperation=True,
                       fixture='morning_medical_heating; actual diagnosis and separate reassurance transactions satisfy player knowledge, trust and pressure gates'))
+    for name, action, steps in [
+        ('memory_reopen_person', 'talk_gu_heng', ['你为什么留在站里？', '上次我问过你为什么留在站里，你还记得吗？']),
+        ('memory_reopen_reference', 'talk_gu_heng', ['发电机现在情况怎么样？', '刚才问你的那件事，现在有变化吗？']),
+        ('memory_reopen_ye', 'talk_ye_cheng', ['你为什么留在站里？', '上次我问你留在这里的原因，你怎么回答我的？']),
+        ('memory_expired_proposal', 'talk_gu_heng', ['我保证下一阶段给厨房供暖。', '确认刚才的安排。']),
+    ]:
+        cases.append(dict(id=name, action=action, text=steps[0], steps=steps, reopen_each_step=True,
+                          fixture='morning_medical_heating; end session and open fresh session before each later message; keep same saved world'))
     if args.only:
         cases = [case for case in cases if case['id'] in args.only]
         if not cases:
@@ -57,7 +65,7 @@ def main():
     if not args.exe:
         command += [str(root/'WhiteoutStation/WhiteoutStation.uproject'), '-game']
     with (output / 'engine.log').open('w', encoding='utf-8') as log:
-        result = subprocess.run(command + ['-NullRHI',
+        result = subprocess.run(command + ['-NullRHI', f'-UserDir={output / "runtime"}',
                                  '-unattended', '-nop4', '-nosplash', '-stdout', '-FullStdOutLogOutput',
                                  f'-WhiteoutV15Probe={corpus}'], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=600)
     reports = []

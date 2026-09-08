@@ -3668,6 +3668,27 @@ FString UWSAgentGateway::BuildDialogueRealizationContextJson(
 		Context->SetArrayField(TEXT("long_term_memory"), MemoryValues);
 
 		TArray<TSharedPtr<FJsonValue>> RecentTurns;
+		if (Prepared.bRoleplayV15)
+		{
+			const auto Entries = Prepared.ReadSnapshot.ConversationHistory.FilterByPredicate(
+				[&](const FWSConversationEntry& Entry) { return Entry.SpeakerId == Roleplay.SpeakerId; });
+			TArray<FName> Topics;
+			for (const auto& Entry : Entries)
+				for (FName Topic : Entry.Topics) Topics.AddUnique(Topic);
+			Context->SetArrayField(TEXT("previously_discussed_topics"), NameValues(Topics));
+			for (int32 I = FMath::Max(0, Entries.Num() - 6); I < Entries.Num(); ++I)
+			{
+				const auto& Entry = Entries[I];
+				TSharedRef<FJsonObject> Object = MakeShared<FJsonObject>();
+				Object->SetStringField(TEXT("player_line"), Entry.PlayerLine);
+				Object->SetStringField(TEXT("npc_line"), Entry.NpcLine);
+				Object->SetNumberField(TEXT("day_phase"), static_cast<int32>(Entry.DayPhase));
+				Object->SetBoolField(TEXT("current_session"), Entry.SessionId == Prepared.OriginalRequest.DialogueSessionId);
+				Object->SetBoolField(TEXT("committed"), Entry.bCommitted);
+				RecentTurns.Add(MakeShared<FJsonValueObject>(Object));
+			}
+		}
+		else
 		if (const TArray<FWSAgentDialogueTurn>* History =
 			DialogueHistory.Find(Prepared.OriginalRequest.DialogueSessionId))
 		{

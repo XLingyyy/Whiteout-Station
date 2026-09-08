@@ -187,6 +187,7 @@ private:
 	TMap<FGuid, TArray<FWSAgentDialogueTurn>> DialogueHistory;
 	FCriticalSection AuditMutex;
 
+	friend class FWhiteoutV15ConversationHistoryTest;
 	void LoadConfig();
 	FString BuildExpressionContextJson(
 		const FWSAgentReply& Decision,

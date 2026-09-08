@@ -10,14 +10,15 @@
 namespace
 {
 	void RunSemanticProbeStep(UWindStationStateSubsystem* State, FGuid Session, FName Action,
-		const TArray<FString>& Steps, int32 Index, TSharedRef<TArray<TSharedPtr<FJsonValue>>> Reports,
+		const TArray<FString>& Steps, int32 Index, bool Reopen, TSharedRef<TArray<TSharedPtr<FJsonValue>>> Reports,
 		TFunction<void(bool, const FString&)> Finish)
 	{
 		if (Index >= Steps.Num()) { Finish(false, TEXT("sequence_completed")); return; }
+		if (Reopen && Index > 0) { State->EndDialogueSession(Session); Session = FGuid::NewGuid(); }
 		const FString Text = Steps[Index];
 		const auto Before = State->GetStateSnapshot();
 		State->ResolveOnlineIntent(Action, Text, Session,
-			[State, Session, Action, Steps, Index, Reports, Finish, Before, Text](bool Ready, const FWSCanonicalIntent& Intent, const FString& Status)
+			[State, Session, Action, Steps, Index, Reopen, Reports, Finish, Before, Text](bool Ready, const FWSCanonicalIntent& Intent, const FString& Status)
 			{
 				auto Row = MakeShared<FJsonObject>(); Row->SetStringField(TEXT("text"), Text);
 				Row->SetBoolField(TEXT("ready"), Ready); Row->SetStringField(TEXT("resolution_status"), Status);
@@ -50,9 +51,11 @@ namespace
 					}
 				}
 				Row->SetArrayField(TEXT("parsed"), Parsed);
-				const auto Record = [State, Session, Action, Steps, Index, Reports, Finish, Before, Row, Ready](bool Committed, const FString& Result)
+				const auto Record = [State, Session, Action, Steps, Index, Reopen, Reports, Finish, Before, Row, Ready](bool Committed, const FString& Result)
 				{
 					const auto After = State->GetStateSnapshot();
+					Row->SetNumberField(TEXT("history_before"), Before.ConversationHistory.Num());
+					Row->SetNumberField(TEXT("history_after"), After.ConversationHistory.Num());
 					Row->SetBoolField(TEXT("committed"), Committed); Row->SetStringField(TEXT("result"), Result);
 					Row->SetNumberField(TEXT("ap_before"), Before.PhaseActionPoints); Row->SetNumberField(TEXT("ap_after"), After.PhaseActionPoints);
 					Row->SetNumberField(TEXT("promises"), After.Promises.Num()); Row->SetNumberField(TEXT("generator_progress"), After.Tasks.GeneratorProgress);
@@ -68,7 +71,7 @@ namespace
 						if (Ledger->PendingCommitment.IsSet()) Row->SetNumberField(TEXT("proposal_version"), Ledger->PendingCommitment->ProposalVersion);
 					}
 					Reports->Add(MakeShared<FJsonValueObject>(Row));
-					RunSemanticProbeStep(State, Session, Action, Steps, Index + 1, Reports, Finish);
+					RunSemanticProbeStep(State, Session, Action, Steps, Index + 1, Reopen, Reports, Finish);
 				};
 				if (!Ready) { Record(false, Status); return; }
 				FWSActionRequest Request; Intent.ApplyTo(Request); Request.ActionId = Action; Request.DialogueSessionId = Session;
@@ -237,7 +240,8 @@ void AWhiteoutGameMode::RunV15DialogueProbe(const FString& InputPath, const int3
 			if (!State->SubmitAuthoredDialogueChoice(TEXT("talk_gu_heng"), Choice, Session).bCommitted)
 			{ Finish(false, TEXT("authored_setup_failed")); return; }
 		}
-		RunSemanticProbeStep(State, Session, FName(*Action), Steps, 0, StepReports, Finish);
+		bool Reopen = false; Input->TryGetBoolField(TEXT("reopen_each_step"), Reopen);
+		RunSemanticProbeStep(State, Session, FName(*Action), Steps, 0, Reopen, StepReports, Finish);
 		return;
 	}
 	State->ResolveOnlineIntent(FName(*Action), Text, Session,

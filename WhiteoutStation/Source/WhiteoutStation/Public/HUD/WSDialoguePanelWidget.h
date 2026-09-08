@@ -44,6 +44,7 @@ private:
 	EWSDialogueMode Mode = EWSDialogueMode::Authored;
 	TArray<FWSAuthoredChoice> Choices;
 	FString History;
+	int32 DisplayedEntryCount = INDEX_NONE;
 	int32 Page = 0;
 	int32 Turns = 0;
 	bool bBusy = false;

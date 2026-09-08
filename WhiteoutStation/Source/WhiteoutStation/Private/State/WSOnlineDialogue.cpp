@@ -150,7 +150,17 @@ bool UWindStationStateSubsystem::ResolveParsedOnlineMessage(FName ActionId, cons
 		Ready.Add(MoveTemp(Part));
 	}
 	Status = FString::Join(Notices, TEXT("\n"));
-	if (Ready.IsEmpty()) return false;
+	if (Ready.IsEmpty())
+	{
+		FWSConversationEntry Entry;
+		Entry.EntryId = Session.LatestMessageId; Entry.SessionId = SessionId;
+		Entry.SpeakerId = ActionId == TEXT("talk_ye_cheng") ? TEXT("ye_cheng") : TEXT("gu_heng");
+		Entry.DayPhase = Session.DayPhase; Entry.PlayerLine = Text; Entry.NpcLine = Status;
+		for (const auto& Part : Parts) if (!Part.TopicId.IsNone()) Entry.Topics.AddUnique(Part.TopicId);
+		RulesEngine.RecordConversationEntry(Entry);
+		SaveSnapshot();
+		return false;
+	}
 	int32 Primary = Ready.IndexOfByPredicate([](const auto& P) { return P.Frame.SpeechAct == EWSDialogueAct::Command; });
 	if (Primary == INDEX_NONE) Primary = 0;
 	Out = Ready[Primary]; Out.Parts = Ready; Out.MessageId = Session.LatestMessageId;
@@ -173,7 +183,7 @@ void UWindStationStateSubsystem::ResolveOnlineIntent(FName ActionId, const FStri
 	{ Completion(false, {}, TEXT("会话已失效，请重新交谈。")); return; }
 	++Session.MessageCount; Session.ResolvedMessage.Reset(); Session.LastParsedMessage.Reset(); Session.LatestMessageId.Invalidate();
 	Session.ActionId = ActionId; Session.DayPhase = RulesEngine.GetState().DayPhase;
-	TArray<FString> History = Session.SafeConversation;
+	TArray<FString> History = BuildOnlineConversationHistory(ActionId, SessionId);
 	History.Add(FString::Printf(TEXT("current_day_phase=%d (morning=0, afternoon=1, dusk=2)"), static_cast<int32>(Session.DayPhase)));
 	if (Session.PendingCommitment.IsSet())
 	{

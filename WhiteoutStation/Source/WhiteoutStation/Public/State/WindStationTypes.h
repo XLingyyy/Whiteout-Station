@@ -889,6 +889,21 @@ struct FWSScoreBreakdown
 };
 
 USTRUCT(BlueprintType)
+struct FWSConversationEntry
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGuid EntryId;
+	UPROPERTY(SaveGame) FGuid SessionId;
+	UPROPERTY(SaveGame) FName SpeakerId;
+	UPROPERTY(SaveGame) EWSDayPhase DayPhase = EWSDayPhase::Morning;
+	UPROPERTY(SaveGame) FString PlayerLine;
+	UPROPERTY(SaveGame) FString NpcLine;
+	UPROPERTY(SaveGame) TArray<FName> Topics;
+	UPROPERTY(SaveGame) int32 TurnIndex = 0;
+	UPROPERTY(SaveGame) bool bCommitted = false;
+};
+
+USTRUCT(BlueprintType)
 struct FWSGameState
 {
 	GENERATED_BODY()
@@ -967,6 +982,9 @@ struct FWSGameState
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	TArray<FWSRoleplayMemoryEntry> DialogueMemories;
+
+	UPROPERTY(SaveGame)
+	TArray<FWSConversationEntry> ConversationHistory;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	int32 ModelCalls = 0;

@@ -464,6 +464,31 @@ FWSGameState UWindStationStateSubsystem::GetStateSnapshot() const
 	return RulesEngine.GetState();
 }
 
+TArray<FWSConversationEntry> UWindStationStateSubsystem::GetConversationHistory(FName ActionId) const
+{
+	const FName Speaker = ActionId == TEXT("talk_ye_cheng") ? FName(TEXT("ye_cheng")) : FName(TEXT("gu_heng"));
+	return RulesEngine.GetState().ConversationHistory.FilterByPredicate(
+		[Speaker](const FWSConversationEntry& Entry) { return Entry.SpeakerId == Speaker; });
+}
+
+TArray<FString> UWindStationStateSubsystem::BuildOnlineConversationHistory(FName ActionId, FGuid SessionId) const
+{
+	const auto Entries = GetConversationHistory(ActionId);
+	TArray<FString> History, Topics;
+	for (const auto& Entry : Entries)
+		for (FName Topic : Entry.Topics) Topics.AddUnique(Topic.ToString());
+	History.Add(TEXT("previously_discussed_topics=") + FString::Join(Topics, TEXT(",")));
+	for (int32 I = FMath::Max(0, Entries.Num() - 6); I < Entries.Num(); ++I)
+	{
+		const auto& Entry = Entries[I];
+		History.Add(FString::Printf(TEXT("historical_exchange day_phase=%d current_session=%s committed=%s current_turn=%d\n玩家：%s\nNPC：%s"),
+			static_cast<int32>(Entry.DayPhase), Entry.SessionId == SessionId ? TEXT("true") : TEXT("false"),
+			Entry.bCommitted ? TEXT("true") : TEXT("false"), Entry.SessionId == SessionId && Entry.bCommitted ? Entry.TurnIndex : 0,
+			*Entry.PlayerLine, *Entry.NpcLine));
+	}
+	return History;
+}
+
 void UWindStationStateSubsystem::CancelPendingDialogue()
 {
 	AbortPendingDialogue(
@@ -571,9 +596,6 @@ void UWindStationStateSubsystem::RecordCommittedDialogueSession(
 		Session.ResolvedMessage.Reset();
 	}
 	Session.PaidAP += Request.bDialogueSessionFollowUp ? 0 : 1;
-	Session.SafeConversation.Add(TEXT("玩家：") + Request.PlayerSaid);
-	Session.SafeConversation.Add(TEXT("NPC：") + LatestDialogue.Utterance);
-	if (Session.SafeConversation.Num() > 6) Session.SafeConversation.RemoveAt(0, Session.SafeConversation.Num() - 6);
 	if (Request.DialogueAct == EWSDialogueAct::Command)
 	{
 		Session.AppliedEffectKeys.Add(FName(*FString::Printf(TEXT("%d:%d"),

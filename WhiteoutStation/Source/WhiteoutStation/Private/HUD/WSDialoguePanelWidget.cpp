@@ -113,7 +113,7 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 void UWSDialoguePanelWidget::Open(FName InAction, EWSDialogueMode InMode)
 {
 	Action = InAction; Mode = InMode; Page = 0; Turns = 0; History.Reset(); bBusy = false; bPendingConfirmation = false;
-	SessionId.Invalidate();
+	SessionId.Invalidate(); DisplayedEntryCount = INDEX_NONE;
 	SetDesiredFocusWidget(Mode == EWSDialogueMode::Online ? Input.Get() : nullptr);
 	Input->SetText(FText::GetEmpty());
 	const FString Name = Action == TEXT("talk_ye_cheng") ? TEXT("叶澄 · 医生") : TEXT("顾衡 · 工程师");
@@ -130,6 +130,25 @@ void UWSDialoguePanelWidget::Open(FName InAction, EWSDialogueMode InMode)
 
 void UWSDialoguePanelWidget::Refresh()
 {
+	if (const auto* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+	{
+		const auto Entries = State->GetConversationHistory(Action);
+		if (DisplayedEntryCount != Entries.Num())
+		{
+			DisplayedEntryCount = Entries.Num();
+			if (!Entries.IsEmpty())
+			{
+				History.Reset();
+				const FString Name = Action == TEXT("talk_ye_cheng") ? TEXT("叶澄：") : TEXT("顾衡：");
+				for (const auto& Entry : Entries)
+				{
+					if (!History.IsEmpty()) History += TEXT("\n\n");
+					History += TEXT("我：") + Entry.PlayerLine + TEXT("\n\n") + Name + Entry.NpcLine;
+				}
+				Transcript->SetText(FText::FromString(History)); HistoryScroll->ScrollToEnd();
+			}
+		}
+	}
 	if (SessionId.IsValid())
 		if (const auto* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 			if (const auto* Session = State->GetDialogueSessionState(SessionId))

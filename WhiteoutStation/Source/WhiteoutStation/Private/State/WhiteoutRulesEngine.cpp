@@ -1786,6 +1786,13 @@ FWSActionPreview FWhiteoutRulesEngine::BuildV11Preview(
 	return Result;
 }
 
+void FWhiteoutRulesEngine::RecordConversationEntry(const FWSConversationEntry& Entry)
+{
+	if (!Entry.EntryId.IsValid() || State.ConversationHistory.ContainsByPredicate(
+		[&](const auto& Existing) { return Existing.EntryId == Entry.EntryId; })) return;
+	State.ConversationHistory.Add(Entry);
+}
+
 FWSActionResult FWhiteoutRulesEngine::CommitV11(
 	FWSActionRequest Request,
 	const FWSPreparedDialogue* Prepared,
@@ -1841,6 +1848,15 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 			Outcome->FinalReply.Speaker,
 			&Result.Changes);
 		const FWSAgentReply& Reply = Outcome->FinalReply;
+		FWSConversationEntry Entry;
+		Entry.EntryId = Request.TransactionId; Entry.SessionId = Request.DialogueSessionId;
+		Entry.SpeakerId = Request.ActionId == TEXT("talk_ye_cheng") ? TEXT("ye_cheng") : TEXT("gu_heng");
+		Entry.DayPhase = State.DayPhase; Entry.PlayerLine = Request.PlayerSaid; Entry.NpcLine = Reply.Utterance;
+		Entry.TurnIndex = Request.DialogueTurnIndex; Entry.bCommitted = true;
+		Entry.Topics.AddUnique(Request.SemanticFrame.TopicId);
+		for (const auto& Part : Request.DialogueParts) Entry.Topics.AddUnique(Part.SemanticFrame.TopicId);
+		Entry.Topics.Remove(NAME_None);
+		RecordConversationEntry(Entry);
 		if (Prepared->bRoleplayV14 && !Reply.MemorySummary.IsEmpty())
 		{
 			FWSRoleplayMemoryEntry Memory;

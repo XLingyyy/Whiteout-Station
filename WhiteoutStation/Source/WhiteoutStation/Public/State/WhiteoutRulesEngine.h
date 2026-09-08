@@ -68,6 +68,7 @@ public:
 	FWSScoreBreakdown CalculateScore() const;
 	void EndGame();
 	bool TryRecordModelCall();
+	void RecordConversationEntry(const FWSConversationEntry& Entry);
 	FWSActionRequirementReport EvaluateActionRequirements(const FWSActionRequest& Request) const;
 	void UpgradePlayerKnowledgeFromUtterance(
 		const TArray<FName>& DisclosedFactIds,
