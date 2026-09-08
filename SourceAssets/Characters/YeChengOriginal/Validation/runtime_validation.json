@@ -1,0 +1,18 @@
+{
+  "independent_game_capture_completed": true,
+  "screenshots": 9,
+  "missing_material_usage_warnings": 0,
+  "animation_set_incomplete_errors": 0,
+  "editor_build": "Succeeded; 8 compile/link actions",
+  "visual_checks": [
+    "front orientation",
+    "idle lowered arms",
+    "walk leg motion and coat follow",
+    "reassure arm motion"
+  ],
+  "limitations": [
+    "Simplified geometry and solid-color materials",
+    "No facial morphs, cloth simulation or spring hair",
+    "No Shipping package produced"
+  ]
+}

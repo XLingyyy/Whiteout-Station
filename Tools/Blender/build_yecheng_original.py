@@ -167,6 +167,9 @@ for s in [-1,1]:
         ribbon('Face framing strand',[(s*.052,-.064,1.652),(s*.082,-.057,1.554),(x,-.072,1.414),(x+s*.025,-.116,1.27),(x+s*.014,-.134,1.15-j*.04)],[.007,.014,.015,.009,.0002],hair,.004)
 
 # Original torso and limbs stay editable under the clothing.
+for j in range(11):
+    x=-.087+j*.0174
+    ribbon('Rear hair layers',[(x*.4,.075,1.673),(x*.85,.102,1.585),(x,.108,1.465),(x*1.16,.113,1.29),(x*1.3,.125,1.10),(x*1.15,.132,.86+random.random()*.13)],[.007,.018,.020,.021,.014,.0002],hair if j%4 else hairlight,.004)
 loft('Body torso',[(.89,0,.008,.095,.064),(.97,0,.006,.105,.072),(1.06,0,.008,.087,.062),(1.15,0,.006,.098,.07),(1.25,0,.005,.127,.076),(1.31,0,.005,.137,.060),(1.36,0,.01,.048,.037)],skin)
 loft('Thermal torso',[(.91,0,.003,.103,.071),(1.02,0,.003,.097,.07),(1.11,0,.003,.10,.076),(1.22,0,.003,.132,.082),(1.30,0,.006,.141,.068),(1.34,0,.01,.045,.043),(1.40,0,.01,.042,.040)],black)
 loft('Trouser pelvis',[(.84,0,.008,.118,.078),(.89,0,.004,.12,.086),(.97,0,.003,.117,.086),(.999,0,.003,.11,.08)],black)
@@ -306,6 +309,10 @@ def weights(o,v):
     if 'boot' in name or 'outsole' in name:return {p+'Foot':1}
     if 'leg' in name or 'trousers' in name:
         t=max(0,min(1,(z-.46)/.10));return {p+'LowerLeg':1-t,p+'UpperLeg':t}
+    if z<.97 and any(t in name for t in ['parka','coat','webbing']):
+        amount=min(.85,max(0,(.97-z)/.25))
+        left=max(0,min(1,(x+.025)/.05))
+        return {'J_Bip_C_Hips':1-amount,'J_Bip_L_UpperLeg':amount*left,'J_Bip_R_UpperLeg':amount*(1-left)}
     if z<1.01:return {'J_Bip_C_Hips':1}
     if z>1.4:return {'J_Bip_C_Head':1}
     centers=[(1.0,'Hips'),(1.12,'Spine'),(1.24,'Chest'),(1.33,'UpperChest'),(1.40,'Neck')]

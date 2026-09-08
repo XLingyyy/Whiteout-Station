@@ -1,6 +1,6 @@
 {
-  "source": "empty scene; original mesh authoring",
-  "meshes": 461,
+  "source": "empty scene; all meshes, materials, UVs and weights authored in this script",
+  "meshes": 472,
   "bones": 53,
-  "triangles": 255716
+  "triangles": 261964
 }

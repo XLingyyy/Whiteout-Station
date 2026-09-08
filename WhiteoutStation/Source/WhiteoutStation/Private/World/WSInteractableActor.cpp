@@ -604,10 +604,17 @@ void AWSInteractableActor::ResolveV10Animations()
 		return;
 	}
 	const bool bGuHeng = ActionId == TEXT("talk_gu_heng");
+	const bool bOriginalYeCheng = !bGuHeng && CharacterMesh
+		&& CharacterMesh->GetSkeletalMeshAsset()
+		&& CharacterMesh->GetSkeletalMeshAsset()->GetPathName().StartsWith(
+			TEXT("/Game/WindStation/Art/AnimeNPC/YeChengOriginal/"));
 	const FString Root = bGuHeng
 		? TEXT("/Game/WindStation/Art/AnimeNPC/GuHeng/AnimationsV10")
-		: TEXT("/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV10");
-	const FString Prefix = bGuHeng ? TEXT("AN_GuHeng") : TEXT("AN_YeCheng_V10");
+		: bOriginalYeCheng
+			? TEXT("/Game/WindStation/Art/AnimeNPC/YeChengOriginal/Animations")
+			: TEXT("/Game/WindStation/Art/AnimeNPC/YeChengV10/AnimationsV10");
+	const FString Prefix = bGuHeng ? TEXT("AN_GuHeng")
+		: bOriginalYeCheng ? TEXT("AN_YeCheng_Original") : TEXT("AN_YeCheng_V10");
 	const auto LoadAnimation = [&Root, &Prefix](const TCHAR* Suffix)
 	{
 		const FString AssetPath = FString::Printf(
