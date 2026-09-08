@@ -11,6 +11,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--key-file', type=Path, required=True)
+    parser.add_argument('--exe', type=Path, help='Use a packaged executable instead of UnrealEditor-Cmd')
     parser.add_argument('--only', nargs='+', help='Run selected case IDs')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
@@ -51,9 +52,12 @@ def main():
         raise SystemExit('No test key found')
     env = os.environ.copy()
     env['WHITEOUT_V15_TEST_KEY'] = match.group()
-    exe = Path('G:/UnrealEngine/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe')
+    exe = args.exe.resolve() if args.exe else Path('G:/UnrealEngine/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe')
+    command = [str(exe)]
+    if not args.exe:
+        command += [str(root/'WhiteoutStation/WhiteoutStation.uproject'), '-game']
     with (output / 'engine.log').open('w', encoding='utf-8') as log:
-        result = subprocess.run([str(exe), str(root/'WhiteoutStation/WhiteoutStation.uproject'), '-game', '-NullRHI',
+        result = subprocess.run(command + ['-NullRHI',
                                  '-unattended', '-nop4', '-nosplash', '-stdout', '-FullStdOutLogOutput',
                                  f'-WhiteoutV15Probe={corpus}'], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=600)
     reports = []
