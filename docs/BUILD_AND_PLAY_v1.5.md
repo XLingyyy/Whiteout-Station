@@ -4,7 +4,7 @@
 
 当前按候选版本管理。120 条语义标注已获用户逐条确认；模型表现、八人盲测和全部视觉／输入验收仍未完成，不能标为完整发布通过。
 
-最新可运行归档：`Artifacts/WhiteoutStation-v1.5-Win64-20260908-9adfe31-candidate/Windows/WhiteoutStation.exe`。包含局部澄清、多意图事务、参数化／版本化承诺、第三轮确认收尾，以及已授权知识排序修正。[本次发行记录](RELEASE_v1.5_20260908.md)。三个旧发行归档已在新包回归通过后清理；下方历史测试证据保留，旧包路径不再可运行。
+最新可运行归档：`Artifacts/WhiteoutStation-v1.5-Win64-20260908-d4d1ba7-candidate/Windows/WhiteoutStation.exe`。新增按 NPC 保存对话原文、关闭重开与读档恢复、跨会话在线记忆。[本次发行记录](RELEASE_v1.5_20260908_history.md)。上一份 `9adfe31` 归档清理被自动审批审查拒绝，暂时保留。
 
 ## 运行与配置
 

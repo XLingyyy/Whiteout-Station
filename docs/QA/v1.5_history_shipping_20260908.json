@@ -1,0 +1,414 @@
+{
+  "version": "1.5",
+  "status": "candidate",
+  "date": "2026-09-08",
+  "source_commit": "d4d1ba764d445cad2184a466c1a2d37e46e4ffd5",
+  "engine": "UE 5.8",
+  "platform": "Win64",
+  "configuration": "Shipping",
+  "package": "Artifacts/WhiteoutStation-v1.5-Win64-20260908-d4d1ba7-candidate",
+  "build_exit_code": 0,
+  "buildcookrun_seconds": 155.37,
+  "content_contract_errors": 0,
+  "editor_automation": {
+    "passed": 7,
+    "failed": 0
+  },
+  "ui_reopen": "Development game window verified through actual F / choice / Esc / F inputs",
+  "authored_routes": [
+    {
+      "route": "medical",
+      "success": true,
+      "exit_code": 0,
+      "fresh_export": true,
+      "ending": "TaskSuccess",
+      "score": 74.69999694824219,
+      "model_calls": 0,
+      "authored_dialogue_count": 3,
+      "all_dialogue_authored": true
+    },
+    {
+      "route": "technical",
+      "success": true,
+      "exit_code": 0,
+      "fresh_export": true,
+      "ending": "TaskSuccess",
+      "score": 71.44000244140625,
+      "model_calls": 0,
+      "authored_dialogue_count": 2,
+      "all_dialogue_authored": true
+    },
+    {
+      "route": "quick",
+      "success": true,
+      "exit_code": 0,
+      "fresh_export": true,
+      "ending": "CostUncontrolled",
+      "score": 58.94000244140625,
+      "model_calls": 0,
+      "authored_dialogue_count": 1,
+      "all_dialogue_authored": true
+    },
+    {
+      "route": "wait",
+      "success": true,
+      "exit_code": 0,
+      "fresh_export": true,
+      "ending": "SurvivalWait",
+      "score": 36.91999816894531,
+      "model_calls": 0,
+      "authored_dialogue_count": 0,
+      "all_dialogue_authored": true
+    },
+    {
+      "route": "collapse",
+      "success": true,
+      "exit_code": 0,
+      "fresh_export": true,
+      "ending": "TotalCollapse",
+      "score": 42.15999984741211,
+      "model_calls": 0,
+      "authored_dialogue_count": 0,
+      "all_dialogue_authored": true
+    }
+  ],
+  "online": {
+    "groups": 3,
+    "messages": 6,
+    "parsed": 6,
+    "committed": 4,
+    "recovery": 0,
+    "results": {
+      "engine_exit": 0,
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "kind": "real_model_requests; no runtime verdict inferred from safe rejection",
+      "cases": [
+        {
+          "id": "memory_reopen_person",
+          "fixture": "morning_medical_heating; end session and open fresh session before each later message; keep same saved world",
+          "result": {
+            "committed": false,
+            "status": "sequence_completed",
+            "ap_before": 4,
+            "ap_after": 2,
+            "model_calls": 4,
+            "elapsed_seconds": 6.130511097609997,
+            "diagnosed": false,
+            "promises": 0,
+            "pending": false,
+            "line": "记得。我说过，责任在这，我就得留下。",
+            "source": "controlled_roleplay_v15",
+            "validation": "ok",
+            "steps": [
+              {
+                "text": "你为什么留在站里？",
+                "ready": true,
+                "resolution_status": "正在回应…",
+                "diagnosed_before": false,
+                "ye_trust_before": 6,
+                "ye_pressure_before": 4.800000190734863,
+                "parsed": [
+                  {
+                    "topic": "person",
+                    "speech_act": 0,
+                    "target": 1,
+                    "polarity": 0,
+                    "commitment": 0,
+                    "clarify": false,
+                    "clarification": "",
+                    "terms": []
+                  }
+                ],
+                "history_before": 0,
+                "history_after": 1,
+                "committed": true,
+                "result": "Committed",
+                "ap_before": 4,
+                "ap_after": 3,
+                "promises": 0,
+                "generator_progress": 0,
+                "forced_actions": 0,
+                "treated": false,
+                "diagnosed": false,
+                "medicine": 1,
+                "relay": 0,
+                "line": "我负责这里的设备，发电机和通讯不能没人管。走了，谁修？责任在这，我就得留下。",
+                "source": "controlled_roleplay_v15",
+                "messages": 1,
+                "turns": 1,
+                "pending_proposal": false
+              },
+              {
+                "text": "上次我问过你为什么留在站里，你还记得吗？",
+                "ready": true,
+                "resolution_status": "正在回应…",
+                "diagnosed_before": false,
+                "ye_trust_before": 6,
+                "ye_pressure_before": 4.800000190734863,
+                "parsed": [
+                  {
+                    "topic": "person",
+                    "speech_act": 0,
+                    "target": 1,
+                    "polarity": 0,
+                    "commitment": 0,
+                    "clarify": false,
+                    "clarification": "",
+                    "terms": []
+                  }
+                ],
+                "history_before": 1,
+                "history_after": 2,
+                "committed": true,
+                "result": "Committed",
+                "ap_before": 3,
+                "ap_after": 2,
+                "promises": 0,
+                "generator_progress": 0,
+                "forced_actions": 0,
+                "treated": false,
+                "diagnosed": false,
+                "medicine": 1,
+                "relay": 0,
+                "line": "记得。我说过，责任在这，我就得留下。",
+                "source": "controlled_roleplay_v15",
+                "messages": 1,
+                "turns": 1,
+                "pending_proposal": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "memory_reopen_ye",
+          "fixture": "morning_medical_heating; end session and open fresh session before each later message; keep same saved world",
+          "result": {
+            "committed": false,
+            "status": "sequence_completed",
+            "ap_before": 4,
+            "ap_after": 2,
+            "model_calls": 4,
+            "elapsed_seconds": 6.613715697079897,
+            "diagnosed": false,
+            "promises": 0,
+            "pending": false,
+            "line": "我说过，是责任。站里需要有人守着医疗和气象，我不能看着情况失控。",
+            "source": "controlled_roleplay_v15",
+            "validation": "ok",
+            "steps": [
+              {
+                "text": "你为什么留在站里？",
+                "ready": true,
+                "resolution_status": "正在回应…",
+                "diagnosed_before": false,
+                "ye_trust_before": 6,
+                "ye_pressure_before": 4.800000190734863,
+                "parsed": [
+                  {
+                    "topic": "person",
+                    "speech_act": 0,
+                    "target": 2,
+                    "polarity": 0,
+                    "commitment": 0,
+                    "clarify": false,
+                    "clarification": "",
+                    "terms": []
+                  }
+                ],
+                "history_before": 0,
+                "history_after": 1,
+                "committed": true,
+                "result": "Committed",
+                "ap_before": 4,
+                "ap_after": 3,
+                "promises": 0,
+                "generator_progress": 0,
+                "forced_actions": 0,
+                "treated": false,
+                "diagnosed": false,
+                "medicine": 1,
+                "relay": 0,
+                "line": "责任。站里需要有人守着医疗和气象，我不能看着情况失控。",
+                "source": "controlled_roleplay_v15",
+                "messages": 1,
+                "turns": 1,
+                "pending_proposal": false
+              },
+              {
+                "text": "上次我问你留在这里的原因，你怎么回答我的？",
+                "ready": true,
+                "resolution_status": "正在回应…",
+                "diagnosed_before": false,
+                "ye_trust_before": 6.400000095367432,
+                "ye_pressure_before": 4.400000095367432,
+                "parsed": [
+                  {
+                    "topic": "person",
+                    "speech_act": 0,
+                    "target": 2,
+                    "polarity": 0,
+                    "commitment": 0,
+                    "clarify": false,
+                    "clarification": "",
+                    "terms": []
+                  }
+                ],
+                "history_before": 1,
+                "history_after": 2,
+                "committed": true,
+                "result": "Committed",
+                "ap_before": 3,
+                "ap_after": 2,
+                "promises": 0,
+                "generator_progress": 0,
+                "forced_actions": 0,
+                "treated": false,
+                "diagnosed": false,
+                "medicine": 1,
+                "relay": 0,
+                "line": "我说过，是责任。站里需要有人守着医疗和气象，我不能看着情况失控。",
+                "source": "controlled_roleplay_v15",
+                "messages": 1,
+                "turns": 1,
+                "pending_proposal": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "memory_expired_proposal",
+          "fixture": "morning_medical_heating; end session and open fresh session before each later message; keep same saved world",
+          "result": {
+            "committed": false,
+            "status": "sequence_completed",
+            "ap_before": 4,
+            "ap_after": 4,
+            "model_calls": 2,
+            "elapsed_seconds": 3.339588601142168,
+            "diagnosed": false,
+            "promises": 0,
+            "pending": false,
+            "line": "",
+            "source": "spine_only",
+            "validation": "preset",
+            "steps": [
+              {
+                "text": "我保证下一阶段给厨房供暖。",
+                "ready": false,
+                "resolution_status": "请确认：下午给厨房供暖。当前为第 1 版安排，尚未登记。",
+                "diagnosed_before": false,
+                "ye_trust_before": 6,
+                "ye_pressure_before": 4.800000190734863,
+                "parsed": [
+                  {
+                    "topic": "Heating",
+                    "speech_act": 3,
+                    "target": 1,
+                    "polarity": 0,
+                    "commitment": 1,
+                    "clarify": false,
+                    "clarification": "",
+                    "terms": [
+                      {
+                        "kind": "heat_zone",
+                        "zone": 3,
+                        "offset": 1,
+                        "prerequisite": "",
+                        "description": "下一阶段给厨房供暖"
+                      }
+                    ]
+                  }
+                ],
+                "history_before": 0,
+                "history_after": 1,
+                "committed": false,
+                "result": "请确认：下午给厨房供暖。当前为第 1 版安排，尚未登记。",
+                "ap_before": 4,
+                "ap_after": 4,
+                "promises": 0,
+                "generator_progress": 0,
+                "forced_actions": 0,
+                "treated": false,
+                "diagnosed": false,
+                "medicine": 1,
+                "relay": 0,
+                "line": "",
+                "source": "",
+                "messages": 1,
+                "turns": 0,
+                "pending_proposal": true,
+                "proposal_version": 1
+              },
+              {
+                "text": "确认刚才的安排。",
+                "ready": false,
+                "resolution_status": "确认引用已失效，请按当前提议及版本重新确认。",
+                "diagnosed_before": false,
+                "ye_trust_before": 6,
+                "ye_pressure_before": 4.800000190734863,
+                "parsed": [
+                  {
+                    "topic": "Heating",
+                    "speech_act": 3,
+                    "target": 1,
+                    "polarity": 0,
+                    "commitment": 2,
+                    "clarify": false,
+                    "clarification": "",
+                    "terms": [
+                      {
+                        "kind": "heat_zone",
+                        "zone": 3,
+                        "offset": 1,
+                        "prerequisite": "",
+                        "description": "下一阶段给厨房供暖"
+                      }
+                    ]
+                  }
+                ],
+                "history_before": 1,
+                "history_after": 2,
+                "committed": false,
+                "result": "确认引用已失效，请按当前提议及版本重新确认。",
+                "ap_before": 4,
+                "ap_after": 4,
+                "promises": 0,
+                "generator_progress": 0,
+                "forced_actions": 0,
+                "treated": false,
+                "diagnosed": false,
+                "medicine": 1,
+                "relay": 0,
+                "line": "",
+                "source": "",
+                "messages": 1,
+                "turns": 0,
+                "pending_proposal": false
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "protected_assets": {
+    "files": 262,
+    "changed": []
+  },
+  "package_key_scan": {
+    "text_files": 80,
+    "matches": 0
+  },
+  "cleanup": {
+    "status": "blocked_by_automatic_approval_review",
+    "reason": "blocked by policy",
+    "retained_old_build": "Artifacts/WhiteoutStation-v1.5-Win64-20260908-9adfe31-candidate",
+    "old_exists": true
+  },
+  "limitations": [
+    "Current-save full transcript; model receives latest six NPC exchanges plus discussed-topic index",
+    "No reconstruction of dialogue discarded by earlier builds",
+    "An editor model response included an unsupported future inspection statement; no world action occurred; overall expression quality remains candidate"
+  ]
+}

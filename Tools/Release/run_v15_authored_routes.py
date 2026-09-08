@@ -16,8 +16,8 @@ def main():
     args = parser.parse_args()
     exe, output = args.exe.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    event_log = args.event_log or ((args.project.resolve().parent if args.project else
-        Path.home() / 'AppData/Local/WhiteoutStation') / 'Saved/Logs/WhiteoutStation_EventLog.json')
+    runtime = output / 'runtime'
+    event_log = args.event_log or (runtime / 'Saved/Logs/WhiteoutStation_EventLog.json')
     expected = {'medical': 'TaskSuccess', 'technical': 'TaskSuccess',
                 'quick': 'CostUncontrolled', 'wait': 'SurvivalWait', 'collapse': 'TotalCollapse'}
     results = []
@@ -25,7 +25,7 @@ def main():
         started = time.time()
         with (output / f'{route}.log').open('w', encoding='utf-8') as log:
             command = [str(exe)] + ([str(args.project.resolve()), '-game'] if args.project else [])
-            process = subprocess.run(command + ['-NullRHI', '-unattended', '-nosplash',
+            process = subprocess.run(command + ['-NullRHI', '-unattended', '-nosplash', f'-UserDir={runtime}',
                                       '-stdout', '-FullStdOutLogOutput', '-WhiteoutV15AuthoredRoute',
                                       f'-WhiteoutAutoRoute={route}', '-WhiteoutAutoRouteExit'],
                                      cwd=exe.parent, stdout=log, stderr=subprocess.STDOUT, timeout=120)
