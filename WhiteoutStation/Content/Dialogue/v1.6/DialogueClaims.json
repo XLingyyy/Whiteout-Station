@@ -1,0 +1,37 @@
+[
+  {
+    "claim_id": "GU_PROTECTION_STOP_KNOWLEDGE",
+    "knowledge_id": "GU_PROTECTION_STOP_KNOWLEDGE",
+    "text": "事故发生时发电机先因输出电压异常触发保护停机"
+  },
+  {
+    "claim_id": "GU_BURNT_RELAY_KNOWLEDGE",
+    "knowledge_id": "GU_BURNT_RELAY_KNOWLEDGE",
+    "text": "控制柜主继电器的触点已经烧毁，无法继续稳定供电"
+  },
+  {
+    "claim_id": "GU_RELAY_COMPATIBILITY_KNOWLEDGE",
+    "knowledge_id": "GU_RELAY_COMPATIBILITY_KNOWLEDGE",
+    "text": "厨房加热器内部继电器的规格与发电机控制柜相符，拆取后厨房会失去固定热源"
+  },
+  {
+    "claim_id": "GU_FORCED_RESTART_KNOWLEDGE",
+    "knowledge_id": "GU_FORCED_RESTART_KNOWLEDGE",
+    "text": "顾衡在保护停机后执行过一次手动旁路重启，这使故障和责任都变得更严重"
+  },
+  {
+    "claim_id": "GU_HAND_INJURY_KNOWLEDGE",
+    "knowledge_id": "GU_HAND_INJURY_KNOWLEDGE",
+    "text": "顾衡的右手撕裂并伴随失温，已经影响精细操作的稳定性"
+  },
+  {
+    "claim_id": "YE_GU_HAND_DIAGNOSIS",
+    "knowledge_id": "YE_GU_HAND_DIAGNOSIS",
+    "text": "叶澄确认顾衡右手撕裂并伴随失温，继续精细操作会增加伤势恶化的风险"
+  },
+  {
+    "claim_id": "YE_HEAT_PACK_KNOWLEDGE",
+    "knowledge_id": "YE_HEAT_PACK_KNOWLEDGE",
+    "text": "医务柜后方存有一只应急保温包，可以替代常规药品稳定顾衡一次"
+  }
+]

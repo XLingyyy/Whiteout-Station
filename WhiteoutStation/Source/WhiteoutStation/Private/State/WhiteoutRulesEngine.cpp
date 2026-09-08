@@ -5,6 +5,7 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "State/WSDialogueDisclosurePolicy.h"
+#include "Dialogue/WSConversationValidator.h"
 
 namespace WhiteoutRules
 {
@@ -273,6 +274,11 @@ bool FWhiteoutRulesEngine::LoadConfig(const FString& ConfigPath, FString& OutErr
 		Config.GeneratorRequired = Gameplay->GetIntegerField(TEXT("generator_required"));
 		Config.AntennaRequired = Gameplay->GetIntegerField(TEXT("antenna_required"));
 		Config.SafeWaitFuel = Gameplay->GetIntegerField(TEXT("safe_wait_fuel"));
+		if (IsV16())
+		{
+			Config.DialogueTurnLimit = Gameplay->GetIntegerField(TEXT("dialogue_turn_limit"));
+			Config.ModelCallHardLimit = Gameplay->GetIntegerField(TEXT("model_call_hard_limit"));
+		}
 		Config.WarmTemperature =
 			TemperatureThresholds->GetNumberField(TEXT("warm"));
 		Config.HypothermicTemperature =
@@ -450,6 +456,8 @@ void FWhiteoutRulesEngine::Reset()
 {
 	State = Config.InitialState;
 	State.RulesSchemaVersion = Config.SchemaVersion;
+	State.RunId = FGuid::NewGuid();
+	State.DialogueLedgerVersion = IsV16() ? 1 : 0;
 	State.RulesVersion = Config.RulesVersion;
 	State.ActionPoints =
 		IsV11() ? Config.ActionPointsPerPhase : Config.StartingActionPoints;
@@ -551,6 +559,7 @@ bool FWhiteoutRulesEngine::ValidateDialogueOutcomeContract(
 	const FWSDialogueOutcome& Outcome,
 	FString& OutReason)
 {
+	if (Prepared.bNaturalV16) return FWSConversationValidator::ValidateCommitted(Prepared, Outcome, OutReason);
 	const FWSActionRequest& Request = Prepared.OriginalRequest;
 	const FWSAgentReply& Reply = Outcome.FinalReply;
 	if (!Prepared.Parts.IsEmpty())
@@ -1123,14 +1132,18 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecuteV11(
 	{
 		return EWSReasonCode::DialogueSessionComplete;
 	}
+	const FName SpeakerId = Request.ActionId == TalkYeCheng ? FName(TEXT("ye_cheng")) : FName(TEXT("gu_heng"));
+	const auto* Ledger = State.DialogueLedger.Find(SpeakerId);
+	if (IsV16() && bDialogueAction && Ledger && !Request.bConfirmationClosure && Ledger->UsedTurns >= Config.DialogueTurnLimit)
+		return EWSReasonCode::DialogueSessionComplete;
 	const int32 Count = ActionCount(Request.ActionId);
-	if (!Request.bDialogueSessionFollowUp
+	if (!(IsV16() && bDialogueAction) && !Request.bDialogueSessionFollowUp
 		&& !Rule->bRepeatable
 		&& Count > 0)
 	{
 		return EWSReasonCode::AlreadyCompleted;
 	}
-	if (!Request.bDialogueSessionFollowUp && Count >= Rule->MaxUses)
+	if (!(IsV16() && bDialogueAction) && !Request.bDialogueSessionFollowUp && Count >= Rule->MaxUses)
 	{
 		return EWSReasonCode::UseLimitReached;
 	}
@@ -1527,7 +1540,7 @@ FWSActionPreview FWhiteoutRulesEngine::BuildV11Preview(
 	Result.RawAP = Rule->BaseAP;
 	Result.APCost = Rule->BaseAP;
 	const bool bFreeDialogueFollowUp =
-		Request.bDialogueSessionFollowUp
+		(IsV16() || Request.bDialogueSessionFollowUp)
 		&& (Request.ActionId == TalkGuHeng
 			|| Request.ActionId == TalkYeCheng);
 	if (bFreeDialogueFollowUp)
@@ -1790,7 +1803,20 @@ void FWhiteoutRulesEngine::RecordConversationEntry(const FWSConversationEntry& E
 {
 	if (!Entry.EntryId.IsValid() || State.ConversationHistory.ContainsByPredicate(
 		[&](const auto& Existing) { return Existing.EntryId == Entry.EntryId; })) return;
+	if (IsV16())
+	{
+		auto& Ledger = State.DialogueLedger.FindOrAdd(Entry.SpeakerId);
+		if (Ledger.SuccessfulMessageIds.Contains(Entry.EntryId)) return;
+		Ledger.SuccessfulMessageIds.Add(Entry.EntryId);
+		if (Entry.bCountedTurn) ++Ledger.UsedTurns;
+	}
 	State.ConversationHistory.Add(Entry);
+}
+
+void FWhiteoutRulesEngine::CancelUnconfirmedConversation(FGuid SessionId)
+{
+	for (auto& Entry : State.ConversationHistory)
+		if (Entry.SessionId == SessionId && Entry.ControlStatus == TEXT("pending")) Entry.ControlStatus = TEXT("cancelled");
 }
 
 FWSActionResult FWhiteoutRulesEngine::CommitV11(
@@ -1849,14 +1875,22 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 			&Result.Changes);
 		const FWSAgentReply& Reply = Outcome->FinalReply;
 		FWSConversationEntry Entry;
-		Entry.EntryId = Request.TransactionId; Entry.SessionId = Request.DialogueSessionId;
+		Entry.EntryId = Request.OnlineMessageId.IsValid() ? Request.OnlineMessageId : Request.TransactionId; Entry.SessionId = Request.DialogueSessionId;
 		Entry.SpeakerId = Request.ActionId == TEXT("talk_ye_cheng") ? TEXT("ye_cheng") : TEXT("gu_heng");
 		Entry.DayPhase = State.DayPhase; Entry.PlayerLine = Request.PlayerSaid; Entry.NpcLine = Reply.Utterance;
 		Entry.TurnIndex = Request.DialogueTurnIndex; Entry.bCommitted = true;
+		Entry.bCountedTurn = !Request.bConfirmationClosure; Entry.ReplySource = Reply.AnswerSource;
+		Entry.StateRevision = Prepared->StateRevision; Entry.CorrectsEntryId = Outcome->CorrectsEntryId;
 		Entry.Topics.AddUnique(Request.SemanticFrame.TopicId);
 		for (const auto& Part : Request.DialogueParts) Entry.Topics.AddUnique(Part.SemanticFrame.TopicId);
 		Entry.Topics.Remove(NAME_None);
 		RecordConversationEntry(Entry);
+		if (IsV16())
+		{
+			auto& Ledger = State.DialogueLedger.FindOrAdd(Entry.SpeakerId);
+			const FName Key(*FString::Printf(TEXT("%d:%d"), static_cast<int32>(Request.DialogueAct), static_cast<int32>(Request.SemanticFrame.TargetCharacter)));
+			Ledger.SocialEffectKeys.AddUnique(Key);
+		}
 		if (Prepared->bRoleplayV14 && !Reply.MemorySummary.IsEmpty())
 		{
 			FWSRoleplayMemoryEntry Memory;
@@ -1925,6 +1959,9 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 	Event.DayPhase = State.DayPhase;
 	Event.BaseAP = ActionPreview.BaseAP;
 	Event.ActualAP = ActionPreview.APCost;
+	Event.bHasActionProvenance = true; Event.Executor = Executor;
+	Event.TargetCharacter = (Request.ActionId == WhiteoutRules::TreatGuHeng) ? EWSCharacterId::GuHeng : Request.TreatmentTarget;
+	Event.TreatmentMethod = Request.ActionId == WhiteoutRules::TreatGuHeng && Request.TreatmentResource == EWSResourceType::HeatPack ? EWSTreatmentMethod::HeatPack : Request.TreatmentMethod;
 	Event.WorkReadiness = ActionPreview.WorkReadiness;
 	Event.CostModifiers = ActionPreview.CostModifiers;
 	if (Prepared && Outcome)
@@ -2468,7 +2505,7 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 				++State.Flags.ForcedActionCount;
 			}
 		}
-		else if (!Request.bDialoguePositiveRewardApplied)
+		else if (!Request.bDialoguePositiveRewardApplied && (!IsV16() || Request.DialogueAct == EWSDialogueAct::Promise))
 		{
 			YeCheng.Trust = FMath::Clamp(YeCheng.Trust + 0.4f, 0.0f, 10.0f);
 			YeCheng.Pressure = FMath::Clamp(YeCheng.Pressure - 0.4f, 0.0f, 10.0f);
@@ -2498,7 +2535,7 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 				++State.Flags.ForcedActionCount;
 			}
 		}
-		else if (Request.bDialoguePositiveRewardApplied)
+		else if (Request.bDialoguePositiveRewardApplied || (IsV16() && Request.DialogueAct != EWSDialogueAct::Promise && Request.DialogueAct != EWSDialogueAct::Challenge))
 		{
 			OutChanges.Add(TEXT("本次私聊已结算正向关系收益"));
 		}
@@ -2655,7 +2692,7 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 		}
 		if (TargetId == EWSCharacterId::GuHeng)
 		{
-			State.Flags.bGuHengTreated =
+			State.Flags.bGuHengTreated |=
 				Method == EWSTreatmentMethod::Full;
 		}
 	}

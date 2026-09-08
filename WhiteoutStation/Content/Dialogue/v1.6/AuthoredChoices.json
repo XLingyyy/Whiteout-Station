@@ -1,0 +1,445 @@
+[
+  {
+    "choice_id": "gu_generator",
+    "speaker_id": "gu_heng",
+    "text": "发电机现在是什么情况？",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "gu_heng",
+      "topic_id": "generator",
+      "speech_act": "ask",
+      "query_type": "status",
+      "target_action_id": "repair_generator",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "发电机现在是什么情况？"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "gu_generator_reply",
+    "topic_id": "generator",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "gu_repair_requirement",
+    "speaker_id": "gu_heng",
+    "text": "怎样准备，才能让你安全地维修？",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "gu_heng",
+      "topic_id": "repair_requirements",
+      "speech_act": "ask",
+      "query_type": "requirements",
+      "target_action_id": "repair_generator",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "怎样准备，才能让你安全地维修？"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "gu_repair_requirement_reply",
+    "topic_id": "repair_requirements",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "gu_restart_evidence",
+    "speaker_id": "gu_heng",
+    "text": "日志和烧毁的继电器都在这里。你解释一下。",
+    "visible_if": [
+      "actual_evidence"
+    ],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "gu_heng",
+      "topic_id": "restart_evidence",
+      "speech_act": "challenge",
+      "query_type": "evidence",
+      "target_action_id": "repair_generator",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "日志和烧毁的继电器都在这里。你解释一下。"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "gu_restart_evidence_reply",
+    "topic_id": "restart_evidence",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "gu_relay",
+    "speaker_id": "gu_heng",
+    "text": "我质疑你对替代方案的判断。现有设备里真的没有能替换的部件吗？",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "gu_heng",
+      "topic_id": "relay_alternative",
+      "speech_act": "challenge",
+      "query_type": "alternative",
+      "target_action_id": "repair_generator",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "我质疑你对替代方案的判断。现有设备里真的没有能替换的部件吗？"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "gu_relay_reply",
+    "topic_id": "relay_alternative",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "gu_heat_promise",
+    "speaker_id": "gu_heng",
+    "text": "下一阶段，我把供暖留给维修间。",
+    "visible_if": [
+      "future_phase"
+    ],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "gu_heng",
+      "topic_id": "commitment",
+      "speech_act": "promise",
+      "query_type": "consequence",
+      "target_action_id": "repair_generator",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "proposed",
+      "promise_condition": "heat_repair_room",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "下一阶段，我把供暖留给维修间。"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "gu_heat_promise_reply",
+    "topic_id": "commitment",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "gu_reassure",
+    "speaker_id": "gu_heng",
+    "text": "我不催你冒险。先把能做的说清楚。",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "gu_heng",
+      "topic_id": "relationship",
+      "speech_act": "reassure",
+      "query_type": "unknown",
+      "target_action_id": "",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "我不催你冒险。先把能做的说清楚。"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "gu_reassure_reply",
+    "topic_id": "relationship",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "ye_diagnosis",
+    "speaker_id": "ye_cheng",
+    "text": "顾衡现在还能做精细维修吗？",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "ye_cheng",
+      "topic_id": "medical",
+      "speech_act": "ask",
+      "query_type": "status",
+      "target_action_id": "repair_generator",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "顾衡现在还能做精细维修吗？"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "ye_diagnosis_reply",
+    "topic_id": "medical",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "ye_alternative",
+    "speaker_id": "ye_cheng",
+    "text": "药品有限，还有别的处理办法吗？",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "ye_cheng",
+      "topic_id": "medical_alternative",
+      "speech_act": "ask",
+      "query_type": "alternative",
+      "target_action_id": "treat_gu_heng",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "药品有限，还有别的处理办法吗？"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "ye_alternative_reply",
+    "topic_id": "medical_alternative",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "gu_person",
+    "speaker_id": "gu_heng",
+    "text": "你为什么一直留在这个站？",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "gu_heng",
+      "topic_id": "person",
+      "speech_act": "ask",
+      "query_type": "unknown",
+      "target_action_id": "",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "你为什么一直留在这个站？"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "gu_person_reply",
+    "topic_id": "person",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "gu_heating",
+    "speaker_id": "gu_heng",
+    "text": "供暖已经定了，你觉得接下来该做什么？",
+    "visible_if": [
+      "heating_locked"
+    ],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "gu_heng",
+      "topic_id": "heating",
+      "speech_act": "ask",
+      "query_type": "status",
+      "target_action_id": "",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "供暖已经定了，你觉得接下来该做什么？"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "gu_heating_reply",
+    "topic_id": "heating",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "gu_command",
+    "speaker_id": "gu_heng",
+    "text": "现在按我的安排做，别再拖延。",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "gu_heng",
+      "topic_id": "relationship",
+      "speech_act": "command",
+      "query_type": "unknown",
+      "target_action_id": "",
+      "target_character": "gu_heng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "现在按我的安排做，别再拖延。"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "gu_command_reply",
+    "topic_id": "relationship",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "ye_person",
+    "speaker_id": "ye_cheng",
+    "text": "你为什么一直留在这个站？",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "ye_cheng",
+      "topic_id": "person",
+      "speech_act": "ask",
+      "query_type": "unknown",
+      "target_action_id": "",
+      "target_character": "ye_cheng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "你为什么一直留在这个站？"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "ye_person_reply",
+    "topic_id": "person",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "ye_heating",
+    "speaker_id": "ye_cheng",
+    "text": "供暖已经定了，你觉得接下来该做什么？",
+    "visible_if": [
+      "heating_locked"
+    ],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "ye_cheng",
+      "topic_id": "heating",
+      "speech_act": "ask",
+      "query_type": "status",
+      "target_action_id": "",
+      "target_character": "ye_cheng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "供暖已经定了，你觉得接下来该做什么？"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "ye_heating_reply",
+    "topic_id": "heating",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "ye_command",
+    "speaker_id": "ye_cheng",
+    "text": "现在按我的安排做，别再拖延。",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "ye_cheng",
+      "topic_id": "relationship",
+      "speech_act": "command",
+      "query_type": "unknown",
+      "target_action_id": "",
+      "target_character": "ye_cheng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "现在按我的安排做，别再拖延。"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "ye_command_reply",
+    "topic_id": "relationship",
+    "repeat_policy": "recap_no_bonus"
+  },
+  {
+    "choice_id": "ye_reassure",
+    "speaker_id": "ye_cheng",
+    "text": "不用一个人扛着，我们一起想办法。",
+    "visible_if": [],
+    "enabled_if": [
+      "dialogue_turn_available"
+    ],
+    "intent": {
+      "speaker_id": "ye_cheng",
+      "topic_id": "relationship",
+      "speech_act": "reassure",
+      "query_type": "unknown",
+      "target_action_id": "",
+      "target_character": "ye_cheng",
+      "polarity": "affirmative",
+      "commitment": "none",
+      "promise_condition": "",
+      "confidence": 1,
+      "needs_clarification": false,
+      "evidence_spans": [
+        "不用一个人扛着，我们一起想办法。"
+      ],
+      "resolved_from_turn": 0
+    },
+    "line_group_id": "ye_reassure_reply",
+    "topic_id": "relationship",
+    "repeat_policy": "recap_no_bonus"
+  }
+]

@@ -1,4 +1,5 @@
 #include "Agents/WSAgentGateway.h"
+#include "Dialogue/WSConversationValidator.h"
 
 #include "Agents/WSNPCDecisionService.h"
 #include "Agents/WSRoleplayResponseValidator.h"
@@ -2390,6 +2391,7 @@ bool UWSAgentGateway::ValidateDialogueOutcome(
 	const FWSDialogueOutcome& Outcome,
 	FString& OutReason)
 {
+	if (Prepared.bNaturalV16) return FWSConversationValidator::ValidateCommitted(Prepared, Outcome, OutReason);
 	if (!Prepared.Parts.IsEmpty())
 	{
 		if (!FWhiteoutRulesEngine::ValidateDialogueOutcomeContract(Prepared, Outcome, OutReason)) return false;
@@ -3274,7 +3276,7 @@ void UWSAgentGateway::LoadConfig()
 
 	FString JsonText;
 	const FString ConfigPath =
-		FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.5.json");
+		FPaths::ProjectContentDir() / TEXT("Agents/AgentRuntime.v1.6.json");
 	if (FFileHelper::LoadFileToString(JsonText, *ConfigPath))
 	{
 		TSharedPtr<FJsonObject> Root;
@@ -3303,18 +3305,22 @@ void UWSAgentGateway::LoadConfig()
 				&& Root->TryGetNumberField(TEXT("top_k_knowledge"), TopKKnowledge)
 				&& Root->TryGetNumberField(TEXT("max_session_turns"), MaxSessionTurns);
 			bRuntimeContractValid = bHasContractFields
-				&& SchemaVersion == 8.0
-				&& RuntimeVersion == TEXT("1.5.0")
-				&& ProtocolVersion == TEXT("bounded_roleplay_v5")
-				&& PromptMode == TEXT("canonical_intent_then_controlled_expression")
+				&& SchemaVersion == 9.0
+				&& RuntimeVersion == TEXT("1.6.0")
+				&& ProtocolVersion == TEXT("natural_roleplay_v6")
+				&& PromptMode == TEXT("canonical_intent_then_natural_expression")
 				&& MaxSentences == 3.0
-				&& MaxLineChars == 240.0
-				&& MaxOutputTokens == 640.0
+				&& MaxLineChars == 320.0
+				&& MaxOutputTokens == 1000.0
 				&& Temperature == 0.45
 				&& TopKKnowledge == 10.0
-				&& MaxSessionTurns == 3.0;
+				&& MaxSessionTurns == 10.0;
 			if (bRuntimeContractValid)
 			{
+				Root->TryGetNumberField(TEXT("max_output_tokens"), NaturalOutputTokens);
+				Root->TryGetNumberField(TEXT("verification_max_output_tokens"), VerificationOutputTokens);
+				NormalDeadline = Root->GetNumberField(TEXT("normal_deadline_seconds"));
+				CriticalDeadline = Root->GetNumberField(TEXT("critical_deadline_seconds"));
 				Root->TryGetStringField(TEXT("endpoint"), Endpoint);
 				Root->TryGetStringField(TEXT("provider_name"), ProviderName);
 				Root->TryGetStringField(TEXT("model"), ModelName);

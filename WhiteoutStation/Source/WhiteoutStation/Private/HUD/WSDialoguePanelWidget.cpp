@@ -123,7 +123,7 @@ void UWSDialoguePanelWidget::Open(FName InAction, EWSDialogueMode InMode)
 	Append(Action == TEXT("talk_ye_cheng") ? TEXT("叶澄：你想说什么？") : TEXT("顾衡：说吧，我听着。"));
 	Refresh();
 	SetStatus(Mode == EWSDialogueMode::InvalidConfiguration
-		? TEXT("AI 配置不可用。可以配置 AI，或切换离线剧本对话。") : TEXT("首次实质回复消耗 1 AP，本次最多 3 轮。"), false);
+		? TEXT("AI 配置不可用。可以配置 AI，或切换离线剧本对话。") : TEXT("交谈不消耗行动力；每名角色每局最多 10 轮。"), false);
 	if (Mode == EWSDialogueMode::Online) Input->SetKeyboardFocus();
 	else SetKeyboardFocus();
 }
@@ -132,6 +132,9 @@ void UWSDialoguePanelWidget::Refresh()
 {
 	if (const auto* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
+		Turns = State->GetDialogueTurnsUsed(Action); TurnLimit = State->GetDialogueTurnLimit();
+		const FString SpeakerTitle = Action == TEXT("talk_ye_cheng") ? TEXT("叶澄 · 医生") : TEXT("顾衡 · 工程师");
+		Header->SetText(FText::FromString(FString::Printf(TEXT("%s｜%s  剩余 %d/%d"), *SpeakerTitle, Mode == EWSDialogueMode::Online ? TEXT("在线交谈") : TEXT("离线交谈"), FMath::Max(0, TurnLimit - Turns), TurnLimit)));
 		const auto Entries = State->GetConversationHistory(Action);
 		if (DisplayedEntryCount != Entries.Num())
 		{
@@ -143,7 +146,9 @@ void UWSDialoguePanelWidget::Refresh()
 				for (const auto& Entry : Entries)
 				{
 					if (!History.IsEmpty()) History += TEXT("\n\n");
-					History += TEXT("我：") + Entry.PlayerLine + TEXT("\n\n") + Name + Entry.NpcLine;
+					History += TEXT("我：") + Entry.PlayerLine + TEXT("\n\n")
+						+ (Entry.ReplySource == TEXT("local_control_v16") ? FString(TEXT("系统：")) : Name) + Entry.NpcLine;
+					if (Entry.ControlStatus == TEXT("cancelled")) History += TEXT("\n系统：此提议已取消。");
 				}
 				Transcript->SetText(FText::FromString(History)); HistoryScroll->ScrollToEnd();
 			}
@@ -153,7 +158,7 @@ void UWSDialoguePanelWidget::Refresh()
 		if (const auto* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 			if (const auto* Session = State->GetDialogueSessionState(SessionId))
 				bPendingConfirmation = Session->PendingCommitment.IsSet();
-	const bool Available = Turns < 3 || (Mode == EWSDialogueMode::Online && bPendingConfirmation);
+	const bool Available = Turns < TurnLimit || (Mode == EWSDialogueMode::Online && bPendingConfirmation);
 	ChoicesScroll->SetVisibility(Mode == EWSDialogueMode::Authored && Available ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Offline->SetVisibility(Mode != EWSDialogueMode::Authored ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Offline->SetIsEnabled(!bBusy);
@@ -189,14 +194,16 @@ FText UWSDialoguePanelWidget::BuildInputHint()
 
 void UWSDialoguePanelWidget::ShowReply(const FWSAgentReply& Reply)
 {
+	Input->SetText(FText::GetEmpty());
 	Turns = Reply.DialogueTurnIndex; bBusy = false; bPendingConfirmation = Reply.bPendingConfirmation;
 	SessionId = Reply.DialogueSessionId;
 	Append((Reply.Speaker == EWSCharacterId::YeCheng ? FString(TEXT("叶澄：")) : FString(TEXT("顾衡："))) + Reply.Utterance);
-	SetStatus(Turns >= 3 ? (bPendingConfirmation ? TEXT("三轮已结束，仅可确认或取消待确认事项，不另扣 AP。") : TEXT("本次私聊已结束，请离开。"))
-		: FString::Printf(TEXT("本次私聊 1 AP · 本次剩余 %d 轮"), 3 - Turns), false);
+	SetStatus(Turns >= TurnLimit ? (bPendingConfirmation ? TEXT("本局额度已用完，仅可确认或取消当前提议。") : TEXT("本局交谈额度已用完。"))
+		: FString::Printf(TEXT("本局剩余 %d 轮"), FMath::Max(0, TurnLimit - Turns)), false);
 	if (Reply.AnswerSource == TEXT("authored_recovery_v15"))
 		Status->SetText(FText::FromString(Status->GetText().ToString() + TEXT(" · 本次使用固定台词")));
-	if (Turns < 3 || bPendingConfirmation)
+	if (!Reply.SystemNotice.IsEmpty()) Status->SetText(FText::FromString(Reply.SystemNotice + TEXT("\n") + Status->GetText().ToString()));
+	if (Turns < TurnLimit || bPendingConfirmation)
 		if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn())) Character->ContinueDialogue();
 	Refresh();
 }
@@ -209,7 +216,7 @@ void UWSDialoguePanelWidget::SetStatus(const FString& Message, bool Busy)
 void UWSDialoguePanelWidget::Select(int32 Index)
 {
 	Index += Page * PageSize();
-	if (Mode != EWSDialogueMode::Authored || bBusy || Turns >= 3 || !Choices.IsValidIndex(Index)) return;
+	if (Mode != EWSDialogueMode::Authored || bBusy || Turns >= TurnLimit || !Choices.IsValidIndex(Index)) return;
 	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
 	{
 		const FWSAuthoredChoice Choice = Choices[Index];
@@ -225,13 +232,13 @@ void UWSDialoguePanelWidget::Select4() { Select(4); }
 void UWSDialoguePanelWidget::NextPage() { Page = (Page + 1) % FMath::Max(1, FMath::DivideAndRoundUp(Choices.Num(), PageSize())); Refresh(); }
 void UWSDialoguePanelWidget::Submit()
 {
-	if (Mode != EWSDialogueMode::Online || bBusy || (Turns >= 3 && !bPendingConfirmation)) return;
+	if (Mode != EWSDialogueMode::Online || bBusy || (Turns >= TurnLimit && !bPendingConfirmation)) return;
 	const FString Text = Input->GetText().ToString().TrimStartAndEnd();
 	if (Text.IsEmpty()) return;
 	if (Text.Len() > 480) { SetStatus(TEXT("内容过长，请缩短至 480 字以内。"), false); return; }
 	if (AWhiteoutCharacter* Character = Cast<AWhiteoutCharacter>(GetOwningPlayerPawn()))
 	{
-		Append(TEXT("我：") + Text); Input->SetText(FText::GetEmpty()); Character->SubmitDialogueText(Text);
+		Character->SubmitDialogueText(Text);
 	}
 }
 void UWSDialoguePanelWidget::Leave()
@@ -246,7 +253,7 @@ FReply UWSDialoguePanelWidget::NativeOnKeyDown(const FGeometry& Geometry, const 
 
 void UWSDialoguePanelWidget::FocusInput()
 {
-	if (Mode == EWSDialogueMode::Online && (Turns < 3 || bPendingConfirmation)) Input->SetKeyboardFocus();
+	if (Mode == EWSDialogueMode::Online && (Turns < TurnLimit || bPendingConfirmation)) Input->SetKeyboardFocus();
 	else SetKeyboardFocus();
 }
 void UWSDialoguePanelWidget::SwitchOffline()
@@ -255,7 +262,7 @@ void UWSDialoguePanelWidget::SwitchOffline()
 	Mode = EWSDialogueMode::Authored; Page = 0;
 	SetDesiredFocusWidget(static_cast<UWidget*>(nullptr));
 	Header->SetText(FText::FromString((Action == TEXT("talk_ye_cheng") ? FString(TEXT("叶澄 · 医生")) : FString(TEXT("顾衡 · 工程师"))) + TEXT("    离线 · 剧本对话")));
-	SetStatus(TEXT("已切换离线剧本对话；本次已用轮次和 AP 保留。"), false);
+	SetStatus(TEXT("已切换离线对话；本局剩余轮次保留。"), false);
 	FocusInput();
 }
 void UWSDialoguePanelWidget::OpenConfiguration()

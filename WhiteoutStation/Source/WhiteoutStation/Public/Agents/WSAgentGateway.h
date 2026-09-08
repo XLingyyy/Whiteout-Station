@@ -59,6 +59,8 @@ public:
 		const TArray<FString>& SafeHistory, int32 ContextTurn,
 		TFunction<void(bool, const FWSCanonicalIntent&, const FString&)> Completion);
 	void RequestControlledRoleplay(const FWSPreparedDialogue& Prepared, FWSDialogueOutcomeCallback Completion);
+	void RequestNaturalRoleplay(const FWSPreparedDialogue& Prepared, FWSDialogueOutcomeCallback Completion, TFunction<bool()> ReserveVerificationCall);
+	void BuildNaturalContext(FWSPreparedDialogue& Prepared) const;
 	static bool ParseControlledRoleplay(const FString& Json, const FWSPreparedDialogue& Prepared,
 		FWSAgentReply& Reply, FString& Error);
 	void ResetSession();
@@ -170,6 +172,12 @@ public:
 		FName CurrentTopicActionId = NAME_None) const;
 
 private:
+	void RequestNaturalJson(const FString& Instruction, const FString& Context, int32 Tokens, float Temperature,
+		float Timeout, TFunction<void(bool, const FString&, const FString&)> Completion);
+	int32 NaturalOutputTokens = 1000;
+	int32 VerificationOutputTokens = 700;
+	float NormalDeadline = 10.0f;
+	float CriticalDeadline = 15.0f;
 	FString Endpoint;
 	FString ApiKey;
 	FString CredentialSource = TEXT("none");

@@ -414,6 +414,8 @@ struct FWSDialogueSemanticFrame
 	GENERATED_BODY()
 
 	FName TopicId;
+	FString QuestionPurpose;
+	FName RequestedActorId;
 	bool bCanonicalIntentValidated = false;
 	double DeadlineSeconds = 0;
 
@@ -796,6 +798,10 @@ USTRUCT(BlueprintType)
 struct FWSEventRecord
 {
 	GENERATED_BODY()
+	UPROPERTY(SaveGame) EWSCharacterId Executor = EWSCharacterId::Player;
+	UPROPERTY(SaveGame) EWSCharacterId TargetCharacter = EWSCharacterId::Player;
+	UPROPERTY(SaveGame) EWSTreatmentMethod TreatmentMethod = EWSTreatmentMethod::Full;
+	UPROPERTY(SaveGame) bool bHasActionProvenance = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	int32 Index = 0;
@@ -901,6 +907,20 @@ struct FWSConversationEntry
 	UPROPERTY(SaveGame) TArray<FName> Topics;
 	UPROPERTY(SaveGame) int32 TurnIndex = 0;
 	UPROPERTY(SaveGame) bool bCommitted = false;
+	UPROPERTY(SaveGame) bool bCountedTurn = false;
+	UPROPERTY(SaveGame) FString ReplySource;
+	UPROPERTY(SaveGame) int64 StateRevision = 0;
+	UPROPERTY(SaveGame) FString ControlStatus;
+	UPROPERTY(SaveGame) FGuid CorrectsEntryId;
+};
+
+USTRUCT()
+struct FWSNpcDialogueLedger
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) int32 UsedTurns = 0;
+	UPROPERTY(SaveGame) TArray<FGuid> SuccessfulMessageIds;
+	UPROPERTY(SaveGame) TArray<FName> SocialEffectKeys;
 };
 
 USTRUCT(BlueprintType)
@@ -985,6 +1005,9 @@ struct FWSGameState
 
 	UPROPERTY(SaveGame)
 	TArray<FWSConversationEntry> ConversationHistory;
+	UPROPERTY(SaveGame) FGuid RunId;
+	UPROPERTY(SaveGame) int32 DialogueLedgerVersion = 0;
+	UPROPERTY(SaveGame) TMap<FName, FWSNpcDialogueLedger> DialogueLedger;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	int32 ModelCalls = 0;
@@ -1189,6 +1212,7 @@ USTRUCT(BlueprintType)
 struct FWSAgentReply
 {
 	GENERATED_BODY()
+	FString SystemNotice;
 	bool bPendingConfirmation = false;
 
 	FName AuthoredLineId;
@@ -1347,6 +1371,10 @@ struct FWSPreparedDialogue
 {
 	GENERATED_BODY()
 	TArray<FWSPreparedDialogue> Parts;
+	bool bNaturalV16 = false;
+	FString NaturalContextJson;
+	TArray<FString> AnswerGoalIds;
+	TMap<FName, FWSRoleplayKnowledgeItem> NaturalFacts;
 
 	bool bRoleplayV15 = false;
 	bool bHasAuthoredFallback = false;
@@ -1406,6 +1434,9 @@ struct FWSDialogueOutcome
 {
 	GENERATED_BODY()
 	TArray<FWSDialogueOutcome> Parts;
+	bool bFullTextVerified = false;
+	TArray<FString> AddressedGoalIds;
+	FGuid CorrectsEntryId;
 	static FWSDialogueOutcome Combine(const TArray<FWSDialogueOutcome>& InParts, const FString& Notice);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)

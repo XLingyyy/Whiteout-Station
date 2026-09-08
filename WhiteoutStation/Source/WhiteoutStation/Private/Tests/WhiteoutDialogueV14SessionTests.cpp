@@ -275,13 +275,13 @@ bool FWhiteoutDialogueV14ThreeTurnSessionTest::RunTest(
 	const FWSCharacterState AfterFirstGu =
 		AfterFirst.Characters.FindRef(EWSCharacterId::GuHeng);
 	TestTrue(TEXT("First turn commits"), First.bCommitted);
-	TestEqual(TEXT("First turn costs one AP"), First.ActualAP, 1);
+	TestEqual(TEXT("First turn costs zero AP"), First.ActualAP, 0);
 	TestEqual(
-		TEXT("First turn deducts one phase AP"),
+		TEXT("First turn preserves phase AP"),
 		AfterFirst.PhaseActionPoints,
-		Before.PhaseActionPoints - 1);
-	TestTrue(
-		TEXT("First turn settles the relationship"),
+		Before.PhaseActionPoints);
+	TestFalse(
+		TEXT("Ordinary first question does not reward relationship"),
 		!FMath::IsNearlyEqual(AfterFirstGu.Trust, BeforeGu.Trust)
 			|| !FMath::IsNearlyEqual(AfterFirstGu.Pressure, BeforeGu.Pressure));
 	TestTrue(
@@ -330,8 +330,8 @@ bool FWhiteoutDialogueV14ThreeTurnSessionTest::RunTest(
 		TEXT("Dialogue use count advances once per session"),
 		AfterThird.ActionCounts.FindRef(TEXT("talk_gu_heng")),
 		Before.ActionCounts.FindRef(TEXT("talk_gu_heng")) + 1);
-	TestFalse(
-		TEXT("Session closes after the third turn"),
+	TestTrue(
+		TEXT("Session stays open after three turns"),
 		StateSubsystem->CanContinueDialogueSession(DialogueSessionId));
 
 	TestEqual(TEXT("Three turns reach realization"), RealizeCount, 3);
@@ -351,21 +351,21 @@ bool FWhiteoutDialogueV14ThreeTurnSessionTest::RunTest(
 	const FWSActionResult Fourth = StateSubsystem->SubmitDialogueAction(
 		MakeTalkRequest(DialogueSessionId, TEXT("再说一句。")));
 	const FWSGameState AfterFourth = StateSubsystem->GetStateSnapshot();
-	TestFalse(TEXT("Fourth turn cannot commit"), Fourth.bCommitted);
+	TestTrue(TEXT("Fourth turn commits within v1.6 quota"), Fourth.bCommitted);
 	TestFalse(TEXT("Fourth turn does not enter pending"), Fourth.bPendingDialogue);
 	TestEqual(
-		TEXT("Fourth turn reports a completed session"),
+		TEXT("Fourth turn is committed"),
 		Fourth.ReasonCode,
-		EWSReasonCode::DialogueSessionComplete);
-	TestEqual(TEXT("Fourth turn does not realize"), RealizeCount, 3);
+		EWSReasonCode::Committed);
+	TestEqual(TEXT("Fourth turn realizes once"), RealizeCount, 4);
 	TestEqual(
 		TEXT("Fourth turn does not consume AP"),
 		AfterFourth.PhaseActionPoints,
 		APBeforeFourth);
 	TestEqual(
-		TEXT("Fourth turn does not append memory"),
+		TEXT("Fourth turn appends memory"),
 		AfterFourth.DialogueMemories.Num(),
-		MemoriesBeforeFourth);
+		MemoriesBeforeFourth + 1);
 
 	TestEqual(
 		TEXT("Each committed turn appends one memory"),
@@ -395,7 +395,7 @@ bool FWhiteoutDialogueV14ThreeTurnSessionTest::RunTest(
 	}
 
 	const TArray<FWSRoleplayMemoryEntry> SavedMemories =
-		AfterThird.DialogueMemories;
+		AfterFourth.DialogueMemories;
 	StateSubsystem->NewGame();
 	TestEqual(
 		TEXT("New game clears runtime dialogue memory"),

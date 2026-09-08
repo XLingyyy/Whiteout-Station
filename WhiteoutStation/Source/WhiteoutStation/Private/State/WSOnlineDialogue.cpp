@@ -3,6 +3,14 @@
 
 namespace
 {
+	EWSCommitmentIntent PureControl(const FString& Text)
+	{
+		FString Value = Text.TrimStartAndEnd();
+		while (Value.EndsWith(TEXT("。")) || Value.EndsWith(TEXT("！")) || Value.EndsWith(TEXT("."))) Value.LeftChopInline(1);
+		if (Value == TEXT("确认") || Value == TEXT("确认承诺") || Value == TEXT("确认这项承诺") || Value == TEXT("同意") || Value == TEXT("好")) return EWSCommitmentIntent::ConfirmPending;
+		if (Value == TEXT("取消") || Value == TEXT("取消承诺") || Value == TEXT("取消这项承诺") || Value == TEXT("不确认")) return EWSCommitmentIntent::RejectPending;
+		return EWSCommitmentIntent::None;
+	}
 	FString DescribeTerms(const TArray<FWSPromiseTerms>& Terms)
 	{
 		TArray<FString> Lines;
@@ -50,10 +58,11 @@ bool UWindStationStateSubsystem::ResolveParsedOnlineMessage(FName ActionId, cons
 		Parts[ProposalPart].Clarification += Parts[I].Clarification;
 		Parts.RemoveAt(I--);
 	}
-	const bool Closing = Session.CommittedTurns >= 3;
+	const bool Closing = GetDialogueTurnsUsed(ActionId) >= GetDialogueTurnLimit();
 	if (Closing && (Parts.Num() != 1 || !Session.PendingCommitment.IsSet()
+		|| PureControl(Text) == EWSCommitmentIntent::None
 		|| (Parts[0].Commitment != EWSCommitmentIntent::ConfirmPending && Parts[0].Commitment != EWSCommitmentIntent::RejectPending)))
-	{ Status = TEXT("本次三轮交谈已结束，只能确认或取消当前待确认事项。"); return false; }
+	{ Status = TEXT("本局交谈额度已用完，仅可输入“确认”或“取消”收尾当前提议。"); return false; }
 	TArray<FWSCanonicalIntent> Ready;
 	TArray<FString> Notices;
 	for (FWSCanonicalIntent Part : Parts)
@@ -90,7 +99,7 @@ bool UWindStationStateSubsystem::ResolveParsedOnlineMessage(FName ActionId, cons
 					Part.PromiseCondition = Session.PendingCommitment->PromiseCondition;
 					Part.Frame.SpeechAct = EWSDialogueAct::Promise;
 					Part.bNeedsClarification = false;
-					Part.bConfirmationClosure = Closing;
+					Part.bConfirmationClosure = Parts.Num() == 1 && PureControl(Text) == EWSCommitmentIntent::ConfirmPending;
 					Notices.Add(TEXT("已登记：") + DescribeTerms(Part.Terms) + TEXT("。这不代表已经履行。"));
 					Ready.Add(Part); continue;
 				}
@@ -156,8 +165,13 @@ bool UWindStationStateSubsystem::ResolveParsedOnlineMessage(FName ActionId, cons
 		Entry.EntryId = Session.LatestMessageId; Entry.SessionId = SessionId;
 		Entry.SpeakerId = ActionId == TEXT("talk_ye_cheng") ? TEXT("ye_cheng") : TEXT("gu_heng");
 		Entry.DayPhase = Session.DayPhase; Entry.PlayerLine = Text; Entry.NpcLine = Status;
+		Entry.bCountedTurn = PureControl(Text) == EWSCommitmentIntent::None;
+		Entry.bCommitted = true; Entry.ReplySource = TEXT("local_control_v16"); Entry.StateRevision = StateRevision;
+		Entry.ControlStatus = Session.PendingCommitment.IsSet() ? TEXT("pending") : TEXT("resolved");
 		for (const auto& Part : Parts) if (!Part.TopicId.IsNone()) Entry.Topics.AddUnique(Part.TopicId);
 		RulesEngine.RecordConversationEntry(Entry);
+		Session.CommittedTurns = GetDialogueTurnsUsed(ActionId);
+		++StateRevision;
 		SaveSnapshot();
 		return false;
 	}
@@ -176,6 +190,23 @@ void UWindStationStateSubsystem::ResolveOnlineIntent(FName ActionId, const FStri
 	if (GetDialogueMode() != EWSDialogueMode::Online || HasPendingDialogue() || bCommitDispatchActive
 		|| bLifecycleTransitionActive || Text.IsEmpty() || Text.Len() > 480 || !SessionId.IsValid())
 	{ Completion(false, {}, TEXT("当前无法发送，请检查会话与 AI 设置。")); return; }
+	const auto Control = PureControl(Text);
+	const auto* Existing = DialogueSessions.Find(SessionId);
+	if (Control != EWSCommitmentIntent::None)
+	{
+		if (!Existing || !Existing->PendingCommitment.IsSet())
+		{ Completion(false, {}, TEXT("当前没有可确认或取消的提议。")); return; }
+		FWSCanonicalIntent Intent = Existing->PendingCommitment.GetValue();
+		Intent.Commitment = Control; Intent.Terms.Reset(); Intent.Parts.Reset();
+		FWSCanonicalIntent Resolved; FString Status;
+		const bool Ready = ResolveParsedOnlineMessage(ActionId, Text, SessionId, Intent, Resolved, Status);
+		Completion(Ready, Resolved, Status); return;
+	}
+	if (GetDialogueTurnsUsed(ActionId) >= GetDialogueTurnLimit())
+	{ Completion(false, {}, TEXT("本局交谈额度已用完。已有提议仅可输入“确认”或“取消”，不能夹带新问题或修改。")); return; }
+	FWSActionRequest Check; Check.ActionId = ActionId; Check.DialogueSessionId = SessionId;
+	if (!PreviewAction(Check).bCanExecute)
+	{ Completion(false, {}, TEXT("当前阶段无法交谈。")); return; }
 	if (!RulesEngine.TryRecordModelCall())
 	{ Completion(false, {}, TEXT("本局 AI 请求额度已用完，请切换离线对话。")); return; }
 	FWSDialogueSessionRuntimeState& Session = DialogueSessions.FindOrAdd(SessionId);

@@ -46,6 +46,7 @@ private:
 	FString History;
 	int32 DisplayedEntryCount = INDEX_NONE;
 	int32 Page = 0;
+	int32 TurnLimit = 10;
 	int32 Turns = 0;
 	bool bBusy = false;
 	bool bPendingConfirmation = false;

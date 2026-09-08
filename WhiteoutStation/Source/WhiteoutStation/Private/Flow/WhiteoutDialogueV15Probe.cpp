@@ -17,8 +17,33 @@ namespace
 		if (Reopen && Index > 0) { State->EndDialogueSession(Session); Session = FGuid::NewGuid(); }
 		const FString Text = Steps[Index];
 		const auto Before = State->GetStateSnapshot();
+		if (Text.StartsWith(TEXT("@")))
+		{
+			bool Success = false;
+			if (Text == TEXT("@save_load")) Success = State->SaveSnapshot() && State->LoadSnapshot();
+			else if (Text == TEXT("@reopen")) { State->EndDialogueSession(Session); Session = FGuid::NewGuid(); Success = true; }
+			else if (Text == TEXT("@talk_gu")) { State->EndDialogueSession(Session); Session = FGuid::NewGuid(); Action = TEXT("talk_gu_heng"); Success = true; }
+			else if (Text == TEXT("@talk_ye")) { State->EndDialogueSession(Session); Session = FGuid::NewGuid(); Action = TEXT("talk_ye_cheng"); Success = true; }
+			else if (Text == TEXT("@treat_full") || Text == TEXT("@treat_support") || Text == TEXT("@bandage"))
+			{
+				FWSActionRequest Request; Request.ActionId = TEXT("treat_character"); Request.TreatmentTarget = EWSCharacterId::GuHeng;
+				Request.TreatmentMethod = Text == TEXT("@treat_full") ? EWSTreatmentMethod::Full : Text == TEXT("@bandage") ? EWSTreatmentMethod::Bandage : EWSTreatmentMethod::HeatPack;
+				Request.bHasCollaborator = true; Request.Collaborator = EWSCharacterId::Player;
+				Success = State->CommitAction(Request).bCommitted;
+			}
+			const auto After = State->GetStateSnapshot();
+			auto Row = MakeShared<FJsonObject>(); Row->SetStringField(TEXT("text"), Text);
+			Row->SetStringField(TEXT("kind"), TEXT("fixture_action")); Row->SetBoolField(TEXT("committed"), Success);
+			Row->SetArrayField(TEXT("parsed"), {}); Row->SetStringField(TEXT("line"), TEXT(""));
+			Row->SetNumberField(TEXT("ap_before"), Before.PhaseActionPoints); Row->SetNumberField(TEXT("ap_after"), After.PhaseActionPoints);
+			Row->SetBoolField(TEXT("treated"), After.Flags.bGuHengTreated); Row->SetNumberField(TEXT("medicine"), After.Resources.Medicine);
+			Row->SetNumberField(TEXT("turns"), State->GetDialogueTurnsUsed(Action)); Reports->Add(MakeShared<FJsonValueObject>(Row));
+			if (!Success) { Finish(false, TEXT("fixture_action_failed")); return; }
+			RunSemanticProbeStep(State, Session, Action, Steps, Index + 1, Reopen, Reports, Finish); return;
+		}
+		const double MessageStarted = FPlatformTime::Seconds();
 		State->ResolveOnlineIntent(Action, Text, Session,
-			[State, Session, Action, Steps, Index, Reopen, Reports, Finish, Before, Text](bool Ready, const FWSCanonicalIntent& Intent, const FString& Status)
+			[State, Session, Action, Steps, Index, Reopen, Reports, Finish, Before, Text, MessageStarted](bool Ready, const FWSCanonicalIntent& Intent, const FString& Status)
 			{
 				auto Row = MakeShared<FJsonObject>(); Row->SetStringField(TEXT("text"), Text);
 				Row->SetBoolField(TEXT("ready"), Ready); Row->SetStringField(TEXT("resolution_status"), Status);
@@ -51,9 +76,13 @@ namespace
 					}
 				}
 				Row->SetArrayField(TEXT("parsed"), Parsed);
-				const auto Record = [State, Session, Action, Steps, Index, Reopen, Reports, Finish, Before, Row, Ready](bool Committed, const FString& Result)
+				const auto Record = [State, Session, Action, Steps, Index, Reopen, Reports, Finish, Before, Row, Ready, MessageStarted](bool Committed, const FString& Result)
 				{
 					const auto After = State->GetStateSnapshot();
+					Row->SetNumberField(TEXT("elapsed_seconds"), FPlatformTime::Seconds() - MessageStarted);
+					Row->SetNumberField(TEXT("model_calls"), After.ModelCalls - Before.ModelCalls);
+					Row->SetNumberField(TEXT("turns_used"), State->GetDialogueTurnsUsed(Action));
+					Row->SetNumberField(TEXT("state_revision"), State->GetStateRevision());
 					Row->SetNumberField(TEXT("history_before"), Before.ConversationHistory.Num());
 					Row->SetNumberField(TEXT("history_after"), After.ConversationHistory.Num());
 					Row->SetBoolField(TEXT("committed"), Committed); Row->SetStringField(TEXT("result"), Result);

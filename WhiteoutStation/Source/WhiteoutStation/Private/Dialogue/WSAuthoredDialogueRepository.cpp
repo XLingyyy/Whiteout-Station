@@ -1,4 +1,5 @@
 #include "Dialogue/WSAuthoredDialogueRepository.h"
+#include "State/WSKnowledgePolicy.h"
 #include "Dom/JsonObject.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -141,9 +142,9 @@ bool FWSAuthoredDialogueRepository::Matches(const TArray<FString>& Predicates,
 		if (P == TEXT("generator_partial") && State.Tasks.GeneratorProgress > 0 && State.Tasks.GeneratorProgress < Required) continue;
 		if (P == TEXT("generator_complete") && State.Tasks.GeneratorProgress >= Required) continue;
 		if (P == TEXT("gu_diagnosed") && State.Flags.bGuHengDiagnosed) continue;
-		if (P == TEXT("gu_treated") && State.Flags.bGuHengTreated) continue;
+		if (P == TEXT("gu_treated") && FWSKnowledgePolicy::CharacterState(EWSCharacterId::GuHeng, State, true).TreatmentStatus == TEXT("completed")) continue;
 		if (P == TEXT("heating_locked") && State.Heating.bLocked) continue;
-		if (P == TEXT("dialogue_turn_available") && (!Context || Context->TurnIndex <= 3)) continue;
+		if (P == TEXT("dialogue_turn_available") && (!Context || Context->RemainingTurns >= 0)) continue;
 		return false;
 	}
 	return true;
@@ -206,6 +207,16 @@ bool FWSAuthoredDialogueRepository::SelectLine(const FWSAuthoredChoice& Choice, 
 		{
 			FString Text; FName Knowledge;
 			if (!RenderClaim(Claim, Context, Text, Knowledge)) { Valid = false; break; }
+			const auto* Fact = Context.AvailableKnowledge.FindByPredicate([&](const auto& Item) { return Item.KnowledgeId == Knowledge; });
+			if (State.RulesSchemaVersion >= 7 && Fact && (Fact->GameFactId == TEXT("FACT_HAND_INJURY") || Fact->GameFactId == TEXT("FACT_MEDICAL_DIAGNOSIS")))
+			{
+				const auto View = FWSKnowledgePolicy::CharacterState(EWSCharacterId::GuHeng, State, true);
+				const FString Subject = Choice.SpeakerId == TEXT("gu_heng") ? TEXT("我的右手") : TEXT("顾衡的右手");
+				Text = Subject + (View.TreatmentStatus == TEXT("completed") ? FString(TEXT("已经接受完整治疗，精细操作不再受伤势限制"))
+					: View.bTemporarySupport ? FString(TEXT("仍然受伤，目前只有临时支持，尚未完成治疗"))
+					: View.bBandaged ? FString(TEXT("做过简单包扎，伤势限制还在，尚未完成治疗"))
+					: FString(TEXT("受伤，精细操作受限，还没有接受治疗")));
+			}
 			Candidate.Line.ReplaceInline(*(TEXT("{claim:") + Claim.ToString() + TEXT("}")), *Text);
 			Candidate.ReferencedKnowledgeIds.AddUnique(Knowledge);
 			FWSRoleplayAssertion Assertion; Assertion.KnowledgeId = Knowledge; Assertion.Mode = EWSRoleplayClaimMode::Stated;

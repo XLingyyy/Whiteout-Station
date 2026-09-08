@@ -57,7 +57,7 @@ bool FWhiteoutV15ConversationHistoryTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Save transcript"), State->SaveSnapshot());
 	TestTrue(TEXT("Reload transcript"), State->LoadSnapshot());
 	TestEqual(TEXT("Reload restores history"), State->GetConversationHistory(Gu).Num(), 1);
-	TestEqual(TEXT("Reload did not charge AP"), State->GetStateSnapshot().PhaseActionPoints, InitialAP - 1);
+	TestEqual(TEXT("Reload did not charge AP"), State->GetStateSnapshot().PhaseActionPoints, InitialAP);
 
 	FWSCanonicalIntent Proposal; Proposal.SpeakerId = TEXT("gu_heng"); Proposal.TopicId = TEXT("commitment");
 	Proposal.Frame.SpeechAct = EWSDialogueAct::Promise; Proposal.Frame.TargetCharacter = EWSCharacterId::GuHeng;
@@ -67,10 +67,10 @@ bool FWhiteoutV15ConversationHistoryTest::RunTest(const FString& Parameters)
 	FWSCanonicalIntent Resolved; FString Status;
 	TestFalse(TEXT("Proposal remains unpaid"), State->ResolveParsedOnlineMessage(Gu, TEXT("下一阶段给厨房供暖。"), NewSession, Proposal, Resolved, Status));
 	TestEqual(TEXT("Proposal response is visible history"), State->GetConversationHistory(Gu).Num(), 2);
-	TestFalse(TEXT("Proposal history not a transaction"), State->GetConversationHistory(Gu).Last().bCommitted);
+	TestTrue(TEXT("Proposal response is a counted exchange"), State->GetConversationHistory(Gu).Last().bCountedTurn);
 	TestEqual(TEXT("Proposal response saved exactly"), State->GetConversationHistory(Gu).Last().NpcLine, Status);
 	TestEqual(TEXT("History does not register promises"), State->GetStateSnapshot().Promises.Num(), 0);
-	TestEqual(TEXT("Control history does not charge"), State->GetStateSnapshot().PhaseActionPoints, InitialAP - 1);
+	TestEqual(TEXT("Control history does not charge"), State->GetStateSnapshot().PhaseActionPoints, InitialAP);
 	State->EndDialogueSession(NewSession);
 	TestNull(TEXT("Old pending ledger is gone"), State->GetDialogueSessionState(NewSession));
 	TestEqual(TEXT("Pending conversation remains readable"), State->GetConversationHistory(Gu).Num(), 2);
@@ -89,12 +89,12 @@ bool FWhiteoutV15ConversationHistoryTest::RunTest(const FString& Parameters)
 	State->CancelPendingDialogue();
 	if (Late) Late(Held.LocalFallback);
 	TestEqual(TEXT("Cancelled late answer never remembered"), State->GetConversationHistory(Gu).Num(), 2);
-	TestEqual(TEXT("Cancelled answer never charged"), State->GetStateSnapshot().PhaseActionPoints, InitialAP - 1);
+	TestEqual(TEXT("Cancelled answer never charged"), State->GetStateSnapshot().PhaseActionPoints, InitialAP);
 	State->SetDialogueRealizeTestHook([](const FWSPreparedDialogue& P, FWSDialogueRealizeTestCallback Callback) { Callback(P.LocalFallback); });
 	TestTrue(TEXT("Retry commits once"), State->SubmitDialogueAction(Request).bCommitted);
 	TestFalse(TEXT("Duplicate cannot commit"), State->SubmitDialogueAction(Request).bCommitted);
 	TestEqual(TEXT("Retry and duplicate add exactly one exchange"), State->GetConversationHistory(Gu).Num(), 3);
-	TestEqual(TEXT("Reopen starts normal paid session"), State->GetStateSnapshot().PhaseActionPoints, InitialAP - 2);
+	TestEqual(TEXT("Reopen preserves zero AP"), State->GetStateSnapshot().PhaseActionPoints, InitialAP);
 	State->NewGame(); TestEqual(TEXT("New game clears old conversations"), State->GetStateSnapshot().ConversationHistory.Num(), 0);
 	UGameplayStatics::DeleteGameInSlot(Slot, 0); State->SetDialogueRealizeTestHook({});
 	Game->Shutdown(); Game->RemoveFromRoot(); return true;

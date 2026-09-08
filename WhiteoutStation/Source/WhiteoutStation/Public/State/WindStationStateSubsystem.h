@@ -67,6 +67,8 @@ public:
 	FWSGameState GetStateSnapshot() const;
 	TArray<FWSConversationEntry> GetConversationHistory(FName ActionId) const;
 	TArray<FString> BuildOnlineConversationHistory(FName ActionId, FGuid SessionId) const;
+	int32 GetDialogueTurnsUsed(FName ActionId) const;
+	int32 GetDialogueTurnLimit() const { return RulesEngine.GetConfig().DialogueTurnLimit; }
 
 	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Actions")
 	FWSActionPreview PreviewAction(const FWSActionRequest& Request) const;
@@ -170,6 +172,7 @@ public:
 private:
 	friend class FWhiteoutV15MessageStateTest;
 	static const FString SaveSlot;
+	static const FString LegacySaveSlotV15;
 	static const FString LegacySaveSlotV14;
 	static const FString LegacySaveSlotV13;
 	static const FString LegacySaveSlotV12;

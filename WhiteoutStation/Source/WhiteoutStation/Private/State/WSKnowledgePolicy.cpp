@@ -1,5 +1,18 @@
 #include "State/WSKnowledgePolicy.h"
 
+FWSCharacterStateView FWSKnowledgePolicy::CharacterState(EWSCharacterId Id, const FWSGameState& State, bool bMayDiscloseInjury)
+{
+	FWSCharacterStateView View;
+	const auto* Character = State.Characters.Find(Id);
+	if (!Character || !bMayDiscloseInjury) return View;
+	View.bInjuryKnown = true; View.Injury = Character->InjurySeverity;
+	View.bTemporarySupport = Character->TemporarySupportUses > 0 && Character->TemporarySupportPhase == State.DayPhase;
+	View.bBandaged = Character->BandageProtection > 0;
+	View.TreatmentStatus = Id == EWSCharacterId::GuHeng && State.Flags.bGuHengTreated ? TEXT("completed")
+		: View.bTemporarySupport ? TEXT("temporary_support_only") : View.bBandaged ? TEXT("bandage_only") : TEXT("not_started");
+	return View;
+}
+
 bool FWSKnowledgePolicy::PlayerKnows(
 	const FWSGameState& State,
 	const FName FactId,

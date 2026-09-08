@@ -25,8 +25,9 @@ FWSStatusCardViewModel WSStatusPresenter::Build(EWSCharacterId Id, const FWSGame
 		Character->Stamina > 0 ? EWSStatusSeverity::Normal : EWSStatusSeverity::Attention);
 	if (Self) View.Fields.Last().DisplayRatio = Character->Stamina / 2.0f;
 	const bool InjuryKnown = Self || (Id == EWSCharacterId::GuHeng && FWSKnowledgePolicy::IsGuHengInjuryVisible(State));
-	const FString Injury = !InjuryKnown ? TEXT("尚未确认") : Character->InjurySeverity == EWSInjurySeverity::Normal
-		? TEXT("正常") : Character->InjurySeverity == EWSInjurySeverity::Restricted ? TEXT("操作受限") : TEXT("严重");
+	const auto KnownState = FWSKnowledgePolicy::CharacterState(Id, State, InjuryKnown);
+	const FString Injury = !KnownState.bInjuryKnown ? TEXT("尚未确认") : KnownState.Injury == EWSInjurySeverity::Normal
+		? TEXT("正常") : KnownState.Injury == EWSInjurySeverity::Restricted ? TEXT("操作受限") : TEXT("严重");
 	Add(TEXT("伤势"), Injury, !InjuryKnown ? EWSStatusSeverity::Unknown
 		: Character->InjurySeverity == EWSInjurySeverity::Critical ? EWSStatusSeverity::Critical
 		: Character->InjurySeverity == EWSInjurySeverity::Restricted ? EWSStatusSeverity::Attention : EWSStatusSeverity::Normal);

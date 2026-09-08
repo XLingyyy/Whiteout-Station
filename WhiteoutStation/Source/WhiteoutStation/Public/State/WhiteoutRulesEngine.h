@@ -26,6 +26,7 @@ struct FWhiteoutRuleConfig
 	int32 GeneratorRequired = 2;
 	int32 AntennaRequired = 1;
 	int32 ModelCallHardLimit = 10;
+	int32 DialogueTurnLimit = 10;
 	int32 SafeWaitFuel = 1;
 	float SafeAntennaTemperature = 5.5f;
 	float CriticalHealth = 3.0f;
@@ -53,6 +54,7 @@ public:
 	FWSGameState& GetMutableStateForTesting() { return State; }
 	const FWhiteoutRuleConfig& GetConfig() const { return Config; }
 	bool IsV11() const { return Config.SchemaVersion >= 4; }
+	bool IsV16() const { return Config.SchemaVersion >= 7; }
 
 	FWSActionPreview Preview(const FWSActionRequest& Request) const;
 	FWSActionResult Commit(FWSActionRequest Request);
@@ -69,6 +71,7 @@ public:
 	void EndGame();
 	bool TryRecordModelCall();
 	void RecordConversationEntry(const FWSConversationEntry& Entry);
+	void CancelUnconfirmedConversation(FGuid SessionId);
 	FWSActionRequirementReport EvaluateActionRequirements(const FWSActionRequest& Request) const;
 	void UpgradePlayerKnowledgeFromUtterance(
 		const TArray<FName>& DisclosedFactIds,

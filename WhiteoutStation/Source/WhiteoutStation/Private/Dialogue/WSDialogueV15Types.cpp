@@ -66,7 +66,7 @@ bool FWSCanonicalIntent::Parse(const FString& Json, const FName ExpectedSpeaker,
 		TEXT("query_type"), TEXT("target_action_id"), TEXT("target_character"), TEXT("polarity"),
 		TEXT("commitment"), TEXT("promise_condition"), TEXT("confidence"),
 		TEXT("needs_clarification"), TEXT("evidence_spans"), TEXT("resolved_from_turn"),
-		TEXT("clarification"), TEXT("terms"), TEXT("proposal_id"), TEXT("proposal_version")};
+		TEXT("clarification"), TEXT("terms"), TEXT("proposal_id"), TEXT("proposal_version"), TEXT("question_purpose"), TEXT("requested_actor_id")};
 	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Root->Values)
 	{
 		if (!Fields.Contains(Pair.Key)) { Error = TEXT("intent_unexpected_field"); return false; }
@@ -132,6 +132,10 @@ bool FWSCanonicalIntent::Parse(const FString& Json, const FName ExpectedSpeaker,
 	Candidate.Frame.TargetActionId = FName(*Action);
 	Candidate.Frame.Confidence = Confidence;
 	Candidate.Frame.Source = TEXT("canonical_v15");
+	Root->TryGetStringField(TEXT("question_purpose"), Candidate.Frame.QuestionPurpose);
+	FString Actor; Root->TryGetStringField(TEXT("requested_actor_id"), Actor);
+	if (!Actor.IsEmpty() && !Characters.Contains(Actor)) { Error = TEXT("intent_invalid_actor"); return false; }
+	Candidate.Frame.RequestedActorId = FName(*Actor);
 	Candidate.Polarity = Polarities.FindChecked(PolarityText);
 	Candidate.Commitment = Commitments.FindChecked(CommitmentText);
 	Candidate.PromiseCondition = FName(*Promise);
@@ -226,7 +230,7 @@ void FWSCanonicalIntent::ApplyTo(FWSActionRequest& Request) const
 	Request.SemanticFrame.TopicId = TopicId;
 	Request.SemanticFrame.DeadlineSeconds = DeadlineSeconds;
 	Request.SemanticFrame.bCanonicalIntentValidated = true;
-	if (TopicId == TEXT("medical")) Request.SemanticFrame.TargetFactId = TEXT("FACT_HAND_INJURY");
+	if (TopicId == TEXT("medical") && Frame.TargetCharacter == EWSCharacterId::GuHeng) Request.SemanticFrame.TargetFactId = TEXT("FACT_HAND_INJURY");
 	else if (TopicId == TEXT("medical_alternative")) Request.SemanticFrame.TargetFactId = TEXT("FACT_HEAT_PACK");
 	else if (TopicId == TEXT("relay_alternative")) Request.SemanticFrame.TargetFactId = TEXT("FACT_RELAY_COMPATIBILITY");
 	else if (TopicId == TEXT("restart_evidence")) Request.SemanticFrame.TargetFactId = TEXT("FACT_FORCED_RESTART_CONFIRMED");

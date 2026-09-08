@@ -806,7 +806,7 @@ namespace
 bool UWSRoleplayKnowledgeRepository::LoadDefault(FString& OutError)
 {
 	return LoadFromDirectory(
-		FPaths::ProjectContentDir() / TEXT("Dialogue/v1.5"),
+		FPaths::ProjectContentDir() / TEXT("Dialogue/v1.6"),
 		OutError);
 }
 

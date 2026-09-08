@@ -41,7 +41,7 @@ bool FWhiteoutV15MessageStateTest::RunTest(const FString& Parameters)
 	};
 	FGuid Session = FGuid::NewGuid(); FWSCanonicalIntent Resolved; FString Status;
 	const auto Resolve = [&](const FWSCanonicalIntent& P)
-	{ return State->ResolveParsedOnlineMessage(TEXT("talk_gu_heng"), TEXT("构造解析结果状态机测试"), Session, P, Resolved, Status); };
+	{ return State->ResolveParsedOnlineMessage(TEXT("talk_gu_heng"), State->GetDialogueTurnsUsed(TEXT("talk_gu_heng")) >= 10 && P.Commitment == EWSCommitmentIntent::ConfirmPending ? TEXT("确认") : TEXT("构造解析结果状态机测试"), Session, P, Resolved, Status); };
 	const auto Request = [&]()
 	{
 		FWSActionRequest R; Resolved.ApplyTo(R); R.ActionId = TEXT("talk_gu_heng");
@@ -66,7 +66,7 @@ bool FWhiteoutV15MessageStateTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Local question retained"), Resolved.Notice.Contains(TEXT("具体")));
 	const auto FirstRequest = Request(); const auto First = State->SubmitDialogueAction(FirstRequest);
 	TestTrue(TEXT("Pressure commits"), First.bCommitted);
-	TestEqual(TEXT("One AP for first actual response"), State->GetStateSnapshot().PhaseActionPoints, InitialAP - 1);
+	TestEqual(TEXT("Zero AP for every response"), State->GetStateSnapshot().PhaseActionPoints, InitialAP);
 	TestEqual(TEXT("No invented repair"), State->GetStateSnapshot().Tasks.GeneratorProgress, 0);
 	const int32 Forced = State->GetStateSnapshot().Flags.ForcedActionCount;
 	TestEqual(TEXT("Pressure has one rule effect"), Forced, 1);
@@ -77,17 +77,18 @@ bool FWhiteoutV15MessageStateTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Pressure effect deduplicates across session"), State->GetStateSnapshot().Flags.ForcedActionCount, Forced);
 	auto Unclear = Ask(TEXT("unknown")); Unclear.bNeedsClarification = true;
 	TestFalse(TEXT("Pure clarification never submits"), Resolve(Unclear));
-	TestEqual(TEXT("Clarification preserves two committed turns"), State->DialogueSessions[Session].CommittedTurns, 2);
+	TestEqual(TEXT("Normal clarification counts a turn"), State->DialogueSessions[Session].CommittedTurns, 3);
 
 	FWSCanonicalIntent Mixed; Mixed.Parts = {Ask(TEXT("person")), Ask(TEXT("generator")), Propose(EWSHeatingZone::Kitchen, 1)};
 	TestTrue(TEXT("Questions accompanying a proposal survive"), Resolve(Mixed));
 	TestEqual(TEXT("Two response clauses retained"), Resolved.Parts.Num(), 2);
 	TestTrue(TEXT("Third mixed message commits"), Submit().bCommitted);
-	TestEqual(TEXT("Two questions consume one turn"), State->DialogueSessions[Session].CommittedTurns, 3);
-	TestEqual(TEXT("No extra AP for sub-intents"), State->GetStateSnapshot().PhaseActionPoints, InitialAP - 1);
+	TestEqual(TEXT("Two questions consume one turn"), State->DialogueSessions[Session].CommittedTurns, 4);
+	TestEqual(TEXT("No extra AP for sub-intents"), State->GetStateSnapshot().PhaseActionPoints, InitialAP);
 	TestTrue(TEXT("Third response exposes pending confirmation"), State->GetLatestDialogue().bPendingConfirmation);
 	TestTrue(TEXT("Pending terms remain kitchen"), State->DialogueSessions[Session].PendingCommitment->Terms[0].Zone == EWSHeatingZone::Kitchen);
-	TestFalse(TEXT("Fourth free-chat message rejected"), Resolve(Ask(TEXT("person"))));
+	for (int32 I = 4; I < 10; ++I) TestTrue(TEXT("Remaining ordinary turns commit"), Resolve(Ask(TEXT("person"))) && Submit().bCommitted);
+	TestFalse(TEXT("Eleventh free-chat message rejected"), Resolve(Ask(TEXT("person"))));
 	FWSActionRequest ForgedClosure; Ask(TEXT("person")).ApplyTo(ForgedClosure);
 	ForgedClosure.ActionId = TEXT("talk_gu_heng"); ForgedClosure.DialogueSessionId = Session;
 	ForgedClosure.bConfirmationClosure = true;
@@ -96,9 +97,10 @@ bool FWhiteoutV15MessageStateTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Closure flag is authoritative"), Resolved.bConfirmationClosure);
 	const auto ClosingRequest = Request();
 	TestTrue(TEXT("Closure commits"), State->SubmitDialogueAction(ClosingRequest).bCommitted);
-	TestEqual(TEXT("Closure does not count fourth turn"), State->DialogueSessions[Session].CommittedTurns, 3);
-	TestEqual(TEXT("Closure does not charge AP"), State->GetStateSnapshot().PhaseActionPoints, InitialAP - 1);
+	TestEqual(TEXT("Closure does not count eleventh turn"), State->DialogueSessions[Session].CommittedTurns, 10);
+	TestEqual(TEXT("Closure does not charge AP"), State->GetStateSnapshot().PhaseActionPoints, InitialAP);
 	TestEqual(TEXT("One promise registered"), State->GetStateSnapshot().Promises.Num(), 1);
+	if (!TestTrue(TEXT("Promise exists for subsequent persistence checks"), !State->GetStateSnapshot().Promises.IsEmpty())) { Game->Shutdown(); Game->RemoveFromRoot(); return false; }
 	TestTrue(TEXT("Correct heating zone persisted"), State->GetStateSnapshot().Promises[0].Terms.Zone == EWSHeatingZone::Kitchen);
 	TestFalse(TEXT("Committed confirmation consumed pending item"), State->DialogueSessions[Session].PendingCommitment.IsSet());
 	TestFalse(TEXT("Duplicate closure cannot register twice"), State->SubmitDialogueAction(ClosingRequest).bCommitted);
@@ -201,7 +203,7 @@ bool FWhiteoutV15MessageStateTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Multi-term confirmation resolves"), Resolve(Confirm()));
 	TestTrue(TEXT("Multi-term confirmation commits once"), Submit().bCommitted);
 	TestEqual(TEXT("Two obligations registered"), State->GetStateSnapshot().Promises.Num(), 2);
-	TestEqual(TEXT("Multi-term registration consumes one turn"), State->DialogueSessions[Session].CommittedTurns, 1);
+	TestEqual(TEXT("Clarifications, proposal and ordinary mixed confirmation each count"), State->DialogueSessions[Session].CommittedTurns, 4);
 	Reset(); Session = FGuid::NewGuid();
 	auto Conflict = Propose(EWSHeatingZone::Kitchen, 1);
 	Conflict.Terms.Append(Propose(EWSHeatingZone::RepairRoom, 1).Terms);
@@ -210,15 +212,18 @@ bool FWhiteoutV15MessageStateTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("First actual turn"), Resolve(Ask(TEXT("person"))) && Submit().bCommitted);
 	TestTrue(TEXT("Second actual turn"), Resolve(Ask(TEXT("generator"))) && Submit().bCommitted);
 	TestFalse(TEXT("Third-slot pure proposal is not a committed turn"), Resolve(Propose(EWSHeatingZone::RepairRoom, 1)));
-	TestEqual(TEXT("Still two turns after proposal"), State->DialogueSessions[Session].CommittedTurns, 2);
+	TestEqual(TEXT("Proposal counts the third turn"), State->DialogueSessions[Session].CommittedTurns, 3);
 	TestTrue(TEXT("Third-slot confirmation resolves"), Resolve(Confirm()));
 	TestTrue(TEXT("Third-slot confirmation commits"), Submit().bCommitted);
-	TestEqual(TEXT("Exactly three turns after confirmation"), State->DialogueSessions[Session].CommittedTurns, 3);
+	TestEqual(TEXT("Non-pure synthetic confirmation counts an ordinary turn"), State->DialogueSessions[Session].CommittedTurns, 4);
 	Reset(); Session = FGuid::NewGuid();
 	TestTrue(TEXT("Player learns diagnosis through a committed transaction"),
 		State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_diagnosis"), FGuid::NewGuid()).bCommitted);
 	TestTrue(TEXT("Actual reassurance supplies conversation memory"),
 		State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_reassure"), FGuid::NewGuid()).bCommitted);
+	FWSActionRequest Rest; Rest.ActionId = TEXT("rest"); Rest.RestTarget = EWSCharacterId::YeCheng; Rest.RestLocation = EWSCharacterLocation::MedicalRoom;
+	TestTrue(TEXT("Actual rest restores doctor stamina"), State->CommitAction(Rest).bCommitted);
+	TestTrue(TEXT("Actual second rest reduces doctor pressure"), State->CommitAction(Rest).bCommitted);
 	auto Diagnosis = Ask(TEXT("medical")); Diagnosis.SpeakerId = TEXT("ye_cheng");
 	Diagnosis.Frame.QueryType = EWSDialogueQueryType::Status; Diagnosis.Frame.TargetActionId = TEXT("repair_generator");
 	auto Alternative = Ask(TEXT("medical_alternative")); Alternative.SpeakerId = TEXT("ye_cheng");

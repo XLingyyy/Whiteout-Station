@@ -3,8 +3,18 @@
 #include "CoreMinimal.h"
 #include "State/WindStationTypes.h"
 
+struct FWSCharacterStateView
+{
+	bool bInjuryKnown = false;
+	EWSInjurySeverity Injury = EWSInjurySeverity::Normal;
+	FString TreatmentStatus = TEXT("unknown");
+	bool bTemporarySupport = false;
+	bool bBandaged = false;
+};
+
 struct WHITEOUTSTATION_API FWSKnowledgePolicy
 {
+	static FWSCharacterStateView CharacterState(EWSCharacterId Id, const FWSGameState& State, bool bMayDiscloseInjury);
 	static bool PlayerKnows(
 		const FWSGameState& State,
 		FName FactId,
