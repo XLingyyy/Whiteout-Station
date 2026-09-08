@@ -71,7 +71,7 @@ public:
 	void EndGame();
 	bool TryRecordModelCall();
 	void RecordConversationEntry(const FWSConversationEntry& Entry);
-	void CancelUnconfirmedConversation(FGuid SessionId);
+	void SetPendingConversationStatus(FGuid SessionId, const FString& Status);
 	FWSActionRequirementReport EvaluateActionRequirements(const FWSActionRequest& Request) const;
 	void UpgradePlayerKnowledgeFromUtterance(
 		const TArray<FName>& DisclosedFactIds,

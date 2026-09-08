@@ -44,6 +44,7 @@ bool UWindStationStateSubsystem::ResolveParsedOnlineMessage(FName ActionId, cons
 	FWSDialogueSessionRuntimeState& Session = DialogueSessions.FindOrAdd(SessionId);
 	if (!Session.ActionId.IsNone() && (Session.ActionId != ActionId || Session.DayPhase != RulesEngine.GetState().DayPhase))
 	{ Status = TEXT("会话状态已变化。"); return false; }
+	Session.RollbackProposal();
 	Session.ActionId = ActionId; Session.DayPhase = RulesEngine.GetState().DayPhase;
 	Session.LatestMessageId = FGuid::NewGuid(); if (!bMessageCounted) ++Session.MessageCount; Session.ResolvedMessage.Reset();
 	Session.LastParsedMessage = Parsed;
@@ -63,6 +64,8 @@ bool UWindStationStateSubsystem::ResolveParsedOnlineMessage(FName ActionId, cons
 		|| PureControl(Text) == EWSCommitmentIntent::None
 		|| (Parts[0].Commitment != EWSCommitmentIntent::ConfirmPending && Parts[0].Commitment != EWSCommitmentIntent::RejectPending)))
 	{ Status = TEXT("本局交谈额度已用完，仅可输入“确认”或“取消”收尾当前提议。"); return false; }
+	Session.ProposalBeforeMessage = Session.PendingCommitment;
+	Session.bProposalChangePending = true;
 	TArray<FWSCanonicalIntent> Ready;
 	TArray<FString> Notices;
 	for (FWSCanonicalIntent Part : Parts)
@@ -90,7 +93,7 @@ bool UWindStationStateSubsystem::ResolveParsedOnlineMessage(FName ActionId, cons
 				{ Notices.Add(TEXT("确认引用已失效，请按当前提议及版本重新确认。")); continue; }
 				if (!Part.Terms.IsEmpty() && !SameTerms(Part.Terms, Session.PendingCommitment->Terms))
 				{
-					if (Closing) { Notices.Add(TEXT("三轮已结束，修改条款需要另行讨论；原提议未确认。")); continue; }
+					if (Closing) { Notices.Add(TEXT("本局交谈额度已用完，原提议未确认。")); continue; }
 					Part.Commitment = EWSCommitmentIntent::Proposed;
 				}
 				else
@@ -161,6 +164,8 @@ bool UWindStationStateSubsystem::ResolveParsedOnlineMessage(FName ActionId, cons
 	Status = FString::Join(Notices, TEXT("\n"));
 	if (Ready.IsEmpty())
 	{
+		Session.bProposalChangePending = false; Session.ProposalBeforeMessage.Reset();
+		RulesEngine.SetPendingConversationStatus(SessionId, Session.PendingCommitment.IsSet() ? TEXT("superseded") : TEXT("cancelled"));
 		FWSConversationEntry Entry;
 		Entry.EntryId = Session.LatestMessageId; Entry.SessionId = SessionId;
 		Entry.SpeakerId = ActionId == TEXT("talk_ye_cheng") ? TEXT("ye_cheng") : TEXT("gu_heng");
@@ -214,6 +219,7 @@ void UWindStationStateSubsystem::ResolveOnlineIntent(FName ActionId, const FStri
 	{ Completion(false, {}, TEXT("会话已失效，请重新交谈。")); return; }
 	++Session.MessageCount; Session.ResolvedMessage.Reset(); Session.LastParsedMessage.Reset(); Session.LatestMessageId.Invalidate();
 	Session.ActionId = ActionId; Session.DayPhase = RulesEngine.GetState().DayPhase;
+	Session.CommittedTurns = GetDialogueTurnsUsed(ActionId);
 	TArray<FString> History = BuildOnlineConversationHistory(ActionId, SessionId);
 	History.Add(FString::Printf(TEXT("current_day_phase=%d (morning=0, afternoon=1, dusk=2)"), static_cast<int32>(Session.DayPhase)));
 	if (Session.PendingCommitment.IsSet())

@@ -212,10 +212,21 @@ bool FWhiteoutV15MessageStateTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("First actual turn"), Resolve(Ask(TEXT("person"))) && Submit().bCommitted);
 	TestTrue(TEXT("Second actual turn"), Resolve(Ask(TEXT("generator"))) && Submit().bCommitted);
 	TestFalse(TEXT("Third-slot pure proposal is not a committed turn"), Resolve(Propose(EWSHeatingZone::RepairRoom, 1)));
-	TestEqual(TEXT("Proposal counts the third turn"), State->DialogueSessions[Session].CommittedTurns, 3);
+	TestEqual(TEXT("Prior clarification plus two replies and proposal count four turns"), State->DialogueSessions[Session].CommittedTurns, 4);
 	TestTrue(TEXT("Third-slot confirmation resolves"), Resolve(Confirm()));
 	TestTrue(TEXT("Third-slot confirmation commits"), Submit().bCommitted);
-	TestEqual(TEXT("Non-pure synthetic confirmation counts an ordinary turn"), State->DialogueSessions[Session].CommittedTurns, 4);
+	TestEqual(TEXT("Non-pure synthetic confirmation counts an ordinary turn"), State->DialogueSessions[Session].CommittedTurns, 5);
+	Reset(); Session = FGuid::NewGuid();
+	TestFalse(TEXT("Original proposal is a local counted response"), Resolve(Propose(EWSHeatingZone::Kitchen, 1)));
+	const auto OriginalProposal = State->DialogueSessions[Session].PendingCommitment.GetValue();
+	FWSCanonicalIntent FailedMixed; FailedMixed.Parts = {Ask(TEXT("person")), Propose(EWSHeatingZone::RepairRoom, 1)};
+	TestTrue(TEXT("Mixed amendment resolves before expression"), Resolve(FailedMixed));
+	State->SetDialogueRealizeTestHook([](const FWSPreparedDialogue& P, FWSDialogueRealizeTestCallback Callback)
+	{ auto Reply = P.LocalFallback; Reply.Utterance = TEXT("invalid mocked expression"); Callback(Reply); });
+	TestFalse(TEXT("Failed expression rejects the whole mixed message"), Submit().bCommitted);
+	TestEqual(TEXT("Failed amendment restores original proposal version"), State->DialogueSessions[Session].PendingCommitment->ProposalVersion, OriginalProposal.ProposalVersion);
+	TestTrue(TEXT("Failed amendment restores original terms"), State->DialogueSessions[Session].PendingCommitment->Terms[0].SameTerms(OriginalProposal.Terms[0]));
+	TestEqual(TEXT("Failed amendment consumes no turn"), State->GetDialogueTurnsUsed(TEXT("talk_gu_heng")), 1);
 	Reset(); Session = FGuid::NewGuid();
 	TestTrue(TEXT("Player learns diagnosis through a committed transaction"),
 		State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_diagnosis"), FGuid::NewGuid()).bCommitted);

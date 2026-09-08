@@ -24,6 +24,12 @@ namespace
 			else if (Text == TEXT("@reopen")) { State->EndDialogueSession(Session); Session = FGuid::NewGuid(); Success = true; }
 			else if (Text == TEXT("@talk_gu")) { State->EndDialogueSession(Session); Session = FGuid::NewGuid(); Action = TEXT("talk_gu_heng"); Success = true; }
 			else if (Text == TEXT("@talk_ye")) { State->EndDialogueSession(Session); Session = FGuid::NewGuid(); Action = TEXT("talk_ye_cheng"); Success = true; }
+			else if (Text == TEXT("@rest_doctor"))
+			{
+				FWSActionRequest Request; Request.ActionId = TEXT("rest"); Request.RestTarget = EWSCharacterId::YeCheng; Request.RestLocation = EWSCharacterLocation::MedicalRoom;
+				Success = State->CommitAction(Request).bCommitted;
+			}
+			else if (Text == TEXT("@reveal_heatpack")) Success = State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_alternative"), FGuid::NewGuid()).bCommitted;
 			else if (Text == TEXT("@treat_full") || Text == TEXT("@treat_support") || Text == TEXT("@bandage"))
 			{
 				FWSActionRequest Request; Request.ActionId = TEXT("treat_character"); Request.TreatmentTarget = EWSCharacterId::GuHeng;
@@ -262,6 +268,15 @@ void AWhiteoutGameMode::RunV15DialogueProbe(const FString& InputPath, const int3
 		bool SetupCooperation = false; Input->TryGetBoolField(TEXT("setup_cooperation"), SetupCooperation);
 		if (SetupCooperation && !State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_reassure"), FGuid::NewGuid()).bCommitted)
 		{ Finish(false, TEXT("authored_cooperation_setup_failed")); return; }
+		bool IncorrectHistory = false; Input->TryGetBoolField(TEXT("setup_incorrect_history"), IncorrectHistory);
+		if (IncorrectHistory)
+		{
+			FWSConversationEntry Entry; Entry.EntryId = FGuid::NewGuid(); Entry.SessionId = Session;
+			Entry.SpeakerId = TEXT("ye_cheng"); Entry.PlayerLine = TEXT("你给顾衡治疗了吗？");
+			Entry.NpcLine = TEXT("已经处理过了，我刚给他的手做了完整治疗。");
+			Entry.bCommitted = true; Entry.bCountedTurn = false; Entry.ReplySource = TEXT("legacy_error_test_fixture");
+			State->RulesEngine.RecordConversationEntry(Entry);
+		}
 		int32 SetupTurns = 0; Input->TryGetNumberField(TEXT("setup_turns"), SetupTurns);
 		for (int32 I = 0; I < SetupTurns; ++I)
 		{

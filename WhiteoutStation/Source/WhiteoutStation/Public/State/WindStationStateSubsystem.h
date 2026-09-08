@@ -20,7 +20,14 @@ struct FWSDialogueSessionRuntimeState
 	bool bPositiveRewardApplied = false;
 	TSet<FName> AppliedEffectKeys;
 	TOptional<FWSCanonicalIntent> PendingCommitment;
+	TOptional<FWSCanonicalIntent> ProposalBeforeMessage;
+	bool bProposalChangePending = false;
 	int64 PendingCommitmentRevision = 0;
+	void RollbackProposal()
+	{
+		if (bProposalChangePending) PendingCommitment = ProposalBeforeMessage;
+		ProposalBeforeMessage.Reset(); bProposalChangePending = false;
+	}
 	int32 MessageCount = 0;
 	FGuid LatestMessageId;
 	TOptional<FWSCanonicalIntent> ResolvedMessage;
@@ -170,6 +177,7 @@ public:
 	const FWhiteoutRulesEngine& GetRulesEngine() const { return RulesEngine; }
 
 private:
+	friend class AWhiteoutGameMode;
 	friend class FWhiteoutV15MessageStateTest;
 	static const FString SaveSlot;
 	static const FString LegacySaveSlotV15;

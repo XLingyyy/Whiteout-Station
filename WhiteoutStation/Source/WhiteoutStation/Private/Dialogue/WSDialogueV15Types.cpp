@@ -20,7 +20,7 @@ FWSDialogueOutcome FWSDialogueOutcome::Combine(const TArray<FWSDialogueOutcome>&
 		Result.FinalReply.Assertions.Append(Part.FinalReply.Assertions);
 		Result.FinalReply.bFallback |= Part.FinalReply.bFallback;
 	}
-	if (!Notice.IsEmpty()) Result.FinalReply.Utterance += TEXT("\n") + Notice;
+	Result.FinalReply.SystemNotice = Notice;
 	Result.FinalReply.DisclosedFactIds = Result.DisclosedFactIds;
 	Result.FinalReply.ReferencedFactIds = Result.DisclosedFactIds;
 	Result.AnswerSource = Result.FinalReply.bFallback ? TEXT("mixed_authored_recovery_v15") : TEXT("controlled_multi_v15");
@@ -192,7 +192,7 @@ bool FWSCanonicalIntent::Parse(const FString& Json, const FName ExpectedSpeaker,
 		Candidate.Commitment = EWSCommitmentIntent::None;
 		Candidate.PromiseCondition = NAME_None;
 		Candidate.Terms.Reset();
-		Candidate.bNeedsClarification = true;
+		Candidate.bNeedsClarification |= bPromise || Candidate.Frame.QueryType == EWSDialogueQueryType::Unknown;
 	}
 	Out = MoveTemp(Candidate);
 	Error = TEXT("ok");

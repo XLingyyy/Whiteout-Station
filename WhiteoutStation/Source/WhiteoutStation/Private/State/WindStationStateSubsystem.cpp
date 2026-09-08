@@ -508,7 +508,7 @@ void UWindStationStateSubsystem::EndDialogueSession(
 	if (bHasPendingDialogue && PendingDialogue.OriginalRequest.DialogueSessionId == DialogueSessionId)
 		CancelPendingDialogue();
 	if (bHasPendingOnlineIntent) CancelPendingDialogue();
-	RulesEngine.CancelUnconfirmedConversation(DialogueSessionId);
+	RulesEngine.SetPendingConversationStatus(DialogueSessionId, TEXT("cancelled"));
 	DialogueSessions.Remove(DialogueSessionId);
 	SaveSnapshot();
 }
@@ -605,10 +605,14 @@ void UWindStationStateSubsystem::RecordCommittedDialogueSession(
 	if (Request.OnlineMessageId.IsValid())
 	{
 		Session.CommittedMessages.Add(Request.OnlineMessageId);
+		Session.bProposalChangePending = false; Session.ProposalBeforeMessage.Reset();
 		for (const auto& Part : Request.DialogueParts)
 			if (Session.PendingCommitment.IsSet() && Part.ConfirmProposalId == Session.PendingCommitment->ProposalId
 				&& Part.ConfirmProposalVersion == Session.PendingCommitment->ProposalVersion)
+			{
+				RulesEngine.SetPendingConversationStatus(Request.DialogueSessionId, TEXT("confirmed"));
 				Session.PendingCommitment.Reset();
+			}
 		Session.ResolvedMessage.Reset();
 	}
 	Session.PaidAP = 0;
@@ -870,6 +874,7 @@ FWSActionResult UWindStationStateSubsystem::SubmitDialogueAction(
 		Rejected.APBefore = RulesEngine.GetState().ActionPoints;
 		Rejected.APAfter = Rejected.APBefore;
 		Rejected.ReasonCode = SessionReason;
+		if (auto* Session = DialogueSessions.Find(Request.DialogueSessionId)) Session->RollbackProposal();
 		CompleteDialogueSubmission(Rejected, MoveTemp(Completion));
 		return Rejected;
 	}
@@ -888,6 +893,7 @@ FWSActionResult UWindStationStateSubsystem::SubmitDialogueAction(
 	FWSActionResult Result = PrepareDialogue(NormalizedRequest);
 	if (!Result.bPendingDialogue)
 	{
+		if (auto* Session = DialogueSessions.Find(Request.DialogueSessionId)) Session->RollbackProposal();
 		CompleteDialogueSubmission(Result, MoveTemp(CapturingCompletion));
 		return Result;
 	}
@@ -1379,26 +1385,12 @@ void UWindStationStateSubsystem::HandlePreparedDialogueOutcome(
 	FWSActionResult Result;
 	if (!CommitDialogueOutcome(Prepared, Outcome, Result))
 	{
+		if (auto* Session = DialogueSessions.Find(Prepared.OriginalRequest.DialogueSessionId)) Session->RollbackProposal();
 		TFunction<void(const FWSActionResult&)> Completion =
 			MoveTemp(PendingDialogueCompletion);
 		bHasPendingDialogue = false;
 		PendingDialogue = FWSPreparedDialogue();
 		++DialogueGeneration;
-		if (Result.ReasonCode == EWSReasonCode::DialogueStateChanged)
-		{
-			FWSAgentReply RetryReply = Prepared.LocalFallback;
-			RetryReply.Utterance = TEXT("情况刚刚有变化。按现在的状态再问一次。");
-			RetryReply.SemanticSpine = RetryReply.Utterance;
-			RetryReply.PersonaTail.Reset();
-			RetryReply.ReferencedFactIds.Reset();
-			RetryReply.PlannedDisclosureFacts.Reset();
-			RetryReply.DisclosedFactIds.Reset();
-			RetryReply.AnswerSource = TEXT("stale_retry");
-			RetryReply.Provider = TEXT("preset");
-			RetryReply.ValidationReason = TEXT("state_revision_changed");
-			LatestDialogue = RetryReply;
-			BroadcastDialogueLine(LatestDialogue);
-		}
 		CompleteDialogueSubmission(Result, MoveTemp(Completion));
 		return;
 	}
@@ -1618,6 +1610,7 @@ void UWindStationStateSubsystem::AbortPendingDialogue(
 	FWSActionResult Result;
 	if (bHasPendingDialogue)
 	{
+		if (auto* Session = DialogueSessions.Find(PendingDialogue.OriginalRequest.DialogueSessionId)) Session->RollbackProposal();
 		Result.ActionId = PendingDialogue.OriginalRequest.ActionId;
 		Result.TransactionId = PendingDialogue.TransactionId;
 		Result.DialogueAct = PendingDialogue.OriginalRequest.DialogueAct;

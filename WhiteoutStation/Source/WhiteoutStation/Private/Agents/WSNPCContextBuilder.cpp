@@ -146,7 +146,8 @@ namespace WSNPCContextBuilderPrivate
 						&& Frame.TargetCharacter == EWSCharacterId::GuHeng
 						&& Frame.TargetFactId == TEXT("FACT_HAND_INJURY")
 						&& (Frame.QueryType == EWSDialogueQueryType::Status
-							|| Frame.QueryType == EWSDialogueQueryType::Evidence)));
+							|| Frame.QueryType == EWSDialogueQueryType::Evidence
+							|| (State.RulesSchemaVersion >= 7 && Frame.QueryType == EWSDialogueQueryType::Requirements))));
 		}
 		if (Predicate == TEXT("gu_heng_diagnosed")) return State.Flags.bGuHengDiagnosed;
 		if (Predicate == TEXT("gu_heng_treated")) return State.Flags.bGuHengTreated;

@@ -99,9 +99,9 @@ bool FWSConversationValidator::ApplyVerdict(const FString& Json, const FWSPrepar
 	{ Error = TEXT("verification_schema_invalid"); return false; }
 	if (!Safe || !Issues.IsEmpty() || !UniqueSubset(Goals, Prepared.AnswerGoalIds) || Goals.Num() != Prepared.AnswerGoalIds.Num())
 	{ Error = TEXT("verification_rejected"); return false; }
-	TArray<FString> Referenced;
-	for (const auto Id : Outcome.FinalReply.ReferencedKnowledgeIds) Referenced.Add(Id.ToString());
-	if (!UniqueSubset(Expressed, Referenced)) { Error = TEXT("verification_fact_mismatch"); return false; }
+	TArray<FString> Authorized;
+	for (const auto& Pair : Prepared.NaturalFacts) Authorized.Add(Pair.Key.ToString());
+	if (!UniqueSubset(Expressed, Authorized)) { Error = TEXT("verification_fact_mismatch"); return false; }
 	if (!Correction.IsEmpty())
 	{
 		if (!FGuid::Parse(Correction, Outcome.CorrectsEntryId)

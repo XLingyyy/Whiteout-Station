@@ -139,6 +139,8 @@ void UWSDialoguePanelWidget::Refresh()
 		if (DisplayedEntryCount != Entries.Num())
 		{
 			DisplayedEntryCount = Entries.Num();
+			if (!Entries.IsEmpty() && Entries.Last().SessionId == SessionId
+				&& Entries.Last().PlayerLine == Input->GetText().ToString().TrimStartAndEnd()) Input->SetText(FText::GetEmpty());
 			if (!Entries.IsEmpty())
 			{
 				History.Reset();

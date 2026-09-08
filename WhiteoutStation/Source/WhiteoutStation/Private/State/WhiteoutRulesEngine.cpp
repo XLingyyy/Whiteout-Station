@@ -819,7 +819,9 @@ FWSActionResult FWhiteoutRulesEngine::CommitInternal(
 	}
 	Result.TransactionId = Request.TransactionId;
 
-	if (State.CommittedTransactions.Contains(Request.TransactionId))
+	if (State.CommittedTransactions.Contains(Request.TransactionId)
+		|| (IsV16() && Request.OnlineMessageId.IsValid() && State.ConversationHistory.ContainsByPredicate(
+			[&](const auto& Entry) { return Entry.EntryId == Request.OnlineMessageId; })))
 	{
 		Result.ReasonCode = EWSReasonCode::DuplicateTransaction;
 		return Result;
@@ -1813,10 +1815,10 @@ void FWhiteoutRulesEngine::RecordConversationEntry(const FWSConversationEntry& E
 	State.ConversationHistory.Add(Entry);
 }
 
-void FWhiteoutRulesEngine::CancelUnconfirmedConversation(FGuid SessionId)
+void FWhiteoutRulesEngine::SetPendingConversationStatus(FGuid SessionId, const FString& Status)
 {
 	for (auto& Entry : State.ConversationHistory)
-		if (Entry.SessionId == SessionId && Entry.ControlStatus == TEXT("pending")) Entry.ControlStatus = TEXT("cancelled");
+		if (Entry.SessionId == SessionId && Entry.ControlStatus == TEXT("pending")) Entry.ControlStatus = Status;
 }
 
 FWSActionResult FWhiteoutRulesEngine::CommitV11(
@@ -1835,7 +1837,9 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 		Request.TransactionId = FGuid::NewGuid();
 	}
 	Result.TransactionId = Request.TransactionId;
-	if (State.CommittedTransactions.Contains(Request.TransactionId))
+	if (State.CommittedTransactions.Contains(Request.TransactionId)
+		|| (IsV16() && Request.OnlineMessageId.IsValid() && State.ConversationHistory.ContainsByPredicate(
+			[&](const auto& Entry) { return Entry.EntryId == Request.OnlineMessageId; })))
 	{
 		Result.ReasonCode = EWSReasonCode::DuplicateTransaction;
 		return Result;
