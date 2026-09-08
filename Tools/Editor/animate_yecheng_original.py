@@ -5,15 +5,16 @@ import json
 import unreal
 
 ROOT=Path(unreal.Paths.project_dir()).resolve().parent
-DEST='/Game/WindStation/Art/AnimeNPC/YeChengOriginal'
+VARIANT=globals().get('YECHENG_VARIANT','Original')
+DEST='/Game/WindStation/Art/AnimeNPC/YeCheng'+VARIANT
 source=runpy.run_path(str(ROOT/'Tools/Editor/generate_v10_npc_animations.py'))
-mesh=unreal.load_asset(DEST+'/SK_YeCheng_Original')
+mesh=unreal.load_asset(DEST+'/SK_YeCheng_'+VARIANT)
 assert mesh
 skel=mesh.skeleton
 reference=skel.get_reference_pose()
 results={}
 for suffix,performance in source['PERFORMANCES'].items():
-    name='AN_YeCheng_Original_'+suffix
+    name='AN_YeCheng_'+VARIANT+'_'+suffix
     path=DEST+'/Animations/'+name
     animation=unreal.load_asset(path)
     if animation is None:
@@ -55,5 +56,5 @@ for suffix,performance in source['PERFORMANCES'].items():
             assert all(abs(v)<300 for v in sample[name]),(suffix,name,sample[name])
         snapshots.append(sample)
     results[suffix]={'length':animation.sequence_length,'samples':snapshots}
-(ROOT/'SourceAssets/Characters/YeChengOriginal/animation_validation.json').write_text(json.dumps(results,indent=2),encoding='utf-8')
-unreal.log('YECHENG_ORIGINAL_ANIMATIONS_COMPLETE')
+(ROOT/f'SourceAssets/Characters/YeCheng{VARIANT}/animation_validation.json').write_text(json.dumps(results,indent=2),encoding='utf-8')
+unreal.log(f'YECHENG_{VARIANT.upper()}_ANIMATIONS_COMPLETE')

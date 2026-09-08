@@ -1,0 +1,6 @@
+{
+  "mesh": "/Game/WindStation/Art/AnimeNPC/YeChengHighDetail/SK_YeCheng_HighDetail.SK_YeCheng_HighDetail",
+  "actor_transforms_preserved": 104,
+  "component_yaw": 0,
+  "actor": "/Game/WindStation/World/MVP_StationMap.MVP_StationMap:PersistentLevel.WSInteractableActor_22"
+}

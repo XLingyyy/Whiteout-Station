@@ -4,11 +4,12 @@ import json
 import unreal
 
 ROOT=Path(unreal.Paths.project_dir()).resolve().parent
-DEST='/Game/WindStation/Art/AnimeNPC/YeChengOriginal'
+VARIANT=globals().get('YECHENG_VARIANT','Original')
+DEST='/Game/WindStation/Art/AnimeNPC/YeCheng'+VARIANT
 task=unreal.AssetImportTask()
-task.filename=str(ROOT/'SourceAssets/Characters/YeChengOriginal/YeCheng_Original.fbx')
+task.filename=str(ROOT/f'SourceAssets/Characters/YeCheng{VARIANT}/YeCheng_{VARIANT}.fbx')
 task.destination_path=DEST
-task.destination_name='SK_YeCheng_Original'
+task.destination_name='SK_YeCheng_'+VARIANT
 task.automated=True
 task.replace_existing=True
 task.save=True
@@ -38,5 +39,5 @@ comp=unreal.new_object(unreal.SkeletalMeshComponent)
 comp.set_skeletal_mesh_asset(mesh)
 pose=mesh.skeleton.get_reference_pose()
 report={'mesh':mesh.get_path_name(),'skeleton':mesh.skeleton.get_path_name(),'materials':[str(m.material_slot_name) for m in mesh.materials],'bones':{str(comp.get_bone_name(i)):str(pose.get_ref_bone_pose(comp.get_bone_name(i),unreal.AnimPoseSpaces.WORLD)) for i in range(comp.get_num_bones())}}
-(ROOT/'Artifacts/yecheng_original_import.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
-unreal.log('YECHENG_ORIGINAL_IMPORT_COMPLETE')
+(ROOT/f'Artifacts/yecheng_{VARIANT.lower()}_import.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+unreal.log(f'YECHENG_{VARIANT.upper()}_IMPORT_COMPLETE')

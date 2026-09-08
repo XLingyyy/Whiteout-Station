@@ -1,0 +1,9 @@
+{
+  "baseline_asset_count": 397,
+  "unchanged_existing_assets": 395,
+  "authorized_changed_assets": [
+    "WhiteoutStation/Content/WindStation/World/MVP_StationMap.umap",
+    "WhiteoutStation/Content/WindStation/Presentation/Characters/DA_WS_YeCheng_AnimeNPC.uasset"
+  ],
+  "actor_transforms_preserved": 104
+}

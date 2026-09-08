@@ -1,0 +1,14 @@
+{
+  "bones": 53,
+  "vertices": 120107,
+  "triangles": 211254,
+  "materials": [
+    "YC_HD_Reference",
+    "YC_HD_Face",
+    "YC_HD_Skin",
+    "YC_HD_Hair",
+    "YC_HD_Gloves",
+    "YC_HD_Fur"
+  ],
+  "height_m": 1.7035511851427145
+}
