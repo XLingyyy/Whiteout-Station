@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>叶澄头部视觉样片 · 同条件评审</title>
+<style>
+body{margin:0;background:#202124;color:#ddd;font:15px/1.6 system-ui,sans-serif}header{padding:20px 28px;border-bottom:1px solid #555}h1{font-size:23px;margin:0 0 8px}p{margin:8px 0}label{display:inline-block;margin:8px 20px 4px 0}select{font:inherit;padding:5px;background:#333;color:white;border:1px solid #777}main{display:grid;grid-template-columns:1fr 1fr;gap:2px;max-width:1600px;margin:0 auto}figure{margin:0}figcaption{padding:12px 20px;background:#292b2d}img{display:block;width:100%;height:auto}aside{padding:16px 28px;max-width:1200px}a{color:#9cbded}.warning{color:#f0bd8c}
+</style>
+<header><h1>叶澄头部视觉样片</h1><p class="warning">最终选用候选 02。结构有局部改善，人物辨识度和眼部观感尚未达到视觉目标。候选 03 有虹膜穿插，已拒绝。</p>
+<label>检查层 <select id="mode"><option value="gray">中性灰形体</option><option value="basecolor">无光照基色</option><option value="final">最终材质</option></select></label>
+<label>固定视角 <select id="view"><option value="front">正面</option><option value="threequarter_left">左三分之四 · 45°</option><option value="threequarter_right">右三分之四 · −45°</option><option value="profile">严格侧面 · 90°</option><option value="shoulders">肩部上下文</option></select></label>
+<label>候选版本 <select id="version"><option value="candidate_02">候选 02 · 本轮交付</option><option value="candidate_01">候选 01 · 嘴周问题</option><option value="candidate_03">候选 03 · 已拒绝</option></select></label>
+</header>
+<main><figure><figcaption>基线：现有模型</figcaption><img id="baseline" alt="固定条件基线模型渲染"></figure><figure><figcaption id="caption">候选 02</figcaption><img id="candidate" alt="同条件候选模型渲染"></figure></main>
+<aside><p>原始模型渲染直接显示，无后期修图。两侧固定相机、灯光、曝光和占屏范围。可通过浏览器缩放查看原图细节。</p><p>本页图像为 Blender 渲染。独立 UE 实时捕获：<a href="UE/compare_dialogue_140cm_90deg.png">140 cm / 90° 对话条件</a> · <a href="UE/compare_inspection_70cm_55deg.png">70 cm / 55° 补充近景</a>。UE 阴影颗粒仍未消除。</p><p><a href="REVIEW.md">制作记录与未解决问题</a> · <a href="YeCheng_HeadLookdev.blend">可编辑工程</a> · <a href="review_conditions.json">固定渲染条件</a></p></aside>
+<script>
+const mode=document.querySelector('#mode'),view=document.querySelector('#view'),version=document.querySelector('#version');
+function update(){const file=mode.value+'_'+view.value+'.png';document.querySelector('#baseline').src='Renders/baseline/'+file;document.querySelector('#candidate').src='Renders/'+version.value+'/'+file;document.querySelector('#caption').textContent=version.selectedOptions[0].textContent;}
+for(const field of [mode,view,version])field.addEventListener('change',update);update();
+</script></html>

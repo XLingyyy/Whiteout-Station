@@ -1,0 +1,276 @@
+{
+  "files": [
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/back.png",
+      "bytes": 1336369,
+      "lfs_pointer": false,
+      "dimensions": [
+        1000,
+        1300
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/bound_face.png",
+      "bytes": 1453126,
+      "lfs_pointer": false,
+      "dimensions": [
+        1000,
+        1300
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/bound_idle.png",
+      "bytes": 1528747,
+      "lfs_pointer": false,
+      "dimensions": [
+        1000,
+        1300
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/bound_side.png",
+      "bytes": 1396206,
+      "lfs_pointer": false,
+      "dimensions": [
+        1000,
+        1300
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/bound_walk.png",
+      "bytes": 1533615,
+      "lfs_pointer": false,
+      "dimensions": [
+        1000,
+        1300
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/face.png",
+      "bytes": 1423692,
+      "lfs_pointer": false,
+      "dimensions": [
+        1000,
+        1300
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/FacePaint.png",
+      "bytes": 1199398,
+      "lfs_pointer": false,
+      "dimensions": [
+        1230,
+        1278
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/face_side.png",
+      "bytes": 1399067,
+      "lfs_pointer": false,
+      "dimensions": [
+        1000,
+        1300
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/front.png",
+      "bytes": 1460126,
+      "lfs_pointer": false,
+      "dimensions": [
+        1000,
+        1300
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/quarter.png",
+      "bytes": 1428282,
+      "lfs_pointer": false,
+      "dimensions": [
+        1000,
+        1300
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Reference_back.png",
+      "bytes": 916921,
+      "lfs_pointer": false,
+      "dimensions": [
+        1086,
+        1448
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Reference_front.png",
+      "bytes": 1052609,
+      "lfs_pointer": false,
+      "dimensions": [
+        1086,
+        1448
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/YC_HD_Face_BaseColor.png",
+      "bytes": 872271,
+      "lfs_pointer": false,
+      "dimensions": [
+        2048,
+        2048
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/YC_HD_Hair_BaseColor.png",
+      "bytes": 1240779,
+      "lfs_pointer": false,
+      "dimensions": [
+        2048,
+        2048
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/YC_HD_Reference_BaseColor.png",
+      "bytes": 10962929,
+      "lfs_pointer": false,
+      "dimensions": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/YeCheng_ClothingSculpt.glb",
+      "bytes": 22097184,
+      "lfs_pointer": false
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/YeCheng_ClothingTextured.glb",
+      "bytes": 5843596,
+      "lfs_pointer": false
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/YeCheng_HighDetail.blend",
+      "bytes": 19269402,
+      "lfs_pointer": false
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/YeCheng_HighDetail.fbx",
+      "bytes": 8819340,
+      "lfs_pointer": false
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/YeCheng_HighDetail_work.blend",
+      "bytes": 12598821,
+      "lfs_pointer": false
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Validation/UE_acknowledge_1600x1000.png",
+      "bytes": 1385458,
+      "lfs_pointer": false,
+      "dimensions": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Validation/UE_alarmed_1600x1000.png",
+      "bytes": 1376538,
+      "lfs_pointer": false,
+      "dimensions": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Validation/UE_consider_1600x1000.png",
+      "bytes": 1382148,
+      "lfs_pointer": false,
+      "dimensions": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Validation/UE_face_1600x1000.png",
+      "bytes": 1482061,
+      "lfs_pointer": false,
+      "dimensions": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Validation/UE_idle_1600x1000.png",
+      "bytes": 1282625,
+      "lfs_pointer": false,
+      "dimensions": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Validation/UE_reassure_1600x1000.png",
+      "bytes": 1390046,
+      "lfs_pointer": false,
+      "dimensions": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Validation/UE_reject_1600x1000.png",
+      "bytes": 1378407,
+      "lfs_pointer": false,
+      "dimensions": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Validation/UE_side_1600x1000.png",
+      "bytes": 1308241,
+      "lfs_pointer": false,
+      "dimensions": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "path": "SourceAssets/Characters/YeChengHighDetail/Validation/UE_walk_1600x1000.png",
+      "bytes": 1387768,
+      "lfs_pointer": false,
+      "dimensions": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "path": "yecheng/左面.png",
+      "bytes": 1273336,
+      "lfs_pointer": false,
+      "dimensions": [
+        1086,
+        1448
+      ]
+    },
+    {
+      "path": "yecheng/正面.png",
+      "bytes": 1710637,
+      "lfs_pointer": false,
+      "dimensions": [
+        1086,
+        1448
+      ]
+    },
+    {
+      "path": "yecheng/背后.png",
+      "bytes": 1607404,
+      "lfs_pointer": false,
+      "dimensions": [
+        1086,
+        1448
+      ]
+    }
+  ],
+  "blender_opened": "YeCheng_HighDetail_work.blend",
+  "blender_version": "5.2.0 LTS",
+  "original_reference_images_visually_opened": true,
+  "existing_screenshots_visually_opened": true
+}

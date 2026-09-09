@@ -1,0 +1,9 @@
+{
+  "selected": "candidate_02",
+  "rejected": "candidate_03",
+  "reason": "candidate_03 iris-panel intersections produce radial gaps",
+  "local_iterations": 3,
+  "image_edits": "none; comparison sheets only place original renders side by side",
+  "production_replacement": false,
+  "added_UVs_only_after_selection": true
+}
