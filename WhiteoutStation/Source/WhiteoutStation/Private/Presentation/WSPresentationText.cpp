@@ -204,6 +204,10 @@ FText FWSPresentationText::ReasonNextStep(const EWSReasonCode Reason)
 
 FText FWSPresentationText::EvidenceLabel(const FName EvidenceId)
 {
+	if (EvidenceId == TEXT("EVIDENCE_PROFESSIONAL_FAULT_RECORD"))
+	{
+		return FText::FromString(TEXT("顾衡的专业故障记录：继电器触点熔毁，已标记拆装顺序与接线位置；为下一次顾衡执行的发电机维修做好准备。"));
+	}
 	if (EvidenceId == TEXT("EVIDENCE_DEEP_GENERATOR_LOG"))
 	{
 		return Text(TEXT("发电机深层日志：08:07 保护系统因输出电压异常自动停机；08:11 有人执行手动旁路重启。日志证明异常重启发生在故障之后。"));

@@ -20,7 +20,7 @@ def validate(content):
         errors += [f'{key}: expected {value!r}' for key, value in expected.items() if runtime.get(key) != value]
         if any(key.lower() in {'api_key', 'authorization', 'bearer_token'} for key in runtime):
             errors.append('credential field in runtime')
-        if rules.get('schema_version') != 7 or rules.get('rules_version') != '1.6.0':
+        if rules.get('schema_version') != 8 or rules.get('rules_version') != '1.6.0':
             errors.append('wrong rules version')
         errors += validate_dialogue(content / 'Dialogue/v1.6')
     except (OSError, ValueError) as error:

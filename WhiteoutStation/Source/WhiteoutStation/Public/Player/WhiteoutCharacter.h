@@ -98,6 +98,7 @@ private:
 	FWSActionRequest PendingOnlineRequest;
 	FName CurrentDialogueTopicActionId;
 	FWSActionRequest PreviewActionRequest;
+	FWSActionPreview DisplayedActionQuote;
 	FGuid ActiveDialogueSessionId;
 	FGuid ActiveDialogueTransactionId;
 

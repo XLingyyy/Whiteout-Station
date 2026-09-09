@@ -179,8 +179,8 @@ def load_rules(path: Path | str | None = None) -> dict[str, Any]:
 
 def validate_rules(rules: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if rules.get("schema_version") not in {4, 6}:
-        errors.append("v1.1 mechanics require schema_version 4 or 6")
+    if rules.get("schema_version") not in {4, 6, 7, 8}:
+        errors.append("mechanics require schema_version 4, 6, 7 or 8")
 
     gameplay = rules.get("gameplay", {})
     phases = gameplay.get("phases", [])
@@ -249,6 +249,8 @@ class WhiteoutSimulatorV11:
         errors = validate_rules(self.rules)
         if errors:
             raise RuleError("; ".join(errors))
+        self.rebalanced = self.rules["schema_version"] >= 8
+        self.v16 = self.rules["schema_version"] >= 7
         self.actions = {action["id"]: action for action in self.rules["actions"]}
         self.facts = {fact["id"]: fact for fact in self.rules["facts"]}
         self.state = self._make_initial_state()
@@ -290,6 +292,8 @@ class WhiteoutSimulatorV11:
                 "score": None,
             }
         )
+        if self.rebalanced:
+            state["repair_preparation_available"] = False
         return state
 
     def new_game(self) -> None:
@@ -461,7 +465,7 @@ class WhiteoutSimulatorV11:
             recipients = params.get("recipients", [])
             if (
                 not isinstance(recipients, list)
-                or not 1 <= len(recipients) <= 2
+                or not 1 <= len(recipients) <= (3 if self.rebalanced else 2)
                 or len(recipients) != len(set(recipients))
                 or any(recipient not in characters for recipient in recipients)
             ):
@@ -695,9 +699,20 @@ class WhiteoutSimulatorV11:
             elif (
                 self.state["characters"][collaborator]["stamina"] <= 0
                 or self._temperature_level(collaborator) == "hypothermic"
+                or (self.v16 and self._injury_level(collaborator) == "critical")
             ):
                 reason = "collaborator_unavailable"
                 blocked = True
+            elif self.v16 and collaborator in NPC_IDS and (
+                self.state["characters"][collaborator]["trust"] < 3
+                or self.state["characters"][collaborator]["pressure"] >= 9
+            ):
+                reason, blocked = "collaborator_refuses", True
+            elif self.v16 and collaborator in NPC_IDS and (
+                self.state["characters"][collaborator]["trust"] < 4.5
+                or self.state["characters"][collaborator]["pressure"] >= 8
+            ):
+                modifiers.append({"source": "reluctant_collaborator", "delta": 1, "character": collaborator})
             else:
                 modifiers.append(
                     {
@@ -725,6 +740,12 @@ class WhiteoutSimulatorV11:
                 self.rules["gameplay"]["action_cost_maximum"],
             )
         )
+        uses_preparation = self.rebalanced and self.state.get("repair_preparation_available", False) and action_id == "repair_generator" and executor == "gu_heng"
+        stamina_waived = uses_preparation and final_ap == 1
+        if uses_preparation:
+            discount = 1 if final_ap > 1 else 0
+            final_ap -= discount
+            modifiers.append({"source": "repair_preparation", "delta": -discount, "character": executor})
         if not blocked and final_ap > self.state["phase_ap"]:
             reason = "insufficient_phase_ap"
             blocked = True
@@ -748,6 +769,8 @@ class WhiteoutSimulatorV11:
             "modifiers": modifiers,
             "final_ap": final_ap,
             "raw_ap": raw_ap,
+            "uses_repair_preparation": uses_preparation,
+            "stamina_waived": stamina_waived,
             "readiness": readiness,
             "executor": executor,
             "support_waiver": support_waiver,
@@ -964,6 +987,9 @@ class WhiteoutSimulatorV11:
             )
             self.state["player_knowledge"]["FACT_BURNT_RELAY"] = "confirmed"
             self.state["player_knowledge"]["FACT_HAND_INJURY"] = "suspected"
+            if self.rebalanced and params.get("collaborator") == "gu_heng":
+                self.state["repair_preparation_available"] = True
+                self.state["evidence"].append("EVIDENCE_PROFESSIONAL_FAULT_RECORD")
             return "确认继电器烧毁和右手伤势线索", "可继续协商替代继电器"
 
         if action_id in {"talk_gu_heng", "talk_ye_cheng"}:
@@ -983,9 +1009,9 @@ class WhiteoutSimulatorV11:
                 )
                 if meal_type == "hot":
                     character["temperature"] = self._clamp(
-                        float(character["temperature"]) + 0.3, 0, 10
+                        float(character["temperature"]) + (0.5 if self.rebalanced else 0.3), 0, 10
                     )
-                if character_id in NPC_IDS:
+                if character_id in NPC_IDS and (not self.rebalanced or not any(character_id in event["recipients"] for event in self.state["food_events"])):
                     character["trust"] = self._clamp(
                         float(character["trust"])
                         + (0.7 if meal_type == "hot" else 0.5),
@@ -993,7 +1019,7 @@ class WhiteoutSimulatorV11:
                         10,
                     )
             for npc_id in NPC_IDS:
-                if npc_id not in recipients:
+                if not self.rebalanced and npc_id not in recipients:
                     characters[npc_id]["trust"] = self._clamp(
                         float(characters[npc_id]["trust"]) - 0.3, 0, 10
                     )
@@ -1013,6 +1039,14 @@ class WhiteoutSimulatorV11:
             target = params.get("target", "player")
             location = params.get("location", self.state["heating"]["current_zone"])
             characters[target]["location"] = location
+            if self.rebalanced:
+                warm = location == self.state["heating"]["current_zone"]
+                person = characters[target]
+                if warm:
+                    person["temperature"] = self._clamp(person["temperature"] + 1.0, 0, 10)
+                    person["stamina"] = min(2, person["stamina"] + 1)
+                person["pressure"] = self._clamp(person["pressure"] - (0.4 if warm else 0.2), 0, 10)
+                return f"{target} 休息已结算", "主动恢复与阶段温度分别结算"
             if location == self.state["heating"]["current_zone"]:
                 if int(characters[target]["stamina"]) < 2:
                     characters[target]["stamina"] += 1
@@ -1200,8 +1234,11 @@ class WhiteoutSimulatorV11:
         executor = preview["executor"]
         try:
             self._consume_support(executor, preview.get("support_waiver"))
-            self._consume_work_stamina(action, executor, params)
+            if not preview.get("stamina_waived", False):
+                self._consume_work_stamina(action, executor, params)
             immediate, follow_up = self._apply_effect(action_id, params, preview)
+            if preview.get("uses_repair_preparation", False):
+                self.state["repair_preparation_available"] = False
             self._move_for_action(action_id, action, params)
             self.state["phase_ap"] = ap_before - int(preview["final_ap"])
             self.state["action_counts"][action_id] = self._action_count(action_id) + 1
@@ -1673,6 +1710,8 @@ class WhiteoutSimulatorV11:
                 "cold": 2.0,
                 "hypothermic": 0.0,
             }[self._temperature_level(character_id)]
+            if self.rebalanced:
+                temp_points = 4 * self._clamp((character["temperature"] - 3.5) / 3.5, 0, 1)
             stamina_points = float(character["stamina"])
             injury_points = {
                 "normal": 2.0,
@@ -1710,6 +1749,15 @@ class WhiteoutSimulatorV11:
             medical_score *= 0.25
         reserve_score = fuel_score + food_score + medical_score + kitchen_score
 
+        if self.rebalanced:
+            people_score *= 40 / 30
+            tired = sum(c["stamina"] < 2 for c in self.state["characters"].values())
+            injured = sum(self._injury_level(c) != "normal" for c in self.state["characters"])
+            need_pack = injured or any(self._temperature_level(c) != "warm" for c in self.state["characters"])
+            coverage = lambda stock, need: min(1, stock / need) if need else 1
+            reserve_score = (4 if resources["fuel"] >= 1 else 0) + 2 * coverage(resources["food"], tired) + 2 * coverage(resources["medicine"], injured)
+            reserve_score += int(not need_pack or resources["heat_pack"] > 0) + int(self.state["flags"]["kitchen_heater_intact"])
+
         trust_average = sum(
             float(self.state["characters"][npc_id]["trust"]) for npc_id in NPC_IDS
         ) / (len(NPC_IDS) * 10.0)
@@ -1730,6 +1778,10 @@ class WhiteoutSimulatorV11:
         information_score = min(9.0, confirmed * 1.5)
         if self.state["flags"]["records_preserved"]:
             information_score += 1.0
+
+        if self.rebalanced:
+            social_score = self._clamp(social_score, 0, 15) * 12 / 15
+            information_score = min(10, information_score) * 8 / 10
 
         breakdown = {
             "task_quality": round(
@@ -1754,6 +1806,8 @@ class WhiteoutSimulatorV11:
             ),
         }
         total = round(sum(breakdown.values()), 2)
+        if self.rebalanced:
+            total = min(total, 69.9 if not tasks["signal_sent"] else 79.9 if self._has_critical_person() else 100)
         raw_rating = classify_rating(total, self.rules["score"]["ratings"])
         cap: str | None = None
         if not tasks["signal_sent"]:

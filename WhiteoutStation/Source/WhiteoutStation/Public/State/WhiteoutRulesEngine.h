@@ -55,6 +55,7 @@ public:
 	const FWhiteoutRuleConfig& GetConfig() const { return Config; }
 	bool IsV11() const { return Config.SchemaVersion >= 4; }
 	bool IsV16() const { return Config.SchemaVersion >= 7; }
+	bool IsV16Rebalanced() const { return Config.SchemaVersion >= 8; }
 
 	FWSActionPreview Preview(const FWSActionRequest& Request) const;
 	FWSActionResult Commit(FWSActionRequest Request);

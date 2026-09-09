@@ -655,6 +655,7 @@ FWSActionPreview UWindStationStateSubsystem::PreviewAction(const FWSActionReques
 		Preview.BaseAP = 0;
 		Preview.RawAP = 0;
 		Preview.APCost = 0;
+		Preview.Costs.Resources.Add(TEXT("fuel"), 1);
 		Preview.WorkReadiness = EWSWorkReadiness::Ready;
 		Preview.PreviewText = FText::FromString(
 			TEXT("锁定本阶段供暖区，消耗 1 单位燃料；本阶段内不可更改。"));
@@ -1844,11 +1845,16 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 		EWSReasonCode::DialogueCancelled,
 		true,
 		true);
-	const FWSGameState MigratedState = MigrateSaveStateForV13(
+	FWSGameState MigratedState = MigrateSaveStateForV13(
 		Save->State,
 		Save->SaveVersion,
 		RulesEngine.GetConfig().SchemaVersion,
 		RulesEngine.GetConfig().RulesVersion);
+	if (Save->State.RulesSchemaVersion < 8 && RulesEngine.IsV16Rebalanced())
+	{
+		MigratedState.bRepairPreparationAvailable = false;
+		MigratedState.bScoreRulesMigrated = true;
+	}
 	RulesEngine.SetState(MigratedState);
 	DialogueSessions.Reset();
 	++StateRevision;
@@ -1908,6 +1914,17 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 			TEXT("promise_condition"),
 			Event.PromiseCondition.IsNone() ? TEXT("none") : Event.PromiseCondition.ToString());
 		Object->SetBoolField(TEXT("promise_recorded"), Event.bPromiseRecorded);
+		Object->SetStringField(TEXT("executor"), DialogueSpeakerId(Event.Executor));
+		Object->SetStringField(TEXT("collaborator"), Event.bHasCollaborator ? DialogueSpeakerId(Event.Collaborator) : TEXT("none"));
+		Object->SetBoolField(TEXT("repair_preparation_granted"), Event.bRepairPreparationGranted);
+		Object->SetBoolField(TEXT("repair_preparation_consumed"), Event.bRepairPreparationConsumed);
+		Object->SetNumberField(TEXT("actual_ap"), Event.ActualAP);
+		const auto ResourceCosts = MakeShared<FJsonObject>();
+		for (const auto& Cost : Event.Costs.Resources) ResourceCosts->SetNumberField(Cost.Key.ToString(), Cost.Value);
+		Object->SetObjectField(TEXT("resource_costs"), ResourceCosts);
+		const auto StaminaCosts = MakeShared<FJsonObject>();
+		for (const auto& Cost : Event.Costs.Stamina) StaminaCosts->SetNumberField(DialogueSpeakerId(Cost.Key), Cost.Value);
+		Object->SetObjectField(TEXT("stamina_costs"), StaminaCosts);
 		Object->SetBoolField(TEXT("crisis_triggered"), Event.bCrisisTriggered);
 		Object->SetStringField(
 			TEXT("speaker"),
@@ -1936,6 +1953,8 @@ bool UWindStationStateSubsystem::ExportEventLog(FString& OutFilePath) const
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	const FWSGameState& Snapshot = RulesEngine.GetState();
 	Root->SetStringField(TEXT("rules_version"), Snapshot.RulesVersion);
+	Root->SetNumberField(TEXT("rules_schema"), Snapshot.RulesSchemaVersion);
+	Root->SetBoolField(TEXT("repair_preparation_available"), Snapshot.bRepairPreparationAvailable);
 	Root->SetArrayField(TEXT("events"), Events);
 	Root->SetNumberField(
 		TEXT("remaining_ap"),

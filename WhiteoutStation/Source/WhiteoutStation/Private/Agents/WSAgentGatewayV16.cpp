@@ -128,6 +128,9 @@ void UWSAgentGateway::BuildNaturalContext(FWSPreparedDialogue& Prepared) const
 	World->SetStringField(TEXT("heating_authority"), TEXT("The currently selected heating zone is active. An unrepaired generator does not mean all station heating has stopped; do not override this current selection with general outage knowledge."));
 	World->SetStringField(TEXT("source"), TEXT("station_public_status"));
 	World->SetBoolField(TEXT("control_cabinet_inspection_completed"), Prepared.ReadSnapshot.ActionCounts.FindRef(TEXT("inspect_control_cabinet")) > 0);
+	World->SetBoolField(TEXT("repair_preparation_available"), Prepared.ReadSnapshot.bRepairPreparationAvailable);
+	World->SetStringField(TEXT("care_rules"), TEXT("供暖区主动休息花费 1 AP，立即体温 +1.0、体能 +1、压力 -0.4，上限分别 10、2、10；体能满仍可回温。未供暖区等待仅压力 -0.2。阶段温度另行结算。分配 1—3 人食物固定 1 AP，不消耗分配者体能。规则描述不是已发生事件。"));
+	World->SetStringField(TEXT("preparation_rule"), TEXT("顾衡参与控制柜协查后才获得一次维修准备。下一次顾衡执行发电机维修：常规 AP 高于 1 时减 1，否则免除顾衡体能消耗。成功提交后消耗；不会治疗伤势或阻止带伤工作的恶化。专业记录不证明事故责任。"));
 	World->SetBoolField(TEXT("generator_log_read_completed"), Prepared.ReadSnapshot.ActionCounts.FindRef(TEXT("investigate_generator_log")) > 0);
 	World->SetStringField(TEXT("inspection_authority"), TEXT("Only these completed records authorize past/perfect tense inspection claims. Role responsibilities and intentions never mean an inspection just happened."));
 	Root->SetObjectField(TEXT("public_world_state"), World);
@@ -135,13 +138,18 @@ void UWSAgentGateway::BuildNaturalContext(FWSPreparedDialogue& Prepared) const
 	for (const auto& Event : Prepared.ReadSnapshot.EventLog)
 	{
 		const bool Treatment = Event.ActionId == TEXT("treat_character") || Event.ActionId == TEXT("treat_gu_heng");
-		if (!Event.bHasActionProvenance || (!Treatment && Event.ActionId != TEXT("repair_generator"))) continue;
+		if (!Event.bHasActionProvenance || (!Treatment && Event.ActionId != TEXT("repair_generator")
+			&& Event.ActionId != TEXT("rest") && Event.ActionId != TEXT("inspect_control_cabinet") && Event.ActionId != TEXT("distribute_food"))) continue;
 		if (Treatment && !InjuryAuthorized) continue;
 		const auto Item = MakeShared<FJsonObject>();
 		Item->SetStringField(TEXT("event_id"), Event.TransactionId.ToString());
 		Item->SetStringField(TEXT("action"), Event.ActionId.ToString());
 		Item->SetStringField(TEXT("actor"), CharacterToken(Event.Executor));
 		Item->SetStringField(TEXT("target"), CharacterToken(Event.TargetCharacter));
+		Item->SetNumberField(TEXT("actual_ap"), Event.ActualAP);
+		Item->SetStringField(TEXT("collaborator"), Event.bHasCollaborator ? CharacterToken(Event.Collaborator) : TEXT("none"));
+		Item->SetBoolField(TEXT("repair_preparation_granted"), Event.bRepairPreparationGranted);
+		Item->SetBoolField(TEXT("repair_preparation_consumed"), Event.bRepairPreparationConsumed);
 		if (Treatment) Item->SetStringField(TEXT("treatment_method"), Event.TreatmentMethod == EWSTreatmentMethod::Full ? TEXT("full") : Event.TreatmentMethod == EWSTreatmentMethod::Bandage ? TEXT("bandage") : TEXT("temporary_support"));
 		Item->SetNumberField(TEXT("event_sequence"), Event.Index);
 		Item->SetNumberField(TEXT("day_phase"), static_cast<int32>(Event.DayPhase));
@@ -216,10 +224,34 @@ void UWSAgentGateway::BuildNaturalContext(FWSPreparedDialogue& Prepared) const
 			Item->SetNumberField(TEXT("executor_stamina_remaining"), PreviewState.Characters.FindRef(EWSCharacterId::YeCheng).Stamina);
 			if (Preview.ReasonCode == EWSReasonCode::YeChengExhausted || Preview.ReasonCode == EWSReasonCode::ExecutorExhausted)
 				Item->SetStringField(TEXT("blocker_explanation"), TEXT("叶澄体能耗尽，需要休整恢复。体能与全队阶段行动力不同，不要说今天的行动力已经用完。"));
-			Item->SetNumberField(TEXT("medicine_cost"), Method == EWSTreatmentMethod::Full ? 1 : 0);
+			Item->SetNumberField(TEXT("medicine_cost"), Preview.Costs.Resources.FindRef(TEXT("medicine")));
+			Item->SetNumberField(TEXT("stamina_cost"), Preview.Costs.Stamina.FindRef(EWSCharacterId::YeCheng));
 			Item->SetStringField(TEXT("unavailable_reason"), StaticEnum<EWSReasonCode>()->GetNameStringByValue(static_cast<int64>(Preview.ReasonCode)));
-			Item->SetStringField(TEXT("ui_entry"), TEXT("退出交谈后打开行动面板，选择诊断 / 治疗角色，再预览并确认方案"));
+			Item->SetStringField(TEXT("ui_entry"), TEXT("退出交谈，面向诊断 / 治疗角色入口按 F；按 Q 选择对象与方案，核对费用后再按 F 执行，Esc 取消"));
 			Actions.Add(MakeShared<FJsonValueObject>(Item));
+		}
+	}
+	if (Rules.LoadConfig(FPaths::ProjectContentDir() / TEXT("Rules/WhiteoutStationRules.v1.6.json"), Error))
+	{
+		Rules.SetState(Prepared.ReadSnapshot);
+		for (const FName Action : {FName(TEXT("inspect_control_cabinet")), FName(TEXT("repair_generator"))})
+		{
+			if (Action == TEXT("repair_generator") && !InjuryAuthorized) continue;
+			for (const bool bCollaborate : {false, true})
+			{
+				FWSActionRequest Request; Request.ActionId = Action; Request.bHasCollaborator = bCollaborate;
+				Request.Collaborator = Action == TEXT("inspect_control_cabinet") ? EWSCharacterId::GuHeng : EWSCharacterId::Player;
+				const auto Quote = Rules.Preview(Request);
+				const auto Item = MakeShared<FJsonObject>();
+				Item->SetStringField(TEXT("action_id"), Action.ToString());
+				Item->SetStringField(TEXT("collaborator"), bCollaborate ? CharacterToken(Request.Collaborator) : TEXT("none"));
+				Item->SetBoolField(TEXT("available"), Quote.bCanExecute);
+				Item->SetNumberField(TEXT("ap_cost"), Quote.APCost);
+				Item->SetNumberField(TEXT("gu_heng_stamina_cost"), Quote.Costs.Stamina.FindRef(EWSCharacterId::GuHeng));
+				Item->SetStringField(TEXT("unavailable_reason"), StaticEnum<EWSReasonCode>()->GetNameStringByValue(static_cast<int64>(Quote.ReasonCode)));
+				Item->SetStringField(TEXT("status"), TEXT("cost quote only; not executed"));
+				Actions.Add(MakeShared<FJsonValueObject>(Item));
+			}
 		}
 	}
 	Root->SetArrayField(TEXT("allowed_actions"), Actions);

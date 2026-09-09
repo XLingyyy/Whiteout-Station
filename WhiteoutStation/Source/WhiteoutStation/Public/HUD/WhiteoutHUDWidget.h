@@ -480,6 +480,8 @@ private:
 	FString SystemMessage;
 	float OpeningElapsed = 0.0f;
 	float ToastRemaining = 0.0f;
+	TArray<FString> FeedbackQueue;
+	void FocusResultsInput();
 	float CrisisElapsed = -1.0f;
 	float EndingElapsed = -1.0f;
 	int32 ActiveOpeningStage = INDEX_NONE;

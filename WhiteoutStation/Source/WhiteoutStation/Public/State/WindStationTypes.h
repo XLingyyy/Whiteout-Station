@@ -795,6 +795,18 @@ struct FWSPromiseRecord
 };
 
 USTRUCT(BlueprintType)
+struct FWSActionCosts
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TMap<FName, int32> Resources;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TMap<EWSCharacterId, int32> Stamina;
+	bool Equals(const FWSActionCosts& Other) const
+	{
+		return Resources.OrderIndependentCompareEqual(Other.Resources) && Stamina.OrderIndependentCompareEqual(Other.Stamina);
+	}
+};
+
+USTRUCT(BlueprintType)
 struct FWSEventRecord
 {
 	GENERATED_BODY()
@@ -802,6 +814,11 @@ struct FWSEventRecord
 	UPROPERTY(SaveGame) EWSCharacterId TargetCharacter = EWSCharacterId::Player;
 	UPROPERTY(SaveGame) EWSTreatmentMethod TreatmentMethod = EWSTreatmentMethod::Full;
 	UPROPERTY(SaveGame) bool bHasActionProvenance = false;
+	UPROPERTY(SaveGame) bool bHasCollaborator = false;
+	UPROPERTY(SaveGame) EWSCharacterId Collaborator = EWSCharacterId::Player;
+	UPROPERTY(SaveGame) bool bRepairPreparationGranted = false;
+	UPROPERTY(SaveGame) bool bRepairPreparationConsumed = false;
+	UPROPERTY(SaveGame) FWSActionCosts Costs;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	int32 Index = 0;
@@ -871,6 +888,7 @@ USTRUCT(BlueprintType)
 struct FWSScoreBreakdown
 {
 	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FString RatingCapReason;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	float TaskQuality = 0.0f;
@@ -927,6 +945,8 @@ USTRUCT(BlueprintType)
 struct FWSGameState
 {
 	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bRepairPreparationAvailable = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bScoreRulesMigrated = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
 	int32 ActionPoints = 12;
@@ -1116,6 +1136,8 @@ USTRUCT(BlueprintType)
 struct FWSActionPreview
 {
 	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) FWSActionCosts Costs;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bUsesRepairPreparation = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName ActionId;
@@ -1158,6 +1180,7 @@ USTRUCT(BlueprintType)
 struct FWSActionResult
 {
 	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) FWSActionCosts Costs;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName ActionId;

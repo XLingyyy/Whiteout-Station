@@ -1,5 +1,5 @@
 {
-  "schema_version": 7,
+  "schema_version": 8,
   "rules_version": "1.6.0",
   "display_name": "风雪站：断电前夜",
   "design_date": "2026-07-30",
@@ -51,7 +51,7 @@
   "initial_state": {
     "resources": {
       "fuel": 4,
-      "food": 2,
+      "food": 3,
       "medicine": 1,
       "heat_pack": 1,
       "replacement_relay": 0
@@ -156,11 +156,11 @@
       "primary_executor": "player",
       "location": "kitchen",
       "tags": [
-        "physical"
+        "distribution"
       ],
       "repeatable": true,
-      "max_uses": 2,
-      "consumes_stamina": true
+      "max_uses": 3,
+      "consumes_stamina": false
     },
     {
       "id": "rest",
@@ -171,7 +171,8 @@
       "tags": [
         "recovery"
       ],
-      "repeatable": true
+      "repeatable": true,
+      "max_uses": 12
     },
     {
       "id": "treat_character",
@@ -321,10 +322,10 @@
   "score": {
     "weights": {
       "task_quality": 30,
-      "people": 30,
-      "effective_reserves": 15,
-      "social_stability": 15,
-      "information_responsibility": 10
+      "people": 40,
+      "effective_reserves": 10,
+      "social_stability": 12,
+      "information_responsibility": 8
     },
     "ratings": {
       "S": [

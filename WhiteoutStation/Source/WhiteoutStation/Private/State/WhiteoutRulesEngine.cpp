@@ -511,6 +511,7 @@ void FWhiteoutRulesEngine::SetState(const FWSGameState& InState)
 			Config.ActionPointsPerPhase);
 		State.ActionPoints = State.PhaseActionPoints;
 	}
+	if (IsV16Rebalanced()) State.Score = CalculateScore();
 }
 
 FWSActionPreview FWhiteoutRulesEngine::Preview(const FWSActionRequest& Request) const
@@ -1233,7 +1234,7 @@ EWSReasonCode FWhiteoutRulesEngine::CanExecuteV11(
 		{
 			return EWSReasonCode::EmptyFoodAllocation;
 		}
-		if (Total > 2)
+		if (Total > (IsV16Rebalanced() ? 3 : 2))
 		{
 			return EWSReasonCode::InvalidFoodAllocation;
 		}
@@ -1541,6 +1542,19 @@ FWSActionPreview FWhiteoutRulesEngine::BuildV11Preview(
 	Result.BaseAP = Rule->BaseAP;
 	Result.RawAP = Rule->BaseAP;
 	Result.APCost = Rule->BaseAP;
+	const EWSCharacterId CostExecutor = ResolveV11Executor(Request);
+	if (Rule->bConsumesStamina)
+		Result.Costs.Stamina.Add(CostExecutor, FMath::Min(1, Character(CostExecutor).Stamina));
+	if (Request.ActionId == DistributeFood)
+		Result.Costs.Resources.Add(TEXT("food"), Request.FoodForPlayer + Request.FoodForGuHeng + Request.FoodForYeCheng);
+	if (Request.ActionId == TreatCharacter || Request.ActionId == TreatGuHeng)
+	{
+		const auto Method = Request.ActionId == TreatGuHeng && Request.TreatmentResource == EWSResourceType::HeatPack
+			? EWSTreatmentMethod::HeatPack : Request.TreatmentMethod;
+		if (Method == EWSTreatmentMethod::Full) Result.Costs.Resources.Add(TEXT("medicine"), 1);
+		else if (Method == EWSTreatmentMethod::HeatPack) Result.Costs.Resources.Add(TEXT("heat_pack"), 1);
+	}
+	if (Request.ActionId == RepairGenerator && Request.bUseRelay) Result.Costs.Resources.Add(TEXT("replacement_relay"), 1);
 	const bool bFreeDialogueFollowUp =
 		(IsV16() || Request.bDialogueSessionFollowUp)
 		&& (Request.ActionId == TalkGuHeng
@@ -1760,6 +1774,21 @@ FWSActionPreview FWhiteoutRulesEngine::BuildV11Preview(
 	}
 
 	Result.APCost = FMath::Clamp(Result.RawAP, 1, 4);
+	if (IsV16Rebalanced() && State.bRepairPreparationAvailable && Request.ActionId == RepairGenerator
+		&& Executor == EWSCharacterId::GuHeng)
+	{
+		Result.bUsesRepairPreparation = true;
+		if (Result.APCost > 1)
+		{
+			--Result.APCost;
+			AddModifier(TEXT("repair_preparation"), -1, Executor, TEXT("协查维修准备：常规费用结算后 -1 AP"));
+		}
+		else
+		{
+			Result.Costs.Stamina.Remove(Executor);
+			AddModifier(TEXT("repair_preparation"), 0, Executor, TEXT("协查维修准备：已为 1 AP，免除本次顾衡体能消耗"));
+		}
+	}
 	if (
 		Result.ReasonCode == EWSReasonCode::Ok
 		&& Result.APCost > State.PhaseActionPoints)
@@ -1826,6 +1855,7 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 	const FWSPreparedDialogue* Prepared,
 	const FWSDialogueOutcome* Outcome)
 {
+	using namespace WhiteoutRules;
 	FWSActionResult Result;
 	Result.ActionId = Request.ActionId;
 	Result.DialogueAct = Request.DialogueAct;
@@ -1850,6 +1880,7 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 	Result.BaseAP = ActionPreview.BaseAP;
 	Result.ActualAP = ActionPreview.APCost;
 	Result.CostModifiers = ActionPreview.CostModifiers;
+	Result.Costs = ActionPreview.Costs;
 	Result.WorkReadiness = ActionPreview.WorkReadiness;
 	if (!ActionPreview.bCanExecute)
 	{
@@ -1859,6 +1890,7 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 	const FWhiteoutActionRule& Rule =
 		Config.ActionRules.FindChecked(Request.ActionId);
 	const EWSCharacterId Executor = ResolveV11Executor(Request);
+	const auto CharactersBefore = State.Characters;
 	State.Phase = EWSGamePhase::ResolvingAction;
 	const int32 PromiseCountBefore = State.Promises.Num();
 	if (ActionPreview.bUsesTemporarySupport)
@@ -1866,11 +1898,42 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 		Character(Executor).TemporarySupportUses =
 			FMath::Max(0, Character(Executor).TemporarySupportUses - 1);
 	}
-	if (Rule.bConsumesStamina)
+	if (ActionPreview.Costs.Stamina.FindRef(Executor) > 0)
 	{
 		ConsumeV11Stamina(Executor);
 	}
 	ApplyV11Effect(Request, ActionPreview, Result.Changes);
+	if (ActionPreview.bUsesRepairPreparation)
+	{
+		State.bRepairPreparationAvailable = false;
+		Result.Changes.Add(TEXT("一次性维修准备已消耗"));
+	}
+	if (IsV16Rebalanced() && Request.ActionId != TalkGuHeng && Request.ActionId != TalkYeCheng)
+	{
+		Result.Changes.Add(FString::Printf(TEXT("实际消耗：%d AP"), Result.ActualAP));
+		for (const auto& Cost : Result.Costs.Resources)
+		{
+			const TCHAR* Label = Cost.Key == TEXT("food") ? TEXT("食物") : Cost.Key == TEXT("medicine") ? TEXT("药品")
+				: Cost.Key == TEXT("heat_pack") ? TEXT("保温包") : TEXT("替代继电器");
+			Result.Changes.Add(FString::Printf(TEXT("%s ×%d"), Label, Cost.Value));
+		}
+		for (const auto& Modifier : Result.CostModifiers) Result.Changes.Add(Modifier.Explanation.ToString());
+		auto TemperatureLabel = [this](float Value) { return Value < Config.HypothermicTemperature ? TEXT("失温") : Value < Config.WarmTemperature ? TEXT("寒冷") : TEXT("温暖"); };
+		auto InjuryLabel = [](EWSInjurySeverity Value) { return Value == EWSInjurySeverity::Normal ? TEXT("正常") : Value == EWSInjurySeverity::Restricted ? TEXT("受限") : TEXT("危重"); };
+		for (const auto& Pair : State.Characters)
+		{
+			const auto& Before = CharactersBefore.FindChecked(Pair.Key);
+			const auto& After = Pair.Value;
+			TArray<FString> Deltas;
+			if (!FMath::IsNearlyEqual(Before.Temperature, After.Temperature))
+				Deltas.Add(FString::Printf(TEXT("体温 %.1f→%.1f，%s→%s"), Before.Temperature, After.Temperature, TemperatureLabel(Before.Temperature), TemperatureLabel(After.Temperature)));
+			if (Before.Stamina != After.Stamina) Deltas.Add(FString::Printf(TEXT("体能 %d→%d"), Before.Stamina, After.Stamina));
+			if (!FMath::IsNearlyEqual(Before.Pressure, After.Pressure)) Deltas.Add(FString::Printf(TEXT("压力 %.1f→%.1f"), Before.Pressure, After.Pressure));
+			if (!FMath::IsNearlyEqual(Before.Trust, After.Trust)) Deltas.Add(FString::Printf(TEXT("信任 %.1f→%.1f"), Before.Trust, After.Trust));
+			if (Before.InjurySeverity != After.InjurySeverity) Deltas.Add(FString::Printf(TEXT("伤势 %s→%s"), InjuryLabel(Before.InjurySeverity), InjuryLabel(After.InjurySeverity)));
+			if (!Deltas.IsEmpty()) Result.Changes.Add(FString::Printf(TEXT("%s：%s"), Pair.Key == EWSCharacterId::Player ? TEXT("你") : Pair.Key == EWSCharacterId::GuHeng ? TEXT("顾衡") : TEXT("叶澄"), *FString::Join(Deltas, TEXT("；"))));
+		}
+	}
 	if (Prepared && Outcome)
 	{
 		UpgradePlayerKnowledgeFromUtterance(
@@ -1964,7 +2027,13 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 	Event.BaseAP = ActionPreview.BaseAP;
 	Event.ActualAP = ActionPreview.APCost;
 	Event.bHasActionProvenance = true; Event.Executor = Executor;
-	Event.TargetCharacter = (Request.ActionId == WhiteoutRules::TreatGuHeng) ? EWSCharacterId::GuHeng : Request.TreatmentTarget;
+	Event.Costs = Result.Costs;
+	Event.bHasCollaborator = Request.bHasCollaborator;
+	Event.Collaborator = Request.Collaborator;
+	Event.bRepairPreparationConsumed = ActionPreview.bUsesRepairPreparation;
+	Event.bRepairPreparationGranted = IsV16Rebalanced() && Request.ActionId == InspectControlCabinet
+		&& Request.bHasCollaborator && Request.Collaborator == EWSCharacterId::GuHeng;
+	Event.TargetCharacter = Request.ActionId == Rest ? Request.RestTarget : (Request.ActionId == WhiteoutRules::TreatGuHeng) ? EWSCharacterId::GuHeng : Request.TreatmentTarget;
 	Event.TreatmentMethod = Request.ActionId == WhiteoutRules::TreatGuHeng && Request.TreatmentResource == EWSResourceType::HeatPack ? EWSTreatmentMethod::HeatPack : Request.TreatmentMethod;
 	Event.WorkReadiness = ActionPreview.WorkReadiness;
 	Event.CostModifiers = ActionPreview.CostModifiers;
@@ -2495,6 +2564,12 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 		DiscoverFact(FactBurntRelay, EWSKnowledgeLevel::Confirmed, &OutChanges);
 		DiscoverFact(FactHandInjury, EWSKnowledgeLevel::Suspected, &OutChanges);
 		State.Flags.bCabinetInspected = true;
+		if (IsV16Rebalanced() && Request.bHasCollaborator && Request.Collaborator == EWSCharacterId::GuHeng)
+		{
+			AddEvidence(TEXT("EVIDENCE_PROFESSIONAL_FAULT_RECORD"), &OutChanges);
+			State.bRepairPreparationAvailable = true;
+			OutChanges.Add(TEXT("顾衡完成专业故障记录，获得一次维修准备；下次顾衡维修减 1 AP，已为 1 AP 时免除其体能消耗"));
+		}
 		OutChanges.Add(TEXT("确认继电器烧毁与右手伤势线索"));
 	}
 	else if (Request.ActionId == TalkYeCheng)
@@ -2589,10 +2664,11 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 				if (Request.bHotMeal)
 				{
 					Current.Temperature =
-						FMath::Clamp(Current.Temperature + 0.3f, 0.0f, 10.0f);
+						FMath::Clamp(Current.Temperature + (IsV16Rebalanced() ? 0.5f : 0.3f), 0.0f, 10.0f);
 				}
 				Current.Location = EWSCharacterLocation::Kitchen;
-				if (Allocation.Key != EWSCharacterId::Player)
+				const bool bAlreadyFed = Allocation.Key == EWSCharacterId::GuHeng ? State.Flags.bGuHengFed : State.Flags.bYeChengFed;
+				if (Allocation.Key != EWSCharacterId::Player && (!IsV16Rebalanced() || !bAlreadyFed))
 				{
 					Current.Trust = FMath::Clamp(
 						Current.Trust + (Request.bHotMeal ? 0.7f : 0.5f),
@@ -2600,7 +2676,7 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 						10.0f);
 				}
 			}
-			else if (Allocation.Key != EWSCharacterId::Player)
+			else if (!IsV16Rebalanced() && Allocation.Key != EWSCharacterId::Player)
 			{
 				Current.Trust =
 					FMath::Clamp(Current.Trust - 0.3f, 0.0f, 10.0f);
@@ -2620,7 +2696,18 @@ void FWhiteoutRulesEngine::ApplyV11Effect(
 	{
 		FWSCharacterState& Target = Character(Request.RestTarget);
 		Target.Location = Request.RestLocation;
-		if (
+		if (IsV16Rebalanced())
+		{
+			const bool bHeated = V11HeatingMatchesLocation(Request.RestLocation);
+			if (bHeated)
+			{
+				Target.Temperature = FMath::Clamp(Target.Temperature + 1.0f, 0.0f, 10.0f);
+				Target.Stamina = FMath::Min(2, Target.Stamina + 1);
+			}
+			Target.Pressure = FMath::Clamp(Target.Pressure - (bHeated ? 0.4f : 0.2f), 0.0f, 10.0f);
+			OutChanges.Add(bHeated ? TEXT("供暖区主动休息已立即结算；阶段温度另行结算") : TEXT("未供暖区等待：仅缓解压力，未恢复体温或体能"));
+		}
+		else if (
 			V11HeatingMatchesLocation(Request.RestLocation)
 			&& Target.Stamina < 2)
 		{
@@ -3319,8 +3406,9 @@ FWSScoreBreakdown FWhiteoutRulesEngine::CalculateScore() const
 			EWSCharacterId::YeCheng})
 		{
 			const FWSCharacterState& Current = Character(CharacterId);
-			const float TemperaturePoints =
-				Current.Temperature < Config.HypothermicTemperature
+			const float TemperaturePoints = IsV16Rebalanced()
+				? 4.0f * FMath::Clamp((Current.Temperature - 3.5f) / 3.5f, 0.0f, 1.0f)
+				: Current.Temperature < Config.HypothermicTemperature
 				? 0.0f
 				: Current.Temperature < Config.WarmTemperature
 					? 2.0f
@@ -3374,6 +3462,24 @@ FWSScoreBreakdown FWhiteoutRulesEngine::CalculateScore() const
 				15.0f,
 				FuelScore + FoodScore + MedicalScore + KitchenScore);
 
+		if (IsV16Rebalanced())
+		{
+			Score.People *= 40.0f / 30.0f;
+			int32 Tired = 0, Injured = 0;
+			bool bNeedsWarmthSupport = false;
+			for (const auto& Pair : State.Characters)
+			{
+				Tired += Pair.Value.Stamina < 2 ? 1 : 0;
+				Injured += Pair.Value.InjurySeverity != EWSInjurySeverity::Normal ? 1 : 0;
+				bNeedsWarmthSupport |= Pair.Value.InjurySeverity != EWSInjurySeverity::Normal || Pair.Value.Temperature < Config.WarmTemperature;
+			}
+			auto Coverage = [](int32 Stock, int32 Need) { return Need == 0 ? 1.0f : FMath::Clamp(float(Stock) / Need, 0.0f, 1.0f); };
+			Score.EffectiveReserves = (State.Resources.Fuel >= 1 ? 4.0f : 0.0f)
+				+ 2.0f * Coverage(State.Resources.Food, Tired) + 2.0f * Coverage(State.Resources.Medicine, Injured)
+				+ ((!bNeedsWarmthSupport || State.Resources.HeatPack > 0) ? 1.0f : 0.0f)
+				+ (State.Flags.bKitchenHeaterIntact ? 1.0f : 0.0f);
+		}
+
 		const float TrustAverage =
 			(
 				Character(EWSCharacterId::GuHeng).Trust
@@ -3403,6 +3509,11 @@ FWSScoreBreakdown FWhiteoutRulesEngine::CalculateScore() const
 		Score.InformationResponsibility =
 			FMath::Min(10.0f, Score.InformationResponsibility);
 
+		if (IsV16Rebalanced())
+		{
+			Score.SocialStability *= 12.0f / 15.0f;
+			Score.InformationResponsibility *= 8.0f / 10.0f;
+		}
 		Score.Total = FMath::Clamp(
 			Score.TaskQuality
 				+ Score.People
@@ -3411,6 +3522,17 @@ FWSScoreBreakdown FWhiteoutRulesEngine::CalculateScore() const
 				+ Score.InformationResponsibility,
 			0.0f,
 			100.0f);
+		if (IsV16Rebalanced())
+		{
+			if (!State.Tasks.bSignalSent && Score.Total >= 70.0f)
+			{
+				Score.Total = 69.9f; Score.RatingCapReason = TEXT("未发送信号：最高 C，总分上限 69.9");
+			}
+			else if ((bAnyCriticalInjury || bAnyHypothermic) && Score.Total >= 80.0f)
+			{
+				Score.Total = 79.9f; Score.RatingCapReason = TEXT("存在危重或失温：最高 B，总分上限 79.9");
+			}
+		}
 		Score.Rating =
 			Score.Total >= 90.0f
 			? TEXT("S")

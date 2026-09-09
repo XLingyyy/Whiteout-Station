@@ -262,7 +262,14 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 			{
 				if (PreviewedInteractable == Interactable)
 				{
-					if (bPreviewCanExecute)
+					const auto CurrentQuote = Interactable->PreviewRequest(PreviewActionRequest);
+					if (CurrentQuote.APCost != DisplayedActionQuote.APCost || !CurrentQuote.Costs.Equals(DisplayedActionQuote.Costs)
+						|| CurrentQuote.bCanExecute != DisplayedActionQuote.bCanExecute)
+					{
+						RefreshActionPreview();
+						return;
+					}
+					if (CurrentQuote.bCanExecute)
 					{
 						Interactable->InteractRequest(this, PreviewActionRequest);
 					}
@@ -278,6 +285,7 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 
 				PreviewActionRequest = Interactable->BuildActionRequest();
 				const FWSActionPreview Preview = Interactable->PreviewRequest(PreviewActionRequest);
+				DisplayedActionQuote = Preview;
 				HUD->ShowActionPreview(Interactable->DisplayName, Preview, PreviewActionRequest);
 				PreviewedInteractable = Interactable;
 				bPreviewCanExecute = Preview.bCanExecute;
@@ -311,7 +319,8 @@ void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
 			{0, 0, 1},
 			{1, 1, 0},
 			{1, 0, 1},
-			{0, 1, 1}};
+			{0, 1, 1},
+			{1, 1, 1}};
 		int32 CurrentIndex = 0;
 		for (int32 Index = 0; Index < UE_ARRAY_COUNT(FoodOptions); ++Index)
 		{
@@ -504,6 +513,7 @@ void AWhiteoutCharacter::RefreshActionPreview()
 		return;
 	}
 	const FWSActionPreview Preview = PreviewedInteractable->PreviewRequest(PreviewActionRequest);
+	DisplayedActionQuote = Preview;
 	bPreviewCanExecute = Preview.bCanExecute;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
@@ -869,6 +879,9 @@ void AWhiteoutCharacter::ToggleGuide()
 
 void AWhiteoutCharacter::TogglePauseMenu()
 {
+	PreviewedInteractable = nullptr;
+	bPreviewCanExecute = false;
+	PreviewActionRequest = FWSActionRequest();
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))

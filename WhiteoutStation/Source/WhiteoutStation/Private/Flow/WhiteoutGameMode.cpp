@@ -2482,7 +2482,13 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 		Step.Type = EWhiteoutAutomationRouteStepType::SettlePhase;
 	};
 
-	if (RouteName.Equals(TEXT("medical"), ESearchCase::IgnoreCase))
+	const bool bCareRoute = RouteName.Equals(TEXT("care90"));
+	const int32 InefficientAP = RouteName.EndsWith(TEXT("slow2")) ? 2 : RouteName.EndsWith(TEXT("slow1")) ? 1 : 0;
+	const auto AddWait = [&AddAction]()
+	{
+		AddAction(TEXT("rest"), [](FWSActionRequest& Request) { Request.RestTarget = EWSCharacterId::Player; Request.RestLocation = EWSCharacterLocation::ControlRoom; });
+	};
+	if (bCareRoute || RouteName.StartsWith(TEXT("medical"), ESearchCase::IgnoreCase))
 	{
 		AddBeginPhase(EWSHeatingZone::MedicalRoom);
 		AddAction(TEXT("talk_ye_cheng"), [](FWSActionRequest& Request)
@@ -2503,16 +2509,23 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 			Request.bHasCollaborator = true;
 			Request.Collaborator = EWSCharacterId::Player;
 		});
-		AddAction(TEXT("distribute_food"), [](FWSActionRequest& Request)
+		AddAction(TEXT("distribute_food"), [bCareRoute](FWSActionRequest& Request)
 		{
 			Request.FoodForPlayer = 1;
 			Request.FoodForGuHeng = 1;
+			Request.FoodForYeCheng = bCareRoute ? 1 : 0;
 		});
 		AddAction(TEXT("talk_gu_heng"), [](FWSActionRequest& Request)
 		{
 			Request.DialogueAct = EWSDialogueAct::Promise;
 			Request.PromiseCondition = TEXT("heat_repair_room");
 		});
+		if (bCareRoute)
+		{
+			AddAction(TEXT("rest"), [](FWSActionRequest& R) { R.RestTarget = EWSCharacterId::YeCheng; R.RestLocation = EWSCharacterLocation::MedicalRoom; });
+			AddAction(TEXT("investigate_generator_log"));
+		}
+		for (int32 I = 0; I < InefficientAP; ++I) AddWait();
 		AddSettlePhase();
 		AddBeginPhase(EWSHeatingZone::RepairRoom);
 		AddAction(TEXT("repair_generator"), [](FWSActionRequest& Request)
@@ -2525,17 +2538,19 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 		{
 			Request.DialogueAct = EWSDialogueAct::Challenge;
 		});
-		AddAction(TEXT("rest"), [](FWSActionRequest& Request)
+		AddAction(TEXT("rest"), [bCareRoute](FWSActionRequest& Request)
 		{
-			Request.RestTarget = EWSCharacterId::Player;
+			Request.RestTarget = bCareRoute ? EWSCharacterId::GuHeng : EWSCharacterId::Player;
 			Request.RestLocation = EWSCharacterLocation::RepairRoom;
 		});
+		if (bCareRoute) AddAction(TEXT("rest"), [](FWSActionRequest& R) { R.RestTarget = EWSCharacterId::YeCheng; R.RestLocation = EWSCharacterLocation::RepairRoom; });
 		AddSettlePhase();
 		AddBeginPhase(EWSHeatingZone::ControlRoom);
 		AddAction(TEXT("calibrate_antenna"));
+		if (bCareRoute) { AddWait(); AddWait(); }
 		AddAction(TEXT("send_signal"));
 	}
-	else if (RouteName.Equals(TEXT("technical"), ESearchCase::IgnoreCase))
+	else if (RouteName.StartsWith(TEXT("technical"), ESearchCase::IgnoreCase))
 	{
 		AddBeginPhase(EWSHeatingZone::Kitchen);
 		AddAction(TEXT("investigate_generator_log"));
@@ -2558,6 +2573,7 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 			Request.SemanticFrame.Confidence = 0.99f;
 			Request.SemanticFrame.Source = TEXT("shipping_auto_route");
 		});
+		if (InefficientAP >= 1) AddWait();
 		AddSettlePhase();
 		AddBeginPhase(EWSHeatingZone::RepairRoom);
 		AddAction(TEXT("dismantle_kitchen_heater"), [](FWSActionRequest& Request)
@@ -2572,6 +2588,7 @@ void AWhiteoutGameMode::RunAutomationRoute(const FString& RouteName)
 			Request.bUseRelay = true;
 		});
 		AddAction(TEXT("talk_ye_cheng"));
+		if (InefficientAP >= 2) AddWait();
 		AddSettlePhase();
 		AddBeginPhase(EWSHeatingZone::ControlRoom);
 		AddAction(TEXT("calibrate_antenna"));

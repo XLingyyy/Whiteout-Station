@@ -1,4 +1,5 @@
 #include "HUD/WhiteoutHUDWidget.h"
+#include "Components/ScaleBox.h"
 #include "HUD/WSDialoguePanelWidget.h"
 #include "HUD/WSStatusPanelWidget.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
@@ -311,7 +312,15 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 	TickOpening(InDeltaTime);
 	const bool bReducedMotion = IsReducedMotionEnabled();
 	if (StatusPanelV15) StatusPanelV15->AdvanceAnimation(InDeltaTime, bReducedMotion);
-	if (ToastRemaining > 0.0f && ToastBorder)
+	const bool bFeedbackVisible = CurrentLayer == EWSUILayer::Game && !IsOpeningVisible();
+	if (ToastRemaining <= 0.0f && !FeedbackQueue.IsEmpty() && ToastText)
+	{
+		ToastText->SetText(FText::FromString(FeedbackQueue[0]));
+		FeedbackQueue.RemoveAt(0);
+		ToastRemaining = 10.0f;
+	}
+	if (ToastBorder) ToastBorder->SetVisibility(bFeedbackVisible && ToastRemaining > 0.0f ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	if (bFeedbackVisible && ToastRemaining > 0.0f && ToastBorder)
 	{
 		ToastRemaining = FMath::Max(0.0f, ToastRemaining - InDeltaTime);
 		const float Opacity = FMath::Clamp(ToastRemaining * 1.8f, 0.0f, 1.0f);
@@ -361,6 +370,7 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 			bEndingResultsRevealed = true;
 			EndingCinematicBorder->SetVisibility(ESlateVisibility::Collapsed);
 			if (ResultsBorder) ResultsBorder->SetVisibility(ESlateVisibility::Visible);
+			if (CurrentLayer == EWSUILayer::Results) FocusResultsInput();
 		}
 	}
 	if (bPresentationCaptureOverride)
@@ -387,6 +397,11 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 
 FReply UWhiteoutHUDWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
+	if (InKeyEvent.GetKey() == EKeys::R && CurrentLayer == EWSUILayer::Results)
+	{
+		RestartGame();
+		return FReply::Handled();
+	}
 	if (InKeyEvent.GetKey() == EKeys::Escape)
 	{
 		HandleBackRequested();
@@ -471,7 +486,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UTextBlock* HelpText = MakeText(TEXT("HelpText"), 12, Secondary);
 	HelpText->SetText(FWSPresentationText::UI(
 		TEXT("ui_help_v06"),
-		TEXT("WASD 移动　鼠标观察　Space 跳跃　F 预览/确认　E 证据板　H 生存手册　Enter 结束　Esc 返回")));
+		TEXT("WASD 移动　鼠标观察　Space 跳跃　F 选择/确认　E 证据板　H 生存手册　Enter 结束　Esc 返回")));
 	BottomBox->AddChildToVerticalBox(FeedbackText)->SetPadding(FMargin(0, 0, 0, 3));
 	BottomBox->AddChildToVerticalBox(PromptText)->SetPadding(FMargin(0, 0, 0, 3));
 	BottomBox->AddChildToVerticalBox(HelpText);
@@ -518,12 +533,13 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	FocusBorder->SetContent(FocusOverlay);
 	FocusBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	PreviewBorder = MakePanel(Canvas, TEXT("PreviewPanel"), FAnchors(0.16f, 0.10f, 0.84f, 0.90f), FMargin(0), WSUITokens::Color::SurfacePreview);
+	PreviewBorder = MakePanel(Canvas, TEXT("PreviewPanel"), FAnchors(0.24f, 0.28f, 0.76f, 0.72f), FMargin(0), WSUITokens::Color::SurfacePreview);
 	UVerticalBox* PreviewBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PreviewBox"));
 	PreviewBorder->SetContent(PreviewBox);
-	PreviewTitleText = MakeText(TEXT("PreviewTitle"), 28, Cyan);
-	PreviewBodyText = MakeText(TEXT("PreviewBody"), 18, Body);
-	PreviewFooterText = MakeText(TEXT("PreviewFooter"), 18, Amber);
+	PreviewBorder->SetVerticalAlignment(VAlign_Center);
+	PreviewTitleText = MakeText(TEXT("PreviewTitle"), 22, Cyan);
+	PreviewBodyText = MakeText(TEXT("PreviewBody"), 16, Body);
+	PreviewFooterText = MakeText(TEXT("PreviewFooter"), 14, Amber);
 	PreviewBox->AddChildToVerticalBox(PreviewTitleText)->SetPadding(FMargin(0, 0, 0, 14));
 	PreviewBox->AddChildToVerticalBox(PreviewBodyText)->SetPadding(FMargin(0, 0, 0, 16));
 	PreviewBox->AddChildToVerticalBox(PreviewFooterText);
@@ -652,19 +668,19 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UTextBlock* GuideIntro = MakeText(TEXT("GuideIntro"), 14, Body);
 	GuideIntro->SetLineHeightPercentage(1.28f);
 	GuideIntro->SetText(FText::FromString(
-		TEXT("阶段与选择\n")
+		TEXT("目标与评分\n首先修复设备并成功发出求救信号。在此基础上，尽量让你、顾衡和叶澄保持温暖、恢复体能、处理伤势并降低压力，结算评分会更高。合理照护后的储备，比单纯囤积物资更有价值。\n任务 30、人员 40、有效储备 10、社会稳定 12、信息责任 8，总分 100。\n\n阶段与选择\n")
 		TEXT("早晨、午后、黄昏各有 4 AP，未使用的 AP 在阶段结算时丢弃。每阶段开始先消耗 1 燃料锁定一个供暖区。\n")
 		TEXT("修复发电机并发送信号可以结束本轮；也可保留燃料、照护队员并等待风暴过去。信号质量、人员状态与剩余储备会导向不同结局。\n")
-		TEXT("按 F 查看动态 AP、执行者和风险，再按 F 确认；带有多个方案的行动可按 Q 切换。\n\n")
+		TEXT("按 F 打开行动选择，查看准确 AP、物资和体能消耗；Q 切换方案，F 执行，Esc 取消。费用变化时需再次确认。行动后显示实际变化 10 秒。\n\n")
 		TEXT("人物状态\n")
 		TEXT("体温：6.0 以上温暖，3.5—5.9 寒冷，低于 3.5 失温。\n")
 		TEXT("体能：2 充足、1 疲惫、0 耗尽；食物和供暖区休整可以恢复。\n")
 		TEXT("伤势：正常、受限、危重。包扎只阻止下一次恶化，完整治疗可移除伤势。\n")
-		TEXT("压力：越低越稳定；寒冷、强迫行动和失衡分配会推高压力。\n")
-		TEXT("准备度：综合体温、体能、伤势与压力；预览中的动态 AP 会反映这些因素。\n")
+		TEXT("压力：越低越稳定；寒冷和强迫行动会推高压力。分批照护不会降低未领取者信任。\n")
+		TEXT("费用：行动选择显示状态结算后的准确 AP；体能和 AP 是不同资源。\n")
 		TEXT("信任：影响合作、情报和结算。公平分配、照护和兑现承诺会改变信任。\n\n")
-		TEXT("信息与交涉\n")
-		TEXT("按 E 查看证据板。AI 关闭时选择固定话题；开启并配置后直接输入，点击发送。私聊首轮成功回复消耗 1 AP，最多三轮；承诺需要再次确认。")));
+		TEXT("恢复与协作\n供暖区休息 1 AP：立即体温 +1.0、体能 +1、压力 −0.4；未供暖区仅压力 −0.2。阶段温度另行结算。\n分配食物固定 1 AP，可一次给 1—3 人各一份，不消耗分配者体能。冷餐恢复体能 1、压力 −0.1；热餐另加体温 +0.5，压力改为 −0.4。\n顾衡协查会留下专业记录和一次维修准备：下次顾衡维修减 1 AP；已为 1 AP 则免除其体能消耗。带伤工作的恶化仍会发生。低信任协作需协调加费，极低信任或失控压力会拒绝。\n\n信息与交涉\n")
+		TEXT("按 E 查看证据板。AI 关闭时选择固定话题；开启并配置后直接输入，点击发送。交谈免费，每名 NPC 每局最多 10 轮成功回复；承诺需要再次确认。")));
 	UScrollBox* GuideScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("GuideScroll"));
 	GuideScroll->AddChild(GuideIntro);
 	UVerticalBoxSlot* GuideScrollSlot = GuideBox->AddChildToVerticalBox(GuideScroll);
@@ -771,7 +787,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	GalleryBox->AddChildToVerticalBox(GalleryToast)->SetPadding(FMargin(0, 14, 0, 0));
 	ComponentGalleryBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	ToastBorder = MakePanel(Canvas, TEXT("ActionToast"), FAnchors(0.27f, 0.70f, 0.73f, 0.70f), FMargin(0, 0, 0, 104), FLinearColor::Transparent);
+	ToastBorder = MakePanel(Canvas, TEXT("ActionToast"), FAnchors(0.14f, 0.68f, 0.86f, 0.92f), FMargin(0), WSUITokens::Color::SurfaceDeep);
 	UOverlay* ToastOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("ToastOverlay"));
 	if (InkBrushTexture)
 	{
@@ -780,7 +796,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		ToastBrush->SetColorAndOpacity(FLinearColor(0.015f, 0.015f, 0.015f, 0.92f));
 		ToastOverlay->AddChildToOverlay(ToastBrush);
 	}
-	ToastText = MakeText(TEXT("ActionToastText"), 17, Body, false);
+	ToastText = MakeText(TEXT("ActionToastText"), 14, Body, true);
 	ToastText->SetJustification(ETextJustify::Center);
 	UOverlaySlot* ToastTextSlot = ToastOverlay->AddChildToOverlay(ToastText);
 	ToastTextSlot->SetHorizontalAlignment(HAlign_Center);
@@ -1430,6 +1446,7 @@ void UWhiteoutHUDWidget::SetBaseHudHidden(const bool bHidden)
 
 void UWhiteoutHUDWidget::SetLayer(const EWSUILayer Layer)
 {
+	if (CurrentLayer == Layer) return;
 	CurrentLayer = Layer;
 	if (Layer != EWSUILayer::Game && Layer != EWSUILayer::Dialogue && Layer != EWSUILayer::Preview) SetStatusFocus(NAME_None);
 	const bool bHideBaseHud = Layer == EWSUILayer::Evidence
@@ -1448,7 +1465,7 @@ void UWhiteoutHUDWidget::SetLayer(const EWSUILayer Layer)
 	{
 		CrosshairText->SetVisibility(bHideBaseHud ? ESlateVisibility::Hidden : ESlateVisibility::Visible);
 	}
-	ResetMouseToViewportCenter();
+	if (Layer != EWSUILayer::Results) ResetMouseToViewportCenter();
 }
 
 void UWhiteoutHUDWidget::ResetMouseToViewportCenter()
@@ -1959,7 +1976,7 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 	int32 WitnessCount = WitnessKnowledgeCount;
 	for (const FName EvidenceId : State.Evidence)
 	{
-		const FString Id = EvidenceId.ToString();
+		const FString Id = EvidenceId.ToString().ToLower();
 		if (Id.Contains(TEXT("log")) || Id.Contains(TEXT("records")))
 		{
 			++FileCount;
@@ -2032,11 +2049,17 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 			UImage* Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), FName(*FString::Printf(TEXT("EvidenceIcon%d"), CardIndex)));
 			Icon->SetBrushFromTexture(IconTexture, true);
 			Icon->SetColorAndOpacity(TypeColor);
-			IconBox->SetContent(Icon);
-			CardRow->AddChildToHorizontalBox(IconBox)->SetPadding(FMargin(0, 0, 10, 0));
+			UScaleBox* Scale = WidgetTree->ConstructWidget<UScaleBox>(UScaleBox::StaticClass());
+			Scale->SetStretch(EStretch::ScaleToFit);
+			Scale->SetContent(Icon);
+			IconBox->SetContent(Scale);
+			auto* IconSlot = CardRow->AddChildToHorizontalBox(IconBox);
+			IconSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			IconSlot->SetVerticalAlignment(VAlign_Center);
+			IconSlot->SetPadding(FMargin(0, 0, 10, 0));
 		}
 		UTextBlock* CardCopy = MakeText(FName(*FString::Printf(TEXT("EvidenceCopy%d"), CardIndex)), 13, Body);
-		CardCopy->SetWrapTextAt(500.0f);
+		CardCopy->SetAutoWrapText(true);
 		CardCopy->SetText(FText::FromString(FString::Printf(TEXT("%s\n%s\n%s"), *Type, *Title, *Summary)));
 		UHorizontalBoxSlot* CopySlot = CardRow->AddChildToHorizontalBox(CardCopy);
 		CopySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -2054,7 +2077,7 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 	for (const FName EvidenceId : State.Evidence)
 	{
 		const FString Id = EvidenceId.ToString();
-		const bool bFile = Id.Contains(TEXT("log")) || Id.Contains(TEXT("records"));
+		const bool bFile = Id.Contains(TEXT("log")) || Id.Contains(TEXT("record"));
 		const bool bWitness = Id.Contains(TEXT("diagnosis"));
 		const FString Label = FWSPresentationText::EvidenceLabel(EvidenceId).ToString();
 		int32 Separator = INDEX_NONE;
@@ -2136,6 +2159,7 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 	{
 		bEndingResultsRevealed = true;
 		ResultsBorder->SetVisibility(ESlateVisibility::Visible);
+		if (!bWasShowingResults) FocusResultsInput();
 	}
 	else
 	{
@@ -2227,7 +2251,7 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 		 PromiseSummary})));
 
 	const TArray<float> Values = {State.Score.TaskQuality, State.Score.People, State.Score.EffectiveReserves, State.Score.SocialStability, State.Score.InformationResponsibility};
-	const TArray<float> Maximums = {30.0f, 30.0f, 20.0f, 12.0f, 8.0f};
+	const TArray<float> Maximums = {30.0f, 40.0f, 10.0f, 12.0f, 8.0f};
 	const TArray<FName> ScoreIds = {TEXT("task"), TEXT("people"), TEXT("reserves"), TEXT("social"), TEXT("information")};
 	const TArray<FText> ScoreLabels = {
 		FWSPresentationText::UI(TEXT("score_task"), TEXT("任务质量")),
@@ -2255,11 +2279,10 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 		if (const FWSCharacterState* Character = State.Characters.Find(CharacterId))
 		{
 			Crew += FString::Printf(
-				TEXT("　%s　健康 %s｜体温 %s｜精力 %s"),
-				*FWSPresentationText::CharacterName(CharacterId).ToString(),
-				*FWSPresentationText::ConditionLevel(Character->Health).ToString(),
-				*FWSPresentationText::ConditionLevel(Character->Temperature).ToString(),
-				*FWSPresentationText::ConditionLevel(Character->Fatigue).ToString());
+				TEXT("　%s　体温 %.1f（%s）｜体能 %d/2｜伤势 %s｜压力 %.1f"),
+				*FWSPresentationText::CharacterName(CharacterId).ToString(), Character->Temperature,
+				Character->Temperature < 3.5f ? TEXT("失温") : Character->Temperature < 6.0f ? TEXT("寒冷") : TEXT("温暖"),
+				Character->Stamina, Character->InjurySeverity == EWSInjurySeverity::Normal ? TEXT("正常") : Character->InjurySeverity == EWSInjurySeverity::Restricted ? TEXT("受限") : TEXT("危重"), Character->Pressure);
 			if (CharacterId != EWSCharacterId::Player)
 			{
 				Crew += FString::Printf(TEXT("｜信任 %s"), *FWSPresentationText::TrustLevel(Character->Trust).ToString());
@@ -2267,6 +2290,8 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 			Crew += TEXT("\n");
 		}
 	}
+	if (!State.Score.RatingCapReason.IsEmpty()) Crew += State.Score.RatingCapReason + TEXT("\n");
+	if (State.bScoreRulesMigrated) Crew += TEXT("旧存档已按 v1.6 新规则重算当前评分；物资、AP 和行动历史保持原值。\n");
 	ResultsCrewText->SetText(FText::FromString(Crew));
 
 	FString Timeline = FWSPresentationText::UI(TEXT("ui_results_timeline_header"), TEXT("完整因果时间线\n")).ToString();
@@ -2281,6 +2306,7 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 			Event.APBefore,
 			Event.APAfter,
 			Event.bCrisisTriggered ? *FWSPresentationText::UI(TEXT("ui_crisis_tag"), TEXT("　［备用电池故障］")).ToString() : TEXT(""));
+		if (!Event.Changes.IsEmpty()) Timeline += TEXT("　") + FString::Join(Event.Changes, TEXT("；")) + TEXT("\n");
 	}
 	if (State.EventLog.IsEmpty())
 	{
@@ -2422,7 +2448,7 @@ void UWhiteoutHUDWidget::ShowActionPreview(
 	else if (Request.ActionId == TEXT("repair_generator"))
 	{
 		Selection = Request.bForce
-			? TEXT("当前方案：强迫推进（关系与人身风险）")
+			? TEXT("当前方案：强迫推进")
 			: Request.bUseRelay
 			? TEXT("当前方案：安装替代继电器")
 			: Request.bHasCollaborator
@@ -2448,56 +2474,26 @@ void UWhiteoutHUDWidget::ShowActionPreview(
 		Selection =
 			TEXT("阶段选择：燃料 ×1；确认后本阶段不可更改");
 	}
-	const bool bHasSelectableOption = !Selection.IsEmpty();
-	if (Preview.bCanExecute)
+	TArray<FString> ResourceCosts, StaminaCosts;
+	for (const auto& Cost : Preview.Costs.Resources)
 	{
-		PreviewTitleText->SetColorAndOpacity(FSlateColor(Cyan));
-		const FString Risk = Preview.RiskText.IsEmpty()
-			? FWSPresentationText::UI(TEXT("ui_risk_none"), TEXT("未发现额外风险。")).ToString()
-			: Preview.RiskText.ToString();
-		FString Expected = Preview.PreviewText.ToString();
-		if (!Expected.IsEmpty())
-		{
-			Expected += TEXT("\n");
-		}
-		Expected += FWSPresentationText::ActionImpact(Preview.ActionId).ToString();
-		FString ResourceCost = FWSPresentationText::ActionResourceCost(Preview.ActionId).ToString();
-		if (bHasSelectableOption)
-		{
-			ResourceCost = Selection;
-		}
-		const FString BodyFormat = FWSPresentationText::UI(
-			TEXT("ui_preview_body_format"),
-			TEXT("行动成本\n行动力 ×{0}\n\n执行者\n{1}\n\n资源成本\n{2}\n\n可预见风险\n{3}\n\n预期结果\n{4}\n\n当前前置条件满足；确认后立即结算。")).ToString();
-		PreviewBodyText->SetText(FText::FromString(FString::Format(
-			*BodyFormat,
-			{Preview.APCost,
-			 FWSPresentationText::ActionExecutor(Preview.ActionId).ToString(),
-			 ResourceCost,
-			 Risk,
-			 Expected})));
-		PreviewFooterText->SetText(FText::FromString(
-			bCanCycleOption
-				? TEXT("[Q] 切换方案　｜　再次按 F 确认执行　｜　移开视线取消")
-				: FWSPresentationText::UI(TEXT("ui_preview_footer"), TEXT("再次按 F 确认执行　｜　移开视线取消")).ToString()));
+		const TCHAR* Label = Cost.Key == TEXT("food") ? TEXT("食物") : Cost.Key == TEXT("medicine") ? TEXT("药品")
+			: Cost.Key == TEXT("heat_pack") ? TEXT("保温包") : Cost.Key == TEXT("fuel") ? TEXT("燃料") : TEXT("替代继电器");
+		ResourceCosts.Add(FString::Printf(TEXT("%s ×%d"), Label, Cost.Value));
 	}
-	else
-	{
-		PreviewTitleText->SetColorAndOpacity(FSlateColor(Danger));
-		const FString RejectionFormat = FWSPresentationText::UI(TEXT("ui_rejection_format"), TEXT("现在不能执行\n{0}\n\n怎样改变条件\n{1}")).ToString();
-		FString Rejection = FString::Format(
-			*RejectionFormat,
-			{FWSPresentationText::ReasonCause(Preview.ReasonCode).ToString(), FWSPresentationText::ReasonNextStep(Preview.ReasonCode).ToString()});
-		if (bHasSelectableOption)
-		{
-			Rejection = Selection + TEXT("\n\n") + Rejection;
-		}
-		PreviewBodyText->SetText(FText::FromString(Rejection));
-		PreviewFooterText->SetText(FText::FromString(
-			bHasSelectableOption
-				? TEXT("[Q] 切换方案　｜　按 F 关闭提示")
-				: FWSPresentationText::UI(TEXT("ui_rejection_footer"), TEXT("移开视线或按 F 关闭提示")).ToString()));
-	}
+	for (const auto& Cost : Preview.Costs.Stamina)
+		StaminaCosts.Add(FString::Printf(TEXT("%s ×%d"), *CharacterShortLabel(Cost.Key), Cost.Value));
+	const FString Executor = Request.ActionId == TEXT("rest") ? CharacterShortLabel(Request.RestTarget) : FWSPresentationText::ActionExecutor(Preview.ActionId).ToString();
+	FString BodyCopy = FString::Printf(TEXT("%s\n执行者：%s%s\n\n行动力：%d AP\n物资：%s\n体能消耗：%s"),
+		*Selection, *Executor,
+		Request.bHasCollaborator ? *FString::Printf(TEXT("　协作者：%s"), *CharacterShortLabel(Request.Collaborator)) : TEXT(""), Preview.APCost,
+		ResourceCosts.IsEmpty() ? TEXT("无") : *FString::Join(ResourceCosts, TEXT("　")),
+		StaminaCosts.IsEmpty() ? TEXT("无") : *FString::Join(StaminaCosts, TEXT("　")));
+	if (!Preview.bCanExecute) BodyCopy += TEXT("\n\n无法执行：") + FWSPresentationText::ReasonCause(Preview.ReasonCode).ToString();
+	PreviewTitleText->SetColorAndOpacity(FSlateColor(Preview.bCanExecute ? Cyan : Danger));
+	PreviewBodyText->SetText(FText::FromString(BodyCopy));
+	PreviewFooterText->SetText(FText::FromString(bCanCycleOption ? TEXT("Q 切换方案　｜　F 确认　｜　Esc 取消") : TEXT("F 确认　｜　Esc 取消")));
+
 }
 
 void UWhiteoutHUDWidget::HideActionPreview()
@@ -2547,15 +2543,9 @@ void UWhiteoutHUDWidget::SetActionFeedback(
 			*RejectedFormat,
 			{ActionName.ToString(), FWSPresentationText::ReasonCause(Result.ReasonCode).ToString(), FWSPresentationText::ReasonNextStep(Result.ReasonCode).ToString()});
 	}
-	if (ToastBorder && ToastText && !bDialogueVisible)
-	{
-		ToastText->SetText(FText::FromString(SystemMessage));
-		ToastText->SetColorAndOpacity(FSlateColor(Result.bCommitted ? Body : FLinearColor(1.0f, 0.72f, 0.62f, 1.0f)));
-		ToastBorder->SetBrushColor(FLinearColor::Transparent);
-		ToastBorder->SetVisibility(ESlateVisibility::Visible);
-		ToastBorder->SetRenderOpacity(1.0f);
-		ToastRemaining = 2.7f;
-	}
+	if (Result.bCommitted && !Result.Changes.IsEmpty()) SystemMessage += TEXT("\n") + FString::Join(Result.Changes, TEXT("；"));
+	FeedbackQueue.Add(SystemMessage);
+
 }
 
 void UWhiteoutHUDWidget::ToggleEvidence()
@@ -3102,6 +3092,7 @@ void UWhiteoutHUDWidget::ResetPresentationCapture()
 	bWasShowingResults = false;
 	bEndingResultsRevealed = false;
 	ToastRemaining = 0.0f;
+	FeedbackQueue.Reset();
 	CrisisElapsed = -1.0f;
 	EndingElapsed = -1.0f;
 	HideActionPreview();
@@ -3241,6 +3232,7 @@ void UWhiteoutHUDWidget::SetEndingCaptureStage(const EWSEndingType Ending, const
 void UWhiteoutHUDWidget::SetSystemMessage(const FString& Message)
 {
 	SystemMessage = Message;
+	FeedbackQueue.Add(Message);
 }
 
 void UWhiteoutHUDWidget::TickOpening(const float DeltaTime)
@@ -3611,6 +3603,7 @@ void UWhiteoutHUDWidget::ShowPanelInstant(UBorder* Panel, const bool bShow)
 void UWhiteoutHUDWidget::DismissOpening()
 {
 	OpeningPhase = EWSOpeningPhase::Complete;
+	SetSystemMessage(TEXT("首先修复设备并成功发出求救信号。在此基础上，尽量让你、顾衡和叶澄保持温暖、恢复体能、处理伤势并降低压力，结算评分会更高。合理照护后的储备，比单纯囤积物资更有价值。"));
 	if (OpeningBorder)
 	{
 		OpeningBorder->SetRenderOpacity(1.0f);
@@ -3753,6 +3746,19 @@ void UWhiteoutHUDWidget::TogglePauseMenu()
 	}
 }
 
+void UWhiteoutHUDWidget::FocusResultsInput()
+{
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		PC->bShowMouseCursor = true;
+		FInputModeUIOnly Mode;
+		Mode.SetWidgetToFocus(TakeWidget());
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(Mode);
+		SetKeyboardFocus();
+	}
+}
+
 void UWhiteoutHUDWidget::ResumeGame()
 {
 	ShowPanelAnimated(PauseBorder, false, WSUITokens::Anim::Fast);
@@ -3764,10 +3770,16 @@ void UWhiteoutHUDWidget::ResumeGame()
 	{
 		PauseHelpText->SetVisibility(ESlateVisibility::Collapsed);
 	}
-	SetLayer(EWSUILayer::Game);
+	const bool bReturnToResults = GetGameInstance() && GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>()->GetStateSnapshot().Phase == EWSGamePhase::Results;
+	SetLayer(bReturnToResults ? EWSUILayer::Results : EWSUILayer::Game);
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
 		PlayerController->SetPause(false);
+		if (bReturnToResults)
+		{
+			if (bEndingResultsRevealed) FocusResultsInput();
+			return;
+		}
 		PlayerController->bShowMouseCursor = false;
 		PlayerController->SetInputMode(FInputModeGameOnly());
 		ResetMouseToViewportCenter();
@@ -3805,10 +3817,11 @@ void UWhiteoutHUDWidget::LoadGame()
 	{
 		const bool bLoaded = StateSubsystem->LoadSnapshot();
 		SystemMessage = bLoaded
-			? TEXT("已恢复最近保存的本轮状态。")
-			: TEXT("没有可读取的 v1.3 或兼容 v1.2 本轮存档。");
+			? TEXT("已恢复存档，当前评分按 v1.6 新规则计算。")
+			: TEXT("没有可读取的兼容存档。");
 		if (bLoaded)
 		{
+			SetSystemMessage(SystemMessage);
 			ResumeGame();
 		}
 	}
