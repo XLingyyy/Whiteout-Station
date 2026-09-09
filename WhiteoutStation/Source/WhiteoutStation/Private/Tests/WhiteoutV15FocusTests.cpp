@@ -17,7 +17,7 @@ bool FWhiteoutV15FocusLeaseTest::RunTest(const FString& Parameters)
 	const UWorld::InitializationValues Values = UWorld::InitializationValues()
 		.AllowAudioPlayback(false).RequiresHitProxies(false).CreatePhysicsScene(true)
 		.CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false).SetTransactional(false);
-	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr, true, ERHIFeatureLevel::SM5, &Values);
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr, true, GEngine->GetDefaultWorldFeatureLevel(), &Values);
 	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
 	AWhiteoutCharacter* Player = World->SpawnActor<AWhiteoutCharacter>();
 	const auto NPC = [&](FName Action, FVector Location)

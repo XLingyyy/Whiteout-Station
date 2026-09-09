@@ -419,6 +419,8 @@ class WhiteoutSimulatorV11:
 
         action = self.actions[action_id]
         count = self._action_count(action_id)
+        if self.v16 and action_id in {"talk_gu_heng", "talk_ye_cheng"} and count >= self.rules['gameplay']['dialogue_turn_limit']:
+            return "dialogue_session_complete"
         if not action.get("repeatable", False) and count > 0:
             return "already_completed"
         if count >= int(action.get("max_uses", 10**9)):
@@ -604,6 +606,8 @@ class WhiteoutSimulatorV11:
                 "readiness": "ready" if reason == "ok" else "unavailable",
                 "executor": action["primary_executor"],
                 "support_waiver": None,
+                "resource_costs": {},
+                "stamina_costs": {},
             }
 
         tags = set(action.get("tags", []))
@@ -761,6 +765,18 @@ class WhiteoutSimulatorV11:
             readiness = "strained"
         else:
             readiness = "ready"
+        resource_costs = {}
+        if action_id == 'distribute_food':
+            resource_costs['food'] = len(params.get('recipients', []))
+        elif action_id in {'treat_character', 'treat_gu_heng'}:
+            method = params.get('method', 'full')
+            if method == 'full':
+                resource_costs['medicine'] = 1
+            elif method == 'heat_pack':
+                resource_costs['heat_pack'] = 1
+        elif action_id == 'repair_generator' and params.get('use_relay'):
+            resource_costs['replacement_relay'] = 1
+        stamina_costs = {executor: min(1, character['stamina'])} if action.get('consumes_stamina') and not stamina_waived else {}
         return {
             "action_id": action_id,
             "can_execute": not blocked,
@@ -771,6 +787,8 @@ class WhiteoutSimulatorV11:
             "raw_ap": raw_ap,
             "uses_repair_preparation": uses_preparation,
             "stamina_waived": stamina_waived,
+            "resource_costs": resource_costs,
+            "stamina_costs": stamina_costs,
             "readiness": readiness,
             "executor": executor,
             "support_waiver": support_waiver,
@@ -783,7 +801,7 @@ class WhiteoutSimulatorV11:
         expected: dict[str, Any] = {}
         if action_id == "repair_generator" and cost["can_execute"]:
             expected["generator_progress"] = self._repair_output(params or {}, cost)
-            expected["stamina_delta"] = -1
+            expected["stamina_delta"] = -cost['stamina_costs'].get(cost['executor'], 0)
             if self._injury_level(cost["executor"]) == "restricted":
                 expected["injury_risk"] = "may_worsen"
         elif action_id == "calibrate_antenna" and cost["can_execute"]:

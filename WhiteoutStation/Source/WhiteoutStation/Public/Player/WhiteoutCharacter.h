@@ -147,7 +147,7 @@ private:
 	void TogglePauseMenu();
 	void BeginDialogue(AWSInteractableActor* Interactable);
 	void CommitDialogueChoice(EWSDialogueAct DialogueAct, FName PromiseCondition);
-	void RefreshActionPreview();
+	void RefreshActionPreview(bool bCostsChanged = false);
 	AWSInteractableActor* FindLookedAtInteractable() const;
 	void UpdateFootsteps();
 };

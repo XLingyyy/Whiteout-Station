@@ -1755,6 +1755,11 @@ FWSGameState UWindStationStateSubsystem::MigrateSaveStateForV13(
 	const FString& TargetRulesVersion)
 {
 	FWSGameState MigratedState = SourceState;
+	if (SourceState.RulesSchemaVersion < 8 && TargetRulesSchemaVersion >= 8)
+	{
+		MigratedState.bRepairPreparationAvailable = false;
+		MigratedState.bScoreRulesMigrated = true;
+	}
 	for (auto& Entry : MigratedState.ConversationHistory)
 		if (Entry.ControlStatus == TEXT("pending")) Entry.ControlStatus = TEXT("cancelled");
 	if (SourceSaveVersion != TEXT("1.6.0")
@@ -1850,11 +1855,6 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 		Save->SaveVersion,
 		RulesEngine.GetConfig().SchemaVersion,
 		RulesEngine.GetConfig().RulesVersion);
-	if (Save->State.RulesSchemaVersion < 8 && RulesEngine.IsV16Rebalanced())
-	{
-		MigratedState.bRepairPreparationAvailable = false;
-		MigratedState.bScoreRulesMigrated = true;
-	}
 	RulesEngine.SetState(MigratedState);
 	DialogueSessions.Reset();
 	++StateRevision;

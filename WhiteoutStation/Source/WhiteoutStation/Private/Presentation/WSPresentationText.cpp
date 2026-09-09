@@ -29,6 +29,8 @@ FText FWSPresentationText::UI(const FName Key, const TCHAR* Fallback)
 
 FText FWSPresentationText::ActionLabel(const FName ActionId)
 {
+	if (ActionId == TEXT("begin_phase")) return FText::FromString(TEXT("锁定阶段供暖"));
+	if (ActionId == TEXT("settle_phase")) return FText::FromString(TEXT("阶段温度与行动结算"));
 	if (ActionId == TEXT("investigate_generator_log")) return TableText(TEXT("action_investigate_generator_log"), TEXT("调查发电机运行记录"));
 	if (ActionId == TEXT("send_signal")) return TableText(TEXT("action_send_signal"), TEXT("发送求救信号"));
 	if (ActionId == TEXT("heat_control_room")) return Text(TEXT("本阶段为控制室供暖"));
@@ -363,9 +365,9 @@ FText FWSPresentationText::EndingAdvice(const EWSEndingType Ending)
 
 FText FWSPresentationText::ScoreAttribution(const FName ScoreId)
 {
-	if (ScoreId == TEXT("task")) return UI(TEXT("score_attr_task"), TEXT("发电机、天线、信号与剩余行动力"));
-	if (ScoreId == TEXT("people")) return UI(TEXT("score_attr_people"), TEXT("三人的体温、体能、伤势与压力"));
-	if (ScoreId == TEXT("reserves")) return UI(TEXT("score_attr_reserves"), TEXT("燃料、食品、医疗物资与厨房供暖"));
+	if (ScoreId == TEXT("task")) return FText::FromString(TEXT("发电机、天线与求救信号"));
+	if (ScoreId == TEXT("people")) return FText::FromString(TEXT("三人的体温、体能、伤势与压力"));
+	if (ScoreId == TEXT("reserves")) return FText::FromString(TEXT("剩余物资对未解决照护需要的覆盖"));
 	if (ScoreId == TEXT("social")) return UI(TEXT("score_attr_social"), TEXT("信任变化与承诺兑现情况"));
 	return UI(TEXT("score_attr_information"), TEXT("证据核验、记录保存与责任选择"));
 }

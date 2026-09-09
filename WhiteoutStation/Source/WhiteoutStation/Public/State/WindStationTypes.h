@@ -818,6 +818,8 @@ struct FWSEventRecord
 	UPROPERTY(SaveGame) EWSCharacterId Collaborator = EWSCharacterId::Player;
 	UPROPERTY(SaveGame) bool bRepairPreparationGranted = false;
 	UPROPERTY(SaveGame) bool bRepairPreparationConsumed = false;
+	UPROPERTY(SaveGame) int32 ActionRulesSchema = 0;
+	UPROPERTY(SaveGame) bool bHeatedRest = false;
 	UPROPERTY(SaveGame) FWSActionCosts Costs;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame)
@@ -1138,6 +1140,7 @@ struct FWSActionPreview
 	GENERATED_BODY()
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FWSActionCosts Costs;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bUsesRepairPreparation = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) FText MissingConditions;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName ActionId;

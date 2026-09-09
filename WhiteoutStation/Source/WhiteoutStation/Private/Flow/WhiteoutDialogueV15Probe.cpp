@@ -29,6 +29,11 @@ namespace
 				FWSActionRequest Request; Request.ActionId = TEXT("rest"); Request.RestTarget = EWSCharacterId::YeCheng; Request.RestLocation = EWSCharacterLocation::MedicalRoom;
 				Success = State->CommitAction(Request).bCommitted;
 			}
+			else if (Text == TEXT("@inspect_with_gu"))
+			{
+				FWSActionRequest Request; Request.ActionId = TEXT("inspect_control_cabinet"); Request.bHasCollaborator = true; Request.Collaborator = EWSCharacterId::GuHeng;
+				Success = State->CommitAction(Request).bCommitted;
+			}
 			else if (Text == TEXT("@reveal_heatpack")) Success = State->SubmitAuthoredDialogueChoice(TEXT("talk_ye_cheng"), TEXT("ye_alternative"), FGuid::NewGuid()).bCommitted;
 			else if (Text == TEXT("@treat_full") || Text == TEXT("@treat_support") || Text == TEXT("@bandage"))
 			{
@@ -44,6 +49,9 @@ namespace
 			Row->SetNumberField(TEXT("ap_before"), Before.PhaseActionPoints); Row->SetNumberField(TEXT("ap_after"), After.PhaseActionPoints);
 			Row->SetBoolField(TEXT("treated"), After.Flags.bGuHengTreated); Row->SetNumberField(TEXT("medicine"), After.Resources.Medicine);
 			Row->SetNumberField(TEXT("turns"), State->GetDialogueTurnsUsed(Action)); Reports->Add(MakeShared<FJsonValueObject>(Row));
+			Row->SetBoolField(TEXT("repair_preparation_available"), After.bRepairPreparationAvailable);
+			Row->SetNumberField(TEXT("ye_temperature_before"), Before.Characters.FindRef(EWSCharacterId::YeCheng).Temperature);
+			Row->SetNumberField(TEXT("ye_temperature_after"), After.Characters.FindRef(EWSCharacterId::YeCheng).Temperature);
 			if (!Success) { Finish(false, TEXT("fixture_action_failed")); return; }
 			RunSemanticProbeStep(State, Session, Action, Steps, Index + 1, Reopen, Reports, Finish); return;
 		}

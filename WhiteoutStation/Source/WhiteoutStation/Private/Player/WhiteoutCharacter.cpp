@@ -266,7 +266,7 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 					if (CurrentQuote.APCost != DisplayedActionQuote.APCost || !CurrentQuote.Costs.Equals(DisplayedActionQuote.Costs)
 						|| CurrentQuote.bCanExecute != DisplayedActionQuote.bCanExecute)
 					{
-						RefreshActionPreview();
+						RefreshActionPreview(true);
 						return;
 					}
 					if (CurrentQuote.bCanExecute)
@@ -506,7 +506,7 @@ void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
 	RefreshActionPreview();
 }
 
-void AWhiteoutCharacter::RefreshActionPreview()
+void AWhiteoutCharacter::RefreshActionPreview(const bool bCostsChanged)
 {
 	if (!PreviewedInteractable)
 	{
@@ -519,7 +519,8 @@ void AWhiteoutCharacter::RefreshActionPreview()
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
 		{
-			HUD->ShowActionPreview(PreviewedInteractable->DisplayName, Preview, PreviewActionRequest);
+			const FText Title = bCostsChanged ? FText::FromString(PreviewedInteractable->DisplayName.ToString() + TEXT("（费用已更新，请再次确认）")) : PreviewedInteractable->DisplayName;
+			HUD->ShowActionPreview(Title, Preview, PreviewActionRequest);
 		}
 	}
 }

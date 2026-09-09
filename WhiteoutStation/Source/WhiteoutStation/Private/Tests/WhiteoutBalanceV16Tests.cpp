@@ -4,6 +4,37 @@
 #include "State/WhiteoutRulesEngine.h"
 #include "Save/WindStationSaveGame.h"
 #include "Kismet/GameplayStatics.h"
+#include "State/WindStationStateSubsystem.h"
+#include "Dialogue/WSConversationValidator.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWSBalanceV16MigrationAndClaims, "Whiteout.V16.Balance.MigrationAndEventAuthority", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FWSBalanceV16MigrationAndClaims::RunTest(const FString& Parameters)
+{
+	FWSGameState Old; Old.RulesSchemaVersion = 7; Old.Resources.Food = 1; Old.PhaseActionPoints = Old.ActionPoints = 1;
+	Old.Flags.bCabinetInspected = true;
+	FWSEventRecord Historical; Historical.ActionId = TEXT("inspect_control_cabinet"); Historical.Changes = {TEXT("old history")}; Old.EventLog.Add(Historical);
+	const auto Migrated = UWindStationStateSubsystem::MigrateSaveStateForV13(Old, TEXT("1.6.0"), 8, TEXT("1.6.0"));
+	TestEqual(TEXT("Migration does not refill food"), Migrated.Resources.Food, 1);
+	TestEqual(TEXT("Migration does not refund AP"), Migrated.PhaseActionPoints, 1);
+	TestFalse(TEXT("Migration does not grant preparation for old inspection"), Migrated.bRepairPreparationAvailable);
+	TestTrue(TEXT("Migration marks new scoring"), Migrated.bScoreRulesMigrated);
+	TestEqual(TEXT("Historical text unchanged"), Migrated.EventLog[0].Changes[0], FString(TEXT("old history")));
+	FWSPreparedDialogue Prepared;
+	FWSDialogueOutcome Outcome;
+	FString Error;
+	const FString PreparationVerdict = TEXT("{\"safe\":true,\"issues\":[],\"expressed_fact_ids\":[],\"addressed_goal_ids\":[],\"corrects_entry_id\":\"\",\"event_claims\":[{\"action\":\"repair_preparation\",\"target\":\"gu_heng\",\"method\":\"available\",\"status\":\"completed\"}]}");
+	TestFalse(TEXT("Verifier cannot grant an unearned preparation"), FWSConversationValidator::ApplyVerdict(PreparationVerdict, Prepared, Outcome, Error));
+	Prepared.ReadSnapshot.bRepairPreparationAvailable = true;
+	TestTrue(TEXT("Actual preparation authorizes statement"), FWSConversationValidator::ApplyVerdict(PreparationVerdict, Prepared, Outcome, Error));
+	const FString RestVerdict = TEXT("{\"safe\":true,\"issues\":[],\"expressed_fact_ids\":[],\"addressed_goal_ids\":[],\"corrects_entry_id\":\"\",\"event_claims\":[{\"action\":\"rest\",\"target\":\"ye_cheng\",\"method\":\"heated\",\"status\":\"completed\"}]}");
+	TestFalse(TEXT("Rules alone do not prove rest happened"), FWSConversationValidator::ApplyVerdict(RestVerdict, Prepared, Outcome, Error));
+	FWSEventRecord Rest; Rest.ActionId = TEXT("rest"); Rest.ActionRulesSchema = 8; Rest.TargetCharacter = EWSCharacterId::YeCheng;
+	Prepared.ReadSnapshot.EventLog.Add(Rest);
+	TestFalse(TEXT("Cold rest does not prove warming"), FWSConversationValidator::ApplyVerdict(RestVerdict, Prepared, Outcome, Error));
+	Prepared.ReadSnapshot.EventLog.Last().bHeatedRest = true;
+	TestTrue(TEXT("Actual warm rest authorizes statement"), FWSConversationValidator::ApplyVerdict(RestVerdict, Prepared, Outcome, Error));
+	return true;
+}
 
 namespace WSBalanceTests
 {
@@ -44,6 +75,7 @@ bool FWSBalanceV16Preparation::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Save preserves preparation"), Engine.GetState().bRepairPreparationAvailable);
 	EWSReasonCode Reason; FWSPhaseSummary Summary; TArray<FString> Changes;
 	TestTrue(TEXT("Settle stage"), Engine.SettleDayPhase(Reason, Summary));
+	TestTrue(TEXT("Stage temperature changes remain separately readable in event history"), Engine.GetState().EventLog.Last().Changes == Summary.Changes && !Summary.Changes.IsEmpty());
 	TestTrue(TEXT("Preparation survives stage"), Engine.GetState().bRepairPreparationAvailable);
 	Engine.BeginDayPhase(EWSHeatingZone::RepairRoom, Reason, Changes);
 	auto& Gu = Engine.GetMutableStateForTesting().Characters.FindChecked(EWSCharacterId::GuHeng);

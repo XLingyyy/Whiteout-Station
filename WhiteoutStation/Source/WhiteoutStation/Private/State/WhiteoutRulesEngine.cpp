@@ -1531,6 +1531,18 @@ FWSActionPreview FWhiteoutRulesEngine::BuildV11Preview(
 	Result.PreviewText = ActionPreviewText(Request.ActionId);
 	Result.RiskText = ActionRiskText(Request.ActionId);
 	Result.ReasonCode = CanExecuteV11(Request);
+	if (Request.ActionId == RepairGenerator && Result.ReasonCode == EWSReasonCode::NeedsGuHengConditions)
+	{
+		const auto& Gu = Character(EWSCharacterId::GuHeng);
+		TArray<FString> Missing;
+		if ((Gu.Trust < 4.5f || Gu.Pressure >= 8.0f) && !Request.bHasCollaborator) Missing.Add(TEXT("当前需要你在旁协作"));
+		if (!Request.bUseRelay)
+		{
+			if (State.Heating.CurrentZone != EWSHeatingZone::RepairRoom) Missing.Add(TEXT("维修间尚未供暖"));
+			if (Gu.Stamina < 2) Missing.Add(FString::Printf(TEXT("顾衡体能 %d/2，常规维修需要 2/2"), Gu.Stamina));
+		}
+		Result.MissingConditions = FText::FromString(FString::Join(Missing, TEXT("；")));
+	}
 
 	const FWhiteoutActionRule* Rule = Config.ActionRules.Find(Request.ActionId);
 	if (!Rule)
@@ -2027,6 +2039,8 @@ FWSActionResult FWhiteoutRulesEngine::CommitV11(
 	Event.BaseAP = ActionPreview.BaseAP;
 	Event.ActualAP = ActionPreview.APCost;
 	Event.bHasActionProvenance = true; Event.Executor = Executor;
+	Event.ActionRulesSchema = Config.SchemaVersion;
+	Event.bHeatedRest = Request.ActionId == Rest && V11HeatingMatchesLocation(Request.RestLocation);
 	Event.Costs = Result.Costs;
 	Event.bHasCollaborator = Request.bHasCollaborator;
 	Event.Collaborator = Request.Collaborator;
@@ -2321,7 +2335,8 @@ bool FWhiteoutRulesEngine::SettleDayPhase(
 	Event.APAfter = 0;
 	Event.ReasonCode = EWSReasonCode::Committed;
 	Event.DayPhase = SettledPhase;
-	Event.Changes = OutSummary.OrderedSteps;
+	Event.Changes = IsV16Rebalanced() ? OutSummary.Changes : OutSummary.OrderedSteps;
+	Event.ActionRulesSchema = Config.SchemaVersion;
 	State.EventLog.Add(MoveTemp(Event));
 
 	State.bDayPhaseStarted = false;

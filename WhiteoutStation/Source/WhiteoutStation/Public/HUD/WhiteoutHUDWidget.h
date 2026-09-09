@@ -248,7 +248,7 @@ private:
 	TArray<TObjectPtr<UButton>> EvidenceCardButtons;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UUniformGridPanel> EvidenceCardGrid;
+	TObjectPtr<UVerticalBox> EvidenceCardGrid;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> EvidenceProgressText;

@@ -142,6 +142,18 @@ bool FWSConversationValidator::ApplyVerdict(const FString& Json, const FWSPrepar
 		}
 		else if (Action == TEXT("repair") && Target == TEXT("generator") && Method.IsEmpty())
 			Completed = Prepared.ReadSnapshot.Tasks.GeneratorProgress >= Prepared.RoleplayRequest.SubjectiveState.GeneratorRequired;
+		else if (Action == TEXT("rest") && (Target == TEXT("player") || Target == TEXT("gu_heng") || Target == TEXT("ye_cheng"))
+			&& (Method.IsEmpty() || Method == TEXT("heated")))
+		{
+			const auto Id = Target == TEXT("gu_heng") ? EWSCharacterId::GuHeng : Target == TEXT("ye_cheng") ? EWSCharacterId::YeCheng : EWSCharacterId::Player;
+			Completed = Prepared.ReadSnapshot.EventLog.ContainsByPredicate([&](const auto& Event)
+			{ return Event.ActionRulesSchema >= 8 && Event.ActionId == TEXT("rest") && Event.TargetCharacter == Id && (Method.IsEmpty() || Event.bHeatedRest); });
+		}
+		else if (Action == TEXT("repair_preparation") && Target == TEXT("gu_heng") && (Method == TEXT("granted") || Method == TEXT("consumed") || Method == TEXT("available")))
+		{
+			Completed = Method == TEXT("available") ? Prepared.ReadSnapshot.bRepairPreparationAvailable : Prepared.ReadSnapshot.EventLog.ContainsByPredicate([&](const auto& Event)
+			{ return Method == TEXT("granted") ? Event.bRepairPreparationGranted : Event.bRepairPreparationConsumed; });
+		}
 		else { Error = TEXT("verification_event_action"); return false; }
 		// Actions in this game commit atomically; there is no ongoing autonomous medical/inspection task.
 		if (Status == TEXT("in_progress") || (Status == TEXT("completed")) != Completed)

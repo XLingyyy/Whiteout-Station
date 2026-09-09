@@ -9,6 +9,7 @@
 #include "Components/Border.h"
 #include "Components/BackgroundBlur.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/ComboBoxString.h"
@@ -60,6 +61,18 @@ namespace
 	constexpr int32 MinutesPerActionPoint = 50;
 	constexpr int32 CollectableEvidenceCount = 7;
 	constexpr int32 DiscoverableFactCount = 8;
+
+	FString ActionChangesForDisplay(const TArray<FString>& Changes)
+	{
+		TArray<FString> Lines;
+		for (const FString& Change : Changes)
+		{
+			// Internal index notifications stay in the event log; the evidence board presents their contents.
+			if (!Change.StartsWith(TEXT("Fact updated: ")) && !Change.StartsWith(TEXT("Evidence acquired: ")))
+				Lines.Add(Change);
+		}
+		return FString::Join(Lines, TEXT("；"));
+	}
 
 	// 颜色别名 —— 全部来自 WSUITokens 单一可信来源
 	const FLinearColor& PanelColor = WSUITokens::Color::SurfacePanel;
@@ -482,6 +495,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UVerticalBox* BottomBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("BottomBox"));
 	SetGlassPanelContent(BottomPanel, BottomBox);
 	FeedbackText = MakeText(TEXT("FeedbackText"), 14, Body);
+	FeedbackText->SetVisibility(ESlateVisibility::Collapsed);
 	PromptText = MakeText(TEXT("PromptText"), 16, Amber);
 	UTextBlock* HelpText = MakeText(TEXT("HelpText"), 12, Secondary);
 	HelpText->SetText(FWSPresentationText::UI(
@@ -618,8 +632,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	EvidenceMain->AddChildToHorizontalBox(FilterSize)->SetPadding(FMargin(0, 0, 14, 0));
 	UVerticalBox* EvidenceContent = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("EvidenceContent"));
 	EvidenceScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("EvidenceScroll"));
-	EvidenceCardGrid = WidgetTree->ConstructWidget<UUniformGridPanel>(UUniformGridPanel::StaticClass(), TEXT("EvidenceCardGrid"));
-	EvidenceCardGrid->SetMinDesiredSlotWidth(300.0f);
+	EvidenceCardGrid = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("EvidenceCardGrid"));
 	if (UScrollBoxSlot* GridSlot = Cast<UScrollBoxSlot>(EvidenceScroll->AddChild(EvidenceCardGrid)))
 	{
 		GridSlot->SetHorizontalAlignment(HAlign_Left);
@@ -799,7 +812,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	ToastText = MakeText(TEXT("ActionToastText"), 14, Body, true);
 	ToastText->SetJustification(ETextJustify::Center);
 	UOverlaySlot* ToastTextSlot = ToastOverlay->AddChildToOverlay(ToastText);
-	ToastTextSlot->SetHorizontalAlignment(HAlign_Center);
+	ToastTextSlot->SetHorizontalAlignment(HAlign_Fill);
 	ToastTextSlot->SetVerticalAlignment(VAlign_Center);
 	ToastBorder->SetContent(ToastOverlay);
 	ToastBorder->SetVisibility(ESlateVisibility::Collapsed);
@@ -2066,7 +2079,9 @@ void UWhiteoutHUDWidget::UpdateEvidence(const FWSGameState& State)
 		CopySlot->SetVerticalAlignment(VAlign_Center);
 		SetGlassPanelContent(Card, CardRow);
 		CardButton->SetContent(Card);
-		UUniformGridSlot* CardSlot = EvidenceCardGrid->AddChildToUniformGrid(CardButton, CardIndex, 0);
+		if (auto* ContentSlot = Cast<UButtonSlot>(Card->Slot)) ContentSlot->SetHorizontalAlignment(HAlign_Fill);
+		UVerticalBoxSlot* CardSlot = EvidenceCardGrid->AddChildToVerticalBox(CardButton);
+		CardSlot->SetPadding(FMargin(0, 0, 0, 12));
 		CardSlot->SetHorizontalAlignment(HAlign_Fill);
 		CardSlot->SetVerticalAlignment(VAlign_Fill);
 		EvidenceCardButtons.Add(CardButton);
@@ -2306,7 +2321,8 @@ void UWhiteoutHUDWidget::UpdateResults(const FWSGameState& State)
 			Event.APBefore,
 			Event.APAfter,
 			Event.bCrisisTriggered ? *FWSPresentationText::UI(TEXT("ui_crisis_tag"), TEXT("　［备用电池故障］")).ToString() : TEXT(""));
-		if (!Event.Changes.IsEmpty()) Timeline += TEXT("　") + FString::Join(Event.Changes, TEXT("；")) + TEXT("\n");
+		const FString Details = ActionChangesForDisplay(Event.Changes);
+		if (!Details.IsEmpty()) Timeline += TEXT("　") + Details + TEXT("\n");
 	}
 	if (State.EventLog.IsEmpty())
 	{
@@ -2489,7 +2505,7 @@ void UWhiteoutHUDWidget::ShowActionPreview(
 		Request.bHasCollaborator ? *FString::Printf(TEXT("　协作者：%s"), *CharacterShortLabel(Request.Collaborator)) : TEXT(""), Preview.APCost,
 		ResourceCosts.IsEmpty() ? TEXT("无") : *FString::Join(ResourceCosts, TEXT("　")),
 		StaminaCosts.IsEmpty() ? TEXT("无") : *FString::Join(StaminaCosts, TEXT("　")));
-	if (!Preview.bCanExecute) BodyCopy += TEXT("\n\n无法执行：") + FWSPresentationText::ReasonCause(Preview.ReasonCode).ToString();
+	if (!Preview.bCanExecute) BodyCopy += TEXT("\n\n无法执行：") + (Preview.MissingConditions.IsEmpty() ? FWSPresentationText::ReasonCause(Preview.ReasonCode).ToString() : Preview.MissingConditions.ToString());
 	PreviewTitleText->SetColorAndOpacity(FSlateColor(Preview.bCanExecute ? Cyan : Danger));
 	PreviewBodyText->SetText(FText::FromString(BodyCopy));
 	PreviewFooterText->SetText(FText::FromString(bCanCycleOption ? TEXT("Q 切换方案　｜　F 确认　｜　Esc 取消") : TEXT("F 确认　｜　Esc 取消")));
@@ -2543,7 +2559,8 @@ void UWhiteoutHUDWidget::SetActionFeedback(
 			*RejectedFormat,
 			{ActionName.ToString(), FWSPresentationText::ReasonCause(Result.ReasonCode).ToString(), FWSPresentationText::ReasonNextStep(Result.ReasonCode).ToString()});
 	}
-	if (Result.bCommitted && !Result.Changes.IsEmpty()) SystemMessage += TEXT("\n") + FString::Join(Result.Changes, TEXT("；"));
+	const FString Details = ActionChangesForDisplay(Result.Changes);
+	if (Result.bCommitted && !Details.IsEmpty()) SystemMessage += TEXT("\n") + Details;
 	FeedbackQueue.Add(SystemMessage);
 
 }
