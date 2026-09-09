@@ -1,0 +1,61 @@
+{
+  "bounds_in_reference_pixels": [
+    550.0,
+    108.0,
+    587.0,
+    140.0
+  ],
+  "size": [
+    740,
+    640
+  ],
+  "reference": "yecheng/\u6b63\u9762.png, screen-right eye",
+  "paint_method": "local authored gradients, traced iris boundary, lash and brow layer colors, fold/lower-lid strokes; no whole-face projection",
+  "visible_iris_outline": [
+    [
+      560,
+      126.4
+    ],
+    [
+      559.5,
+      129
+    ],
+    [
+      560,
+      132
+    ],
+    [
+      562,
+      135
+    ],
+    [
+      567,
+      136
+    ],
+    [
+      572,
+      135.5
+    ],
+    [
+      575,
+      133.5
+    ],
+    [
+      576,
+      129
+    ],
+    [
+      575.5,
+      125.3
+    ],
+    [
+      575,
+      118
+    ],
+    [
+      561,
+      118
+    ]
+  ],
+  "uncertain_hidden_iris_closure": "not a design claim; occluded by upper eyelid"
+}

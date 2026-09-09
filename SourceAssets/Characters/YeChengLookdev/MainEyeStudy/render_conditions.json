@@ -1,0 +1,62 @@
+{
+  "camera_location": [
+    0.0430000014603138,
+    -2.0,
+    0.8560000061988831
+  ],
+  "rotation": [
+    1.5707964897155762,
+    -0.0,
+    0.0
+  ],
+  "projection": "ORTHO",
+  "scale": 0.085,
+  "resolution": [
+    1000,
+    800
+  ],
+  "exposure": 0,
+  "view_transform": "Standard",
+  "motion_blur": false,
+  "depth_of_field": false,
+  "lights": [
+    {
+      "name": "Fixed softbox",
+      "position": [
+        -0.800000011920929,
+        -1.5,
+        1.600000023841858
+      ],
+      "energy": 19.5,
+      "size": 1.2000000476837158
+    },
+    {
+      "name": "Fixed softbox.001",
+      "position": [
+        0.8999999761581421,
+        -0.699999988079071,
+        1.0
+      ],
+      "energy": 7.5,
+      "size": 1.2000000476837158
+    },
+    {
+      "name": "Fixed softbox.002",
+      "position": [
+        0.0,
+        0.800000011920929,
+        1.2999999523162842
+      ],
+      "energy": 10.5,
+      "size": 1.0
+    }
+  ],
+  "temporarily_hidden_for_clear": [
+    "Parted fringe 1 0",
+    "Parted fringe 1 1",
+    "Parted fringe 1 2",
+    "Parted fringe 1 3"
+  ],
+  "hair_restored_in_saved_blend": true,
+  "gray_note": "local painted fold/shadow overlay hidden; eye, lash and brow geometry remain gray; iris paint is absent"
+}

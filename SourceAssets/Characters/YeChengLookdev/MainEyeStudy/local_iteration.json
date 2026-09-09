@@ -1,0 +1,14 @@
+{
+  "iteration": 2,
+  "observed_first_render": [
+    "lash and brow triangle chords intersected convex skin",
+    "iris edge visibly polygonal"
+  ],
+  "correction": [
+    "subdivided only existing lash/brow surfaces and reprojected to skin",
+    "shape-preserving interpolation inside traced eye bounds",
+    "eye panel extends under lid with recessed border",
+    "softened only local iris boundary paint"
+  ],
+  "scope": "same one-eye study; no other facial feature edits"
+}
