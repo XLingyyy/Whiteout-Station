@@ -4,7 +4,7 @@
 
 ## 运行与教程
 
-打开 `WhiteoutStation/WhiteoutStation.uproject`，默认地图为 `/Game/WindStation/World/MVP_StationMap`。候选包构建在独立目录 `Artifacts/WhiteoutStation-v1.7-Win64-20260910-candidate/Windows/`，实际构建与验收状态见实施和发行记录。
+打开 `WhiteoutStation/WhiteoutStation.uproject`，默认地图为 `/Game/WindStation/World/MVP_StationMap`。候选包构建在独立目录 `Artifacts/WhiteoutStation-v1.7-Win64-20260910-candidate2/Windows/`，实际构建与验收状态见实施和发行记录。
 
 推进开场后，首次新局在安全可操作点显示教程。鼠标左键或右方向键继续，左方向键返回；Esc 打开跳过确认。教程期间游戏暂停，游戏操作不会穿透。末页完成后恢复控制。H 生存手册内可以重看，Esc 返回原手册位置。
 
@@ -24,7 +24,7 @@
 
 ```powershell
 & 'G:\UnrealEngine\UE_5.8\Engine\Build\BatchFiles\Build.bat' WhiteoutStationEditor Win64 Development '-Project=G:\Whiteout Station\WhiteoutStation\WhiteoutStation.uproject' -WaitMutex -NoHotReloadFromIDE
-& 'G:\UnrealEngine\UE_5.8\Engine\Build\BatchFiles\RunUAT.bat' BuildCookRun '-project=G:\Whiteout Station\WhiteoutStation\WhiteoutStation.uproject' -noP4 -nocompileeditor -platform=Win64 -clientconfig=Shipping -build -cook -stage -pak -archive '-archivedirectory=G:\Whiteout Station\Artifacts\WhiteoutStation-v1.7-Win64-20260910-candidate'
+& 'G:\UnrealEngine\UE_5.8\Engine\Build\BatchFiles\RunUAT.bat' BuildCookRun '-project=G:\Whiteout Station\WhiteoutStation\WhiteoutStation.uproject' -noP4 -nocompileeditor -platform=Win64 -clientconfig=Shipping -build -cook -stage -pak -archive '-archivedirectory=G:\Whiteout Station\Artifacts\WhiteoutStation-v1.7-Win64-20260910-candidate2'
 ```
 
 后续候选使用新的目录名。禁止覆盖现用 v1.6 包。只有相同源码的 Editor 编译已通过时使用 `-nocompileeditor`。
@@ -37,7 +37,7 @@ python -X utf8 Tools/Capture/validate_tutorial_assets_v17.py
 python -X utf8 Tools/Release/scan_secrets.py
 python -X utf8 Tools/Capture/run_tutorial_v17.py --mode probe --performance --label _verified
 python -X utf8 Tools/Capture/run_tutorial_v17.py --mode probe --layout-only --width 1280 --height 720 --scale 1.5 --label _720_150
-python -X utf8 Tools/Release/run_v15_authored_routes.py --exe 'Artifacts/WhiteoutStation-v1.7-Win64-20260910-candidate/Windows/WhiteoutStation/Binaries/Win64/WhiteoutStation-Win64-Shipping.exe' --output Artifacts/v1.7-evidence/shipping-routes --rebalance
+python -X utf8 Tools/Release/run_v15_authored_routes.py --exe 'Artifacts/WhiteoutStation-v1.7-Win64-20260910-candidate2/Windows/WhiteoutStation/Binaries/Win64/WhiteoutStation-Win64-Shipping.exe' --output Artifacts/v1.7-evidence/shipping-routes --rebalance
 ```
 
 `run_tutorial_v17.py --exe` 可以指定真正的候选启动器或 Shipping 可执行文件。每次创建独立 UserDir；不会使用玩家存档。测试通过 Slate 原生事件驱动，OS 鼠标、输入法和真人理解验收需要独立记录。`--layout-only` 只运行五页与释放检查，不重复 30 次开关及存档用例。

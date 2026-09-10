@@ -1,0 +1,37 @@
+{
+  "product_version": "1.7.0",
+  "ui_revision": 1,
+  "tutorial_version": 1,
+  "rules_schema": 8,
+  "agent_config_schema": 9,
+  "engine_version": "5.8",
+  "configuration": "Shipping",
+  "platform": "Win64",
+  "source_commit": "4394e2d067eed49ecd442b52fd7338d758aaef5a",
+  "gameplay_regression_commit": "5131d44",
+  "build_completed_local": "2026-09-10T17:14:57.516354",
+  "status": "candidate_pending_manual_acceptance",
+  "package_directory": "Artifacts/WhiteoutStation-v1.7-Win64-20260910-candidate2",
+  "launcher": "Windows/WhiteoutStation.exe",
+  "save_slot": "WhiteoutStation_Autosave_v1_7",
+  "save_integrity": "UE serialized payload with CRC32 footer; legacy slots read-only",
+  "tests": {
+    "editor_targeted": "5/5",
+    "v16_save_quota": "3/3",
+    "editor_rendered": "33/33",
+    "shipping_rendered": "33/33",
+    "layout_matrix": "8/8; 11 checks each; 40 frames",
+    "authored_routes": "10/10; full export matches v1.6 except random transaction_id",
+    "protected_assets": "262/262 unchanged",
+    "source_and_package_gate": "pass",
+    "tutorial_resources": "7 approved textures reachable"
+  },
+  "manual_acceptance_pending": [
+    "OS mouse hit routing, hold, double click and click-through",
+    "OS Alt-Tab, Tab focus and Chinese IME/draft",
+    "legacy/pending request/level transition manual scenarios listed in acceptance report",
+    "3-5 unfamiliar player comprehension sessions"
+  ],
+  "evidence_root": "Artifacts/v1.7-evidence",
+  "acceptance_report": "docs/QA/v1.7_acceptance.md"
+}
