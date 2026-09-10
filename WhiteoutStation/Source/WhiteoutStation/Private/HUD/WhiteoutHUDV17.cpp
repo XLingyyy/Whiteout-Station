@@ -137,6 +137,7 @@ void UWhiteoutHUDWidget::RefreshAP(const FWSGameState& State)
 	const auto* Subsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
 	if (!Subsystem) return;
 	const int64 Revision = Subsystem->GetStateRevision();
+	if (APModel.RunId != State.RunId) PresentedTransactions.Reset();
 	if (APModel.RunId != State.RunId || APModel.PhaseId != State.DayPhase || APModel.StateRevision != Revision)
 	{
 		APModel.QuotedCost.Reset(); APModel.QuoteToken.Reset();

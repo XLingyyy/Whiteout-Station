@@ -42,6 +42,7 @@ public:
 
 private:
 	void BeginV17Capture();
+	FString V17BatchMode;
 	UPROPERTY()
 	TObjectPtr<ACameraActor> OpeningCamera;
 

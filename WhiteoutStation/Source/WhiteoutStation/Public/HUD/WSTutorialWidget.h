@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Flow/WSTutorialFlow.h"
@@ -60,6 +60,10 @@ private:
 	UPROPERTY() TObjectPtr<UImage> PrimaryImage;
 	UPROPERTY() TObjectPtr<UImage> SecondaryImage;
 	UPROPERTY() TObjectPtr<UButton> PreviousButton;
+	UPROPERTY() TObjectPtr<UButton> SkipButton;
+	UPROPERTY() TObjectPtr<UButton> ContinueButton;
+	UPROPERTY() TObjectPtr<UButton> ConfirmSkipButton;
+	UPROPERTY() TObjectPtr<UButton> ContinueReadingButton;
 	UPROPERTY() TObjectPtr<USizeBox> ImageColumn;
 	UPROPERTY() TObjectPtr<UBackgroundBlur> Blur;
 	TSharedPtr<FStreamableHandle> LoadHandle;

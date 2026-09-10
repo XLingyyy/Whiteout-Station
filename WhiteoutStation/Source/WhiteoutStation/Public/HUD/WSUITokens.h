@@ -14,14 +14,15 @@ namespace WSUITokens
 	namespace V17
 	{
 		constexpr int32 UIRevision = 1;
-		inline const FLinearColor Surface(14.f/255, 20.f/255, 25.f/255, .94f);
-		inline const FLinearColor SurfaceRaised(23.f/255, 31.f/255, 37.f/255, .95f);
-		inline const FLinearColor Text(237.f/255, 240.f/255, 235.f/255);
-		inline const FLinearColor Secondary(165.f/255, 176.f/255, 182.f/255);
-		inline const FLinearColor Stroke(57.f/255, 67.f/255, 74.f/255);
-		inline const FLinearColor Divider(48.f/255, 58.f/255, 64.f/255);
-		inline const FLinearColor Attention(223.f/255, 171.f/255, 103.f/255);
-		inline const FLinearColor Critical(237.f/255, 138.f/255, 123.f/255);
+		// The design palette is sRGB; Slate consumes linear colors.
+		inline const FLinearColor Surface = FLinearColor::FromSRGBColor(FColor(14, 20, 25, 240));
+		inline const FLinearColor SurfaceRaised = FLinearColor::FromSRGBColor(FColor(23, 31, 37, 242));
+		inline const FLinearColor Text = FLinearColor::FromSRGBColor(FColor(237, 240, 235));
+		inline const FLinearColor Secondary = FLinearColor::FromSRGBColor(FColor(165, 176, 182));
+		inline const FLinearColor Stroke = FLinearColor::FromSRGBColor(FColor(57, 67, 74));
+		inline const FLinearColor Divider = FLinearColor::FromSRGBColor(FColor(48, 58, 64));
+		inline const FLinearColor Attention = FLinearColor::FromSRGBColor(FColor(223, 171, 103));
+		inline const FLinearColor Critical = FLinearColor::FromSRGBColor(FColor(237, 138, 123));
 		constexpr float Radius = 9;
 		constexpr float FadeIn = .18f;
 		constexpr float FadeOut = .12f;

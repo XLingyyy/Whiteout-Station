@@ -77,6 +77,7 @@ public:
 	bool IsTutorialActive() const { return bTutorialLease; }
 	void TryStartTutorial();
 	void ExportV17Geometry(const FString& Path) const;
+	void BeginV17RuntimeProbe();
 	UFUNCTION() void ReplayTutorial();
 	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, bool bDialogue = false);
 	void ClearInteractionFocus();
@@ -140,6 +141,8 @@ public:
 	void SetEndingCaptureStage(EWSEndingType Ending, bool bShowResults);
 
 private:
+	friend struct FWSV17RuntimeProbe;
+	TSet<FGuid> PresentedTransactions;
 	UPROPERTY() TObjectPtr<UWSTutorialWidget> TutorialWidget;
 	UPROPERTY() TObjectPtr<UWSActionPointWidget> ActionPointWidget;
 	UPROPERTY() TObjectPtr<UScrollBox> GuideScrollV17;

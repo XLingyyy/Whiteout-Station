@@ -1,4 +1,4 @@
-#include "HUD/WSTutorialWidget.h"
+﻿#include "HUD/WSTutorialWidget.h"
 #include "Engine/Font.h"
 #include "HUD/WSUITokens.h"
 #include "Blueprint/WidgetTree.h"
@@ -117,21 +117,21 @@ void UWSTutorialWidget::Build(UFont* Font)
 		Style.SetNormal(FSlateRoundedBoxBrush(WSUITokens::V17::Surface, 6.f, WSUITokens::V17::Stroke, 1.f));
 		Style.SetHovered(FSlateRoundedBoxBrush(WSUITokens::V17::SurfaceRaised, 6.f, WSUITokens::V17::Attention, 1.f));
 		Style.SetPressed(FSlateRoundedBoxBrush(WSUITokens::V17::Stroke, 6.f));
-		Style.SetDisabled(FSlateRoundedBoxBrush(WSUITokens::V17::Surface, 6.f)); B->SetStyle(Style);
+		Style.SetDisabled(FSlateRoundedBoxBrush(WSUITokens::V17::Surface, 6.f)); Style.SetNormalPadding(FMargin(14, 10)); Style.SetPressedPadding(FMargin(14, 10)); B->SetStyle(Style);
 		UTextBlock* T = Text(16, WSUITokens::V17::Text); T->SetText(FText::FromString(Label)); B->SetContent(T);
 		Row->AddChildToHorizontalBox(B)->SetPadding(FMargin(0, 0, 8, 0)); return B;
 	};
 	PreviousButton = Button(Footer, TEXT("上一页")); PreviousButton->OnClicked.AddDynamic(this, &UWSTutorialWidget::Previous);
-	Button(Footer, TEXT("跳过教程"))->OnClicked.AddDynamic(this, &UWSTutorialWidget::Skip);
+	SkipButton = Button(Footer, TEXT("跳过教程")); SkipButton->OnClicked.AddDynamic(this, &UWSTutorialWidget::Skip);
 	USizeBox* Gap = WidgetTree->ConstructWidget<USizeBox>(); Footer->AddChildToHorizontalBox(Gap)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-	UButton* Continue = Button(Footer, TEXT("鼠标左键 · 下一页")); ContinueLabel = Cast<UTextBlock>(Continue->GetContent()); Continue->OnClicked.AddDynamic(this, &UWSTutorialWidget::Next);
+	ContinueButton = Button(Footer, TEXT("鼠标左键 · 下一页")); ContinueLabel = Cast<UTextBlock>(ContinueButton->GetContent()); ContinueButton->OnClicked.AddDynamic(this, &UWSTutorialWidget::Next);
 	Confirm = WidgetTree->ConstructWidget<UBorder>(); Confirm->SetBrush(FSlateRoundedBoxBrush(WSUITokens::V17::SurfaceRaised, 12.f, WSUITokens::V17::Stroke, 1.f)); Confirm->SetPadding(FMargin(24));
 	UCanvasPanelSlot* CS = Root->AddChildToCanvas(Confirm); CS->SetAnchors(FAnchors(.5f)); CS->SetAlignment(FVector2D(.5f)); CS->SetAutoSize(true); CS->SetZOrder(3);
 	UVerticalBox* CB = WidgetTree->ConstructWidget<UVerticalBox>(); Confirm->SetContent(CB);
 	UTextBlock* Question = Text(22, WSUITokens::V17::Text); Question->SetText(FText::FromString(TEXT("跳过入门教程？\n以后可以在 H 生存手册中重看。"))); CB->AddChildToVerticalBox(Question)->SetPadding(FMargin(0, 0, 0, 20));
 	UHorizontalBox* Choices = WidgetTree->ConstructWidget<UHorizontalBox>(); CB->AddChildToVerticalBox(Choices);
-	Button(Choices, TEXT("继续阅读"))->OnClicked.AddDynamic(this, &UWSTutorialWidget::ContinueReading);
-	Button(Choices, TEXT("确认跳过"))->OnClicked.AddDynamic(this, &UWSTutorialWidget::ConfirmSkip);
+	ContinueReadingButton = Button(Choices, TEXT("继续阅读")); ContinueReadingButton->OnClicked.AddDynamic(this, &UWSTutorialWidget::ContinueReading);
+	ConfirmSkipButton = Button(Choices, TEXT("确认跳过")); ConfirmSkipButton->OnClicked.AddDynamic(this, &UWSTutorialWidget::ConfirmSkip);
 	Confirm->SetVisibility(ESlateVisibility::Collapsed);
 	SetVisibility(ESlateVisibility::Collapsed);
 }
@@ -238,7 +238,7 @@ void UWSTutorialWidget::Back()
 	if (Flow.IsReplay()) { RequestClose(EWSTutorialStatus::InProgress); return; }
 	bConfirming = !bConfirming; Panel->SetIsEnabled(!bConfirming);
 	Confirm->SetVisibility(bConfirming ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	Flow.AwaitRelease(); SetKeyboardFocus();
+	Flow.AwaitRelease(); if (bConfirming) ContinueReadingButton->SetKeyboardFocus(); else SetKeyboardFocus();
 }
 void UWSTutorialWidget::ConfirmSkip() { if (bConfirming && Flow.IsArmed()) RequestClose(EWSTutorialStatus::Skipped); }
 void UWSTutorialWidget::ContinueReading() { if (bConfirming) Back(); }
@@ -287,7 +287,14 @@ FReply UWSTutorialWidget::NativeOnPreviewKeyDown(const FGeometry& G, const FKeyE
 	{
 		if (E.GetKey() == EKeys::Escape) Back();
 		else if (E.GetKey() == EKeys::Left) Previous();
-		else if (E.GetKey() == EKeys::Right || E.GetKey() == EKeys::SpaceBar || E.GetKey() == EKeys::Enter) Next();
+		else if (E.GetKey() == EKeys::Right) Next();
+		else if (E.GetKey() == EKeys::SpaceBar || E.GetKey() == EKeys::Enter)
+		{
+			if (bConfirming) { if (ConfirmSkipButton->HasKeyboardFocus()) ConfirmSkip(); else ContinueReading(); }
+			else if (PreviousButton->HasKeyboardFocus()) Previous();
+			else if (SkipButton->HasKeyboardFocus()) Skip();
+			else Next();
+		}
 	}
 	return FReply::Handled();
 }

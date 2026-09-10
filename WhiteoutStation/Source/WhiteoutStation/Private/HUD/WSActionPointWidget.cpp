@@ -1,5 +1,7 @@
 #include "HUD/WSActionPointWidget.h"
 #include "Engine/Font.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
+#include "Framework/Application/SlateApplication.h"
 #include "HUD/WSUITokens.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/SizeBox.h"
@@ -36,6 +38,7 @@ void UWSActionPointWidget::Present(const FWSAPViewModel& Model)
 	};
 	if (!Model.IsValid() && (View.PhaseCapacity != Model.PhaseCapacity || View.PhaseRemaining != Model.PhaseRemaining))
 		UE_LOG(LogTemp, Error, TEXT("Invalid phase AP: remaining=%d capacity=%d"), Model.PhaseRemaining, Model.PhaseCapacity);
+	if (View.RunId != Model.RunId || View.PhaseId != Model.PhaseId) SpendCount = 0;
 	View = Model;
 	const TCHAR* Label = Model.PhaseId == EWSDayPhase::Morning ? TEXT("早晨") : Model.PhaseId == EWSDayPhase::Afternoon ? TEXT("午后")
 		: Model.PhaseId == EWSDayPhase::Dusk ? TEXT("黄昏") : TEXT("本轮结束");
@@ -57,6 +60,12 @@ void UWSActionPointWidget::Present(const FWSAPViewModel& Model)
 		Model.PhaseId == EWSDayPhase::Afternoon ? TEXT("· ") : TEXT(""), Model.PhaseId == EWSDayPhase::Dusk ? TEXT("· ") : TEXT("")));
 }
 
+void UWSActionPointWidget::AnimateSpend(int32 Cost, bool bReducedMotion)
+{
+	SpendCount = bReducedMotion ? 0 : Cost;
+	SpendStarted = FSlateApplication::Get().GetCurrentTime();
+}
+
 int32 UWSActionPointWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& Culling,
 	FSlateWindowElementList& Elements, int32 Layer, const FWidgetStyle& Style, bool bEnabled) const
 {
@@ -67,7 +76,8 @@ int32 UWSActionPointWidget::NativePaint(const FPaintArgs& Args, const FGeometry&
 	const int32 Count = FMath::Min(View.PhaseCapacity, 24);
 	const float Width = (Size.X - (Count - 1) * 6) / Count;
 	if (Width <= 0) return Layer;
-	const FSlateBrush* Brush = FCoreStyle::Get().GetBrush("WhiteBrush");
+	static const FSlateRoundedBoxBrush Rounded(FLinearColor::White, 4.f);
+	const FSlateBrush* Brush = &Rounded;
 	for (int32 I = 0; I < Count; ++I)
 	{
 		const float X = I * (Width + 6);
@@ -75,6 +85,12 @@ int32 UWSActionPointWidget::NativePaint(const FPaintArgs& Args, const FGeometry&
 		const FLinearColor Fill = Cell == EWSAPCell::Available ? WSUITokens::V17::Attention : WSUITokens::V17::SurfaceRaised;
 		FSlateDrawElement::MakeBox(Elements, Layer + 1, G.ToPaintGeometry(FVector2D(Width, 24), FSlateLayoutTransform(FVector2D(X, 0))), Brush, ESlateDrawEffect::None, WSUITokens::V17::Stroke);
 		FSlateDrawElement::MakeBox(Elements, Layer + 2, G.ToPaintGeometry(FVector2D(Width - 2, 22), FSlateLayoutTransform(FVector2D(X + 1, 1))), Brush, ESlateDrawEffect::None, Fill);
+		const float Tail = FMath::Clamp(1.0 - (FSlateApplication::Get().GetCurrentTime() - SpendStarted) / .20, 0.0, 1.0);
+		if (Tail > 0 && I >= View.PhaseRemaining && I < View.PhaseRemaining + SpendCount)
+		{
+			FLinearColor Fade = WSUITokens::V17::Attention; Fade.A = Tail;
+			FSlateDrawElement::MakeBox(Elements, Layer + 3, G.ToPaintGeometry(FVector2D(Width - 2, 22), FSlateLayoutTransform(FVector2D(X + 1, 1))), Brush, ESlateDrawEffect::None, Fade);
+		}
 		if (Cell == EWSAPCell::PreviewSpend)
 		{
 			for (float T = 3; T < Width - 3; T += 9)

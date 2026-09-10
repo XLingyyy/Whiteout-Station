@@ -1,5 +1,6 @@
-#include "HUD/WhiteoutHUDWidget.h"
+﻿#include "HUD/WhiteoutHUDWidget.h"
 #include "HUD/WSTutorialWidget.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
 #include "HUD/WSActionPointWidget.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Misc/CommandLine.h"
@@ -327,9 +328,10 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 		const float Width = LayoutSize.X < 1450 ? 300.f : 340.f;
 		if (auto* LayoutSlot = Cast<UCanvasPanelSlot>(TopPanel->Slot)) { LayoutSlot->SetPosition(FVector2D(Margin, Margin)); LayoutSlot->SetSize(FVector2D(Width, 240)); }
 		if (auto* LayoutSlot = Cast<UCanvasPanelSlot>(ResourcePanel->Slot)) { LayoutSlot->SetPosition(FVector2D(Margin, Margin + 252)); LayoutSlot->SetSize(FVector2D(Width, 80)); }
-		if (auto* LayoutSlot = Cast<UCanvasPanelSlot>(ObjectivePanel->Slot)) { LayoutSlot->SetPosition(FVector2D(Margin, Margin + 344)); LayoutSlot->SetSize(FVector2D(Width, FMath::Max(140.0, LayoutSize.Y - Margin - 424))); }
+		if (auto* LayoutSlot = Cast<UCanvasPanelSlot>(ObjectivePanel->Slot)) { LayoutSlot->SetPosition(FVector2D(Margin, Margin + 344)); LayoutSlot->SetSize(FVector2D(Width, FMath::Max(140.0, FMath::Min(470.0, LayoutSize.Y - Margin - 424)))); }
 		ObjectiveText->SetWrapTextAt(Width - 24); TutorialText->SetWrapTextAt(Width - 24); TutorialTitleText->SetWrapTextAt(Width - 24);
 		if (auto* LayoutSlot = Cast<UCanvasPanelSlot>(BottomPanel->Slot)) { LayoutSlot->SetOffsets(FMargin(-FMath::Min(420.0, LayoutSize.X * .32), -64, FMath::Min(840.0, LayoutSize.X * .64), 44)); }
+		if (auto* LayoutSlot = Cast<UCanvasPanelSlot>(ToastBorder->Slot)) { const double W = FMath::Min(720.0, LayoutSize.X * .55); LayoutSlot->SetOffsets(FMargin(-W / 2, -186, W, 108)); }
 
 		if (UCanvasPanelSlot* DialogueCanvasSlot = Cast<UCanvasPanelSlot>(DialogueBorder->Slot))
 		{
@@ -471,6 +473,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	TopBox->AddChildToVerticalBox(ActionPointWidget);
 	TopText->SetVisibility(ESlateVisibility::Collapsed);
 	TopStatusText->SetVisibility(ESlateVisibility::Collapsed);
+	TopConditionText->SetVisibility(ESlateVisibility::Collapsed);
 	TopBox->AddChildToVerticalBox(TopText);
 	TopBox->AddChildToVerticalBox(TopStatusText)->SetPadding(FMargin(0, 2, 0, 0));
 	TopBox->AddChildToVerticalBox(TopConditionText)->SetPadding(FMargin(0, 2, 0, 0));
@@ -529,10 +532,11 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	FeedbackText = MakeText(TEXT("FeedbackText"), 14, Body);
 	FeedbackText->SetVisibility(ESlateVisibility::Collapsed);
 	PromptText = MakeText(TEXT("PromptText"), 16, Amber);
+	PromptText->SetVisibility(ESlateVisibility::Collapsed);
 	UTextBlock* HelpText = MakeText(TEXT("HelpText"), 12, Secondary);
 	HelpText->SetText(FWSPresentationText::UI(
 		TEXT("ui_help_v06"),
-		TEXT("WASD 移动　鼠标观察　Space 跳跃　F 选择/确认　E 证据板　H 生存手册　Enter 结束　Esc 返回")));
+		TEXT("WASD 移动　F 交互　Q 切换方案　E 证据板　H 手册　Esc 返回")));
 	BottomBox->AddChildToVerticalBox(FeedbackText)->SetPadding(FMargin(0, 0, 0, 3));
 	BottomBox->AddChildToVerticalBox(PromptText)->SetPadding(FMargin(0, 0, 0, 3));
 	BottomBox->AddChildToVerticalBox(HelpText);
@@ -835,21 +839,13 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	GalleryBox->AddChildToVerticalBox(GalleryToast)->SetPadding(FMargin(0, 14, 0, 0));
 	ComponentGalleryBorder->SetVisibility(ESlateVisibility::Collapsed);
 
-	ToastBorder = MakePanel(Canvas, TEXT("ActionToast"), FAnchors(0.14f, 0.68f, 0.86f, 0.92f), FMargin(0), WSUITokens::Color::SurfaceDeep);
-	UOverlay* ToastOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("ToastOverlay"));
-	if (InkBrushTexture)
-	{
-		UImage* ToastBrush = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("ToastBrush"));
-		ToastBrush->SetBrushFromTexture(InkBrushTexture, true);
-		ToastBrush->SetColorAndOpacity(FLinearColor(0.015f, 0.015f, 0.015f, 0.92f));
-		ToastOverlay->AddChildToOverlay(ToastBrush);
-	}
+	ToastBorder = MakePanel(Canvas, TEXT("ActionToast"), FAnchors(.5f, 1.f), FMargin(-360, -186, 720, 108), WSUITokens::V17::SurfaceRaised);
+	ToastBorder->SetPadding(FMargin(18, 12));
+	UScrollBox* ToastScroll = WidgetTree->ConstructWidget<UScrollBox>();
 	ToastText = MakeText(TEXT("ActionToastText"), 14, Body, true);
 	ToastText->SetJustification(ETextJustify::Center);
-	UOverlaySlot* ToastTextSlot = ToastOverlay->AddChildToOverlay(ToastText);
-	ToastTextSlot->SetHorizontalAlignment(HAlign_Fill);
-	ToastTextSlot->SetVerticalAlignment(VAlign_Center);
-	ToastBorder->SetContent(ToastOverlay);
+	ToastScroll->AddChild(ToastText);
+	ToastBorder->SetContent(ToastScroll);
 	ToastBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	EndingCinematicBorder = MakePanel(Canvas, TEXT("EndingCinematicPanel"), FAnchors(0, 0, 1, 1), FMargin(0), FLinearColor(0.004f, 0.004f, 0.006f, 0.94f));
@@ -1230,6 +1226,7 @@ UBorder* UWhiteoutHUDWidget::MakePanel(
 	const FLinearColor& Color)
 {
 	UBorder* Border = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), Name);
+	Border->SetBrush(FSlateRoundedBoxBrush(FLinearColor::White, WSUITokens::V17::Radius));
 	Border->SetBrushColor(Color);
 	Border->SetPadding(FMargin(20));
 	UCanvasPanelSlot* CanvasSlot = Canvas->AddChildToCanvas(Border);
@@ -1248,6 +1245,7 @@ UBorder* UWhiteoutHUDWidget::MakeGlassPanel(
 	const bool bHairline)
 {
 	UBorder* Shell = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), Name);
+	Shell->SetBrush(FSlateRoundedBoxBrush(FLinearColor::White, WSUITokens::V17::Radius));
 	Shell->SetBrushColor(bHairline
 		? WSUITokens::Color::StrokeHairline
 		: FLinearColor::Transparent);
@@ -1270,7 +1268,7 @@ UBorder* UWhiteoutHUDWidget::MakeGlassPanel(
 		UOverlay::StaticClass(), FName(*(Name.ToString() + TEXT("Layers"))));
 	UBorder* TintLayer = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(), FName(*(Name.ToString() + TEXT("Tint"))));
-	TintLayer->SetBrushColor(Tint);
+	TintLayer->SetBrush(FSlateRoundedBoxBrush(Tint, WSUITokens::V17::Radius - 1));
 	UOverlaySlot* TintSlot = Layers->AddChildToOverlay(TintLayer);
 	TintSlot->SetHorizontalAlignment(HAlign_Fill);
 	TintSlot->SetVerticalAlignment(VAlign_Fill);
@@ -1752,7 +1750,7 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 		TopConditionText->SetText(FText::FromString(PhaseCondition));
 	}
 
-	ObjectiveText->SetText(FText::FromString(BuildObjectiveSummary(State)));
+	ObjectiveText->SetText(FText::FromString(FString::Printf(TEXT("当前目标\n发电机修复    %d / 2\n天线校准        %d / 1\n求救信号        %s\n\n供暖 · %s"), State.Tasks.GeneratorProgress, State.Tasks.AntennaCalibration, State.Tasks.bSignalSent ? TEXT("已发送") : TEXT("未发送"), *HeatingZoneLabel(State.Heating.CurrentZone))));
 	if (TutorialTitleText)
 	{
 		int32 MinimumAP = 0;
@@ -2413,7 +2411,8 @@ void UWhiteoutHUDWidget::SetInteractionFocus(const FText& ActionName, const FWSA
 		FocusText->SetText(FText::FromString(NewName));
 		if (bDialogue)
 		{
-			FocusAPText->SetVisibility(ESlateVisibility::Collapsed);
+			FocusAPText->SetVisibility(ESlateVisibility::Visible);
+			FocusAPText->SetText(FText::FromString(TEXT(" · 0 AP")));
 			FocusKeyText->SetText(FText::FromString(TEXT("　·　[F] 开始对话")));
 		}
 		else
@@ -2580,11 +2579,24 @@ void UWhiteoutHUDWidget::SetActionFeedback(
 	const FWSActionPreview& Preview,
 	const bool bPromiseCreated)
 {
+	if (Result.bCommitted && Result.TransactionId.IsValid())
+	{
+		if (PresentedTransactions.Contains(Result.TransactionId)) return;
+		PresentedTransactions.Add(Result.TransactionId);
+	}
 	HideActionPreview();
 	if (Result.bCommitted)
 	{
-		const FString CommittedFormat = FWSPresentationText::UI(TEXT("ui_feedback_committed"), TEXT("已执行：{0}　｜　行动力 {1} → {2}")).ToString();
-		SystemMessage = FString::Format(*CommittedFormat, {ActionName.ToString(), Result.APBefore, Result.APAfter});
+		SystemMessage = FString::Printf(TEXT("已执行：%s　｜　实际消耗 %d AP"), *ActionName.ToString(), Result.ActualAP);
+		APModel.TransactionId = Result.TransactionId;
+		APModel.RefreshReason = EWSAPRefreshReason::Committed;
+		if (const auto* S = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
+		{
+			const auto& Snapshot = S->GetStateSnapshot();
+			const FWSEventRecord* Event = Snapshot.EventLog.FindByPredicate([&](const FWSEventRecord& E) { return E.TransactionId == Result.TransactionId; });
+			if (Event && Event->DayPhase == Snapshot.DayPhase) ActionPointWidget->AnimateSpend(Result.ActualAP, IsReducedMotionEnabled());
+			else if (Event && Result.ActualAP > 0) SystemMessage += TEXT("（上阶段支出；新阶段预算单独显示）");
+		}
 		if (bPromiseCreated)
 		{
 			SystemMessage = FWSPresentationText::UI(TEXT("ui_promise_recorded"), TEXT("承诺已记录　｜　")).ToString() + SystemMessage;
