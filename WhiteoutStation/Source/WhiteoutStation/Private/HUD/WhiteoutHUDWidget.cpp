@@ -3682,7 +3682,7 @@ void UWhiteoutHUDWidget::ShowPanelInstant(UBorder* Panel, const bool bShow)
 void UWhiteoutHUDWidget::DismissOpening()
 {
 	OpeningPhase = EWSOpeningPhase::Complete;
-	SetSystemMessage(TEXT("首先修复设备并成功发出求救信号。在此基础上，尽量让你、顾衡和叶澄保持温暖、恢复体能、处理伤势并降低压力，结算评分会更高。合理照护后的储备，比单纯囤积物资更有价值。"));
+	SetSystemMessage(TEXT("先修复设备并发出求救信号。照顾三人的状态，并保留有效储备。按 H 查看完整手册。"));
 	if (OpeningBorder)
 	{
 		OpeningBorder->SetRenderOpacity(1.0f);

@@ -39,8 +39,8 @@ void AWhiteoutGameMode::BeginV17Capture()
 	for (TActorIterator<AWSInteractableActor> It(GetWorld()); It; ++It) if (It->ActionId == TargetId) { Target = *It; break; }
 	if (!Target) { UE_LOG(LogTemp, Error, TEXT("V17 capture target missing")); return; }
 	const FVector Center = Target->IsCharacterHotspot() ? Target->InteractionCollision->Bounds.Origin : Target->Mesh->Bounds.Origin;
-	float Yaw = Target->IsCharacterHotspot() ? Target->GetActorRotation().Yaw + 90.f : 180.f;
-	float Distance = 235.f, Height = Target->IsCharacterHotspot() ? 0.f : 35.f;
+	float Yaw = Target->IsCharacterHotspot() ? Target->GetActorRotation().Yaw + 90.f : 0.f;
+	float Distance = Target->IsCharacterHotspot() ? 235.f : 180.f, Height = Target->IsCharacterHotspot() ? 0.f : 35.f;
 	FParse::Value(FCommandLine::Get(), TEXT("V17CameraYaw="), Yaw);
 	FParse::Value(FCommandLine::Get(), TEXT("V17CameraDistance="), Distance);
 	FParse::Value(FCommandLine::Get(), TEXT("V17CameraHeight="), Height);
@@ -93,6 +93,6 @@ void AWhiteoutGameMode::BeginV17Capture()
 			{
 				FTimerHandle Exit; GetWorldTimerManager().SetTimer(Exit, []() { FPlatformMisc::RequestExit(false); }, 2.f, false);
 			}
-		}), 2.f, false);
+		}), Mode == TEXT("interaction") ? 12.f : 2.f, false);
 	}), 1.f, false);
 }

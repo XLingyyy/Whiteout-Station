@@ -39,10 +39,10 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 	const auto StyleButton = [](UButton* B)
 	{
 		FButtonStyle Style;
-		Style.SetNormal(FSlateColorBrush(FLinearColor(0.07f, 0.11f, 0.14f)));
-		Style.SetHovered(FSlateColorBrush(FLinearColor(0.12f, 0.21f, 0.25f)));
-		Style.SetPressed(FSlateColorBrush(FLinearColor(0.04f, 0.09f, 0.11f)));
-		Style.SetDisabled(FSlateColorBrush(FLinearColor(0.06f, 0.07f, 0.08f)));
+		Style.SetNormal(FSlateRoundedBoxBrush(WSUITokens::V17::SurfaceRaised, 6.f, WSUITokens::V17::Stroke, 1.f));
+		Style.SetHovered(FSlateRoundedBoxBrush(WSUITokens::V17::SurfaceRaised, 6.f, WSUITokens::V17::Attention, 1.f));
+		Style.SetPressed(FSlateRoundedBoxBrush(WSUITokens::V17::Stroke, 6.f));
+		Style.SetDisabled(FSlateRoundedBoxBrush(WSUITokens::V17::Surface, 6.f));
 		Style.SetNormalPadding(FMargin(12, 6)); Style.SetPressedPadding(FMargin(12, 6));
 		B->SetStyle(Style);
 	};
@@ -79,12 +79,12 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 	Input = WidgetTree->ConstructWidget<UMultiLineEditableTextBox>();
 	FTextBlockStyle InputStyle;
 	InputStyle.SetFont(FSlateFontInfo(Font, 16));
-	InputStyle.SetColorAndOpacity(FSlateColor(FLinearColor(0.91f, 0.93f, 0.95f)));
-	Input->WidgetStyle.SetBackgroundImageNormal(FSlateColorBrush(FLinearColor(0.035f, 0.05f, 0.065f)));
-	Input->WidgetStyle.SetBackgroundImageHovered(FSlateColorBrush(FLinearColor(0.045f, 0.065f, 0.08f)));
-	Input->WidgetStyle.SetBackgroundImageFocused(FSlateColorBrush(FLinearColor(0.055f, 0.085f, 0.105f)));
-	Input->WidgetStyle.SetBackgroundImageReadOnly(FSlateColorBrush(FLinearColor(0.035f, 0.04f, 0.05f)));
-	Input->WidgetStyle.SetForegroundColor(FLinearColor(0.91f, 0.93f, 0.95f));
+	InputStyle.SetColorAndOpacity(FSlateColor(WSUITokens::V17::Text));
+	Input->WidgetStyle.SetBackgroundImageNormal(FSlateRoundedBoxBrush(WSUITokens::V17::SurfaceRaised, 6.f, WSUITokens::V17::Stroke, 1.f));
+	Input->WidgetStyle.SetBackgroundImageHovered(FSlateRoundedBoxBrush(WSUITokens::V17::SurfaceRaised, 6.f, WSUITokens::V17::Stroke, 1.f));
+	Input->WidgetStyle.SetBackgroundImageFocused(FSlateRoundedBoxBrush(WSUITokens::V17::SurfaceRaised, 6.f, WSUITokens::V17::Attention, 1.f));
+	Input->WidgetStyle.SetBackgroundImageReadOnly(FSlateRoundedBoxBrush(WSUITokens::V17::Surface, 6.f));
+	Input->WidgetStyle.SetForegroundColor(WSUITokens::V17::Text);
 	Input->WidgetStyle.SetPadding(FMargin(10));
 	Input->SetTextStyle(InputStyle);
 	Input->SetHintText(BuildInputHint());

@@ -3,6 +3,7 @@
 #include "Agents/WSAgentGateway.h"
 #include "Agents/WSNPCContextBuilder.h"
 #include "Camera/CameraComponent.h"
+#include "Materials/MaterialInterface.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
@@ -79,6 +80,8 @@ AWhiteoutCharacter::AWhiteoutCharacter()
 void AWhiteoutCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	if (auto* Outline = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/WindStation/UI/v17/M_WS_InteractionOutline_A.M_WS_InteractionOutline_A")))
+		FirstPersonCamera->PostProcessSettings.AddBlendable(Outline, 1.f);
 	if (FSlateApplication::IsInitialized())
 		FSlateApplication::Get().OnApplicationActivationStateChanged().AddUObject(this, &AWhiteoutCharacter::HandleApplicationActivation);
 	if (const APlayerController* PlayerController = Cast<APlayerController>(Controller))

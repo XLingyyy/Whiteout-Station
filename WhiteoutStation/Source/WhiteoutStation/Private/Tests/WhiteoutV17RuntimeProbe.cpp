@@ -12,6 +12,11 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "HAL/IConsoleManager.h"
+#include "HAL/PlatformMemory.h"
+#include "ProfilingDebugging/CsvProfiler.h"
+#include "Save/WindStationSaveGame.h"
+#include "HUD/WSActionPointWidget.h"
 #include "Serialization/JsonSerializer.h"
 #include "Settings/WhiteoutSettingsSubsystem.h"
 #include "State/WindStationStateSubsystem.h"
@@ -27,6 +32,10 @@ struct FWSV17RuntimeProbe : TSharedFromThis<FWSV17RuntimeProbe>
 	FVector Position;
 	int32 Step = 0, Cycles = 0;
 	FKey PendingKey;
+	double PhaseStarted = 0;
+	TSharedFuture<FString> CsvResult;
+	TArray<TSharedPtr<FJsonValue>> MemorySamples;
+	int32 OriginalBlurFallback = 0;
 	double Started = FPlatformTime::Seconds();
 	float GuideOffset = 0;
 	TArray<TSharedPtr<FJsonValue>> Checks;
@@ -41,10 +50,9 @@ struct FWSV17RuntimeProbe : TSharedFromThis<FWSV17RuntimeProbe>
 	}
 	void Key(FKey Key, bool Repeat = false)
 	{
-		auto* T = HUD->TutorialWidget.Get();
 		FKeyEvent Event(Key, FModifierKeysState(), 0, Repeat, 0, 0);
-		T->NativeOnPreviewKeyDown(T->GetCachedGeometry(), Event);
-		T->NativeOnKeyUp(T->GetCachedGeometry(), Event);
+		FSlateApplication::Get().ProcessKeyDownEvent(Event);
+		FSlateApplication::Get().ProcessKeyUpEvent(Event);
 	}
 	bool Unchanged() const
 	{
@@ -64,7 +72,8 @@ struct FWSV17RuntimeProbe : TSharedFromThis<FWSV17RuntimeProbe>
 		auto* H = HUD.Get(); auto* T = H->TutorialWidget.Get();
 		auto* S = H->GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
 		auto* Settings = H->GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>();
-		if (FPlatformTime::Seconds() - Started > 100) { Check(TEXT("fixture completed within timeout"), false); return Finish(); }
+		if (FPlatformTime::Seconds() - Started > 240) { Check(TEXT("fixture completed within timeout"), false); return Finish(); }
+		if (Step >= 100) return Performance();
 		if (PendingKey.IsValid())
 		{
 			if (FScreenshotRequest::IsScreenshotRequested()) return true;
@@ -73,7 +82,10 @@ struct FWSV17RuntimeProbe : TSharedFromThis<FWSV17RuntimeProbe>
 		}
 		if (Step == 0)
 		{
-			if (!H->bTutorialLease || !FSlateApplication::Get().IsActive()) return true;
+			if (!H->bTutorialLease) return true;
+			// Activate Slate's test session without taking Windows foreground focus.
+			FSlateApplication::Get().OnApplicationActivationChanged(true);
+			T->SetKeyboardFocus();
 			Check(TEXT("first safe game point opens T01 and pauses"), T->GetPageIndex() == 0 && UGameplayStatics::IsGamePaused(H));
 			++Step; return true;
 		}
@@ -108,7 +120,9 @@ struct FWSV17RuntimeProbe : TSharedFromThis<FWSV17RuntimeProbe>
 			if (Cycles == 30)
 			{
 				Check(TEXT("30 replay cycles release their leases"), !H->bTutorialLease && H->CurrentLayer == EWSUILayer::Guide && Unchanged());
-				H->ToggleGuide(); return Finish();
+				H->ToggleGuide();
+				if (FParse::Param(FCommandLine::Get(), TEXT("V17Performance"))) { Step = 100; PhaseStarted = FPlatformTime::Seconds(); return true; }
+				CheckActionsAndSaves(); return Finish();
 			}
 			H->ReplayTutorial(); break;
 		case 12: Key(EKeys::Escape); break;
@@ -118,10 +132,95 @@ struct FWSV17RuntimeProbe : TSharedFromThis<FWSV17RuntimeProbe>
 		}
 		return true;
 	}
+	void CheckActionsAndSaves()
+	{
+		auto* H = HUD.Get(); auto* S = H->GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
+		for (FName Action : {FName(TEXT("inspect_control_cabinet")), FName(TEXT("investigate_generator_log"))})
+		{
+			FWSActionRequest Request; Request.ActionId = Action; Request.TransactionId = FGuid::NewGuid();
+			const auto Quote = S->PreviewAction(Request); const int32 APBefore = S->GetStateSnapshot().PhaseActionPoints;
+			H->ShowActionPreview(FText::FromName(Action), Quote, Request); H->RefreshAP(S->GetStateSnapshot());
+			Check(TEXT("quote leaves authoritative AP unchanged"), S->GetStateSnapshot().PhaseActionPoints == APBefore && H->APModel.QuotedCost == Quote.APCost);
+			H->HideActionPreview(); Check(TEXT("cancel invalidates quote"), !H->APModel.QuotedCost.IsSet());
+			const auto Result = S->CommitAction(Request);
+			Check(TEXT("real action pays quoted phase AP"), Result.bCommitted && S->GetStateSnapshot().PhaseActionPoints == APBefore - Quote.APCost);
+			H->SetActionFeedback(FText::FromName(Action), Result, Quote); const int32 FeedbackCount = H->FeedbackQueue.Num();
+			H->SetActionFeedback(FText::FromName(Action), Result, Quote);
+			Check(TEXT("duplicate committed transaction adds no feedback"), H->FeedbackQueue.Num() == FeedbackCount);
+		}
+		const auto SavedState = S->GetStateSnapshot();
+		auto* Legacy = NewObject<UWindStationSaveGame>(); Legacy->SaveVersion = TEXT("1.6.0"); Legacy->State = SavedState;
+		Check(TEXT("isolated v1.6 fixture saved"), UGameplayStatics::SaveGameToSlot(Legacy, TEXT("WhiteoutStation_Autosave_v1_6"), 0));
+		Check(TEXT("explicit legacy backup loads into independent v1.7 slot"), S->LoadLegacySnapshot());
+		const auto Loaded = S->GetStateSnapshot();
+		Check(TEXT("legacy load preserves AP, run and model count"), Loaded.PhaseActionPoints == SavedState.PhaseActionPoints && Loaded.ActionPoints == SavedState.ActionPoints && Loaded.RunId == SavedState.RunId && Loaded.ModelCalls == SavedState.ModelCalls);
+		auto* LegacyAfter = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromSlot(TEXT("WhiteoutStation_Autosave_v1_6"), 0));
+		Check(TEXT("legacy slot content unchanged"), LegacyAfter && LegacyAfter->SaveVersion == TEXT("1.6.0") && FWSGameState::StaticStruct()->CompareScriptStruct(&Legacy->State, &LegacyAfter->State, 0));
+		const FString Slot = FPaths::ProjectSavedDir() / TEXT("SaveGames/WhiteoutStation_Autosave_v1_7.sav");
+		TArray<uint8> Original;
+		if (FFileHelper::LoadFileToArray(Original, *Slot))
+		{
+			const TArray<uint8> Invalid{0, 1, 2, 3}; FFileHelper::SaveArrayToFile(Invalid, *Slot);
+			Check(TEXT("corrupt current slot does not silently select legacy"), !S->LoadSnapshot());
+			const auto AfterFailure = S->GetStateSnapshot();
+			Check(TEXT("failed load preserves current state"), FWSGameState::StaticStruct()->CompareScriptStruct(&Loaded, &AfterFailure, 0));
+			FFileHelper::SaveArrayToFile(Original, *Slot);
+		}
+		else Check(TEXT("v1.7 slot available for corruption regression"), false);
+	}
+	bool Performance()
+	{
+#if CSV_PROFILER
+		const double Now = FPlatformTime::Seconds(); const double Elapsed = Now - PhaseStarted;
+		auto* H = HUD.Get(); auto* Csv = FCsvProfiler::Get();
+		if (Step == 101 || Step == 104 || Step == 107)
+		{
+			TSharedRef<FJsonObject> M = MakeShared<FJsonObject>(); M->SetNumberField(TEXT("phase"), Step);
+			M->SetNumberField(TEXT("seconds"), Elapsed); M->SetNumberField(TEXT("process_mb"), FPlatformMemory::GetStats().UsedPhysical / 1048576.0);
+			MemorySamples.Add(MakeShared<FJsonValueObject>(M));
+		}
+		if (Step == 100 && Elapsed >= 10)
+		{
+			Csv->EnableCategoryByString(TEXT("Slate")); Csv->BeginCapture(-1, Directory / TEXT("performance"), TEXT("game.csv")); Step = 101; PhaseStarted = Now;
+		}
+		else if ((Step == 101 || Step == 104 || Step == 107) && Elapsed >= 30)
+		{
+			CsvResult = Csv->EndCapture(); ++Step;
+		}
+		else if (Step == 102 && CsvResult.IsReady())
+		{
+			H->StartTutorial(true); Step = 103; PhaseStarted = Now;
+		}
+		else if (Step == 103 && Elapsed >= 5)
+		{
+			Csv->BeginCapture(-1, Directory / TEXT("performance"), TEXT("tutorial.csv")); Step = 104; PhaseStarted = Now;
+		}
+		else if (Step == 105 && CsvResult.IsReady())
+		{
+			auto* C = IConsoleManager::Get().FindConsoleVariable(TEXT("Slate.ForceBackgroundBlurLowQualityOverride")); OriginalBlurFallback = C->GetInt(); C->Set(1);
+			Step = 106; PhaseStarted = Now;
+		}
+		else if (Step == 106 && Elapsed >= 5)
+		{
+			Csv->BeginCapture(-1, Directory / TEXT("performance"), TEXT("fallback.csv")); Step = 107; PhaseStarted = Now;
+		}
+		else if (Step == 108 && CsvResult.IsReady())
+		{
+			IConsoleManager::Get().FindConsoleVariable(TEXT("Slate.ForceBackgroundBlurLowQualityOverride"))->Set(OriginalBlurFallback);
+			H->ReleaseTutorial(EWSTutorialStatus::InProgress);
+			Check(TEXT("performance sampling leaves game state unchanged"), Unchanged());
+			CheckActionsAndSaves(); return Finish();
+		}
+		return true;
+#else
+		Check(TEXT("CSV profiler available"), false); return Finish();
+#endif
+	}
 	bool Finish()
 	{
 		TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
 		Result->SetArrayField(TEXT("checks"), Checks); Result->SetNumberField(TEXT("replay_cycles"), Cycles);
+		Result->SetArrayField(TEXT("memory_samples"), MemorySamples);
 		Result->SetStringField(TEXT("input_driver"), TEXT("native widget events in rendered game; OS checks separate"));
 		FString Json; FJsonSerializer::Serialize(Result, TJsonWriterFactory<>::Create(&Json));
 		FString Suffix; FParse::Value(FCommandLine::Get(), TEXT("V17Label="), Suffix);
@@ -135,6 +234,11 @@ void UWhiteoutHUDWidget::BeginV17RuntimeProbe()
 {
 	FString Mode; FParse::Value(FCommandLine::Get(), TEXT("V17Frame="), Mode);
 	if (Mode != TEXT("probe")) return;
+	FString UserDirectory; FParse::Value(FCommandLine::Get(), TEXT("UserDir="), UserDirectory);
+	if (!FPaths::ConvertRelativePathToFull(UserDirectory).StartsWith(FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../Artifacts/v1.7-evidence/capture-user-probe"))))
+	{
+		UE_LOG(LogTemp, Error, TEXT("V17 probe requires its isolated capture UserDir")); return;
+	}
 	auto Probe = MakeShared<FWSV17RuntimeProbe>(); Probe->HUD = this;
 	auto* S = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
 	Probe->Before = S->GetStateSnapshot(); Probe->Revision = S->GetStateRevision();

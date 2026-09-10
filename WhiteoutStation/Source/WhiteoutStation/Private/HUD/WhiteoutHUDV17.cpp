@@ -43,6 +43,9 @@ void UWhiteoutHUDWidget::TryStartTutorial()
 	auto* Settings = GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>();
 	if (!State || !Settings) return;
 	TutorialWidget->Preload(State->HasLiveLLMProvider() && State->GetDialogueMode() == EWSDialogueMode::Online);
+	const auto& CurrentPreference = Settings->GetTutorialPreference();
+	if (!FWSTutorialFlow::NeedsAutoShow(CurrentPreference, State->WasSnapshotLoaded())
+		&& (!State->WasLegacySnapshotLoaded() || CurrentPreference.UpgradeHintShownVersion >= FWSTutorialFlow::Version)) return;
 	const bool bSafe = State->IsPresentationModalSafe() && !IsOpeningVisible()
 		&& CurrentLayer == EWSUILayer::Game && GetOwningPlayer() && GetOwningPlayer()->GetPawn()
 		&& State->GetStateSnapshot().Phase != EWSGamePhase::Results && EndingElapsed < 0;

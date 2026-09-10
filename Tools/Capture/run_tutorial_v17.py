@@ -14,6 +14,9 @@ def main():
     p.add_argument('--height', type=int, default=1080)
     p.add_argument('--scale', type=float, default=1)
     p.add_argument('--label', default='')
+    p.add_argument('--performance', action='store_true')
+    p.add_argument('--camera-yaw', type=float)
+    p.add_argument('--camera-distance', type=float)
     p.add_argument('--keep-open', action='store_true')
     args = p.parse_args()
     evidence = ROOT/'Artifacts/v1.7-evidence'
@@ -26,6 +29,9 @@ def main():
                 '-unattended', '-WhiteoutV17Capture', f'-V17Frame={args.mode}', f'-V17Label={args.label}',
                 f'-WhiteoutCaptureScale={args.scale}', f'-UserDir={evidence}/capture-user-{label}', f'-abslog={evidence}/capture-{label}.log']
     if not args.keep_open: command += ['-WhiteoutAutoExit']
+    if args.camera_yaw is not None: command += [f'-V17CameraYaw={args.camera_yaw}']
+    if args.camera_distance is not None: command += [f'-V17CameraDistance={args.camera_distance}']
+    if args.performance: command += ['-V17Performance', '-csvGpuStats']
     result = subprocess.run(command, timeout=None if args.keep_open else 360)
     print(json.dumps({'mode': args.mode, 'label': args.label, 'exit_code': result.returncode}))
     return result.returncode
