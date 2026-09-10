@@ -93,6 +93,17 @@ void UWhiteoutSettingsSubsystem::Initialize(FSubsystemCollectionBase& Collection
 
 void UWhiteoutSettingsSubsystem::Load()
 {
+	if (GConfig)
+	{
+		GConfig->GetInt(SettingsSection, TEXT("TutorialVersion"), TutorialPreference.Version, GGameUserSettingsIni);
+		int32 Status = 0;
+		GConfig->GetInt(SettingsSection, TEXT("TutorialStatus"), Status, GGameUserSettingsIni);
+		if (Status < 0 || Status > 3)
+			UE_LOG(LogTemp, Warning, TEXT("Invalid tutorial preference; using Never"));
+		TutorialPreference.Status = Status >= 0 && Status <= 3 ? static_cast<EWSTutorialStatus>(Status) : EWSTutorialStatus::Never;
+		TutorialPreference.LastPageId = FName(*LoadStringSetting(TEXT("TutorialLastPageId"), TEXT("T01"), 3));
+		GConfig->GetInt(SettingsSection, TEXT("TutorialUpgradeHintShownVersion"), TutorialPreference.UpgradeHintShownVersion, GGameUserSettingsIni);
+	}
 	FieldOfView = LoadClampedSetting(TEXT("FieldOfView"), 90.0f, MinFieldOfView, MaxFieldOfView);
 	MasterVolume = LoadClampedSetting(TEXT("MasterVolume"), 1.0f, 0.0f, 1.0f);
 	AmbienceVolume = LoadClampedSetting(TEXT("AmbienceVolume"), 1.0f, 0.0f, 1.0f);
@@ -145,6 +156,21 @@ void UWhiteoutSettingsSubsystem::Save() const
 	GConfig->SetBool(SettingsSection, TEXT("LLMEnabled"), bLLMEnabled, GGameUserSettingsIni);
 	GConfig->RemoveKey(SettingsSection, TEXT("LLMApiKey"), GGameUserSettingsIni);
 	GConfig->RemoveKey(SettingsSection, TEXT("ApiKey"), GGameUserSettingsIni);
+	GConfig->Flush(false, GGameUserSettingsIni);
+}
+
+void UWhiteoutSettingsSubsystem::SetTutorialPreference(const FWSTutorialPreference& Preference)
+{
+	TutorialPreference = Preference;
+	if (!GConfig)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Tutorial preference could not be persisted: config unavailable"));
+		return;
+	}
+	GConfig->SetInt(SettingsSection, TEXT("TutorialVersion"), Preference.Version, GGameUserSettingsIni);
+	GConfig->SetInt(SettingsSection, TEXT("TutorialStatus"), static_cast<int32>(Preference.Status), GGameUserSettingsIni);
+	GConfig->SetString(SettingsSection, TEXT("TutorialLastPageId"), *Preference.LastPageId.ToString(), GGameUserSettingsIni);
+	GConfig->SetInt(SettingsSection, TEXT("TutorialUpgradeHintShownVersion"), Preference.UpgradeHintShownVersion, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);
 }
 

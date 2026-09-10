@@ -41,6 +41,7 @@ public:
 	void SubmitV15OnlineRouteDialogue(const FWSActionRequest& AuthoredRequest);
 
 private:
+	void BeginV17Capture();
 	UPROPERTY()
 	TObjectPtr<ACameraActor> OpeningCamera;
 

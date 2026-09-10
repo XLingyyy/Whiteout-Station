@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "HUD/WSTutorialTypes.h"
 #include "WhiteoutSettingsSubsystem.generated.h"
 
 class USoundClass;
@@ -25,6 +26,8 @@ public:
 	float GetFeedbackVolume() const { return FeedbackVolume; }
 	float GetTextScale() const { return TextScale; }
 	bool IsReducedMotionEnabled() const { return bReducedMotion; }
+	const FWSTutorialPreference& GetTutorialPreference() const { return TutorialPreference; }
+	void SetTutorialPreference(const FWSTutorialPreference& Preference);
 	const FString& GetLLMProviderId() const { return LLMProviderId; }
 	const FString& GetLLMBaseUrl() const { return LLMBaseUrl; }
 	const FString& GetLLMModelId() const { return LLMModelId; }
@@ -67,6 +70,7 @@ private:
 	float FeedbackVolume = 1.0f;
 	float TextScale = 1.0f;
 	bool bReducedMotion = false;
+	FWSTutorialPreference TutorialPreference;
 	FString LLMProviderId = TEXT("deepseek");
 	FString LLMBaseUrl = TEXT("https://api.deepseek.com");
 	FString LLMModelId = TEXT("deepseek-v4-flash");

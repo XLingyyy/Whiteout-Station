@@ -256,6 +256,11 @@ AWhiteoutGameMode::AWhiteoutGameMode()
 void AWhiteoutGameMode::BeginPlay()
 {
 	Super::BeginPlay();
+	if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV17Capture")))
+	{
+		FTimerHandle CaptureTimer;
+		GetWorldTimerManager().SetTimer(CaptureTimer, this, &AWhiteoutGameMode::BeginV17Capture, 2.0f, false);
+	}
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation: starting playable v1.0 flow"));
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{

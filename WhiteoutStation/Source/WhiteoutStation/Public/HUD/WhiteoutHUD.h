@@ -36,6 +36,7 @@ public:
 	void SetSystemMessage(const FString& Message);
 	bool AdvanceOpening();
 	bool IsOpeningVisible() const;
+	bool IsTutorialActive() const;
 	void DismissOpening();
 	void ToggleGuide();
 	void TogglePauseMenu();

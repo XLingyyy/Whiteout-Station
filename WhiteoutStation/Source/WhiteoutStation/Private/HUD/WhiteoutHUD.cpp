@@ -193,3 +193,9 @@ void AWhiteoutHUD::OpenDialogueSettings()
 {
 	if (HUDWidget) HUDWidget->OpenDialogueSettings();
 }
+
+
+bool AWhiteoutHUD::IsTutorialActive() const
+{
+	return HUDWidget && HUDWidget->IsTutorialActive();
+}

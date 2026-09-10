@@ -93,6 +93,9 @@ public:
 	bool HasPendingDialogue() const { return bHasPendingDialogue || bHasPendingOnlineIntent; }
 
 	int64 GetStateRevision() const { return StateRevision; }
+	bool IsPresentationModalSafe() const { return !HasPendingDialogue() && !bCommitDispatchActive && !bLifecycleTransitionActive; }
+	bool WasSnapshotLoaded() const { return bSnapshotLoaded; }
+	bool WasLegacySnapshotLoaded() const { return bLegacySnapshotLoaded; }
 	static bool CanCommitPreparedDialogue(
 		const FWSPreparedDialogue& Candidate,
 		const FWSPreparedDialogue& Pending,
@@ -132,6 +135,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Whiteout Station|Save")
 	bool LoadSnapshot();
+	bool LoadLegacySnapshot() { return LoadSnapshotFrom(true); }
+	bool HasLegacySnapshot() const;
 
 	UFUNCTION(BlueprintPure, Category = "Whiteout Station|Save")
 	bool HasSnapshot() const;
@@ -177,9 +182,11 @@ public:
 	const FWhiteoutRulesEngine& GetRulesEngine() const { return RulesEngine; }
 
 private:
+	bool LoadSnapshotFrom(bool bUseLegacyBackup);
 	friend class AWhiteoutGameMode;
 	friend class FWhiteoutV15MessageStateTest;
 	static const FString SaveSlot;
+	static const FString LegacySaveSlotV16;
 	static const FString LegacySaveSlotV15;
 	static const FString LegacySaveSlotV14;
 	static const FString LegacySaveSlotV13;
@@ -208,6 +215,8 @@ private:
 	bool bHasPendingOnlineIntent = false;
 	bool bCommitDispatchActive = false;
 	bool bLifecycleTransitionActive = false;
+	bool bSnapshotLoaded = false;
+	bool bLegacySnapshotLoaded = false;
 	TFunction<void(const FWSActionResult&)> PendingDialogueCompletion;
 	int64 StateRevision = 1;
 	int64 DialogueGeneration = 1;

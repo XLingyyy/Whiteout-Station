@@ -189,6 +189,8 @@ namespace
 }
 
 const FString UWindStationStateSubsystem::SaveSlot(
+	TEXT("WhiteoutStation_Autosave_v1_7"));
+const FString UWindStationStateSubsystem::LegacySaveSlotV16(
 	TEXT("WhiteoutStation_Autosave_v1_6"));
 const FString UWindStationStateSubsystem::LegacySaveSlotV15(TEXT("WhiteoutStation_Autosave_v1_5"));
 const FString UWindStationStateSubsystem::LegacySaveSlotV14(
@@ -454,6 +456,7 @@ void UWindStationStateSubsystem::NewGame()
 		true,
 		true);
 	RulesEngine.Reset();
+	bSnapshotLoaded = bLegacySnapshotLoaded = false;
 	DialogueSessions.Reset();
 	++StateRevision;
 	LatestDialogue = FWSAgentReply();
@@ -1762,7 +1765,8 @@ FWSGameState UWindStationStateSubsystem::MigrateSaveStateForV13(
 	}
 	for (auto& Entry : MigratedState.ConversationHistory)
 		if (Entry.ControlStatus == TEXT("pending")) Entry.ControlStatus = TEXT("cancelled");
-	if (SourceSaveVersion != TEXT("1.6.0")
+	if (SourceSaveVersion != TEXT("1.7.0")
+		&& SourceSaveVersion != TEXT("1.6.0")
 		&& SourceSaveVersion != TEXT("1.5.0")
 		&& SourceSaveVersion != TEXT("1.4.0")
 		&& SourceSaveVersion != TEXT("1.3.0"))
@@ -1805,6 +1809,11 @@ FWSGameState UWindStationStateSubsystem::MigrateSaveStateForV13(
 
 bool UWindStationStateSubsystem::LoadSnapshot()
 {
+	return LoadSnapshotFrom(false);
+}
+
+bool UWindStationStateSubsystem::LoadSnapshotFrom(bool bUseLegacyBackup)
+{
 	if (bLifecycleTransitionActive || bCommitDispatchActive)
 	{
 		return false;
@@ -1816,9 +1825,11 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	bAllowLegacyFallback = AutomationSaveSlot.IsEmpty();
 #endif
 	if (bAllowLegacyFallback
-		&& !UGameplayStatics::DoesSaveGameExist(SlotToLoad, 0))
+		&& (bUseLegacyBackup || !UGameplayStatics::DoesSaveGameExist(SlotToLoad, 0)))
 	{
-		SlotToLoad = UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV15, 0)
+		SlotToLoad = UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV16, 0)
+			? LegacySaveSlotV16
+			: UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV15, 0)
 			? LegacySaveSlotV15
 			: UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV14, 0)
 			? LegacySaveSlotV14
@@ -1836,7 +1847,8 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(
 		UGameplayStatics::LoadGameFromSlot(SlotToLoad, 0));
 	if (!Save
-		|| (Save->SaveVersion != TEXT("1.6.0")
+		|| (Save->SaveVersion != TEXT("1.7.0")
+			&& Save->SaveVersion != TEXT("1.6.0")
 			&& Save->SaveVersion != TEXT("1.5.0")
 			&& Save->SaveVersion != TEXT("1.4.0")
 			&& Save->SaveVersion != TEXT("1.3.0")
@@ -1859,7 +1871,9 @@ bool UWindStationStateSubsystem::LoadSnapshot()
 	DialogueSessions.Reset();
 	++StateRevision;
 	LatestDialogue = FWSAgentReply();
-	if (bLoadLegacySlot || Save->SaveVersion != TEXT("1.6.0"))
+	bSnapshotLoaded = true;
+	bLegacySnapshotLoaded = bLoadLegacySlot || Save->SaveVersion != TEXT("1.7.0");
+	if (bLegacySnapshotLoaded)
 	{
 		SaveSnapshot();
 	}
@@ -1877,6 +1891,17 @@ bool UWindStationStateSubsystem::HasSnapshot() const
 	}
 #endif
 	return UGameplayStatics::DoesSaveGameExist(ActiveSaveSlot, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV16, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV15, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV14, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV13, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV12, 0)
+		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV11, 0);
+}
+
+bool UWindStationStateSubsystem::HasLegacySnapshot() const
+{
+	return UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV16, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV15, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV14, 0)
 		|| UGameplayStatics::DoesSaveGameExist(LegacySaveSlotV13, 0)

@@ -23,7 +23,7 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 {
 	SetIsFocusable(true);
 	UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
-	Background->SetBrush(FSlateRoundedBoxBrush(WSUITokens::V15::Surface, WSUITokens::V15::Radius, WSUITokens::V15::Stroke, 1.0f));
+	Background->SetBrush(FSlateRoundedBoxBrush(WSUITokens::V17::Surface, WSUITokens::V17::Radius, WSUITokens::V17::Stroke, 1.0f));
 	Background->SetPadding(FMargin(16));
 	WidgetTree->RootWidget = Background;
 	UVerticalBox* Box = WidgetTree->ConstructWidget<UVerticalBox>();
@@ -32,7 +32,7 @@ void UWSDialoguePanelWidget::Build(UFont* Font)
 	{
 		UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>();
 		T->SetFont(FSlateFontInfo(Font, Size));
-		T->SetColorAndOpacity(FSlateColor(WSUITokens::V15::Text));
+		T->SetColorAndOpacity(FSlateColor(WSUITokens::V17::Text));
 		T->SetAutoWrapText(true);
 		return T;
 	};

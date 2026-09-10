@@ -5,6 +5,8 @@
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "State/WindStationTypes.h"
+#include "HUD/WSTutorialTypes.h"
+#include "Presentation/WSAPViewModel.h"
 #include "WhiteoutHUDWidget.generated.h"
 
 class UBorder;
@@ -22,6 +24,8 @@ class UUniformGridPanel;
 class UVerticalBox;
 class UFont;
 class UTexture2D;
+class UWSTutorialWidget;
+class UWSActionPointWidget;
 
 enum class EWSUILayer : uint8
 {
@@ -32,6 +36,7 @@ enum class EWSUILayer : uint8
 	Guide,
 	Pause,
 	Settings,
+	Tutorial,
 	Results
 };
 
@@ -69,6 +74,10 @@ public:
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	void SetInteractionPrompt(const FText& Prompt);
+	bool IsTutorialActive() const { return bTutorialLease; }
+	void TryStartTutorial();
+	void ExportV17Geometry(const FString& Path) const;
+	UFUNCTION() void ReplayTutorial();
 	void SetInteractionFocus(const FText& ActionName, const FWSActionPreview& Preview, bool bDialogue = false);
 	void ClearInteractionFocus();
 	void SetStatusFocus(FName ActionId);
@@ -131,6 +140,27 @@ public:
 	void SetEndingCaptureStage(EWSEndingType Ending, bool bShowResults);
 
 private:
+	UPROPERTY() TObjectPtr<UWSTutorialWidget> TutorialWidget;
+	UPROPERTY() TObjectPtr<UWSActionPointWidget> ActionPointWidget;
+	UPROPERTY() TObjectPtr<UScrollBox> GuideScrollV17;
+	UPROPERTY() TObjectPtr<UButton> ReplayTutorialButton;
+	UPROPERTY() TObjectPtr<UButton> LegacyBackupButton;
+	UFUNCTION() void LoadLegacyBackup();
+	UPROPERTY() TObjectPtr<UBorder> ResourcePanel;
+	UPROPERTY() TObjectPtr<UTextBlock> ResourceText;
+	FWSAPViewModel APModel;
+	FWSActionRequest ActiveAPRequest;
+	bool bTutorialLease = false;
+	bool bTutorialOwnsPause = false;
+	bool bTutorialReturnCursor = false;
+	bool bTutorialReplay = false;
+	bool bTutorialBypass = false;
+	EWSUILayer TutorialReturnLayer = EWSUILayer::Game;
+	TWeakPtr<SWidget> TutorialReturnFocus;
+	void StartTutorial(bool bReplay);
+	void ReleaseTutorial(EWSTutorialStatus Reason);
+	void PersistTutorialPage(FName PageId);
+	void RefreshAP(const FWSGameState& State);
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> TopPanel;
 

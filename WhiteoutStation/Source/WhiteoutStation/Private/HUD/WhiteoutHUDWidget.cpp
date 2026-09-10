@@ -1,4 +1,9 @@
 #include "HUD/WhiteoutHUDWidget.h"
+#include "HUD/WSTutorialWidget.h"
+#include "HUD/WSActionPointWidget.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Components/ScaleBox.h"
 #include "HUD/WSDialoguePanelWidget.h"
 #include "HUD/WSStatusPanelWidget.h"
@@ -239,6 +244,12 @@ void UWhiteoutHUDWidget::NativeOnInitialized()
 	YeChengPortraitTexture = LoadObject<UTexture2D>(nullptr, TEXT("/Game/WindStation/UI/v03/Portraits/P_YeCheng.P_YeCheng"));
 	SystemMessage = FWSPresentationText::UI(TEXT("ui_initial_message"), TEXT("靠近带有白色轮廓的设备，按 F 查看行动。")).ToString();
 	BuildWidgetTree();
+	bTutorialBypass = FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV17Capture"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV15UIFixture"));
+	FString TestValue;
+	bTutorialBypass |= FParse::Value(FCommandLine::Get(), TEXT("WhiteoutAutoRoute="), TestValue)
+		|| FParse::Value(FCommandLine::Get(), TEXT("WhiteoutPresentationCapture="), TestValue)
+		|| FParse::Value(FCommandLine::Get(), TEXT("WhiteoutV15Probe="), TestValue);
 	UE_LOG(LogTemp, Display, TEXT("WhiteoutStation v0.2: native UMG widget tree initialized"));
 }
 
@@ -301,6 +312,7 @@ void UWhiteoutHUDWidget::NativeDestruct()
 			StateSubsystem->OnStateChanged.RemoveDynamic(this, &UWhiteoutHUDWidget::UpdateEvidence);
 		}
 	}
+	ReleaseTutorial(EWSTutorialStatus::InProgress);
 	Super::NativeDestruct();
 }
 
@@ -311,6 +323,14 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 	if (DialogueBorder && LayoutSize.X > 0 && LayoutSize.Y > 0 && LayoutSize != LastDialogueLayoutSize)
 	{
 		LastDialogueLayoutSize = LayoutSize;
+		const float Margin = LayoutSize.Y < 800 ? 20.f : 36.f;
+		const float Width = LayoutSize.X < 1450 ? 300.f : 340.f;
+		if (auto* LayoutSlot = Cast<UCanvasPanelSlot>(TopPanel->Slot)) { LayoutSlot->SetPosition(FVector2D(Margin, Margin)); LayoutSlot->SetSize(FVector2D(Width, 240)); }
+		if (auto* LayoutSlot = Cast<UCanvasPanelSlot>(ResourcePanel->Slot)) { LayoutSlot->SetPosition(FVector2D(Margin, Margin + 252)); LayoutSlot->SetSize(FVector2D(Width, 80)); }
+		if (auto* LayoutSlot = Cast<UCanvasPanelSlot>(ObjectivePanel->Slot)) { LayoutSlot->SetPosition(FVector2D(Margin, Margin + 344)); LayoutSlot->SetSize(FVector2D(Width, FMath::Max(140.0, LayoutSize.Y - Margin - 424))); }
+		ObjectiveText->SetWrapTextAt(Width - 24); TutorialText->SetWrapTextAt(Width - 24); TutorialTitleText->SetWrapTextAt(Width - 24);
+		if (auto* LayoutSlot = Cast<UCanvasPanelSlot>(BottomPanel->Slot)) { LayoutSlot->SetOffsets(FMargin(-FMath::Min(420.0, LayoutSize.X * .32), -64, FMath::Min(840.0, LayoutSize.X * .64), 44)); }
+
 		if (UCanvasPanelSlot* DialogueCanvasSlot = Cast<UCanvasPanelSlot>(DialogueBorder->Slot))
 		{
 			const float Top = LayoutSize.Y < 650 ? 0.08f : 0.30f;
@@ -323,6 +343,7 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 	}
 	TickPanelAnimations(InDeltaTime);
 	TickOpening(InDeltaTime);
+	TryStartTutorial();
 	const bool bReducedMotion = IsReducedMotionEnabled();
 	if (StatusPanelV15) StatusPanelV15->AdvanceAnimation(InDeltaTime, bReducedMotion);
 	const bool bFeedbackVisible = CurrentLayer == EWSUILayer::Game && !IsOpeningVisible();
@@ -338,11 +359,6 @@ void UWhiteoutHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InD
 		ToastRemaining = FMath::Max(0.0f, ToastRemaining - InDeltaTime);
 		const float Opacity = FMath::Clamp(ToastRemaining * 1.8f, 0.0f, 1.0f);
 		ToastBorder->SetRenderOpacity(Opacity);
-		if (TopText && !bReducedMotion)
-		{
-			const float Pulse = 1.0f + 0.035f * FMath::Sin(ToastRemaining * 12.0f) * Opacity;
-			TopText->SetRenderScale(FVector2D(Pulse));
-		}
 		if (ToastRemaining <= 0.0f)
 		{
 			ToastBorder->SetVisibility(ESlateVisibility::Collapsed);
@@ -442,7 +458,7 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	UCanvasPanel* Canvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDRoot"));
 	WidgetTree->RootWidget = Canvas;
 
-	TopPanel = MakeGlassPanel(Canvas, TEXT("TopPanel"), FAnchors(0, 0), FMargin(20, 20, 340, 124), 12.0f, WSUITokens::Color::SurfacePanel);
+	TopPanel = MakeGlassPanel(Canvas, TEXT("TopPanel"), FAnchors(0, 0), FMargin(36, 36, 340, 256), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(TopPanel, FMargin(10, 7));
 	TopPanel->SetClipping(EWidgetClipping::ClipToBounds);
 	UVerticalBox* TopBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("TopBox"));
@@ -450,12 +466,21 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	TopText->SetFont(UIFont(16, true));
 	TopStatusText = MakeText(TEXT("TopStatusText"), 15, Body, false);
 	TopConditionText = MakeText(TEXT("TopConditionText"), 15, Secondary, false);
+	ActionPointWidget = CreateWidget<UWSActionPointWidget>(GetOwningPlayer());
+	ActionPointWidget->Build(UIFontFamily);
+	TopBox->AddChildToVerticalBox(ActionPointWidget);
+	TopText->SetVisibility(ESlateVisibility::Collapsed);
+	TopStatusText->SetVisibility(ESlateVisibility::Collapsed);
 	TopBox->AddChildToVerticalBox(TopText);
 	TopBox->AddChildToVerticalBox(TopStatusText)->SetPadding(FMargin(0, 2, 0, 0));
 	TopBox->AddChildToVerticalBox(TopConditionText)->SetPadding(FMargin(0, 2, 0, 0));
 	SetGlassPanelContent(TopPanel, TopBox);
 
-	ObjectivePanel = MakeGlassPanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(20, 156, 340, 420), 12.0f, WSUITokens::Color::SurfacePanel);
+	ResourcePanel = MakeGlassPanel(Canvas, TEXT("ResourcePanel"), FAnchors(0,0), FMargin(36, 288, 340, 80), 0.f, WSUITokens::V17::Surface);
+	SetGlassPanelPadding(ResourcePanel, FMargin(14, 10));
+	ResourceText = MakeText(TEXT("ResourceText"), 16, Body);
+	SetGlassPanelContent(ResourcePanel, ResourceText);
+	ObjectivePanel = MakeGlassPanel(Canvas, TEXT("ObjectivePanel"), FAnchors(0, 0), FMargin(36, 308, 340, 420), 12.0f, WSUITokens::Color::SurfacePanel);
 	SetGlassPanelPadding(ObjectivePanel, FMargin(12));
 	ObjectivePanel->SetClipping(EWidgetClipping::ClipToBounds);
 	UVerticalBox* ObjectiveBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ObjectiveBox"));
@@ -473,7 +498,8 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	TutorialText->SetWrapTextAt(316.0f);
 	TutorialText->SetLineHeightPercentage(1.2f);
 	ObjectiveBox->AddChildToVerticalBox(TutorialText);
-	SetGlassPanelContent(ObjectivePanel, ObjectiveBox);
+	UScrollBox* ObjectiveScroll = WidgetTree->ConstructWidget<UScrollBox>(); ObjectiveScroll->AddChild(ObjectiveBox);
+	SetGlassPanelContent(ObjectivePanel, ObjectiveScroll);
 
 	USafeZone* V15SafeZone = WidgetTree->ConstructWidget<USafeZone>();
 	V15SafeZone->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -482,6 +508,12 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	V15Canvas = WidgetTree->ConstructWidget<UCanvasPanel>();
 	V15Canvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	V15SafeZone->SetContent(V15Canvas);
+	TutorialWidget = CreateWidget<UWSTutorialWidget>(GetOwningPlayer());
+	TutorialWidget->Build(UIFontFamily);
+	TutorialWidget->OnClosed.BindUObject(this, &UWhiteoutHUDWidget::ReleaseTutorial);
+	TutorialWidget->OnPageChanged.BindUObject(this, &UWhiteoutHUDWidget::PersistTutorialPage);
+	UCanvasPanelSlot* TutorialSlot = Canvas->AddChildToCanvas(TutorialWidget);
+	TutorialSlot->SetAnchors(FAnchors(0, 0, 1, 1)); TutorialSlot->SetOffsets(FMargin(0)); TutorialSlot->SetZOrder(100);
 	StatusPanelV15 = CreateWidget<UWSStatusPanelWidget>(GetOwningPlayer());
 	StatusPanelV15->Build(UIFontFamily);
 	UCanvasPanelSlot* StatusSlot = V15Canvas->AddChildToCanvas(StatusPanelV15);
@@ -695,12 +727,15 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 		TEXT("恢复与协作\n供暖区休息 1 AP：立即体温 +1.0、体能 +1、压力 −0.4；未供暖区仅压力 −0.2。阶段温度另行结算。\n分配食物固定 1 AP，可一次给 1—3 人各一份，不消耗分配者体能。冷餐恢复体能 1、压力 −0.1；热餐另加体温 +0.5，压力改为 −0.4。\n顾衡协查会留下专业记录和一次维修准备：下次顾衡维修减 1 AP；已为 1 AP 则免除其体能消耗。带伤工作的恶化仍会发生。低信任协作需协调加费，极低信任或失控压力会拒绝。\n\n信息与交涉\n")
 		TEXT("按 E 查看证据板。AI 关闭时选择固定话题；开启并配置后直接输入，点击发送。交谈免费，每名 NPC 每局最多 10 轮成功回复；承诺需要再次确认。")));
 	UScrollBox* GuideScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("GuideScroll"));
+	GuideScrollV17 = GuideScroll;
 	GuideScroll->AddChild(GuideIntro);
 	UVerticalBoxSlot* GuideScrollSlot = GuideBox->AddChildToVerticalBox(GuideScroll);
 	GuideScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	GuideContextText = MakeText(TEXT("GuideContextText"), 14, WSUITokens::Color::TextCinematicWarm);
 	GuideContextText->SetLineHeightPercentage(1.24f);
 	GuideBox->AddChildToVerticalBox(GuideContextText)->SetPadding(FMargin(0, 12, 0, 8));
+	ReplayTutorialButton = MakeButton(GuideBox, FText::FromString(TEXT("重看入门教程")), TEXT("ReplayTutorialButton"));
+	ReplayTutorialButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::ReplayTutorial);
 	UButton* GuideCloseButton = MakeButton(
 		GuideBox,
 		FText::FromString(TEXT("返回游戏　[H / Esc]")),
@@ -923,6 +958,9 @@ void UWhiteoutHUDWidget::BuildWidgetTree()
 	PauseDefaultButton = ResumeButton;
 	UButton* SaveButton = MakeButton(PauseBox, FText::FromString(TEXT("保存本轮　｜　记录当前状态")), TEXT("SaveButton"));
 	LoadGameButton = MakeButton(PauseBox, FText::FromString(TEXT("读取存档　｜　恢复最近记录")), TEXT("LoadButton"));
+	LegacyBackupButton = MakeButton(PauseBox, FText::FromString(TEXT("改用旧版备份　｜　替换 v1.7 进度")), TEXT("LegacyBackupButton"));
+	LegacyBackupButton->OnClicked.AddDynamic(this, &UWhiteoutHUDWidget::LoadLegacyBackup);
+	LegacyBackupButton->SetVisibility(ESlateVisibility::Collapsed);
 	UButton* SettingsButton = MakeButton(PauseBox, FText::FromString(TEXT("设置　　　｜　画面、声音与辅助")), TEXT("SettingsButton"));
 	UButton* HelpButton = MakeButton(PauseBox, FText::FromString(TEXT("生存手册　｜　目标、状态与操作")), TEXT("HelpButton"));
 	UButton* RestartButton = MakeButton(PauseBox, FWSPresentationText::UI(TEXT("ui_restart"), TEXT("重新开始")), TEXT("RestartButton"));
@@ -1219,7 +1257,7 @@ UBorder* UWhiteoutHUDWidget::MakeGlassPanel(
 
 	UBackgroundBlur* Blur = WidgetTree->ConstructWidget<UBackgroundBlur>(
 		UBackgroundBlur::StaticClass(), FName(*(Name.ToString() + TEXT("Blur"))));
-	Blur->SetBlurStrength(BlurStrength);
+	Blur->SetBlurStrength(0.f); // A surfaces use opaque tint; the tutorial owns the only full-screen blur.
 	Blur->SetApplyAlphaToBlur(true);
 	Blur->SetPadding(FMargin(0));
 	Blur->SetHorizontalAlignment(HAlign_Fill);
@@ -1452,6 +1490,7 @@ void UWhiteoutHUDWidget::SetBaseHudHidden(const bool bHidden)
 {
 	const ESlateVisibility PanelVisibility = bHidden ? ESlateVisibility::Hidden : ESlateVisibility::Visible;
 	if (TopPanel) TopPanel->SetVisibility(PanelVisibility);
+	if (ResourcePanel) ResourcePanel->SetVisibility(PanelVisibility);
 	if (ObjectivePanel) ObjectivePanel->SetVisibility(PanelVisibility);
 	if (StatusPanelV15) StatusPanelV15->SetVisibility(bHidden ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	if (BottomPanel) BottomPanel->SetVisibility(PanelVisibility);
@@ -1459,6 +1498,7 @@ void UWhiteoutHUDWidget::SetBaseHudHidden(const bool bHidden)
 
 void UWhiteoutHUDWidget::SetLayer(const EWSUILayer Layer)
 {
+	if (bTutorialLease && Layer != EWSUILayer::Tutorial) return;
 	if (CurrentLayer == Layer) return;
 	CurrentLayer = Layer;
 	if (Layer != EWSUILayer::Game && Layer != EWSUILayer::Dialogue && Layer != EWSUILayer::Preview) SetStatusFocus(NAME_None);
@@ -1478,7 +1518,7 @@ void UWhiteoutHUDWidget::SetLayer(const EWSUILayer Layer)
 	{
 		CrosshairText->SetVisibility(bHideBaseHud ? ESlateVisibility::Hidden : ESlateVisibility::Visible);
 	}
-	if (Layer != EWSUILayer::Results) ResetMouseToViewportCenter();
+	if (Layer != EWSUILayer::Results && Layer != EWSUILayer::Tutorial) ResetMouseToViewportCenter();
 }
 
 void UWhiteoutHUDWidget::ResetMouseToViewportCenter()
@@ -1687,6 +1727,8 @@ FString UWhiteoutHUDWidget::BuildObjectiveSummary(const FWSGameState& State)
 
 void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 {
+	RefreshAP(State);
+	if (ResourceText) ResourceText->SetText(FText::FromString(FString::Printf(TEXT("燃料  %d        食物  %d\n药品  %d        保温包  %d"), State.Resources.Fuel, State.Resources.Food, State.Resources.Medicine, State.Resources.HeatPack)));
 	const FString PhaseCondition = !State.bDayPhaseStarted
 		? TEXT("阶段待开始 ｜ 选择一个供暖区")
 		: FString::Printf(
@@ -1698,12 +1740,12 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 		TopStatusText->SetText(FText::Format(
 			FText::FromString(TEXT("{0} ｜ {1} AP {2} / 4 ｜ {3}")),
 			FText::FromString(
-				ClockForProgress(State.DayPhase, State.ActionPoints)),
+				ClockForProgress(State.DayPhase, State.PhaseActionPoints)),
 			FText::FromString(DayPhaseLabel(State.DayPhase)),
-			FText::AsNumber(State.ActionPoints),
+			FText::AsNumber(State.PhaseActionPoints),
 			FWSPresentationText::PhaseLabel(State.Phase)));
 		TopStatusText->SetColorAndOpacity(FSlateColor(
-			State.ActionPoints <= 1 ? Danger : Body));
+			State.PhaseActionPoints <= 1 ? Danger : Body));
 	}
 	if (TopConditionText)
 	{
@@ -1718,7 +1760,7 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 		const FString GuideTitle = State.bDayPhaseStarted
 			? FString::Printf(
 				TEXT("可选下一步｜本阶段 %d / 4 AP"),
-				State.ActionPoints)
+				State.PhaseActionPoints)
 			: TEXT("阶段准备｜四个供暖区任选其一");
 		TutorialTitleText->SetText(FText::FromString(GuideTitle));
 		if (TutorialText)
@@ -1734,9 +1776,9 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	{
 		PauseStatusText->SetText(FText::FromString(FString::Printf(
 			TEXT("%s　｜　%s AP %d / 4　｜　%s"),
-			*ClockForProgress(State.DayPhase, State.ActionPoints),
+			*ClockForProgress(State.DayPhase, State.PhaseActionPoints),
 			*DayPhaseLabel(State.DayPhase),
-			State.ActionPoints,
+			State.PhaseActionPoints,
 			*FWSPresentationText::PhaseLabel(State.Phase).ToString())));
 	}
 	if (PauseSituationText)
@@ -1745,7 +1787,7 @@ void UWhiteoutHUDWidget::UpdateFromState(const FWSGameState& State)
 	}
 	if (PauseSituationValues.Num() >= 5)
 	{
-		PauseSituationValues[0]->SetText(FText::FromString(FString::Printf(TEXT("%d / 4"), State.ActionPoints)));
+		PauseSituationValues[0]->SetText(FText::FromString(FString::Printf(TEXT("%d / 4"), State.PhaseActionPoints)));
 		PauseSituationValues[1]->SetText(FText::FromString(
 			ClockForProgress(EWSDayPhase::Complete, 0)));
 		PauseSituationValues[2]->SetText(FText::FromString(FString::Printf(TEXT("%d / 2"), State.Tasks.GeneratorProgress)));
@@ -1840,11 +1882,11 @@ FString UWhiteoutHUDWidget::BuildTaskGuide(
 		Options.Add(TEXT("• 整备：先恢复体能、治疗伤势或平衡食物分配"));
 		Options.Add(TEXT("• 等待：保留燃料并推进阶段，接受未知救援结果"));
 	}
-	if (State.ActionPoints > 0)
+	if (State.PhaseActionPoints > 0)
 	{
 		Options.Add(FString::Printf(
 			TEXT("• 结束阶段：Enter 放弃剩余 %d AP，进入下一阶段"),
-			State.ActionPoints));
+			State.PhaseActionPoints));
 	}
 	return FString::Join(Options, TEXT("\n"));
 }
@@ -2411,6 +2453,13 @@ void UWhiteoutHUDWidget::ShowActionPreview(
 	const FWSActionPreview& Preview,
 	const FWSActionRequest& Request)
 {
+	if (bTutorialLease) return;
+	ActiveAPRequest = Request;
+	APModel.QuotedCost = Preview.APCost;
+	APModel.bCanExecute = Preview.bCanExecute;
+	APModel.BlockingReason = Preview.MissingConditions.ToString();
+	APModel.QuoteToken = FGuid::NewGuid().ToString();
+	if (const auto* S = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>()) APModel.StateRevision = S->GetStateRevision();
 	SetLayer(EWSUILayer::Preview);
 	ShowPanelAnimated(PreviewBorder, true, WSUITokens::Anim::Fast, false);
 	PreviewTitleText->SetText(ActionName);
@@ -2514,6 +2563,7 @@ void UWhiteoutHUDWidget::ShowActionPreview(
 
 void UWhiteoutHUDWidget::HideActionPreview()
 {
+	APModel.QuotedCost.Reset(); APModel.QuoteToken.Reset();
 	if (PreviewBorder)
 	{
 		ShowPanelAnimated(PreviewBorder, false, WSUITokens::Anim::Fast, false);
@@ -3667,6 +3717,7 @@ void UWhiteoutHUDWidget::ToggleGuide()
 
 void UWhiteoutHUDWidget::CloseGuide()
 {
+	if (bTutorialLease) return;
 	if (GuideBorder)
 	{
 		ShowPanelAnimated(GuideBorder, false, WSUITokens::Anim::Fast);
@@ -3698,6 +3749,9 @@ void UWhiteoutHUDWidget::HandleBackRequested()
 	// Game -> open Pause
 	switch (CurrentLayer)
 	{
+	case EWSUILayer::Tutorial:
+		if (TutorialWidget) TutorialWidget->Back();
+		break;
 	case EWSUILayer::Settings:
 		CloseSettings();
 		break;
@@ -3728,6 +3782,7 @@ void UWhiteoutHUDWidget::HandleBackRequested()
 
 void UWhiteoutHUDWidget::TogglePauseMenu()
 {
+	if (bTutorialLease) return;
 	if (IsPauseMenuVisible())
 	{
 		ResumeGame();
@@ -3778,6 +3833,7 @@ void UWhiteoutHUDWidget::FocusResultsInput()
 
 void UWhiteoutHUDWidget::ResumeGame()
 {
+	if (bTutorialLease) return;
 	ShowPanelAnimated(PauseBorder, false, WSUITokens::Anim::Fast);
 	if (SettingsBorder)
 	{
@@ -3805,6 +3861,7 @@ void UWhiteoutHUDWidget::ResumeGame()
 
 void UWhiteoutHUDWidget::SaveGame()
 {
+	if (bTutorialLease) return;
 	if (!GetGameInstance())
 	{
 		return;
@@ -3825,6 +3882,7 @@ void UWhiteoutHUDWidget::SaveGame()
 
 void UWhiteoutHUDWidget::LoadGame()
 {
+	if (bTutorialLease) return;
 	if (!GetGameInstance())
 	{
 		return;
@@ -3834,8 +3892,10 @@ void UWhiteoutHUDWidget::LoadGame()
 	{
 		const bool bLoaded = StateSubsystem->LoadSnapshot();
 		SystemMessage = bLoaded
-			? TEXT("已恢复存档，当前评分按 v1.6 新规则计算。")
-			: TEXT("没有可读取的兼容存档。");
+			? TEXT("已恢复存档。")
+			: TEXT("读取失败：存档缺失、损坏或版本不兼容。当前状态保持不变；可明确选择旧版备份。");
+		if (LegacyBackupButton) LegacyBackupButton->SetVisibility(!bLoaded && StateSubsystem->HasLegacySnapshot() ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		if (!bLoaded && PauseSituationText) PauseSituationText->SetText(FText::FromString(SystemMessage));
 		if (bLoaded)
 		{
 			SetSystemMessage(SystemMessage);
@@ -3846,6 +3906,7 @@ void UWhiteoutHUDWidget::LoadGame()
 
 void UWhiteoutHUDWidget::OpenSettings()
 {
+	if (bTutorialLease) return;
 	RefreshSettingsUI();
 	if (PauseBorder)
 	{
@@ -4236,6 +4297,7 @@ void UWhiteoutHUDWidget::ToggleControls()
 
 void UWhiteoutHUDWidget::RestartGame()
 {
+	if (bTutorialLease) return;
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
 		StateSubsystem->NewGame();

@@ -110,7 +110,7 @@ void AWhiteoutCharacter::BeginPlay()
 void AWhiteoutCharacter::Tick(const float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (!bApplicationActive) return;
+	if (!bApplicationActive || IsTutorialInputBlocked()) return;
 	if (ActiveDialogueSessionId.IsValid() && !IsDialogueTargetVisible(ActiveDialogueTarget.Get(), 340.0f, true))
 	{
 		CancelDialogue();
@@ -176,6 +176,7 @@ void AWhiteoutCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AWhiteoutCharacter::HandleApplicationActivation(bool bActive)
 {
 	bApplicationActive = bActive;
+	if (IsTutorialInputBlocked()) return;
 	if (bActive) return;
 	CancelDialogue();
 	if (IsValid(FocusedInteractable)) FocusedInteractable->SetInteractionFocused(false);
@@ -221,26 +222,31 @@ void AWhiteoutCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 
 void AWhiteoutCharacter::MoveForward(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (Value.Get<bool>()) AddMovementInput(GetActorForwardVector(), 1.0f);
 }
 
 void AWhiteoutCharacter::MoveBackward(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (Value.Get<bool>()) AddMovementInput(GetActorForwardVector(), -1.0f);
 }
 
 void AWhiteoutCharacter::MoveLeft(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (Value.Get<bool>()) AddMovementInput(GetActorRightVector(), -1.0f);
 }
 
 void AWhiteoutCharacter::MoveRight(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (Value.Get<bool>()) AddMovementInput(GetActorRightVector(), 1.0f);
 }
 
 void AWhiteoutCharacter::Look(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	const FVector2D Axis = Value.Get<FVector2D>();
 	AddControllerYawInput(Axis.X);
 	AddControllerPitchInput(-Axis.Y);
@@ -248,6 +254,7 @@ void AWhiteoutCharacter::Look(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (ActiveDialogueSessionId.IsValid()) return;
 	if (AWSInteractableActor* Interactable = FocusedInteractable)
 	{
@@ -296,6 +303,7 @@ void AWhiteoutCharacter::Interact(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::CycleActionOption(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (!PreviewedInteractable || ActiveDialogueTarget.IsValid())
 	{
 		return;
@@ -686,6 +694,7 @@ void AWhiteoutCharacter::CommitDialogueChoice(const EWSDialogueAct DialogueAct, 
 
 void AWhiteoutCharacter::SubmitAuthoredChoice(FName ChoiceId)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (!ActiveDialogueTarget.IsValid() || bDialogueChoiceCommitted || bDialogueIntentPending) return;
 	UWindStationStateSubsystem* State = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
 	if (!State) return;
@@ -703,6 +712,7 @@ void AWhiteoutCharacter::SubmitAuthoredChoice(FName ChoiceId)
 
 void AWhiteoutCharacter::SubmitDialogueText(const FString& UserText)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (!ActiveDialogueTarget.IsValid() || bDialogueChoiceCommitted || bDialogueIntentPending) return;
 	const FString Text = UserText.TrimStartAndEnd();
 	if (Text.IsEmpty() || Text.Len() > 480) return;
@@ -739,6 +749,7 @@ void AWhiteoutCharacter::SubmitDialogueChoice(
 	const FName PromiseCondition,
 	const FString& PlayerSaid)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (!ActiveDialogueTarget.IsValid() || bDialogueChoiceCommitted || bDialogueIntentPending)
 	{
 		return;
@@ -841,6 +852,7 @@ void AWhiteoutCharacter::CancelDialogue()
 
 void AWhiteoutCharacter::HandleJumpPressed()
 {
+	if (IsTutorialInputBlocked()) return;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
@@ -857,6 +869,7 @@ void AWhiteoutCharacter::HandleJumpPressed()
 
 void AWhiteoutCharacter::AdvanceOpening()
 {
+	if (IsTutorialInputBlocked()) return;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (AWhiteoutHUD* HUD = Cast<AWhiteoutHUD>(PlayerController->GetHUD()))
@@ -868,6 +881,7 @@ void AWhiteoutCharacter::AdvanceOpening()
 
 void AWhiteoutCharacter::ToggleGuide()
 {
+	if (IsTutorialInputBlocked()) return;
 	if (ActiveDialogueSessionId.IsValid()) return;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
@@ -894,6 +908,7 @@ void AWhiteoutCharacter::TogglePauseMenu()
 
 void AWhiteoutCharacter::ContinueRun(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (ActiveDialogueSessionId.IsValid()) return;
 	UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
 	if (!StateSubsystem)
@@ -913,6 +928,7 @@ void AWhiteoutCharacter::ContinueRun(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::ToggleEvidence(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (ActiveDialogueSessionId.IsValid()) return;
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
@@ -925,6 +941,7 @@ void AWhiteoutCharacter::ToggleEvidence(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::RestartRun(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (ActiveDialogueSessionId.IsValid()) return;
 	if (UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>())
 	{
@@ -935,6 +952,7 @@ void AWhiteoutCharacter::RestartRun(const FInputActionValue& Value)
 
 void AWhiteoutCharacter::Settle(const FInputActionValue& Value)
 {
+	if (IsTutorialInputBlocked()) return;
 	if (ActiveDialogueSessionId.IsValid()) return;
 	UWindStationStateSubsystem* StateSubsystem = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
 	if (!StateSubsystem)
@@ -1335,4 +1353,11 @@ void AWhiteoutCharacter::UpdateFootsteps()
 			0.32f,
 			FMath::FRandRange(0.93f, 1.07f));
 	}
+}
+
+bool AWhiteoutCharacter::IsTutorialInputBlocked() const
+{
+    if (const auto* PC = Cast<APlayerController>(Controller))
+        if (const auto* HUD = Cast<AWhiteoutHUD>(PC->GetHUD())) return HUD->IsTutorialActive();
+    return false;
 }

@@ -49,6 +49,7 @@ public:
 		FName PromiseCondition = NAME_None) const;
 
 private:
+	bool IsTutorialInputBlocked() const;
 	friend class FWhiteoutV15FocusLeaseTest;
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> RuntimeInputContext;
