@@ -23,6 +23,8 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/GameUserSettings.h"
 #include "GameFramework/PlayerController.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Settings/WhiteoutSettingsSubsystem.h"
 
 UWSTutorialData::UWSTutorialData()
@@ -118,7 +120,7 @@ void UWSTutorialWidget::Build(UFont* Font)
 		Style.SetHovered(FSlateRoundedBoxBrush(WSUITokens::V17::SurfaceRaised, 6.f, WSUITokens::V17::Attention, 1.f));
 		Style.SetPressed(FSlateRoundedBoxBrush(WSUITokens::V17::Stroke, 6.f));
 		Style.SetDisabled(FSlateRoundedBoxBrush(WSUITokens::V17::Surface, 6.f)); Style.SetNormalPadding(FMargin(14, 10)); Style.SetPressedPadding(FMargin(14, 10)); B->SetStyle(Style);
-		UTextBlock* T = Text(16, WSUITokens::V17::Text); T->SetText(FText::FromString(Label)); B->SetContent(T);
+		UTextBlock* T = Text(16, WSUITokens::V17::Text); T->SetAutoWrapText(false); T->SetText(FText::FromString(Label)); B->SetContent(T);
 		Row->AddChildToHorizontalBox(B)->SetPadding(FMargin(0, 0, 8, 0)); return B;
 	};
 	PreviousButton = Button(Footer, TEXT("上一页")); PreviousButton->OnClicked.AddDynamic(this, &UWSTutorialWidget::Previous);
@@ -191,7 +193,8 @@ void UWSTutorialWidget::ShowPage()
 	PreviousButton->SetIsEnabled(Flow.GetPage() > 0);
 	ContinueLabel->SetText(FText::FromString(Flow.GetPage() == 4 ? TEXT("鼠标左键 · 开始探索") : TEXT("鼠标左键 · 下一页")));
 	OnPageChanged.ExecuteIfBound(P.PageId);
-	UE_LOG(LogTemp, Display, TEXT("Tutorial version=1 page=%s replay=%d"), *P.PageId.ToString(), Flow.IsReplay());
+	if (!UE_BUILD_SHIPPING || FParse::Param(FCommandLine::Get(), TEXT("WhiteoutV17Capture")))
+		UE_LOG(LogTemp, Display, TEXT("Tutorial version=1 page=%s replay=%d"), *P.PageId.ToString(), Flow.IsReplay());
 }
 
 void UWSTutorialWidget::NativeTick(const FGeometry& G, float DeltaTime)

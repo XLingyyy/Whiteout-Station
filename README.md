@@ -1,12 +1,20 @@
 # Whiteout Station / 风雪站：断电前夜
 
-Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前开发版本为 v1.6（运行时版本 `1.6.0`）。
+Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前开发版本为 v1.7（运行时版本 `1.7.0`）；已保留的 v1.6 发行包仍可回滚使用。
 
 玩家在暴风雪抵达前管理早晨、午后、黄昏三个阶段共 12 点行动力，与工程师顾衡、医生叶澄调查停电、
 分配物资、修复发电机和室外天线，并尝试发出求救信号。开场、探索、行动
 预览、分阶段对话、自由文本、结算和四类结局已形成完整闭环。
 
-## v1.6 重点
+## v1.7 重点
+
+- 首次安全可操作时显示五页入门教程，支持翻页、跳过、继续阅读与 H 手册重看。
+- A 风格 HUD：阶段四格 AP、真实费用预览、玩家与 NPC 四字段状态卡，以及聚焦物品白色轮廓。
+- 教程配图来自当前实机画面；阅读进度与世界存档分离，教程期间暂停世界并隔离游戏输入。
+- v1.7 使用独立存档槽和内容校验；可以读取旧版进度，不写回旧槽。
+- 施工与验收结果见 [v1.7 实施记录](docs/IMPLEMENTATION_v1.7.md)，操作与构建见 [v1.7 构建说明](docs/BUILD_AND_PLAY_v1.7.md)。
+
+## 保留的 v1.6 玩法与对话规则
 
 - 默认离线，固定选项与作者台词不发送模型请求。
 - 所有交谈 0 AP；每名 NPC 每局 10 轮，在线与离线共享，跨窗口、阶段和存档保留。
@@ -43,7 +51,8 @@ Unreal Engine 5.8 C++ 社会生存与轻推理 Demo。当前开发版本为 v1.6
 - `Enter` 结算，`C` 读取最近自动存档，`R` 开始新一轮。
 
 构建、Shipping、验收和 AI 配置见
-[`docs/BUILD_AND_PLAY_v1.6.md`](docs/BUILD_AND_PLAY_v1.6.md)；历史说明保留在
+[`docs/BUILD_AND_PLAY_v1.7.md`](docs/BUILD_AND_PLAY_v1.7.md)；历史说明保留在
+[`v1.6`](docs/BUILD_AND_PLAY_v1.6.md)、
 [`v1.3`](docs/BUILD_AND_PLAY_v1.3.md) 和 [`v1.2`](docs/BUILD_AND_PLAY_v1.2.md)。关卡对象的编辑器
 拖动与替换方法见 [`docs/LEVEL_EDITING.md`](docs/LEVEL_EDITING.md)。
 
@@ -65,13 +74,14 @@ $env:WHITEOUT_LLM_ENABLED = 'true'
 关闭 AI 时使用固定选项。在线失败保留输入并显示系统提示。本版不自动改写或替换未经核查的完整回复，可由玩家切换离线选项。
 密钥不得写入运行配置 JSON、源码、日志或发布包；loopback mock 不携带 Authorization。
 
-v1.6 自动存档槽为 `WhiteoutStation_Autosave_v1_6`，支持读取并迁移 v1.5/v1.4/v1.3/v1.2/v1.1 存档。
+v1.7 自动存档槽为 `WhiteoutStation_Autosave_v1_7`，支持读取并迁移 v1.6/v1.5/v1.4/v1.3/v1.2/v1.1 存档。新槽损坏时先报告失败，可显式选择旧备份；不会自动回退并覆盖当前进度。
 NPC 已用轮次和已提交历史随存档恢复；未完成请求和待确认提议在读档时失效。旧存档按可证实的唯一已提交交流迁移，不退还旧版本已花费的 AP。
 
 ## 回归
 
 ```powershell
-python -X utf8 Tools/Release/validate_source_v16.py
+python -X utf8 Tools/Release/validate_source_v17.py
+python -X utf8 Tools/Capture/validate_tutorial_assets_v17.py
 python -X utf8 Tools/Release/scan_secrets.py
 ```
 
