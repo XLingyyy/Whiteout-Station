@@ -11,6 +11,8 @@ ROLES = {'T01': {'Dialogue'}, 'T02': {'Interactable'}, 'T03': {'AP', 'CostPrevie
 def validate(manifest, evidence_root, content=None):
     if not manifest.is_file(): return ['尚未建立教程采集清单']
     errors = []
+    if content and not (content / 'WindStation/UI/v17/Tutorial/Data/DA_Tutorial_A.uasset').is_file():
+        errors.append('tutorial data asset missing')
     try:
         data = json.loads(manifest.read_text(encoding='utf-8-sig'))
         if data.get('ui_revision') != 1 or data.get('tutorial_version') != 1: errors.append('stale UI/tutorial revision')
@@ -49,7 +51,7 @@ def validate(manifest, evidence_root, content=None):
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--manifest', type=Path, default=ROOT/'docs/QA/v1.7_tutorial_assets.json')
-    parser.add_argument('--evidence-root', type=Path, default=ROOT/'Artifacts/v1.7-evidence')
+    parser.add_argument('--evidence-root', type=Path, default=ROOT/'SourceAssets/UI/v17/Tutorial')
     parser.add_argument('--content', type=Path, default=ROOT/'WhiteoutStation/Content')
     args=parser.parse_args()
     errors=validate(args.manifest,args.evidence_root,args.content)

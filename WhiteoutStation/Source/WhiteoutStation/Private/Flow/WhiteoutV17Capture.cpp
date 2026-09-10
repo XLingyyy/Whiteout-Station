@@ -76,7 +76,9 @@ void AWhiteoutGameMode::BeginV17Capture()
 		FTimerHandle Capture;
 		GetWorldTimerManager().SetTimer(Capture, FTimerDelegate::CreateWeakLambda(this, [this, Mode, PC, bBatch]()
 		{
-			const FString Dir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../Artifacts/v1.7-evidence/frames"));
+			FString EvidenceDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../Artifacts/v1.7-evidence"));
+			FParse::Value(FCommandLine::Get(), TEXT("V17EvidenceDir="), EvidenceDir);
+			const FString Dir = EvidenceDir / TEXT("frames");
 			IFileManager::Get().MakeDirectory(*Dir, true);
 			for (TObjectIterator<UWhiteoutHUDWidget> It; It; ++It)
 				if (It->GetWorld() == GetWorld() && It->IsInViewport()) It->ExportV17Geometry(Dir / (Mode + TEXT(".geometry.json")));

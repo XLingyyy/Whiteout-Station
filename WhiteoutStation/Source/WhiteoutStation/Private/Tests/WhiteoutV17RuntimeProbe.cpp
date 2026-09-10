@@ -87,6 +87,14 @@ struct FWSV17RuntimeProbe : TSharedFromThis<FWSV17RuntimeProbe>
 			FSlateApplication::Get().OnApplicationActivationChanged(true);
 			T->SetKeyboardFocus();
 			Check(TEXT("first safe game point opens T01 and pauses"), T->GetPageIndex() == 0 && UGameplayStatics::IsGamePaused(H));
+			auto* Data = LoadObject<UWSTutorialData>(nullptr, TEXT("/Game/WindStation/UI/v17/Tutorial/Data/DA_Tutorial_A.DA_Tutorial_A"));
+			bool CompleteAssets = Data && Data->Pages.Num() == 6;
+			if (Data) for (auto& Page : Data->Pages)
+			{
+				CompleteAssets &= Page.ResourceStatus == EWSTutorialResourceStatus::Approved && Page.PrimaryImage.LoadSynchronous() != nullptr;
+				if (!Page.SecondaryImage.IsNull()) CompleteAssets &= Page.SecondaryImage.LoadSynchronous() != nullptr;
+			}
+			Check(TEXT("all approved tutorial textures reachable in runtime"), CompleteAssets);
 			++Step; return true;
 		}
 		switch (Step++)
@@ -109,6 +117,7 @@ struct FWSV17RuntimeProbe : TSharedFromThis<FWSV17RuntimeProbe>
 			Check(TEXT("completion releases pause and move/look locks"), !H->bTutorialLease && !UGameplayStatics::IsGamePaused(H)
 				&& !H->GetOwningPlayer()->IsMoveInputIgnored() && !H->GetOwningPlayer()->IsLookInputIgnored());
 			Check(TEXT("completion changes preference only"), Settings->GetTutorialPreference().Status == EWSTutorialStatus::Completed && Unchanged());
+			if (FParse::Param(FCommandLine::Get(), TEXT("V17LayoutOnly"))) return Finish();
 			H->ToggleGuide(); H->GuideScrollV17->SetScrollOffset(42); break;
 		case 8: GuideOffset = H->GuideScrollV17->GetScrollOffset(); H->ReplayTutorial(); break;
 		case 9:
@@ -164,9 +173,21 @@ struct FWSV17RuntimeProbe : TSharedFromThis<FWSV17RuntimeProbe>
 			Check(TEXT("corrupt current slot does not silently select legacy"), !S->LoadSnapshot());
 			const auto AfterFailure = S->GetStateSnapshot();
 			Check(TEXT("failed load preserves current state"), FWSGameState::StaticStruct()->CompareScriptStruct(&Loaded, &AfterFailure, 0));
+			TArray<uint8> Changed = Original; Changed[Changed.Num() / 2] ^= 0x01;
+			FFileHelper::SaveArrayToFile(Changed, *Slot);
+			Check(TEXT("damaged payload rejected before deserialization"), !S->LoadSnapshot());
+			Changed = Original; Changed.SetNum(Changed.Num() / 2);
+			FFileHelper::SaveArrayToFile(Changed, *Slot);
+			Check(TEXT("truncated payload rejected before deserialization"), !S->LoadSnapshot());
 			FFileHelper::SaveArrayToFile(Original, *Slot);
+			Check(TEXT("intact v1.7 slot loads after corruption checks"), S->LoadSnapshot());
 		}
 		else Check(TEXT("v1.7 slot available for corruption regression"), false);
+		const auto BeforeReset = S->GetStateSnapshot();
+		H->GetOwningPlayer()->ConsoleCommand(TEXT("Whiteout.ResetTutorial"));
+		const auto AfterReset = S->GetStateSnapshot();
+		Check(TEXT("explicit tutorial reset preserves game progress"), H->GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>()->GetTutorialPreference().Status == EWSTutorialStatus::Never
+			&& FWSGameState::StaticStruct()->CompareScriptStruct(&BeforeReset, &AfterReset, 0));
 	}
 	bool Performance()
 	{
@@ -225,7 +246,11 @@ struct FWSV17RuntimeProbe : TSharedFromThis<FWSV17RuntimeProbe>
 		FString Json; FJsonSerializer::Serialize(Result, TJsonWriterFactory<>::Create(&Json));
 		FString Suffix; FParse::Value(FCommandLine::Get(), TEXT("V17Label="), Suffix);
 		FFileHelper::SaveStringToFile(Json, *(Directory / (TEXT("runtime-probe") + Suffix + TEXT(".json"))));
-		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoExit"))) FPlatformMisc::RequestExit(false);
+		if (FParse::Param(FCommandLine::Get(), TEXT("WhiteoutAutoExit")))
+		{
+			const bool Passed = !Checks.ContainsByPredicate([](const auto& C) { return !C->AsObject()->GetBoolField(TEXT("passed")); });
+			FPlatformMisc::RequestExitWithStatus(false, Passed ? 0 : 1);
+		}
 		return false;
 	}
 };
@@ -235,11 +260,15 @@ void UWhiteoutHUDWidget::BeginV17RuntimeProbe()
 	FString Mode; FParse::Value(FCommandLine::Get(), TEXT("V17Frame="), Mode);
 	if (Mode != TEXT("probe")) return;
 	FString UserDirectory; FParse::Value(FCommandLine::Get(), TEXT("UserDir="), UserDirectory);
-	if (!FPaths::ConvertRelativePathToFull(UserDirectory).StartsWith(FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../Artifacts/v1.7-evidence/capture-user-probe"))))
+	FString EvidenceDirectory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../Artifacts/v1.7-evidence"));
+	FParse::Value(FCommandLine::Get(), TEXT("V17EvidenceDir="), EvidenceDirectory);
+	EvidenceDirectory = FPaths::ConvertRelativePathToFull(EvidenceDirectory);
+	if (!EvidenceDirectory.EndsWith(TEXT("/Artifacts/v1.7-evidence")) || !FPaths::ConvertRelativePathToFull(UserDirectory).StartsWith(EvidenceDirectory / TEXT("capture-user-probe")))
 	{
 		UE_LOG(LogTemp, Error, TEXT("V17 probe requires its isolated capture UserDir")); return;
 	}
 	auto Probe = MakeShared<FWSV17RuntimeProbe>(); Probe->HUD = this;
+	Probe->Directory = EvidenceDirectory;
 	auto* S = GetGameInstance()->GetSubsystem<UWindStationStateSubsystem>();
 	Probe->Before = S->GetStateSnapshot(); Probe->Revision = S->GetStateRevision();
 	Probe->Position = GetOwningPlayer()->GetPawn()->GetActorLocation();

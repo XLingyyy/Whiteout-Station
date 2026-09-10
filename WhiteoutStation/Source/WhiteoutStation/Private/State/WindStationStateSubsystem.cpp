@@ -9,6 +9,7 @@
 #include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/Crc.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Save/WindStationSaveGame.h"
@@ -18,6 +19,7 @@
 
 namespace
 {
+	constexpr uint32 V17SaveFooter = 0x57533137;
 	FString DialogueSpeakerId(const EWSCharacterId Speaker)
 	{
 		switch (Speaker)
@@ -1748,7 +1750,12 @@ bool UWindStationStateSubsystem::SaveSnapshot()
 		return false;
 	}
 	Save->State = RulesEngine.GetState();
-	return UGameplayStatics::SaveGameToSlot(Save, GetActiveSaveSlot(), 0);
+	TArray<uint8> Data;
+	if (!UGameplayStatics::SaveGameToMemory(Save, Data)) return false;
+	// Validate the complete v1.7 payload before UE deserializes names or array lengths.
+	const uint32 Footer[] = {V17SaveFooter, FCrc::MemCrc32(Data.GetData(), Data.Num())};
+	Data.Append(reinterpret_cast<const uint8*>(Footer), sizeof(Footer));
+	return UGameplayStatics::SaveDataToSlot(Data, GetActiveSaveSlot(), 0);
 }
 
 FWSGameState UWindStationStateSubsystem::MigrateSaveStateForV13(
@@ -1844,8 +1851,19 @@ bool UWindStationStateSubsystem::LoadSnapshotFrom(bool bUseLegacyBackup)
 	{
 		return false;
 	}
-	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(
-		UGameplayStatics::LoadGameFromSlot(SlotToLoad, 0));
+	TArray<uint8> Data;
+	if (!UGameplayStatics::LoadDataFromSlot(Data, SlotToLoad, 0)) return false;
+	if (!bLoadLegacySlot)
+	{
+		uint32 Footer[2] = {};
+		if (Data.Num() <= sizeof(Footer)) return false;
+		FMemory::Memcpy(Footer, Data.GetData() + Data.Num() - sizeof(Footer), sizeof(Footer));
+		if (Footer[0] != V17SaveFooter || Footer[1] != FCrc::MemCrc32(Data.GetData(), Data.Num() - sizeof(Footer))) return false;
+		Data.SetNum(Data.Num() - sizeof(Footer));
+	}
+	// All supported legacy slots use UE's GVAS header; reject truncated/headerless files.
+	if (Data.Num() < 16 || FMemory::Memcmp(Data.GetData(), "GVAS", 4) != 0) return false;
+	UWindStationSaveGame* Save = Cast<UWindStationSaveGame>(UGameplayStatics::LoadGameFromMemory(Data));
 	if (!Save
 		|| (Save->SaveVersion != TEXT("1.7.0")
 			&& Save->SaveVersion != TEXT("1.6.0")

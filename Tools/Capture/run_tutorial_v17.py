@@ -3,6 +3,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -15,6 +16,7 @@ def main():
     p.add_argument('--scale', type=float, default=1)
     p.add_argument('--label', default='')
     p.add_argument('--performance', action='store_true')
+    p.add_argument('--layout-only', action='store_true')
     p.add_argument('--camera-yaw', type=float)
     p.add_argument('--camera-distance', type=float)
     p.add_argument('--keep-open', action='store_true')
@@ -22,16 +24,19 @@ def main():
     evidence = ROOT/'Artifacts/v1.7-evidence'
     evidence.mkdir(parents=True, exist_ok=True)
     label = args.mode + args.label
+    runtime = evidence / ('capture-user-' + label + '-' + datetime.now().strftime('%Y%m%d-%H%M%S'))
     command = [str(args.exe)]
     if args.exe.name.startswith('UnrealEditor'):
         command += [str(ROOT/'WhiteoutStation/WhiteoutStation.uproject'), '-game']
     command += ['-windowed', f'-ResX={args.width}', f'-ResY={args.height}', '-ForceRes', '-nosplash', '-nop4', '-nosound',
-                '-unattended', '-WhiteoutV17Capture', f'-V17Frame={args.mode}', f'-V17Label={args.label}',
-                f'-WhiteoutCaptureScale={args.scale}', f'-UserDir={evidence}/capture-user-{label}', f'-abslog={evidence}/capture-{label}.log']
+                '-unattended', '-WhiteoutV17Capture', f'-V17Frame={args.mode}',
+                f'-WhiteoutCaptureScale={args.scale}', f'-UserDir={runtime}', f'-V17EvidenceDir={evidence}', f'-abslog={evidence}/capture-{label}.log']
     if not args.keep_open: command += ['-WhiteoutAutoExit']
+    if args.label: command += [f'-V17Label={args.label}']
     if args.camera_yaw is not None: command += [f'-V17CameraYaw={args.camera_yaw}']
     if args.camera_distance is not None: command += [f'-V17CameraDistance={args.camera_distance}']
     if args.performance: command += ['-V17Performance', '-csvGpuStats']
+    if args.layout_only: command += ['-V17LayoutOnly']
     result = subprocess.run(command, timeout=None if args.keep_open else 360)
     print(json.dumps({'mode': args.mode, 'label': args.label, 'exit_code': result.returncode}))
     return result.returncode

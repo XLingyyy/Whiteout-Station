@@ -3,7 +3,9 @@
 #include "Agents/WSAgentGateway.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
 #include "Engine/UserInterfaceSettings.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/WhiteoutCharacter.h"
@@ -13,6 +15,14 @@
 namespace
 {
 	const TCHAR* SettingsSection = TEXT("WhiteoutStation.LocalSettings");
+	FAutoConsoleCommandWithWorld ResetTutorialCommand(
+		TEXT("Whiteout.ResetTutorial"), TEXT("Reset tutorial reading progress only; keep game saves and other settings."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (World && World->GetGameInstance())
+				if (auto* Settings = World->GetGameInstance()->GetSubsystem<UWhiteoutSettingsSubsystem>())
+					Settings->SetTutorialPreference(FWSTutorialPreference());
+		}));
 
 	float LoadClampedSetting(const TCHAR* Key, const float DefaultValue, const float Minimum, const float Maximum)
 	{
